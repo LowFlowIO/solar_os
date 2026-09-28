@@ -61,11 +61,14 @@
 #if SOLAR_OS_PACKAGE_APP_CONTACTS
 #include "solar_os_contacts.h"
 #endif
-#include "solar_os_job_registry.h"
+#include "solar_os_jobs.h"
 #include "solar_os_keys.h"
 #include "solar_os_log.h"
 #include "solar_os_manual.h"
 #include "solar_os_memory.h"
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+#include "solar_os_module_packages.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_OTA
 #include "solar_os_ota.h"
 #endif
@@ -151,6 +154,8 @@ typedef enum {
     SHELL_COMPLETION_SOURCE_CONTACT_IDS,
     SHELL_COMPLETION_SOURCE_ENDPOINT_IDS,
     SHELL_COMPLETION_SOURCE_PLAYGROUND_APPS,
+    SHELL_COMPLETION_SOURCE_MODULES_AVAILABLE,
+    SHELL_COMPLETION_SOURCE_MODULES_INSTALLED,
     SHELL_COMPLETION_SOURCE_AUDIO_OUTPUTS,
     SHELL_COMPLETION_SOURCE_EXPANSION_DRIVERS,
     SHELL_COMPLETION_SOURCE_EXPANSION_DEVICES,
@@ -521,7 +526,10 @@ static const shell_command_t shell_builtin_commands[] = {
     {"fg", "resume a display app session", cmd_fg},
     {"close", "close a session", cmd_close},
     {"version", "show SolarOS version", solar_os_shell_cmd_version},
-    {"pkg", "show compiled packages", solar_os_shell_cmd_pkg},
+    {"pkg", "show or install packages", solar_os_shell_cmd_pkg},
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    {"load", "run a native ELF module", solar_os_shell_cmd_load},
+#endif
     {"board", "show board capabilities", solar_os_shell_cmd_board},
     {"identity", "show or configure device identity", solar_os_shell_cmd_identity},
     {"input", "show input sources", solar_os_shell_cmd_input},
@@ -808,6 +816,13 @@ static const char * const gesture_unbind_values[] = {"all"};
 static const char * const engine_subcommands[] = {"status", "list", "reset"};
 #endif
 static const char * const mem_subcommands[] = {"policy"};
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+static const char * const pkg_subcommands[] = {
+    "system", "available", "installed", "install", "remove",
+};
+#else
+static const char * const pkg_subcommands[] = {"system"};
+#endif
 static const char * const nvs_subcommands[] = {
     "status", "list", "erase", "backup", "restore", "clear",
 };
@@ -1935,6 +1950,11 @@ static const char * const path_agent_config_max_tools[] = {
 static const char * const path_engine[] = {"engine"};
 #endif
 static const char * const path_mem[] = {"mem"};
+static const char * const path_pkg[] = {"pkg"};
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+static const char * const path_pkg_install[] = {"pkg", "install"};
+static const char * const path_pkg_remove[] = {"pkg", "remove"};
+#endif
 static const char * const path_nvs[] = {"nvs"};
 static const char * const path_nvs_backup[] = {"nvs", "backup"};
 static const char * const path_nvs_restore[] = {"nvs", "restore"};
@@ -2676,6 +2696,18 @@ static const char * const path_ota_boot[] = {"ota", "boot"};
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .source = SHELL_COMPLETION_SOURCE_PLAYGROUND_APPS, \
     }
+#define SHELL_COMPLETION_MODULES_AVAILABLE(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .source = SHELL_COMPLETION_SOURCE_MODULES_AVAILABLE, \
+    }
+#define SHELL_COMPLETION_MODULES_INSTALLED(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .source = SHELL_COMPLETION_SOURCE_MODULES_INSTALLED, \
+    }
 #define SHELL_COMPLETION_AUDIO_OUTPUTS(path_array) \
     { \
         .path = path_array, \
@@ -3101,6 +3133,11 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_engine, engine_subcommands),
 #endif
     SHELL_COMPLETION_STATIC(path_mem, mem_subcommands),
+    SHELL_COMPLETION_STATIC(path_pkg, pkg_subcommands),
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    SHELL_COMPLETION_MODULES_AVAILABLE(path_pkg_install),
+    SHELL_COMPLETION_MODULES_INSTALLED(path_pkg_remove),
+#endif
     SHELL_COMPLETION_STATIC(path_nvs, nvs_subcommands),
     SHELL_COMPLETION_PATH(path_nvs_backup, false),
     SHELL_COMPLETION_PATH(path_nvs_restore, false),
@@ -4812,6 +4849,56 @@ static bool shell_alias_lookup_target_command(const char *name, char *target, si
     return true;
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+static bool shell_native_module_is_shadowed(const char *name)
+{
+    char alias_target[SHELL_INPUT_MAX];
+
+    return shell_builtin_command_exists(name) ||
+        solar_os_app_registry_find(name) != NULL ||
+        shell_alias_lookup_target_command(name,
+                                          alias_target,
+                                          sizeof(alias_target));
+}
+
+typedef struct {
+    const char *prefix;
+    solar_os_shell_io_t *io;
+} shell_native_module_print_t;
+
+static bool shell_native_module_print_callback(const char *name, void *user)
+{
+    shell_native_module_print_t *print =
+        (shell_native_module_print_t *)user;
+    if (!shell_native_module_is_shadowed(name) &&
+        (print->prefix == NULL || starts_with(name, print->prefix))) {
+        solar_os_shell_io_writeln(print->io, name);
+    }
+    return true;
+}
+
+typedef struct {
+    const char *prefix;
+    char *match;
+    size_t match_len;
+    size_t *count;
+} shell_native_module_complete_t;
+
+static bool shell_native_module_complete_callback(const char *name, void *user)
+{
+    shell_native_module_complete_t *complete =
+        (shell_native_module_complete_t *)user;
+    if (!shell_native_module_is_shadowed(name) &&
+        starts_with(name, complete->prefix)) {
+        shell_note_completion_match(complete->match,
+                                    complete->match_len,
+                                    complete->count,
+                                    name);
+    }
+    return true;
+}
+#endif
+
 static uint32_t shell_now_ms(void)
 {
     return (uint32_t)pdTICKS_TO_MS(xTaskGetTickCount());
@@ -5115,6 +5202,9 @@ static bool shell_is_path_command(const char *command)
            strcmp(command, "cp") == 0 ||
            strcmp(command, "zip") == 0 ||
            strcmp(command, "unzip") == 0 ||
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+           strcmp(command, "load") == 0 ||
+#endif
 #if SOLAR_OS_PACKAGE_APP_APLAY
            strcmp(command, "aplay") == 0 ||
 #endif
@@ -5249,6 +5339,13 @@ static void shell_print_builtin_command_matches(solar_os_context_t *ctx, const c
         }
     }
     (void)shell_for_each_alias(shell_alias_print_callback, &alias_print);
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    shell_native_module_print_t native_print = {.prefix = prefix, .io = io};
+    (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_APP,
+        shell_native_module_print_callback,
+        &native_print);
+#endif
 
     shell_prompt(ctx);
     shell_replace_input(ctx, original);
@@ -5287,6 +5384,18 @@ static void shell_complete_builtin_command(solar_os_context_t *ctx, bool show_ma
         }
         match_count += alias_complete.count;
     }
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    shell_native_module_complete_t native_complete = {
+        .prefix = shell_session(ctx)->input,
+        .match = match,
+        .match_len = sizeof(match),
+        .count = &match_count,
+    };
+    (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_APP,
+        shell_native_module_complete_callback,
+        &native_complete);
+#endif
 
     if (match_count == 0) {
         return;
@@ -5697,6 +5806,17 @@ static bool shell_completion_alias_emit_callback(const char *name,
     return true;
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+static bool shell_completion_native_module_emit_callback(const char *name,
+                                                         void *user)
+{
+    if (!shell_native_module_is_shadowed(name)) {
+        shell_completion_emit((shell_completion_match_t *)user, name);
+    }
+    return true;
+}
+#endif
+
 static void shell_completion_emit_commands(shell_completion_match_t *state)
 {
     for (size_t i = 0; i < shell_builtin_command_count; i++) {
@@ -5710,6 +5830,12 @@ static void shell_completion_emit_commands(shell_completion_match_t *state)
         }
     }
     (void)shell_for_each_alias(shell_completion_alias_emit_callback, state);
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_APP,
+        shell_completion_native_module_emit_callback,
+        state);
+#endif
 }
 
 static void shell_completion_emit_apps(shell_completion_match_t *state)
@@ -5726,10 +5852,11 @@ static void shell_completion_emit_apps(shell_completion_match_t *state)
 
 static void shell_completion_emit_jobs(shell_completion_match_t *state)
 {
-    for (size_t i = 0; i < solar_os_job_registry_count(); i++) {
-        const solar_os_job_registry_entry_t *job = solar_os_job_registry_get(i);
-        if (job != NULL && job->name != NULL) {
-            shell_completion_emit(state, job->name);
+    const size_t count = solar_os_jobs_count();
+    for (size_t i = 0; i < count; i++) {
+        solar_os_job_status_t job;
+        if (solar_os_jobs_get(i, &job) && job.name != NULL) {
+            shell_completion_emit(state, job.name);
         }
     }
 }
@@ -5890,6 +6017,50 @@ static void shell_completion_emit_playground_apps(
         if (solar_os_playground_get_installed_app_id(i, id, sizeof(id))) {
             shell_completion_emit(state, id);
         }
+    }
+#else
+    (void)state;
+#endif
+}
+
+static void shell_completion_emit_available_modules(
+    shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    const size_t count = solar_os_module_catalog_cached_count();
+    for (size_t i = 0U; i < count; i++) {
+        char id[SOLAR_OS_MODULE_PACKAGE_ID_MAX];
+        if (solar_os_module_catalog_cached_get(i, id, sizeof(id))) {
+            shell_completion_emit(state, id);
+        }
+    }
+#else
+    (void)state;
+#endif
+}
+
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+static bool shell_completion_installed_module_emit(const char *id, void *user)
+{
+    shell_completion_emit((shell_completion_match_t *)user, id);
+    return true;
+}
+#endif
+
+static void shell_completion_emit_installed_modules(
+    shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    static const solar_os_module_type_t types[] = {
+        SOLAR_OS_MODULE_TYPE_APP,
+        SOLAR_OS_MODULE_TYPE_JOB,
+        SOLAR_OS_MODULE_TYPE_DRIVER,
+    };
+    for (size_t i = 0U; i < SHELL_ARRAY_COUNT(types); i++) {
+        (void)solar_os_module_package_foreach_installed(
+            types[i],
+            shell_completion_installed_module_emit,
+            state);
     }
 #else
     (void)state;
@@ -7899,6 +8070,12 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
         case SHELL_COMPLETION_SOURCE_PLAYGROUND_APPS:
             shell_completion_emit_playground_apps(state);
             break;
+        case SHELL_COMPLETION_SOURCE_MODULES_AVAILABLE:
+            shell_completion_emit_available_modules(state);
+            break;
+        case SHELL_COMPLETION_SOURCE_MODULES_INSTALLED:
+            shell_completion_emit_installed_modules(state);
+            break;
         case SHELL_COMPLETION_SOURCE_AUDIO_OUTPUTS:
             shell_completion_emit_audio_outputs(state);
             break;
@@ -9723,6 +9900,20 @@ static bool shell_execute_line(solar_os_context_t *ctx,
     if (alias_matched) {
         return alias_should_prompt;
     }
+
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    bool native_module_matched = false;
+    solar_os_shell_diag_set_source(io, source, line_number);
+    const bool native_module_should_prompt =
+        solar_os_shell_try_native_module(ctx,
+                                         argc,
+                                         argv,
+                                         &native_module_matched);
+    solar_os_shell_diag_set_source(io, NULL, 0);
+    if (native_module_matched) {
+        return native_module_should_prompt;
+    }
+#endif
 
     shell_report_unknown_command(io, argv[0], source, line_number);
     return true;

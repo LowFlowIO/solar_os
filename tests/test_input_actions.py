@@ -1,4 +1,5 @@
 import unittest
+import tomllib
 from pathlib import Path
 
 
@@ -16,6 +17,7 @@ GESTURE_COMPLETION = (
 ).read_text(encoding="utf-8")
 MAIN = (ROOT / "src/main.c").read_text(encoding="utf-8")
 PACKAGES = (ROOT / "packages/solar_os_packages.toml").read_text(encoding="utf-8")
+PACKAGE_DATA = tomllib.loads(PACKAGES)
 JOB = (ROOT / "src/jobs/solar_os_gesture_listener_job.c").read_text(
     encoding="utf-8"
 )
@@ -90,8 +92,10 @@ class InputActionsTest(unittest.TestCase):
         self.assertIn("solar_os_input_actions_stop()", JOB)
         self.assertIn(".worker_stack_bytes = SOLAR_OS_INPUT_ACTION_WORKER_STACK", JOB)
         self.assertIn("solar_os_gesture_listener_job", REGISTRY)
-        self.assertIn('members = ["core_runtime", "core_shell", "app_ltop", "job_gesture_listener"]',
-                      PACKAGES)
+        self.assertIn(
+            "job_gesture_listener",
+            PACKAGE_DATA["groups"]["bootstrap"]["members"],
+        )
 
     def test_gesture_command_discovers_sources_and_drives_completion(self):
         self.assertIn("gesture_print_sources", SHELL_INPUT)

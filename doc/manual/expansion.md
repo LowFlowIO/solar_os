@@ -73,7 +73,7 @@ existing named buses; create, attach, detach, or remove buses in the `io` app.
 `expansion status` retains the textual capabilities, buses, devices, and claims
 report for scripts and terminal inspection.
 
-`expansion drivers` groups compiled drivers under bold Audio, Display, Input,
+`expansion drivers` groups registered drivers under bold Audio, Display, Input,
 Power, Radio, Sensor, Storage, and Utility headings, with driver names sorted
 inside each category. Its aligned rows also show probe support, bus type, and
 the driver summary. `expansion devices` prints each attached device in a
@@ -440,7 +440,7 @@ board-default `display0` cannot be detached.
 
 ## Quick reference
 
-solaros.expansion.drivers() lists compiled drivers and devices() lists
+solaros.expansion.drivers() lists registered drivers and devices() lists
 currently attached devices with normalized bindings. attach(driver, name,
 bindings) and detach(name) manage them. Never assume an example name such as
 lcd0 or oled0 exists; inspect devices() or use a name explicitly supplied by

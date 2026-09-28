@@ -82,7 +82,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [ota command](commands.md) — Show running and configured OTA state.
 - [outbox command](commands.md) — List pending outbound messages. Sent and failed messages remain in conversation history, not Outbox.
 - [ping command](commands.md) — Send ICMP echo requests. Without count, ping runs until Esc, Ctrl+C, or app-exit.
-- [pkg command](commands.md) — Print compiled package groups and build units.
+- [pkg command](commands.md) — Inspect compiled packages and install signed native modules.
 - [pocsag command](commands.md) — Show POCSAG receiver configuration, counters, correction statistics, and RSSI.
 - [port command](commands.md) — List byte-stream ports.
 - [power command](commands.md) — Show the selected and effective profiles, suspend state, sleep policy, and wake statistics.

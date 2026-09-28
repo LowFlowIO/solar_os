@@ -90,7 +90,16 @@ matrix.
 ## Ownership Rules
 
 - `bootstrap` is immutable and contains only the runtime and shell needed to
-  start SolarOS. A flavor cannot disable its members.
+  start SolarOS. A flavor cannot disable its members. On ESP32-S3 boards with
+  PSRAM it also contains the native-module loader service and its `load`
+  maintainer command, plus signed-catalog installation through `pkg`; target
+  and capability pruning remove those services from other boards.
+- Native module manifests and signed catalogs carry an explicit `app`, `job`,
+  or `driver` type. Each type has a versioned runtime contract. Installed
+  artifacts use separate `/modules/apps`, `/modules/jobs`, and
+  `/modules/drivers` namespaces. Application modules run synchronously and
+  unload; jobs and drivers remain resident while their callbacks are
+  registered. A per-entry lifecycle ABI is distinct from the native host ABI.
 - Groups are selection shortcuts only. They cannot own source files or ESP-IDF
   component requirements.
 - Every source file and component requirement belongs to a package.
@@ -362,7 +371,9 @@ For maintainer experiments, an optional `[packages]` table can override
 individual internal packages. The builder does not expose that table as
 another selection layer.
 
-Use `pkg` on the device to inspect the resolved package list.
+Use `pkg system` on the device to inspect the resolved firmware package list.
+Use `pkg` without arguments to browse signed native modules in the package
+manager.
 
 ## Quick reference
 
@@ -370,5 +381,5 @@ Select a board, an update layout, and then granular groups. Build to replace the
 total estimate with a measured image size; adjust, rebuild, and flash when it
 fits. A flavor stores only portable groups. The board supplies required hardware
 drivers and removes unsupported groups, while the layout defines the image
-limit. Internal packages and services are resolved automatically. Use `pkg`
-on-device to inspect the resolved firmware.
+limit. Internal packages and services are resolved automatically. Use
+`pkg system` on-device to inspect the resolved firmware.

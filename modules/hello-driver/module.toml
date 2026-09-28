@@ -1,0 +1,12 @@
+schema_version = 2
+type = "driver"
+id = "hello-driver"
+name = "Hello Driver"
+version = "1.0.0"
+description = "Verify resident native driver registration, attach, and detach."
+target = "esp32s3"
+native_abi = 1
+lifecycle_abi = 1
+minimum_host_api_size = 20
+required_capabilities = ["psram"]
+artifact = "solaros_native_hello_driver.driver.elf"

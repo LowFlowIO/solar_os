@@ -231,7 +231,13 @@ job for periodic polling.
 | Command | Usage | Description |
 | --- | --- | --- |
 | `version` | `version` | Print the SolarOS version and firmware flavor. |
-| `pkg` | `pkg` | Print compiled package groups and build units. |
+| `pkg` | `pkg` | Open the native-module package manager. |
+| `pkg` | `pkg system` | Print compiled package groups and build units. |
+| `pkg` | `pkg available` | Verify the signed native-module catalog and print its compact module list. |
+| `pkg` | `pkg installed` | List installed application, job, and driver modules. |
+| `pkg` | `pkg install <module>` | Download, verify, validate, and atomically install a native module; Ctrl+C, Esc, or the app-exit key cancels. |
+| `pkg` | `pkg remove <module>` | Remove an installed native module. |
+| `load` | `load <file.elf> [args...]` | Validate, relocate, run, and unload one native ELF module from storage. |
 | `board` | `board` | Print board ID, name, and capabilities. |
 | `identity` | `identity [status]` | Show the configured user and hostname. |
 | `identity` | `identity user <name>` | Save the SolarOS user and default SSH/SCP username in NVS. |
@@ -300,6 +306,79 @@ pointer sources after `input calibrate`, common named keys after `input emit`,
 Gesture completion lists gesture-capable sources after `source=`, limits
 `gesture=` values to the selected source's advertised gestures, and offers
 `all` after `gesture unbind`.
+
+### Native ELF modules
+
+`load` is the low-level maintainer interface for the native-module runtime. It
+is compiled only for ESP32-S3 boards with PSRAM. The command resolves the ELF
+path through the calling shell's current directory, reads at most 2 MiB into
+PSRAM, validates every ELF header and table boundary, checks for an Xtensa
+ELF32 dynamic object, relocates it into executable PSRAM, and calls its entry
+point with the supplied arguments.
+
+Native modules import the single versioned `solar_os_native_host_v1` symbol.
+The returned function table reports the ABI version, target, firmware version,
+and provides UTF-8 output through the shell that invoked `load`. Arbitrary
+SolarOS or ESP-IDF internals are not exported. The first ABI is intentionally
+small so later operations can be added after their ownership and lifetime
+rules are defined. Native ELF code is not sandboxed; `load` is for trusted,
+maintainer-produced modules only.
+
+The `load` runner is for short-lived command-style modules. A module must stop
+all of its work and release every callback and resource before its entry point
+returns, because the runner immediately unloads its code and data. Installed
+jobs and drivers use separate resident lifecycle ABIs instead of this runner.
+
+The standalone `modules/hello` ESP-IDF project builds a small acceptance
+module.
+
+Official native-module catalogs are versioned with the host firmware. `pkg`
+accepts a catalog only when its ECDSA signature, SolarOS version, ESP target,
+and native ABI match the running firmware. Each downloaded ELF must match the
+signed size and SHA-256, pass the same ELF validation as `load`, and is staged
+before atomic activation. The signed type selects the storage and lifecycle
+boundary: application modules use `/modules/apps/<module>.elf`, jobs use
+`/modules/jobs`, and drivers use `/modules/drivers`. Every entry separately
+declares its lifecycle ABI and its type-specific native host API size.
+Application lifecycle ABI 1 is the synchronous `main(argc, argv)`
+run-and-unload contract. Job lifecycle ABI 1 registers start, stop, and tick
+callbacks and keeps the ELF resident until the stopped job is removed. Driver
+lifecycle ABI 1 registers a zero-binding utility driver contract and keeps the
+ELF resident until all devices are detached and the module is removed.
+Installed jobs and drivers are reactivated during boot. The default repository is
+`https://solar-os.eu/ota/modules`.
+
+Run `pkg` without arguments to open the package manager. It refreshes the
+signed catalog in a worker, marks installed entries with `*`, and lets you
+inspect, install, remove, or refresh modules without blocking screen redraws.
+After a successful catalog check, `pkg install` completion uses that verified
+catalog. `pkg remove` completion and `pkg installed` read the installed module
+directories directly.
+
+Installed application modules are shell commands: the module ID resolves under
+`/modules/apps` after built-in commands, compiled applications, and aliases.
+Command completion lists installed applications. `load` remains available for
+explicit paths and diagnostics. Reinstalling an application from the schema-v1
+layout moves it into `/modules/apps`; `pkg remove` also recognizes the legacy
+flat application path during this transition.
+
+The acceptance modules exercise all three paths. Use `pkg install hello-job`,
+then `job start hello-job`, `job status hello-job`, and `job stop hello-job`.
+Use `pkg install hello-driver`, then `expansion attach hello-driver hello0` and
+`expansion detach hello0`. The hello driver claims no GPIO or bus. `pkg remove`
+rejects a running job or a driver with an attached device.
+
+For example:
+
+```text
+pkg available
+pkg installed
+pkg install hello
+hello SolarOS
+pkg remove hello
+```
+
+### Power, RTC, schedules, and terminal settings
 
 `power` usage:
 
@@ -903,7 +982,7 @@ available for the compiled board.
 | `expansion` | `expansion status` | Show expansion capabilities, named buses and leases, connector resources, active devices, and resource claims. |
 | `expansion` | `expansion layout [connector]` | Draw the board's physical connector map with live free, releasable, claimed, fixed, power, ground, and NC markers. |
 | `expansion` | `expansion scan` | List expansion resources and probe-capable drivers. |
-| `expansion` | `expansion drivers` | List compiled expansion drivers. |
+| `expansion` | `expansion drivers` | List registered expansion drivers. |
 | `expansion` | `expansion devices` | List fixed board and runtime-attached expansion devices with origin, readiness, startup mode, policy, and bindings. |
 | `expansion` | `expansion bus create i2c <name> port=<i2c0\|i2c1> sda=<gpio> scl=<gpio> [speed=<hz>]` | Define a runtime I2C bus on an unused controller and approved expansion pins. |
 | `expansion` | `expansion bus create onewire <name> pin=<gpio>` | Define a runtime named 1-Wire bus on an approved expansion pin. |
@@ -914,7 +993,7 @@ available for the compiled board.
 | `expansion` | `expansion bus attach <name>` | Attach a named detachable bus and reserve its endpoint and signal pins. |
 | `expansion` | `expansion bus detach <name>` | Detach an idle named bus, preserving its descriptor while releasing its endpoint and signal pins. |
 | `expansion` | `expansion bus remove <name>` | Remove an idle runtime bus and release its signal pins. |
-| `expansion` | `expansion attach <driver> <name> <resource...>` | Attach a compiled expansion driver or manual resource profile. |
+| `expansion` | `expansion attach <driver> <name> <resource...>` | Attach a registered expansion driver or manual resource profile. |
 | `expansion` | `expansion detach <name>` | Detach an active expansion device and release its resource claims. |
 | `expansion` | `expansion export <path>` | Atomically export runtime buses and catalog-backed device attachments as a portable expansion manifest for custom-board generation. |
 | `neopixel` | `neopixel [status\|list] [name]` | List attached WS2812/NeoPixel strips. |
@@ -1203,6 +1282,7 @@ pocsag send radio 448425000 1200 1841525 "SolarOS calling" alpha inverted
 help
 version
 pkg
+hello SolarOS
 board
 wifi on
 ping wintermute
