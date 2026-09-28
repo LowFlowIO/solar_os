@@ -378,6 +378,8 @@ hello SolarOS
 pkg remove hello
 ```
 
+### Power, RTC, schedules, and terminal settings
+
 `power` usage:
 
 ```text

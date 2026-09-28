@@ -2,6 +2,15 @@
 
 ## 4.x
 
+- **4.15.0** — 2026-09-28 — Added signed native ELF module packages for
+  ESP32-S3 targets with PSRAM. The `pkg` package manager browses the versioned
+  repository, verifies catalog signatures and host compatibility, and
+  atomically installs verified application, job, and driver artifacts.
+  Application modules become shell commands, while resident jobs and expansion
+  drivers register with the normal SolarOS runtime and reactivate during boot.
+  The repository includes source projects for acceptance modules across all
+  three lifecycle paths, and CID can publish their signed catalogs
+  independently of firmware OTA releases.
 - **4.14.1** — 2026-09-26 — Added runtime display layouts: two to four
   physical displays can be joined into one logical canvas, while one physical
   display can be split into two independent logical viewports with their own
