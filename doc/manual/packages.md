@@ -92,8 +92,8 @@ matrix.
 - `bootstrap` is immutable and contains only the runtime and shell needed to
   start SolarOS. A flavor cannot disable its members. On ESP32-S3 boards with
   PSRAM it also contains the native-module loader service and its `load`
-  maintainer command; target and capability pruning remove that service from
-  other boards.
+  maintainer command, plus signed-catalog installation through `pkg`; target
+  and capability pruning remove those services from other boards.
 - Groups are selection shortcuts only. They cannot own source files or ESP-IDF
   component requirements.
 - Every source file and component requirement belongs to a package.

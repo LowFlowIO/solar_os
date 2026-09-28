@@ -77,6 +77,10 @@ void solar_os_shell_cmd_jobs(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_log(solar_os_context_t *ctx, int argc, char **argv);
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
 void solar_os_shell_cmd_load(solar_os_context_t *ctx, int argc, char **argv);
+bool solar_os_shell_try_native_module(solar_os_context_t *ctx,
+                                      int argc,
+                                      char **argv,
+                                      bool *matched);
 #endif
 void solar_os_shell_cmd_man(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv);

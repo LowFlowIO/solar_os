@@ -749,7 +749,13 @@ capabilities = ["wifi"]
 
 [packages.service_native_modules]
 label = "bootstrap.native-modules"
+depends = [
+  "service_crypto",
+  "service_http_client",
+  "service_json",
+]
 sources = [
+  "services/solar_os_module_packages.c",
   "services/solar_os_native.c",
   "services/solar_os_native_elf.c",
   "shell/solar_os_shell_native.c",

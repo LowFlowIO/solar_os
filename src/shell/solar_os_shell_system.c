@@ -25,6 +25,10 @@
 #include "solar_os_engines.h"
 #include "solar_os_i2c.h"
 #include "solar_os_memory.h"
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+#include "solar_os_log.h"
+#include "solar_os_module_packages.h"
+#endif
 #include "solar_os_power.h"
 #include "solar_os_ramfs.h"
 #include "solar_os_shell.h"
@@ -345,17 +349,231 @@ static void pkg_print_build_unit_tree(solar_os_shell_io_t *term,
     }
 }
 
-void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+#define PKG_NETWORK_TASK_STACK (16U * 1024U)
+#define PKG_NETWORK_WAIT_MS 50U
+SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(PKG_NETWORK_TASK_STACK);
+
+typedef struct {
+    solar_os_shell_io_t *term;
+    uint32_t last_reported;
+} pkg_install_shell_state_t;
+
+typedef enum {
+    PKG_NETWORK_AVAILABLE = 0,
+    PKG_NETWORK_INSTALL,
+} pkg_network_action_t;
+
+typedef struct {
+    solar_os_shell_io_t *term;
+    pkg_network_action_t action;
+    const char *id;
+    volatile bool done;
+} pkg_network_worker_t;
+
+static bool pkg_install_cancelled(void *user)
 {
-    solar_os_shell_io_t *term = terminal(ctx);
+    pkg_install_shell_state_t *state = (pkg_install_shell_state_t *)user;
+    size_t count = 0U;
+    char chars[8];
 
-    (void)argv;
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+    while ((count = solar_os_ble_keyboard_read_chars(chars, sizeof(chars))) > 0U) {
+        for (size_t i = 0U; i < count; i++) {
+            if ((uint8_t)chars[i] == SOLAR_OS_KEY_APP_EXIT) {
+                return true;
+            }
+        }
+    }
+#endif
 
-    if (argc != 1) {
-        solar_os_shell_diag_unexpected(term, "pkg", argv[1], "pkg");
+    solar_os_shell_io_t *term = state != NULL ? state->term : NULL;
+    if (term == NULL ||
+        solar_os_shell_io_kind(term) != SOLAR_OS_SHELL_IO_KIND_PORT ||
+        !solar_os_port_handle_valid(&term->port)) {
+        return false;
+    }
+
+    uint8_t port_chars[8];
+    do {
+        count = 0U;
+        if (solar_os_port_read(&term->port,
+                               port_chars,
+                               sizeof(port_chars),
+                               0U,
+                               &count) != ESP_OK) {
+            return false;
+        }
+        for (size_t i = 0U; i < count; i++) {
+            if (port_chars[i] == 0x1dU ||
+                port_chars[i] == SOLAR_OS_KEY_APP_EXIT) {
+                return true;
+            }
+        }
+    } while (count > 0U);
+    return false;
+}
+
+static void pkg_install_progress(uint32_t bytes, uint32_t total, void *user)
+{
+    pkg_install_shell_state_t *state = (pkg_install_shell_state_t *)user;
+    if (state == NULL || state->term == NULL ||
+        (bytes != total && bytes - state->last_reported < 16384U)) {
+        return;
+    }
+    state->last_reported = bytes;
+    solar_os_shell_io_printf(state->term,
+                             "pkg: downloaded %u/%u bytes\n",
+                             (unsigned)bytes,
+                             (unsigned)total);
+    solar_os_shell_io_flush(state->term);
+}
+
+static void pkg_print_available(solar_os_shell_io_t *term)
+{
+    solar_os_shell_io_writeln(term, "pkg: checking signed module catalog");
+    solar_os_shell_io_flush(term);
+
+    solar_os_module_catalog_t *catalog = NULL;
+    char detail[128];
+    const esp_err_t err =
+        solar_os_module_catalog_fetch(&catalog, detail, sizeof(detail));
+    if (err != ESP_OK) {
+        solar_os_shell_diag_esp(term, "pkg available", err, detail, NULL);
         return;
     }
 
+    solar_os_shell_io_printf(term,
+                             "Native modules for SolarOS %s, %s, ABI %u (signature verified):\n",
+                             catalog->host_version,
+                             catalog->target,
+                             (unsigned)catalog->native_abi);
+    if (catalog->count == 0U) {
+        solar_os_shell_io_writeln(term, "  none");
+    }
+    for (size_t i = 0U; i < catalog->count; i++) {
+        const solar_os_module_package_t *package = &catalog->packages[i];
+        solar_os_shell_io_printf(term,
+                                 "  %-16s %-10s %s%s%s\n",
+                                 package->id,
+                                 package->version,
+                                 package->installed ? "[installed] " : "",
+                                 package->compatible ? "" : "[incompatible] ",
+                                 package->name);
+        solar_os_shell_io_printf(term, "    %s\n", package->description);
+        if (!package->compatible) {
+            solar_os_shell_io_printf(term,
+                                     "    %s\n",
+                                     package->incompatibility);
+        }
+    }
+    solar_os_module_catalog_free(catalog);
+}
+
+static void pkg_install_module(solar_os_shell_io_t *term, const char *id)
+{
+    pkg_install_shell_state_t state = {
+        .term = term,
+    };
+    const solar_os_module_install_options_t options = {
+        .should_cancel = pkg_install_cancelled,
+        .progress = pkg_install_progress,
+        .user = &state,
+    };
+    solar_os_module_install_result_t result;
+    char detail[128];
+
+    solar_os_shell_io_printf(term,
+                             "pkg: installing %s; %s stops\n",
+                             id,
+                             solar_os_shell_io_app_exit_key(term));
+    solar_os_shell_io_flush(term);
+    const esp_err_t err = solar_os_module_package_install(id,
+                                                          &options,
+                                                          &result,
+                                                          detail,
+                                                          sizeof(detail));
+    if (err != ESP_OK) {
+        solar_os_shell_diag_esp(term, "pkg install", err, detail, NULL);
+        return;
+    }
+    solar_os_shell_io_printf(term,
+                             "pkg: installed %s %s (%u bytes) -> %s\n",
+                             result.id,
+                             result.version,
+                             (unsigned)result.bytes,
+                             result.path);
+}
+
+static void pkg_network_task(void *arg)
+{
+    pkg_network_worker_t *worker = (pkg_network_worker_t *)arg;
+    if (worker != NULL) {
+        if (worker->action == PKG_NETWORK_AVAILABLE) {
+            pkg_print_available(worker->term);
+        } else {
+            pkg_install_module(worker->term, worker->id);
+        }
+        SOLAR_OS_LOGI("solar_os_shell",
+                      "pkg network task stopped stack_min_free=%u bytes",
+                      (unsigned)uxTaskGetStackHighWaterMark(NULL));
+        worker->done = true;
+    }
+    solar_os_task_delete_internal(NULL);
+}
+
+static void pkg_run_network_worker(solar_os_shell_io_t *term,
+                                   pkg_network_action_t action,
+                                   const char *id)
+{
+    pkg_network_worker_t worker = {
+        .term = term,
+        .action = action,
+        .id = id,
+    };
+
+    TaskHandle_t task = NULL;
+    if (solar_os_task_create_pinned_internal(pkg_network_task,
+                                             "pkg_network",
+                                             PKG_NETWORK_TASK_STACK,
+                                             &worker,
+                                             tskIDLE_PRIORITY + 1U,
+                                             &task,
+                                             tskNO_AFFINITY,
+                                             SOLAR_OS_TASK_ROLE_FOREGROUND) != pdPASS) {
+        solar_os_shell_diag_esp(term,
+                                action == PKG_NETWORK_AVAILABLE ?
+                                    "pkg available" : "pkg install",
+                                ESP_ERR_NO_MEM,
+                                "could not start the package network worker",
+                                NULL);
+        return;
+    }
+
+    TickType_t delay = pdMS_TO_TICKS(PKG_NETWORK_WAIT_MS);
+    if (delay == 0U) {
+        delay = 1U;
+    }
+    while (!worker.done) {
+        vTaskDelay(delay);
+    }
+}
+
+static void pkg_remove_module(solar_os_shell_io_t *term, const char *id)
+{
+    char detail[128] = {0};
+    const esp_err_t err =
+        solar_os_module_package_remove(id, detail, sizeof(detail));
+    if (err != ESP_OK) {
+        solar_os_shell_diag_esp(term, "pkg remove", err, detail, NULL);
+        return;
+    }
+    solar_os_shell_io_printf(term, "pkg: removed %s\n", id);
+}
+#endif
+
+static void pkg_print_system(solar_os_shell_io_t *term)
+{
     solar_os_shell_io_printf(term, "Flavor: %s\n", SOLAR_OS_FLAVOR_NAME);
     if (SOLAR_OS_FLAVOR_DESCRIPTION[0] != '\0') {
         solar_os_shell_io_printf(term, "%s\n", SOLAR_OS_FLAVOR_DESCRIPTION);
@@ -363,6 +581,42 @@ void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
     pkg_print_wrapped_list(term, "Groups", SOLAR_OS_PACKAGE_GROUP_LIST);
     pkg_print_wrapped_list(term, "Required capabilities", SOLAR_OS_PACKAGE_REQUIRED_CAPABILITIES);
     pkg_print_build_unit_tree(term, "Build units", SOLAR_OS_PACKAGE_LIST);
+}
+
+void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "system") == 0)) {
+        pkg_print_system(term);
+        return;
+    }
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    if (argc == 2 && strcmp(argv[1], "available") == 0) {
+        pkg_run_network_worker(term, PKG_NETWORK_AVAILABLE, NULL);
+        return;
+    }
+    if (argc == 3 && strcmp(argv[1], "install") == 0) {
+        pkg_run_network_worker(term, PKG_NETWORK_INSTALL, argv[2]);
+        return;
+    }
+    if (argc == 3 && strcmp(argv[1], "remove") == 0) {
+        pkg_remove_module(term, argv[2]);
+        return;
+    }
+    static const char * const subcommands[] = {
+        "system", "available", "install", "remove",
+    };
+    solar_os_shell_diag_subcommand(term,
+                                   "pkg",
+                                   argc,
+                                   argv,
+                                   "pkg [system|available|install <module>|remove <module>]",
+                                   subcommands,
+                                   sizeof(subcommands) / sizeof(subcommands[0]));
+#else
+    solar_os_shell_diag_unexpected(term, "pkg", argv[1], "pkg [system]");
+#endif
 }
 
 void solar_os_shell_cmd_clear(solar_os_context_t *ctx, int argc, char **argv)

@@ -231,7 +231,10 @@ job for periodic polling.
 | Command | Usage | Description |
 | --- | --- | --- |
 | `version` | `version` | Print the SolarOS version and firmware flavor. |
-| `pkg` | `pkg` | Print compiled package groups and build units. |
+| `pkg` | `pkg` or `pkg system` | Print compiled package groups and build units. |
+| `pkg` | `pkg available` | Verify the signed native-module catalog and list compatible modules. |
+| `pkg` | `pkg install <module>` | Download, verify, validate, and atomically install a native module. |
+| `pkg` | `pkg remove <module>` | Remove an installed native module. |
 | `load` | `load <file.elf> [args...]` | Validate, relocate, run, and unload one native ELF module from storage. |
 | `board` | `board` | Print board ID, name, and capabilities. |
 | `identity` | `identity [status]` | Show the configured user and hostname. |
@@ -321,13 +324,31 @@ maintainer-produced modules only.
 
 The initial runner is for short-lived command-style modules. A module must stop
 all of its work and release every callback and resource before its entry point
-returns, because `load` immediately unloads its code and data. Installed native
-applications, jobs, background services, signed catalogs, and `pkg` download
-operations are separate later layers; no embedded application is converted by
-this command.
+returns, because the runner immediately unloads its code and data. Native jobs
+and drivers require separate lifecycle contracts and are not part of this
+initial runner; no embedded application is converted by this command.
 
-The standalone `examples/native/hello` ESP-IDF project builds a small acceptance
+The standalone `modules/hello` ESP-IDF project builds a small acceptance
 module.
+
+Official native-module catalogs are versioned with the host firmware. `pkg`
+accepts a catalog only when its ECDSA signature, SolarOS version, ESP target,
+and native ABI match the running firmware. Each downloaded ELF must match the
+signed size and SHA-256, pass the same ELF validation as `load`, and is staged
+before atomically replacing `/modules/<module>.app.elf`. The default repository
+is `https://solar-os.eu/ota/modules`. Installed `*.app.elf` modules are also
+shell commands: the module ID resolves to `/modules/<module>.app.elf` after
+built-in commands, compiled applications, and aliases. Command completion lists
+installed modules. `load` remains available for explicit paths and diagnostics.
+
+For example:
+
+```text
+pkg available
+pkg install hello
+hello SolarOS
+pkg remove hello
+```
 
 `power` usage:
 
@@ -1231,7 +1252,7 @@ pocsag send radio 448425000 1200 1841525 "SolarOS calling" alpha inverted
 help
 version
 pkg
-load /modules/hello.elf SolarOS
+hello SolarOS
 board
 wifi on
 ping wintermute
