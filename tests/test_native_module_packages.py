@@ -38,6 +38,27 @@ class NativeModulePackagesTest(unittest.TestCase):
             source = next((module / "main").glob("*.c")).read_text(encoding="utf-8")
             self.assertIn(symbol, source)
 
+    def test_resident_slots_are_allocated_lazily_in_external_memory(self):
+        native = (ROOT / "src/services/solar_os_native.c").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertNotIn(
+            "native_resident_slot_t native_resident_slots[", native
+        )
+        allocation_start = native.index("slot = solar_os_memory_calloc(")
+        allocation_end = native.index("slot->type = type;", allocation_start)
+        allocation = native[allocation_start:allocation_end]
+        self.assertIn("SOLAR_OS_MEMORY_EXTERNAL_REQUIRED", allocation)
+        self.assertIn('"native.resident.slot"', allocation)
+
+        deactivation_start = native.index(
+            "esp_err_t solar_os_native_module_deactivate("
+        )
+        deactivation = native[deactivation_start:]
+        self.assertIn("native_slot_remove(slot);", deactivation)
+        self.assertIn("solar_os_memory_free(slot);", deactivation)
+
     def test_native_package_service_has_compatibility_and_integrity_gates(self):
         service = (ROOT / "src/services/solar_os_module_packages.c").read_text(
             encoding="utf-8"

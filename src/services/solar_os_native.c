@@ -29,7 +29,8 @@ static solar_os_native_run_options_t native_active_options;
 #define SOLAR_OS_NATIVE_RESIDENT_MAX SOLAR_OS_MODULE_PACKAGE_COUNT_MAX
 #define SOLAR_OS_NATIVE_SUMMARY_MAX 96U
 
-typedef struct {
+typedef struct native_resident_slot {
+    struct native_resident_slot *next;
     bool active;
     bool deactivating;
     bool registered;
@@ -48,7 +49,7 @@ typedef struct {
 #endif
 } native_resident_slot_t;
 
-static native_resident_slot_t native_resident_slots[SOLAR_OS_NATIVE_RESIDENT_MAX];
+static native_resident_slot_t *native_resident_slots;
 static native_resident_slot_t *native_registering_slot;
 static portMUX_TYPE native_resident_lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -281,24 +282,73 @@ static esp_err_t native_driver_detach_callback(void *user, const char *name)
 static native_resident_slot_t *native_find_slot(solar_os_module_type_t type,
                                                 const char *id)
 {
-    for (size_t i = 0U; i < SOLAR_OS_NATIVE_RESIDENT_MAX; i++) {
-        native_resident_slot_t *slot = &native_resident_slots[i];
+    native_resident_slot_t *found = NULL;
+    portENTER_CRITICAL(&native_resident_lock);
+    for (native_resident_slot_t *slot = native_resident_slots;
+         slot != NULL;
+         slot = slot->next) {
         if (slot->active && slot->type == type && strcmp(slot->id, id) == 0) {
-            return slot;
+            found = slot;
+            break;
         }
     }
-    return NULL;
+    portEXIT_CRITICAL(&native_resident_lock);
+    return found;
 }
 
-static native_resident_slot_t *native_free_slot(void)
+static size_t native_slot_count(void)
 {
-    for (size_t i = 0U; i < SOLAR_OS_NATIVE_RESIDENT_MAX; i++) {
-        if (!native_resident_slots[i].active &&
-            !native_resident_slots[i].elf_initialized) {
-            return &native_resident_slots[i];
-        }
+    size_t count = 0U;
+    portENTER_CRITICAL(&native_resident_lock);
+    for (const native_resident_slot_t *slot = native_resident_slots;
+         slot != NULL;
+         slot = slot->next) {
+        count++;
     }
-    return NULL;
+    portEXIT_CRITICAL(&native_resident_lock);
+    return count;
+}
+
+static bool native_slot_add(native_resident_slot_t *slot)
+{
+    if (slot == NULL) {
+        return false;
+    }
+    bool added = false;
+    portENTER_CRITICAL(&native_resident_lock);
+    size_t count = 0U;
+    for (const native_resident_slot_t *current = native_resident_slots;
+         current != NULL;
+         current = current->next) {
+        count++;
+    }
+    if (count < SOLAR_OS_NATIVE_RESIDENT_MAX) {
+        slot->next = native_resident_slots;
+        slot->active = true;
+        native_resident_slots = slot;
+        added = true;
+    }
+    portEXIT_CRITICAL(&native_resident_lock);
+    return added;
+}
+
+static void native_slot_remove(native_resident_slot_t *slot)
+{
+    if (slot == NULL) {
+        return;
+    }
+    portENTER_CRITICAL(&native_resident_lock);
+    native_resident_slot_t **current = &native_resident_slots;
+    while (*current != NULL) {
+        if (*current == slot) {
+            *current = slot->next;
+            slot->next = NULL;
+            slot->active = false;
+            break;
+        }
+        current = &(*current)->next;
+    }
+    portEXIT_CRITICAL(&native_resident_lock);
 }
 
 static esp_err_t native_load_resident(native_resident_slot_t *slot,
@@ -573,45 +623,59 @@ esp_err_t solar_os_native_module_activate(solar_os_module_type_t type,
     }
 
     esp_err_t err = ESP_OK;
-    native_resident_slot_t *slot = native_find_slot(type, id);
-    if (slot != NULL) {
+    native_resident_slot_t *slot = NULL;
+    bool slot_linked = false;
+    if (native_find_slot(type, id) != NULL) {
         goto done;
     }
-    slot = native_free_slot();
-    if (slot == NULL) {
+    if (native_slot_count() >= SOLAR_OS_NATIVE_RESIDENT_MAX) {
         native_set_detail(detail, detail_len, "no resident native module slot is available");
         err = ESP_ERR_NO_MEM;
         goto done;
     }
-    memset(slot, 0, sizeof(*slot));
+    slot = solar_os_memory_calloc(1,
+                                  sizeof(*slot),
+                                  SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,
+                                  "native.resident.slot");
+    if (slot == NULL) {
+        native_set_detail(detail, detail_len, "not enough external memory for the resident module");
+        err = ESP_ERR_NO_MEM;
+        goto done;
+    }
     slot->type = type;
     snprintf(slot->id, sizeof(slot->id), "%s", id);
 
     err = native_load_resident(slot, path, detail, detail_len);
     if (err != ESP_OK) {
-        memset(slot, 0, sizeof(*slot));
         goto done;
     }
-    portENTER_CRITICAL(&native_resident_lock);
-    slot->active = true;
-    portEXIT_CRITICAL(&native_resident_lock);
+    slot_linked = native_slot_add(slot);
+    if (!slot_linked) {
+        native_set_detail(detail, detail_len, "no resident native module slot is available");
+        err = ESP_ERR_NO_MEM;
+        goto done;
+    }
     err = native_register_resident(slot);
     if (err != ESP_OK) {
-        portENTER_CRITICAL(&native_resident_lock);
-        slot->active = false;
-        portEXIT_CRITICAL(&native_resident_lock);
-        if (slot->elf_initialized) {
-            esp_elf_deinit(&slot->elf);
-        }
-        memset(slot, 0, sizeof(*slot));
         native_set_detail(detail,
                           detail_len,
                           err == ESP_ERR_NOT_SUPPORTED ?
                               "module lifecycle is not supported by this firmware" :
                               "module could not be registered with SolarOS");
+        goto done;
     }
+    slot = NULL;
 
 done:
+    if (slot != NULL) {
+        if (slot_linked) {
+            native_slot_remove(slot);
+        }
+        if (slot->elf_initialized) {
+            esp_elf_deinit(&slot->elf);
+        }
+        solar_os_memory_free(slot);
+    }
     atomic_store(&native_running, false);
     return err;
 }
@@ -663,13 +727,11 @@ esp_err_t solar_os_native_module_deactivate(solar_os_module_type_t type,
         }
         vTaskDelay(1);
     }
-    portENTER_CRITICAL(&native_resident_lock);
-    slot->active = false;
-    portEXIT_CRITICAL(&native_resident_lock);
+    native_slot_remove(slot);
     if (slot->elf_initialized) {
         esp_elf_deinit(&slot->elf);
     }
-    memset(slot, 0, sizeof(*slot));
+    solar_os_memory_free(slot);
     atomic_store(&native_running, false);
     return ESP_OK;
 }
@@ -680,8 +742,6 @@ bool solar_os_native_module_active(solar_os_module_type_t type,
     if (id == NULL) {
         return false;
     }
-    portENTER_CRITICAL(&native_resident_lock);
     const bool active = native_find_slot(type, id) != NULL;
-    portEXIT_CRITICAL(&native_resident_lock);
     return active;
 }
