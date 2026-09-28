@@ -81,7 +81,17 @@ esp_err_t solar_os_module_packages_init(void);
 esp_err_t solar_os_module_catalog_fetch(solar_os_module_catalog_t **out_catalog,
                                         char *detail,
                                         size_t detail_len);
+esp_err_t solar_os_module_catalog_fetch_ex(
+    solar_os_module_catalog_t **out_catalog,
+    solar_os_module_package_cancel_fn should_cancel,
+    void *cancel_user,
+    char *detail,
+    size_t detail_len);
 void solar_os_module_catalog_free(solar_os_module_catalog_t *catalog);
+size_t solar_os_module_catalog_cached_count(void);
+bool solar_os_module_catalog_cached_get(size_t index,
+                                        char *id,
+                                        size_t id_len);
 
 esp_err_t solar_os_module_package_install(const char *id,
                                           const solar_os_module_install_options_t *options,

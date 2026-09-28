@@ -83,7 +83,7 @@ class NativeModulePackagesTest(unittest.TestCase):
             '"service_json"',
         ):
             self.assertIn(dependency, packages)
-        for command in ("available", "install", "remove"):
+        for command in ("available", "installed", "install", "remove"):
             self.assertIn(f'strcmp(argv[1], "{command}")', shell)
 
         self.assertIn("PKG_NETWORK_TASK_STACK (16U * 1024U)", shell)
@@ -92,6 +92,31 @@ class NativeModulePackagesTest(unittest.TestCase):
         self.assertIn("pkg_run_network_worker(term, PKG_NETWORK_INSTALL", shell)
         self.assertIn("ch == SOLAR_OS_KEY_ESCAPE", shell)
         self.assertIn("ch == 0x03U", shell)
+
+    def test_pkg_has_tui_lists_and_module_completion(self):
+        packages = (ROOT / "packages/solar_os_packages.toml").read_text(
+            encoding="utf-8"
+        )
+        shell_command = (ROOT / "src/shell/solar_os_shell_system.c").read_text(
+            encoding="utf-8"
+        )
+        shell = (ROOT / "src/apps/solar_os_shell.c").read_text(encoding="utf-8")
+        tui = (ROOT / "src/shell/solar_os_shell_pkg_tui.c").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertIn('"shell/solar_os_shell_pkg_tui.c"', packages)
+        self.assertIn("solar_os_shell_launch_pkg_tui(ctx)", shell_command)
+        self.assertIn("pkg_print_installed(term)", shell_command)
+        self.assertIn("solar_os_module_package_foreach_installed", shell_command)
+        self.assertIn("SHELL_COMPLETION_MODULES_AVAILABLE(path_pkg_install)", shell)
+        self.assertIn("SHELL_COMPLETION_MODULES_INSTALLED(path_pkg_remove)", shell)
+        self.assertIn("solar_os_module_catalog_cached_get", shell)
+        self.assertIn("solar_os_module_package_foreach_installed", shell)
+        self.assertIn("solar_os_module_catalog_fetch_ex", tui)
+        self.assertIn("solar_os_module_package_install", tui)
+        self.assertIn("solar_os_module_package_remove", tui)
+        self.assertIn("SOLAR_OS_EVENT_TICK", tui)
 
     def test_job_completion_uses_runtime_registry(self):
         shell = (ROOT / "src/apps/solar_os_shell.c").read_text(encoding="utf-8")

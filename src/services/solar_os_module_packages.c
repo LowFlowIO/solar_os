@@ -7,6 +7,8 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_attr.h"
+#include "freertos/FreeRTOS.h"
 #include "sdkconfig.h"
 #include "solar_os_config.h"
 #include "solar_os_board_caps.h"
@@ -38,6 +40,14 @@
 #define MODULE_HTTP_DEADLINE_MS 60000U
 
 static atomic_bool module_operation_running;
+
+typedef struct {
+    size_t count;
+    char ids[SOLAR_OS_MODULE_PACKAGE_COUNT_MAX][SOLAR_OS_MODULE_PACKAGE_ID_MAX];
+} module_catalog_id_cache_t;
+
+static EXT_RAM_BSS_ATTR module_catalog_id_cache_t module_catalog_id_cache;
+static portMUX_TYPE module_catalog_cache_lock = portMUX_INITIALIZER_UNLOCKED;
 
 typedef struct {
     FILE *file;
@@ -568,6 +578,14 @@ static esp_err_t module_catalog_fetch(
         goto done;
     }
     catalog->signature_verified = true;
+    portENTER_CRITICAL(&module_catalog_cache_lock);
+    module_catalog_id_cache.count = catalog->count;
+    for (size_t i = 0U; i < catalog->count; i++) {
+        strlcpy(module_catalog_id_cache.ids[i],
+                catalog->packages[i].id,
+                sizeof(module_catalog_id_cache.ids[i]));
+    }
+    portEXIT_CRITICAL(&module_catalog_cache_lock);
     *out_catalog = catalog;
 
 done:
@@ -580,9 +598,23 @@ esp_err_t solar_os_module_catalog_fetch(solar_os_module_catalog_t **out_catalog,
                                         char *detail,
                                         size_t detail_len)
 {
+    return solar_os_module_catalog_fetch_ex(out_catalog,
+                                            NULL,
+                                            NULL,
+                                            detail,
+                                            detail_len);
+}
+
+esp_err_t solar_os_module_catalog_fetch_ex(
+    solar_os_module_catalog_t **out_catalog,
+    solar_os_module_package_cancel_fn should_cancel,
+    void *cancel_user,
+    char *detail,
+    size_t detail_len)
+{
     return module_catalog_fetch(out_catalog,
-                                NULL,
-                                NULL,
+                                should_cancel,
+                                cancel_user,
                                 detail,
                                 detail_len);
 }
@@ -590,6 +622,30 @@ esp_err_t solar_os_module_catalog_fetch(solar_os_module_catalog_t **out_catalog,
 void solar_os_module_catalog_free(solar_os_module_catalog_t *catalog)
 {
     solar_os_memory_free(catalog);
+}
+
+size_t solar_os_module_catalog_cached_count(void)
+{
+    portENTER_CRITICAL(&module_catalog_cache_lock);
+    const size_t count = module_catalog_id_cache.count;
+    portEXIT_CRITICAL(&module_catalog_cache_lock);
+    return count;
+}
+
+bool solar_os_module_catalog_cached_get(size_t index,
+                                        char *id,
+                                        size_t id_len)
+{
+    if (id == NULL || id_len == 0U) {
+        return false;
+    }
+    portENTER_CRITICAL(&module_catalog_cache_lock);
+    const bool found = index < module_catalog_id_cache.count;
+    if (found) {
+        strlcpy(id, module_catalog_id_cache.ids[index], id_len);
+    }
+    portEXIT_CRITICAL(&module_catalog_cache_lock);
+    return found;
 }
 
 esp_err_t solar_os_module_package_path(solar_os_module_type_t type,

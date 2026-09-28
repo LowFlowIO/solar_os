@@ -33,6 +33,7 @@
 #include "solar_os_ramfs.h"
 #include "solar_os_shell.h"
 #include "solar_os_shell_common.h"
+#include "solar_os_shell_tui_apps.h"
 #include "solar_os_nvs_backup.h"
 
 static const char * const power_commands[] = {
@@ -449,28 +450,25 @@ static void pkg_print_available(solar_os_shell_io_t *term)
     }
 
     solar_os_shell_io_printf(term,
-                             "Native modules for SolarOS %s, %s, host ABI %u (signature verified):\n",
+                             "Available modules: SolarOS %s, %s, ABI %u, signed\n",
                              catalog->host_version,
                              catalog->target,
                              (unsigned)catalog->native_abi);
     if (catalog->count == 0U) {
-        solar_os_shell_io_writeln(term, "  none");
+        solar_os_shell_io_writeln(term, "none");
     }
     for (size_t i = 0U; i < catalog->count; i++) {
         const solar_os_module_package_t *package = &catalog->packages[i];
         solar_os_shell_io_printf(term,
-                                 "  %-7s ABI %-3u %-16s %-10s %s%s%s\n",
+                                 "%s %s %s%s%s\n",
                                  solar_os_module_type_name(package->type),
-                                 (unsigned)package->lifecycle_abi,
                                  package->id,
                                  package->version,
-                                 package->installed ? "[installed] " : "",
-                                 package->compatible ? "" : "[incompatible] ",
-                                 package->name);
-        solar_os_shell_io_printf(term, "    %s\n", package->description);
+                                 package->installed ? " installed" : "",
+                                 package->compatible ? "" : " incompatible");
         if (!package->compatible) {
             solar_os_shell_io_printf(term,
-                                     "    %s\n",
+                                     "reason: %s\n",
                                      package->incompatibility);
         }
     }
@@ -578,6 +576,54 @@ static void pkg_remove_module(solar_os_shell_io_t *term, const char *id)
     }
     solar_os_shell_io_printf(term, "pkg: removed %s\n", id);
 }
+
+typedef struct {
+    solar_os_shell_io_t *term;
+    solar_os_module_type_t type;
+    size_t count;
+} pkg_installed_print_t;
+
+static bool pkg_print_installed_module(const char *id, void *user)
+{
+    pkg_installed_print_t *print = (pkg_installed_print_t *)user;
+    solar_os_shell_io_printf(print->term,
+                             "%s %s\n",
+                             solar_os_module_type_name(print->type),
+                             id);
+    print->count++;
+    return true;
+}
+
+static void pkg_print_installed(solar_os_shell_io_t *term)
+{
+    static const solar_os_module_type_t types[] = {
+        SOLAR_OS_MODULE_TYPE_APP,
+        SOLAR_OS_MODULE_TYPE_JOB,
+        SOLAR_OS_MODULE_TYPE_DRIVER,
+    };
+    pkg_installed_print_t print = {
+        .term = term,
+    };
+    solar_os_shell_io_writeln(term, "Installed modules:");
+    for (size_t i = 0U; i < sizeof(types) / sizeof(types[0]); i++) {
+        print.type = types[i];
+        const esp_err_t err = solar_os_module_package_foreach_installed(
+            types[i],
+            pkg_print_installed_module,
+            &print);
+        if (err != ESP_OK) {
+            solar_os_shell_diag_esp(term,
+                                    "pkg installed",
+                                    err,
+                                    "could not read installed modules",
+                                    NULL);
+            return;
+        }
+    }
+    if (print.count == 0U) {
+        solar_os_shell_io_writeln(term, "none");
+    }
+}
 #endif
 
 static void pkg_print_system(solar_os_shell_io_t *term)
@@ -595,13 +641,32 @@ void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
 
-    if (argc == 1 || (argc == 2 && strcmp(argv[1], "system") == 0)) {
+    if (argc == 1) {
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+        const esp_err_t err = solar_os_shell_launch_pkg_tui(ctx);
+        if (err != ESP_OK) {
+            solar_os_shell_io_printf(term,
+                                     "pkg: could not start TUI: %s\n",
+                                     solar_os_shell_error_text(err));
+        } else {
+            solar_os_shell_session_prepare_foreground_launch(ctx, true);
+        }
+#else
+        pkg_print_system(term);
+#endif
+        return;
+    }
+    if (argc == 2 && strcmp(argv[1], "system") == 0) {
         pkg_print_system(term);
         return;
     }
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
     if (argc == 2 && strcmp(argv[1], "available") == 0) {
         pkg_run_network_worker(term, PKG_NETWORK_AVAILABLE, NULL);
+        return;
+    }
+    if (argc == 2 && strcmp(argv[1], "installed") == 0) {
+        pkg_print_installed(term);
         return;
     }
     if (argc == 3 && strcmp(argv[1], "install") == 0) {
@@ -613,13 +678,13 @@ void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
     static const char * const subcommands[] = {
-        "system", "available", "install", "remove",
+        "system", "available", "installed", "install", "remove",
     };
     solar_os_shell_diag_subcommand(term,
                                    "pkg",
                                    argc,
                                    argv,
-                                   "pkg [system|available|install <module>|remove <module>]",
+                                   "pkg [system|available|installed|install <module>|remove <module>]",
                                    subcommands,
                                    sizeof(subcommands) / sizeof(subcommands[0]));
 #else

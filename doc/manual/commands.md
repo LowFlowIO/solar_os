@@ -231,8 +231,10 @@ job for periodic polling.
 | Command | Usage | Description |
 | --- | --- | --- |
 | `version` | `version` | Print the SolarOS version and firmware flavor. |
-| `pkg` | `pkg` or `pkg system` | Print compiled package groups and build units. |
-| `pkg` | `pkg available` | Verify the signed native-module catalog and list compatible modules. |
+| `pkg` | `pkg` | Open the native-module package manager. |
+| `pkg` | `pkg system` | Print compiled package groups and build units. |
+| `pkg` | `pkg available` | Verify the signed native-module catalog and print its compact module list. |
+| `pkg` | `pkg installed` | List installed application, job, and driver modules. |
 | `pkg` | `pkg install <module>` | Download, verify, validate, and atomically install a native module; Ctrl+C, Esc, or the app-exit key cancels. |
 | `pkg` | `pkg remove <module>` | Remove an installed native module. |
 | `load` | `load <file.elf> [args...]` | Validate, relocate, run, and unload one native ELF module from storage. |
@@ -346,6 +348,13 @@ ELF resident until all devices are detached and the module is removed.
 Installed jobs and drivers are reactivated during boot. The default repository is
 `https://solar-os.eu/ota/modules`.
 
+Run `pkg` without arguments to open the package manager. It refreshes the
+signed catalog in a worker, marks installed entries with `*`, and lets you
+inspect, install, remove, or refresh modules without blocking screen redraws.
+After a successful catalog check, `pkg install` completion uses that verified
+catalog. `pkg remove` completion and `pkg installed` read the installed module
+directories directly.
+
 Installed application modules are shell commands: the module ID resolves under
 `/modules/apps` after built-in commands, compiled applications, and aliases.
 Command completion lists installed applications. `load` remains available for
@@ -363,6 +372,7 @@ For example:
 
 ```text
 pkg available
+pkg installed
 pkg install hello
 hello SolarOS
 pkg remove hello

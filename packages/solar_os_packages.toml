@@ -759,6 +759,7 @@ sources = [
   "services/solar_os_native.c",
   "services/solar_os_native_elf.c",
   "shell/solar_os_shell_native.c",
+  "shell/solar_os_shell_pkg_tui.c",
 ]
 requires = ["espressif__elf_loader"]
 targets = ["esp32s3"]

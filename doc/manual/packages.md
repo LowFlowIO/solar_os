@@ -371,7 +371,9 @@ For maintainer experiments, an optional `[packages]` table can override
 individual internal packages. The builder does not expose that table as
 another selection layer.
 
-Use `pkg` on the device to inspect the resolved package list.
+Use `pkg system` on the device to inspect the resolved firmware package list.
+Use `pkg` without arguments to browse signed native modules in the package
+manager.
 
 ## Quick reference
 
@@ -379,5 +381,5 @@ Select a board, an update layout, and then granular groups. Build to replace the
 total estimate with a measured image size; adjust, rebuild, and flash when it
 fits. A flavor stores only portable groups. The board supplies required hardware
 drivers and removes unsupported groups, while the layout defines the image
-limit. Internal packages and services are resolved automatically. Use `pkg`
-on-device to inspect the resolved firmware.
+limit. Internal packages and services are resolved automatically. Use
+`pkg system` on-device to inspect the resolved firmware.

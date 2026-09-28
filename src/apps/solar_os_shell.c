@@ -154,6 +154,8 @@ typedef enum {
     SHELL_COMPLETION_SOURCE_CONTACT_IDS,
     SHELL_COMPLETION_SOURCE_ENDPOINT_IDS,
     SHELL_COMPLETION_SOURCE_PLAYGROUND_APPS,
+    SHELL_COMPLETION_SOURCE_MODULES_AVAILABLE,
+    SHELL_COMPLETION_SOURCE_MODULES_INSTALLED,
     SHELL_COMPLETION_SOURCE_AUDIO_OUTPUTS,
     SHELL_COMPLETION_SOURCE_EXPANSION_DRIVERS,
     SHELL_COMPLETION_SOURCE_EXPANSION_DEVICES,
@@ -816,7 +818,7 @@ static const char * const engine_subcommands[] = {"status", "list", "reset"};
 static const char * const mem_subcommands[] = {"policy"};
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
 static const char * const pkg_subcommands[] = {
-    "system", "available", "install", "remove",
+    "system", "available", "installed", "install", "remove",
 };
 #else
 static const char * const pkg_subcommands[] = {"system"};
@@ -1949,6 +1951,10 @@ static const char * const path_engine[] = {"engine"};
 #endif
 static const char * const path_mem[] = {"mem"};
 static const char * const path_pkg[] = {"pkg"};
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+static const char * const path_pkg_install[] = {"pkg", "install"};
+static const char * const path_pkg_remove[] = {"pkg", "remove"};
+#endif
 static const char * const path_nvs[] = {"nvs"};
 static const char * const path_nvs_backup[] = {"nvs", "backup"};
 static const char * const path_nvs_restore[] = {"nvs", "restore"};
@@ -2690,6 +2696,18 @@ static const char * const path_ota_boot[] = {"ota", "boot"};
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .source = SHELL_COMPLETION_SOURCE_PLAYGROUND_APPS, \
     }
+#define SHELL_COMPLETION_MODULES_AVAILABLE(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .source = SHELL_COMPLETION_SOURCE_MODULES_AVAILABLE, \
+    }
+#define SHELL_COMPLETION_MODULES_INSTALLED(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .source = SHELL_COMPLETION_SOURCE_MODULES_INSTALLED, \
+    }
 #define SHELL_COMPLETION_AUDIO_OUTPUTS(path_array) \
     { \
         .path = path_array, \
@@ -3116,6 +3134,10 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #endif
     SHELL_COMPLETION_STATIC(path_mem, mem_subcommands),
     SHELL_COMPLETION_STATIC(path_pkg, pkg_subcommands),
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    SHELL_COMPLETION_MODULES_AVAILABLE(path_pkg_install),
+    SHELL_COMPLETION_MODULES_INSTALLED(path_pkg_remove),
+#endif
     SHELL_COMPLETION_STATIC(path_nvs, nvs_subcommands),
     SHELL_COMPLETION_PATH(path_nvs_backup, false),
     SHELL_COMPLETION_PATH(path_nvs_restore, false),
@@ -6001,6 +6023,50 @@ static void shell_completion_emit_playground_apps(
 #endif
 }
 
+static void shell_completion_emit_available_modules(
+    shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    const size_t count = solar_os_module_catalog_cached_count();
+    for (size_t i = 0U; i < count; i++) {
+        char id[SOLAR_OS_MODULE_PACKAGE_ID_MAX];
+        if (solar_os_module_catalog_cached_get(i, id, sizeof(id))) {
+            shell_completion_emit(state, id);
+        }
+    }
+#else
+    (void)state;
+#endif
+}
+
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+static bool shell_completion_installed_module_emit(const char *id, void *user)
+{
+    shell_completion_emit((shell_completion_match_t *)user, id);
+    return true;
+}
+#endif
+
+static void shell_completion_emit_installed_modules(
+    shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    static const solar_os_module_type_t types[] = {
+        SOLAR_OS_MODULE_TYPE_APP,
+        SOLAR_OS_MODULE_TYPE_JOB,
+        SOLAR_OS_MODULE_TYPE_DRIVER,
+    };
+    for (size_t i = 0U; i < SHELL_ARRAY_COUNT(types); i++) {
+        (void)solar_os_module_package_foreach_installed(
+            types[i],
+            shell_completion_installed_module_emit,
+            state);
+    }
+#else
+    (void)state;
+#endif
+}
+
 static void shell_completion_emit_expansion_devices(shell_completion_match_t *state)
 {
 #if SOLAR_OS_PACKAGE_SERVICE_EXPANSION
@@ -8003,6 +8069,12 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
             break;
         case SHELL_COMPLETION_SOURCE_PLAYGROUND_APPS:
             shell_completion_emit_playground_apps(state);
+            break;
+        case SHELL_COMPLETION_SOURCE_MODULES_AVAILABLE:
+            shell_completion_emit_available_modules(state);
+            break;
+        case SHELL_COMPLETION_SOURCE_MODULES_INSTALLED:
+            shell_completion_emit_installed_modules(state);
             break;
         case SHELL_COMPLETION_SOURCE_AUDIO_OUTPUTS:
             shell_completion_emit_audio_outputs(state);
