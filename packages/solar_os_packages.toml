@@ -3,7 +3,13 @@ label = "SolarOS runtime"
 category = "System"
 hidden = true
 immutable = true
-members = ["core_runtime", "core_shell", "app_ltop", "job_gesture_listener"]
+members = [
+  "core_runtime",
+  "core_shell",
+  "service_native_modules",
+  "app_ltop",
+  "job_gesture_listener",
+]
 
 [groups.hardware_shell]
 label = "Hardware shell commands"
@@ -740,6 +746,17 @@ requires = [
   "esp_https_ota",
 ]
 capabilities = ["wifi"]
+
+[packages.service_native_modules]
+label = "bootstrap.native-modules"
+sources = [
+  "services/solar_os_native.c",
+  "services/solar_os_native_elf.c",
+  "shell/solar_os_shell_native.c",
+]
+requires = ["espressif__elf_loader"]
+targets = ["esp32s3"]
+capabilities = ["psram"]
 
 [packages.service_docs]
 label = "maintenance.docs"

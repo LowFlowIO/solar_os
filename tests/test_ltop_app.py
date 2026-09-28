@@ -1,4 +1,5 @@
 import unittest
+import tomllib
 from pathlib import Path
 
 
@@ -8,15 +9,13 @@ REGISTRY = (ROOT / "src/apps/solar_os_app_registry.c").read_text(
     encoding="utf-8"
 )
 PACKAGES = (ROOT / "packages/solar_os_packages.toml").read_text(encoding="utf-8")
+PACKAGE_DATA = tomllib.loads(PACKAGES)
 MANUAL = (ROOT / "doc/manual/apps.md").read_text(encoding="utf-8")
 
 
 class LiveTopAppTest(unittest.TestCase):
     def test_ltop_is_a_resumable_text_app_in_every_flavor(self):
-        self.assertIn(
-            'members = ["core_runtime", "core_shell", "app_ltop"',
-            PACKAGES,
-        )
+        self.assertIn("app_ltop", PACKAGE_DATA["groups"]["bootstrap"]["members"])
         self.assertIn("[packages.app_ltop]", PACKAGES)
         self.assertIn('sources = ["apps/solar_os_ltop.c"]', PACKAGES)
         entry = next(

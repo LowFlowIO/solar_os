@@ -232,6 +232,7 @@ job for periodic polling.
 | --- | --- | --- |
 | `version` | `version` | Print the SolarOS version and firmware flavor. |
 | `pkg` | `pkg` | Print compiled package groups and build units. |
+| `load` | `load <file.elf> [args...]` | Validate, relocate, run, and unload one native ELF module from storage. |
 | `board` | `board` | Print board ID, name, and capabilities. |
 | `identity` | `identity [status]` | Show the configured user and hostname. |
 | `identity` | `identity user <name>` | Save the SolarOS user and default SSH/SCP username in NVS. |
@@ -300,6 +301,33 @@ pointer sources after `input calibrate`, common named keys after `input emit`,
 Gesture completion lists gesture-capable sources after `source=`, limits
 `gesture=` values to the selected source's advertised gestures, and offers
 `all` after `gesture unbind`.
+
+### Native ELF modules
+
+`load` is the low-level maintainer interface for the native-module runtime. It
+is compiled only for ESP32-S3 boards with PSRAM. The command resolves the ELF
+path through the calling shell's current directory, reads at most 2 MiB into
+PSRAM, validates every ELF header and table boundary, checks for an Xtensa
+ELF32 dynamic object, relocates it into executable PSRAM, and calls its entry
+point with the supplied arguments.
+
+Native modules import the single versioned `solar_os_native_host_v1` symbol.
+The returned function table reports the ABI version, target, firmware version,
+and provides UTF-8 output through the shell that invoked `load`. Arbitrary
+SolarOS or ESP-IDF internals are not exported. The first ABI is intentionally
+small so later operations can be added after their ownership and lifetime
+rules are defined. Native ELF code is not sandboxed; `load` is for trusted,
+maintainer-produced modules only.
+
+The initial runner is for short-lived command-style modules. A module must stop
+all of its work and release every callback and resource before its entry point
+returns, because `load` immediately unloads its code and data. Installed native
+applications, jobs, background services, signed catalogs, and `pkg` download
+operations are separate later layers; no embedded application is converted by
+this command.
+
+The standalone `examples/native/hello` ESP-IDF project builds a small acceptance
+module.
 
 `power` usage:
 
@@ -1203,6 +1231,7 @@ pocsag send radio 448425000 1200 1841525 "SolarOS calling" alpha inverted
 help
 version
 pkg
+load /modules/hello.elf SolarOS
 board
 wifi on
 ping wintermute

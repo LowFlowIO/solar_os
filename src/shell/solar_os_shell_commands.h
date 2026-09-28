@@ -75,6 +75,9 @@ void solar_os_shell_cmd_led(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_job(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_jobs(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_log(solar_os_context_t *ctx, int argc, char **argv);
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+void solar_os_shell_cmd_load(solar_os_context_t *ctx, int argc, char **argv);
+#endif
 void solar_os_shell_cmd_man(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv);
 #if SOLAR_OS_PACKAGE_JOB_MIDI

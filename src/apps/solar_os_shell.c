@@ -522,6 +522,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"close", "close a session", cmd_close},
     {"version", "show SolarOS version", solar_os_shell_cmd_version},
     {"pkg", "show compiled packages", solar_os_shell_cmd_pkg},
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    {"load", "run a native ELF module", solar_os_shell_cmd_load},
+#endif
     {"board", "show board capabilities", solar_os_shell_cmd_board},
     {"identity", "show or configure device identity", solar_os_shell_cmd_identity},
     {"input", "show input sources", solar_os_shell_cmd_input},
@@ -5115,6 +5118,9 @@ static bool shell_is_path_command(const char *command)
            strcmp(command, "cp") == 0 ||
            strcmp(command, "zip") == 0 ||
            strcmp(command, "unzip") == 0 ||
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+           strcmp(command, "load") == 0 ||
+#endif
 #if SOLAR_OS_PACKAGE_APP_APLAY
            strcmp(command, "aplay") == 0 ||
 #endif
