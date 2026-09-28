@@ -30,6 +30,9 @@
 #include "solar_os_json.h"
 #endif
 #include "solar_os_log.h"
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+#include "solar_os_module_packages.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_MQTT
 #include "solar_os_mqtt.h"
 #endif
@@ -269,6 +272,15 @@ void solar_os_boot_services_init(uint32_t now_ms)
                           "Expansion initialization incomplete: %s",
                           esp_err_to_name(expansion_err));
         }
+    }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    const esp_err_t modules_err = solar_os_module_packages_init();
+    if (modules_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG,
+                      "One or more resident modules were unavailable: %s",
+                      esp_err_to_name(modules_err));
     }
 #endif
 

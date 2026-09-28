@@ -108,7 +108,10 @@ bool solar_os_shell_try_native_module(solar_os_context_t *ctx,
         *matched = false;
     }
     if (ctx == NULL || argc < 1 || argv == NULL || argv[0] == NULL ||
-        solar_os_module_package_path(argv[0], path, sizeof(path)) != ESP_OK ||
+        solar_os_module_package_path(SOLAR_OS_MODULE_TYPE_APP,
+                                     argv[0],
+                                     path,
+                                     sizeof(path)) != ESP_OK ||
         solar_os_storage_stat(path, &metadata) != ESP_OK ||
         metadata.type != SOLAR_OS_STORAGE_ENTRY_FILE) {
         return true;

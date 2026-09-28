@@ -184,6 +184,16 @@ struct solar_os_job {
     void (*detail)(solar_os_context_t *ctx);
     /* Optional detail for the most recent start failure. */
     void (*error_detail)(char *buffer, size_t buffer_len);
+    /* Optional context-aware callbacks used by dynamically registered jobs. */
+    void *callback_user;
+    esp_err_t (*start_with_user)(void *user,
+                                 solar_os_context_t *ctx,
+                                 int argc,
+                                 char **argv);
+    void (*stop_with_user)(void *user, solar_os_context_t *ctx);
+    bool (*event_with_user)(void *user,
+                            solar_os_context_t *ctx,
+                            const solar_os_event_t *event);
 };
 
 void solar_os_context_init(solar_os_context_t *ctx,

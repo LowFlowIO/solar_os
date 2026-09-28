@@ -138,7 +138,7 @@ local devices = solaros.buses.onewire_scan("onewire0")
 local reply = solaros.buses.onewire_xfer("onewire0", 9, "\xcc\x44")
 ```
 
-`solaros.expansion.drivers()` lists compiled drivers with their categories.
+`solaros.expansion.drivers()` lists registered drivers with their categories.
 `devices()` lists active devices with `name`, `driver`, `origin` (`board` or
 `runtime`), `ready`,
 `autostart`, `detachable`, and normalized `bindings`. Each binding contains

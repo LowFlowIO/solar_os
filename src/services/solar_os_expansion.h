@@ -94,6 +94,12 @@ typedef struct {
     bool allow_unlisted_bindings;
     solar_os_expansion_attach_fn_t attach;
     solar_os_expansion_detach_fn_t detach;
+    void *callback_user;
+    esp_err_t (*attach_with_user)(void *user,
+                                  const char *name,
+                                  const solar_os_expansion_binding_t *bindings,
+                                  size_t binding_count);
+    esp_err_t (*detach_with_user)(void *user, const char *name);
 } solar_os_expansion_driver_t;
 
 typedef enum {
@@ -127,6 +133,10 @@ bool solar_os_expansion_available(void);
 
 size_t solar_os_expansion_driver_count(void);
 bool solar_os_expansion_get_driver(size_t index, solar_os_expansion_driver_t *driver);
+esp_err_t solar_os_expansion_register_driver(
+    const solar_os_expansion_driver_t *driver);
+esp_err_t solar_os_expansion_unregister_driver(
+    const solar_os_expansion_driver_t *driver);
 bool solar_os_expansion_driver_supported(const char *name);
 const char *solar_os_expansion_category_name(solar_os_expansion_category_t category);
 bool solar_os_expansion_binding_pin_supported(

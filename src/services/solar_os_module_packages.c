@@ -8,6 +8,7 @@
 #include <string.h>
 
 #include "sdkconfig.h"
+#include "solar_os_config.h"
 #include "solar_os_board_caps.h"
 #include "solar_os_crypto.h"
 #include "solar_os_http_client.h"
@@ -16,7 +17,10 @@
 #include "solar_os_native.h"
 #include "solar_os_native_elf.h"
 #include "solar_os_native_abi.h"
+#include "solar_os_native_driver_abi.h"
+#include "solar_os_native_job_abi.h"
 #include "solar_os_ota_key.h"
+#include "solar_os_log.h"
 #include "solar_os_storage.h"
 
 #ifndef SOLAR_OS_VERSION
@@ -28,6 +32,7 @@
 #endif
 
 #define MODULE_CATALOG_MAX_BYTES (32U * 1024U)
+#define MODULE_CATALOG_SCHEMA_VERSION 2U
 #define MODULE_SIGNATURE_MAX_BYTES 512U
 #define MODULE_HTTP_TIMEOUT_MS 15000U
 #define MODULE_HTTP_DEADLINE_MS 60000U
@@ -40,6 +45,8 @@ typedef struct {
     const solar_os_module_install_options_t *options;
     uint32_t expected_size;
     uint32_t bytes;
+    int response_status;
+    bool response_size_mismatch;
 } module_download_t;
 
 static void module_set_detail(char *detail, size_t detail_len, const char *text)
@@ -60,6 +67,66 @@ static bool module_name_valid(const char *text)
         }
     }
     return strcmp(text, ".") != 0 && strcmp(text, "..") != 0;
+}
+
+const char *solar_os_module_type_name(solar_os_module_type_t type)
+{
+    switch (type) {
+    case SOLAR_OS_MODULE_TYPE_APP:
+        return "app";
+    case SOLAR_OS_MODULE_TYPE_JOB:
+        return "job";
+    case SOLAR_OS_MODULE_TYPE_DRIVER:
+        return "driver";
+    default:
+        return "invalid";
+    }
+}
+
+static const char *module_type_directory(solar_os_module_type_t type)
+{
+    switch (type) {
+    case SOLAR_OS_MODULE_TYPE_APP:
+        return "apps";
+    case SOLAR_OS_MODULE_TYPE_JOB:
+        return "jobs";
+    case SOLAR_OS_MODULE_TYPE_DRIVER:
+        return "drivers";
+    default:
+        return NULL;
+    }
+}
+
+static esp_err_t module_legacy_app_path(const char *id,
+                                        char *path,
+                                        size_t path_len)
+{
+    if (!module_name_valid(id) || path == NULL || path_len == 0U) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    char relative[64];
+    const int written = snprintf(relative,
+                                 sizeof(relative),
+                                 "modules/%s.app.elf",
+                                 id);
+    if (written < 0 || (size_t)written >= sizeof(relative)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    return solar_os_storage_default_path(relative, path, path_len);
+}
+
+static solar_os_module_type_t module_type_parse(const char *name)
+{
+    if (name != NULL && strcmp(name, "app") == 0) {
+        return SOLAR_OS_MODULE_TYPE_APP;
+    }
+    if (name != NULL && strcmp(name, "job") == 0) {
+        return SOLAR_OS_MODULE_TYPE_JOB;
+    }
+    if (name != NULL && strcmp(name, "driver") == 0) {
+        return SOLAR_OS_MODULE_TYPE_DRIVER;
+    }
+    return SOLAR_OS_MODULE_TYPE_INVALID;
 }
 
 static bool module_relative_path_valid(const char *path)
@@ -103,7 +170,9 @@ static esp_err_t module_release_url(char *out, size_t out_len)
 
 static esp_err_t module_fetch_body(const char *url,
                                    size_t max_bytes,
-                                   solar_os_http_buffered_response_t *response)
+                                   solar_os_http_buffered_response_t *response,
+                                   solar_os_module_package_cancel_fn should_cancel,
+                                   void *cancel_user)
 {
     const solar_os_http_request_options_t request = {
         .url = url,
@@ -112,6 +181,8 @@ static esp_err_t module_fetch_body(const char *url,
         .follow_redirects = true,
         .timeout_ms = MODULE_HTTP_TIMEOUT_MS,
         .deadline_ms = MODULE_HTTP_DEADLINE_MS,
+        .should_cancel = should_cancel,
+        .cancel_user_data = cancel_user,
         .receive_buffer_size = 2048U,
         .transmit_buffer_size = 1024U,
     };
@@ -187,8 +258,16 @@ static esp_err_t module_parse_package(const solar_os_json_value_t *value,
     memset(package, 0, sizeof(*package));
 
     char artifact_path[192];
-    esp_err_t err = solar_os_json_get_path_string(value, "id",
-                                                   package->id, sizeof(package->id));
+    char type_name[16];
+    esp_err_t err = solar_os_json_get_path_string(value, "type",
+                                                   type_name, sizeof(type_name));
+    if (err == ESP_OK) {
+        package->type = module_type_parse(type_name);
+    }
+    if (err == ESP_OK) {
+        err = solar_os_json_get_path_string(value, "id",
+                                            package->id, sizeof(package->id));
+    }
     if (err == ESP_OK) {
         err = solar_os_json_get_path_string(value, "name",
                                             package->name, sizeof(package->name));
@@ -201,6 +280,11 @@ static esp_err_t module_parse_package(const solar_os_json_value_t *value,
         err = solar_os_json_get_path_string(value, "description",
                                             package->description,
                                             sizeof(package->description));
+    }
+    if (err == ESP_OK) {
+        err = solar_os_json_get_path_uint32(value,
+                                            "lifecycle_abi",
+                                            &package->lifecycle_abi);
     }
     if (err == ESP_OK) {
         err = solar_os_json_get_path_uint32(value,
@@ -220,10 +304,24 @@ static esp_err_t module_parse_package(const solar_os_json_value_t *value,
                                             package->artifact_sha256,
                                             sizeof(package->artifact_sha256));
     }
-    if (err != ESP_OK || !module_name_valid(package->id) ||
-        package->name[0] == '\0' || package->version[0] == '\0' ||
+    char expected_artifact_path[192];
+    const int expected_artifact_path_len = snprintf(
+        expected_artifact_path,
+        sizeof(expected_artifact_path),
+        "%s/%s/%s/%s.elf",
+        solar_os_module_type_name(package->type),
+        package->id,
+        package->version,
+        package->artifact_sha256);
+    if (err != ESP_OK || package->type == SOLAR_OS_MODULE_TYPE_INVALID ||
+        !module_name_valid(package->id) ||
+        package->name[0] == '\0' || !module_name_valid(package->version) ||
+        package->lifecycle_abi == 0U ||
         package->minimum_host_api_size == 0U ||
         !module_relative_path_valid(artifact_path) ||
+        expected_artifact_path_len < 0 ||
+        (size_t)expected_artifact_path_len >= sizeof(expected_artifact_path) ||
+        strcmp(artifact_path, expected_artifact_path) != 0 ||
         package->artifact_size < 52U ||
         package->artifact_size > SOLAR_OS_NATIVE_ELF_MAX_BYTES ||
         !solar_os_crypto_sha256_hex_is_valid(package->artifact_sha256) ||
@@ -235,7 +333,40 @@ static esp_err_t module_parse_package(const solar_os_json_value_t *value,
     }
 
     package->compatible = true;
-    if (package->minimum_host_api_size > sizeof(solar_os_native_host_api_v1_t)) {
+    uint32_t supported_lifecycle_abi = 0U;
+    size_t host_api_size = 0U;
+    switch (package->type) {
+    case SOLAR_OS_MODULE_TYPE_APP:
+        supported_lifecycle_abi = SOLAR_OS_MODULE_APP_LIFECYCLE_ABI;
+        host_api_size = sizeof(solar_os_native_host_api_v1_t);
+        break;
+    case SOLAR_OS_MODULE_TYPE_JOB:
+        supported_lifecycle_abi = SOLAR_OS_MODULE_JOB_LIFECYCLE_ABI;
+        host_api_size = sizeof(solar_os_native_job_host_api_v1_t);
+        break;
+    case SOLAR_OS_MODULE_TYPE_DRIVER:
+        supported_lifecycle_abi = SOLAR_OS_MODULE_DRIVER_LIFECYCLE_ABI;
+        host_api_size = sizeof(solar_os_native_driver_host_api_v1_t);
+#if !SOLAR_OS_PACKAGE_SERVICE_EXPANSION
+        package->compatible = false;
+        snprintf(package->incompatibility,
+                 sizeof(package->incompatibility),
+                 "needs expansion service");
+#endif
+        break;
+    default:
+        break;
+    }
+    if (package->compatible &&
+        package->lifecycle_abi != supported_lifecycle_abi) {
+        package->compatible = false;
+        snprintf(package->incompatibility,
+                 sizeof(package->incompatibility),
+                 "needs %s lifecycle ABI %u",
+                 solar_os_module_type_name(package->type),
+                 (unsigned)package->lifecycle_abi);
+    } else if (package->compatible &&
+               package->minimum_host_api_size > host_api_size) {
         package->compatible = false;
         snprintf(package->incompatibility,
                  sizeof(package->incompatibility),
@@ -268,7 +399,8 @@ static esp_err_t module_parse_package(const solar_os_json_value_t *value,
 
     char installed_path[SOLAR_OS_STORAGE_PATH_MAX];
     bool installed = false;
-    if (solar_os_module_package_path(package->id,
+    if (solar_os_module_package_path(package->type,
+                                     package->id,
                                      installed_path,
                                      sizeof(installed_path)) == ESP_OK) {
         (void)solar_os_storage_exists(installed_path, &installed);
@@ -319,7 +451,8 @@ static esp_err_t module_parse_catalog(const uint8_t *body,
                                             &catalog->native_abi);
     }
     if (err != ESP_OK || strcmp(schema, "solaros.module_catalog") != 0 ||
-        schema_version != 1U || strcmp(project, "SolarOS") != 0 ||
+        schema_version != MODULE_CATALOG_SCHEMA_VERSION ||
+        strcmp(project, "SolarOS") != 0 ||
         catalog->host_version[0] == '\0' || catalog->source_commit[0] == '\0' ||
         catalog->target[0] == '\0' ||
         strcmp(catalog->host_version, SOLAR_OS_VERSION) != 0 ||
@@ -356,9 +489,12 @@ static esp_err_t module_parse_catalog(const uint8_t *body,
     return ESP_OK;
 }
 
-esp_err_t solar_os_module_catalog_fetch(solar_os_module_catalog_t **out_catalog,
-                                        char *detail,
-                                        size_t detail_len)
+static esp_err_t module_catalog_fetch(
+    solar_os_module_catalog_t **out_catalog,
+    solar_os_module_package_cancel_fn should_cancel,
+    void *cancel_user,
+    char *detail,
+    size_t detail_len)
 {
     if (out_catalog == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -386,11 +522,15 @@ esp_err_t solar_os_module_catalog_fetch(solar_os_module_catalog_t **out_catalog,
     memset(&signature_response, 0, sizeof(signature_response));
     esp_err_t err = module_fetch_body(catalog_url,
                                       MODULE_CATALOG_MAX_BYTES,
-                                      &catalog_response);
+                                      &catalog_response,
+                                      should_cancel,
+                                      cancel_user);
     if (err == ESP_OK) {
         err = module_fetch_body(signature_url,
                                 MODULE_SIGNATURE_MAX_BYTES,
-                                &signature_response);
+                                &signature_response,
+                                should_cancel,
+                                cancel_user);
     }
     if (err != ESP_OK) {
         module_set_detail(detail, detail_len, "could not download the module catalog");
@@ -423,7 +563,7 @@ esp_err_t solar_os_module_catalog_fetch(solar_os_module_catalog_t **out_catalog,
         solar_os_memory_free(catalog);
         module_set_detail(detail, detail_len,
                           err == ESP_ERR_NOT_SUPPORTED ?
-                              "catalog does not match this firmware, target, or ABI" :
+                              "catalog does not match this firmware, target, ABI, or schema" :
                               "module catalog is invalid");
         goto done;
     }
@@ -436,20 +576,38 @@ done:
     return err;
 }
 
+esp_err_t solar_os_module_catalog_fetch(solar_os_module_catalog_t **out_catalog,
+                                        char *detail,
+                                        size_t detail_len)
+{
+    return module_catalog_fetch(out_catalog,
+                                NULL,
+                                NULL,
+                                detail,
+                                detail_len);
+}
+
 void solar_os_module_catalog_free(solar_os_module_catalog_t *catalog)
 {
     solar_os_memory_free(catalog);
 }
 
-esp_err_t solar_os_module_package_path(const char *id,
+esp_err_t solar_os_module_package_path(solar_os_module_type_t type,
+                                       const char *id,
                                        char *path,
                                        size_t path_len)
 {
-    if (!module_name_valid(id) || path == NULL || path_len == 0U) {
+    const char *directory = module_type_directory(type);
+    if (directory == NULL || !module_name_valid(id) ||
+        path == NULL || path_len == 0U) {
         return ESP_ERR_INVALID_ARG;
     }
     char relative[64];
-    const int written = snprintf(relative, sizeof(relative), "modules/%s.app.elf", id);
+    const int written = snprintf(relative,
+                                 sizeof(relative),
+                                 "modules/%s/%s.elf",
+                                 directory,
+                                 id);
     if (written < 0 || (size_t)written >= sizeof(relative)) {
         return ESP_ERR_INVALID_SIZE;
     }
@@ -457,16 +615,26 @@ esp_err_t solar_os_module_package_path(const char *id,
 }
 
 esp_err_t solar_os_module_package_foreach_installed(
+    solar_os_module_type_t type,
     solar_os_module_package_visit_fn visit,
     void *user)
 {
-    static const char suffix[] = ".app.elf";
+    static const char suffix[] = ".elf";
     char modules_path[SOLAR_OS_STORAGE_PATH_MAX];
+    const char *directory = module_type_directory(type);
 
-    if (visit == NULL) {
+    if (directory == NULL || visit == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = solar_os_storage_default_path("modules",
+    char relative[32];
+    const int written = snprintf(relative,
+                                 sizeof(relative),
+                                 "modules/%s",
+                                 directory);
+    if (written < 0 || (size_t)written >= sizeof(relative)) {
+        return ESP_ERR_INVALID_SIZE;
+    }
+    esp_err_t err = solar_os_storage_default_path(relative,
                                                   modules_path,
                                                   sizeof(modules_path));
     if (err != ESP_OK) {
@@ -501,7 +669,7 @@ esp_err_t solar_os_module_package_foreach_installed(
 
         char path[SOLAR_OS_STORAGE_PATH_MAX];
         solar_os_storage_metadata_t metadata;
-        if (solar_os_module_package_path(id, path, sizeof(path)) != ESP_OK ||
+        if (solar_os_module_package_path(type, id, path, sizeof(path)) != ESP_OK ||
             solar_os_storage_stat(path, &metadata) != ESP_OK ||
             metadata.type != SOLAR_OS_STORAGE_ENTRY_FILE) {
             continue;
@@ -513,6 +681,64 @@ esp_err_t solar_os_module_package_foreach_installed(
 
     closedir(dir);
     return ESP_OK;
+}
+
+typedef struct {
+    solar_os_module_type_t type;
+    esp_err_t first_error;
+} module_init_visit_t;
+
+static bool module_activate_installed(const char *id, void *user)
+{
+    module_init_visit_t *visit = (module_init_visit_t *)user;
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    char detail[128] = {0};
+    esp_err_t err = solar_os_module_package_path(visit->type,
+                                                 id,
+                                                 path,
+                                                 sizeof(path));
+    if (err == ESP_OK) {
+        err = solar_os_native_module_activate(visit->type,
+                                              id,
+                                              path,
+                                              detail,
+                                              sizeof(detail));
+    }
+    if (err != ESP_OK) {
+        SOLAR_OS_LOGW("module_packages",
+                      "could not activate %s %s: %s%s%s",
+                      solar_os_module_type_name(visit->type),
+                      id,
+                      esp_err_to_name(err),
+                      detail[0] != '\0' ? " - " : "",
+                      detail);
+        if (visit->first_error == ESP_OK) {
+            visit->first_error = err;
+        }
+    }
+    return true;
+}
+
+esp_err_t solar_os_module_packages_init(void)
+{
+    module_init_visit_t visit = {
+        .first_error = ESP_OK,
+    };
+    static const solar_os_module_type_t resident_types[] = {
+        SOLAR_OS_MODULE_TYPE_JOB,
+        SOLAR_OS_MODULE_TYPE_DRIVER,
+    };
+    for (size_t i = 0U; i < sizeof(resident_types) / sizeof(resident_types[0]); i++) {
+        visit.type = resident_types[i];
+        const esp_err_t err = solar_os_module_package_foreach_installed(
+            visit.type,
+            module_activate_installed,
+            &visit);
+        if (err != ESP_OK && visit.first_error == ESP_OK) {
+            visit.first_error = err;
+        }
+    }
+    return visit.first_error;
 }
 
 static bool module_download_cancelled(void *user)
@@ -530,9 +756,11 @@ static esp_err_t module_download_event(const solar_os_http_event_t *event, void 
         return ESP_ERR_INVALID_ARG;
     }
     if (event->type == SOLAR_OS_HTTP_EVENT_RESPONSE) {
-        if (event->status_code != 200 ||
-            (event->content_length >= 0 &&
-             (uint64_t)event->content_length != download->expected_size)) {
+        download->response_status = event->status_code;
+        download->response_size_mismatch =
+            event->content_length >= 0 &&
+            (uint64_t)event->content_length != download->expected_size;
+        if (event->status_code != 200 || download->response_size_mismatch) {
             return ESP_ERR_INVALID_RESPONSE;
         }
         return ESP_OK;
@@ -610,7 +838,11 @@ esp_err_t solar_os_module_package_install(const char *id,
     }
     esp_err_t err = ESP_OK;
     solar_os_module_catalog_t *catalog = NULL;
-    err = solar_os_module_catalog_fetch(&catalog, detail, detail_len);
+    err = module_catalog_fetch(&catalog,
+                               options != NULL ? options->should_cancel : NULL,
+                               options != NULL ? options->user : NULL,
+                               detail,
+                               detail_len);
     if (err != ESP_OK) {
         goto done;
     }
@@ -631,17 +863,43 @@ esp_err_t solar_os_module_package_install(const char *id,
         err = ESP_ERR_NOT_SUPPORTED;
         goto done;
     }
+    if (package->type != SOLAR_OS_MODULE_TYPE_APP &&
+        solar_os_native_module_active(package->type, id)) {
+        module_set_detail(detail,
+                          detail_len,
+                          "remove the active resident module before reinstalling it");
+        err = ESP_ERR_INVALID_STATE;
+        goto done;
+    }
 
     char module_dir[SOLAR_OS_STORAGE_PATH_MAX];
     char active_path[SOLAR_OS_STORAGE_PATH_MAX];
     char staged_path[SOLAR_OS_STORAGE_PATH_MAX];
     char backup_path[SOLAR_OS_STORAGE_PATH_MAX];
-    if (solar_os_storage_default_path("modules", module_dir, sizeof(module_dir)) != ESP_OK ||
-        solar_os_module_package_path(id, active_path, sizeof(active_path)) != ESP_OK ||
+    if (solar_os_module_package_path(package->type,
+                                     id,
+                                     active_path,
+                                     sizeof(active_path)) != ESP_OK ||
         solar_os_storage_sibling_path(active_path, ".tmp",
                                       staged_path, sizeof(staged_path)) != ESP_OK ||
         solar_os_storage_sibling_path(active_path, ".bak",
                                       backup_path, sizeof(backup_path)) != ESP_OK) {
+        module_set_detail(detail, detail_len, "module storage path is too long");
+        err = ESP_ERR_INVALID_SIZE;
+        goto done;
+    }
+    const char *type_directory = module_type_directory(package->type);
+    char module_relative[32];
+    const int module_relative_len = snprintf(module_relative,
+                                             sizeof(module_relative),
+                                             "modules/%s",
+                                             type_directory != NULL ?
+                                                 type_directory : "invalid");
+    if (module_relative_len < 0 ||
+        (size_t)module_relative_len >= sizeof(module_relative) ||
+        solar_os_storage_default_path(module_relative,
+                                      module_dir,
+                                      sizeof(module_dir)) != ESP_OK) {
         module_set_detail(detail, detail_len, "module storage path is too long");
         err = ESP_ERR_INVALID_SIZE;
         goto done;
@@ -717,31 +975,73 @@ esp_err_t solar_os_module_package_install(const char *id,
     solar_os_crypto_sha256_free(&download.sha256);
     if (err != ESP_OK) {
         (void)solar_os_storage_remove(staged_path);
-        module_set_detail(detail, detail_len,
-                          err == ESP_ERR_INVALID_CRC ?
-                              "downloaded module hash does not match the signed catalog" :
+        if (err == ESP_ERR_INVALID_CRC) {
+            module_set_detail(detail,
+                              detail_len,
+                              "downloaded module hash does not match the signed catalog");
+        } else if (download.response_status != 0 &&
+                   download.response_status != 200) {
+            if (detail != NULL && detail_len > 0U) {
+                snprintf(detail,
+                         detail_len,
+                         "module artifact server returned HTTP %d",
+                         download.response_status);
+            }
+        } else if (download.response_size_mismatch) {
+            module_set_detail(detail,
+                              detail_len,
+                              "module artifact size differs from the signed catalog");
+        } else {
+            module_set_detail(detail,
+                              detail_len,
                               "module download failed or was cancelled");
+        }
         goto done;
     }
 
+    bool resident_activated = false;
     err = module_validate_download(staged_path,
                                    package->artifact_size,
                                    detail,
                                    detail_len);
+    if (err == ESP_OK && package->type != SOLAR_OS_MODULE_TYPE_APP) {
+        err = solar_os_native_module_activate(package->type,
+                                              package->id,
+                                              staged_path,
+                                              detail,
+                                              detail_len);
+        resident_activated = err == ESP_OK;
+    }
     if (err == ESP_OK) {
         err = solar_os_storage_replace_file(staged_path,
                                             active_path,
                                             backup_path);
     }
     if (err != ESP_OK) {
+        if (resident_activated) {
+            char deactivate_detail[128];
+            (void)solar_os_native_module_deactivate(package->type,
+                                                    package->id,
+                                                    deactivate_detail,
+                                                    sizeof(deactivate_detail));
+        }
         (void)solar_os_storage_remove(staged_path);
         if (detail == NULL || detail[0] == '\0') {
             module_set_detail(detail, detail_len, "module validation or activation failed");
         }
         goto done;
     }
+    if (package->type == SOLAR_OS_MODULE_TYPE_APP) {
+        char legacy_path[SOLAR_OS_STORAGE_PATH_MAX];
+        if (module_legacy_app_path(id,
+                                   legacy_path,
+                                   sizeof(legacy_path)) == ESP_OK) {
+            (void)solar_os_storage_remove(legacy_path);
+        }
+    }
 
     if (result != NULL) {
+        result->type = package->type;
         snprintf(result->id, sizeof(result->id), "%s", package->id);
         snprintf(result->version, sizeof(result->version), "%s", package->version);
         snprintf(result->path, sizeof(result->path), "%s", active_path);
@@ -766,22 +1066,72 @@ esp_err_t solar_os_module_package_remove(const char *id,
         return ESP_ERR_INVALID_STATE;
     }
 
-    char path[SOLAR_OS_STORAGE_PATH_MAX];
-    esp_err_t err = solar_os_module_package_path(id, path, sizeof(path));
-    if (err != ESP_OK) {
+    if (!module_name_valid(id)) {
         module_set_detail(detail, detail_len, "invalid module name or storage path");
+        atomic_store(&module_operation_running, false);
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    esp_err_t err = ESP_ERR_NOT_FOUND;
+    size_t matches = 0U;
+    solar_os_module_type_t matched_type = SOLAR_OS_MODULE_TYPE_INVALID;
+    static const solar_os_module_type_t types[] = {
+        SOLAR_OS_MODULE_TYPE_APP,
+        SOLAR_OS_MODULE_TYPE_JOB,
+        SOLAR_OS_MODULE_TYPE_DRIVER,
+    };
+    for (size_t i = 0U; i < sizeof(types) / sizeof(types[0]); i++) {
+        char candidate[SOLAR_OS_STORAGE_PATH_MAX];
+        bool exists = false;
+        if (solar_os_module_package_path(types[i],
+                                         id,
+                                         candidate,
+                                         sizeof(candidate)) == ESP_OK &&
+            solar_os_storage_exists(candidate, &exists) == ESP_OK && exists) {
+            snprintf(path, sizeof(path), "%s", candidate);
+            matched_type = types[i];
+            matches++;
+        }
+    }
+    char legacy_path[SOLAR_OS_STORAGE_PATH_MAX];
+    bool legacy_exists = false;
+    if (module_legacy_app_path(id, legacy_path, sizeof(legacy_path)) == ESP_OK) {
+        (void)solar_os_storage_exists(legacy_path, &legacy_exists);
+    }
+    if (legacy_exists && matches == 0U) {
+        snprintf(path, sizeof(path), "%s", legacy_path);
+        matched_type = SOLAR_OS_MODULE_TYPE_APP;
+        matches = 1U;
+    } else if (legacy_exists && matched_type != SOLAR_OS_MODULE_TYPE_APP) {
+        matches++;
+    }
+    if (matches > 1U) {
+        module_set_detail(detail, detail_len, "module name is ambiguous across types");
+        err = ESP_ERR_INVALID_STATE;
         goto done;
     }
-    bool exists = false;
-    err = solar_os_storage_exists(path, &exists);
-    if (err != ESP_OK || !exists) {
+    if (matches == 0U) {
         module_set_detail(detail, detail_len, "module is not installed");
         err = ESP_ERR_NOT_FOUND;
         goto done;
     }
+    if (matched_type != SOLAR_OS_MODULE_TYPE_APP &&
+        solar_os_native_module_active(matched_type, id)) {
+        err = solar_os_native_module_deactivate(matched_type,
+                                                id,
+                                                detail,
+                                                detail_len);
+        if (err != ESP_OK) {
+            goto done;
+        }
+    }
     err = solar_os_storage_remove(path);
     if (err != ESP_OK) {
         module_set_detail(detail, detail_len, "could not remove the installed module");
+    } else if (matched_type == SOLAR_OS_MODULE_TYPE_APP && legacy_exists &&
+               strcmp(path, legacy_path) != 0) {
+        (void)solar_os_storage_remove(legacy_path);
     }
 
 done:

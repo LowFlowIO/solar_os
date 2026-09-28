@@ -61,7 +61,7 @@
 #if SOLAR_OS_PACKAGE_APP_CONTACTS
 #include "solar_os_contacts.h"
 #endif
-#include "solar_os_job_registry.h"
+#include "solar_os_jobs.h"
 #include "solar_os_keys.h"
 #include "solar_os_log.h"
 #include "solar_os_manual.h"
@@ -5320,6 +5320,7 @@ static void shell_print_builtin_command_matches(solar_os_context_t *ctx, const c
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
     shell_native_module_print_t native_print = {.prefix = prefix, .io = io};
     (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_APP,
         shell_native_module_print_callback,
         &native_print);
 #endif
@@ -5369,6 +5370,7 @@ static void shell_complete_builtin_command(solar_os_context_t *ctx, bool show_ma
         .count = &match_count,
     };
     (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_APP,
         shell_native_module_complete_callback,
         &native_complete);
 #endif
@@ -5808,6 +5810,7 @@ static void shell_completion_emit_commands(shell_completion_match_t *state)
     (void)shell_for_each_alias(shell_completion_alias_emit_callback, state);
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
     (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_APP,
         shell_completion_native_module_emit_callback,
         state);
 #endif
@@ -5827,10 +5830,11 @@ static void shell_completion_emit_apps(shell_completion_match_t *state)
 
 static void shell_completion_emit_jobs(shell_completion_match_t *state)
 {
-    for (size_t i = 0; i < solar_os_job_registry_count(); i++) {
-        const solar_os_job_registry_entry_t *job = solar_os_job_registry_get(i);
-        if (job != NULL && job->name != NULL) {
-            shell_completion_emit(state, job->name);
+    const size_t count = solar_os_jobs_count();
+    for (size_t i = 0; i < count; i++) {
+        solar_os_job_status_t job;
+        if (solar_os_jobs_get(i, &job) && job.name != NULL) {
+            shell_completion_emit(state, job.name);
         }
     }
 }

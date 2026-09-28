@@ -380,7 +380,10 @@ static bool pkg_install_cancelled(void *user)
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
     while ((count = solar_os_ble_keyboard_read_chars(chars, sizeof(chars))) > 0U) {
         for (size_t i = 0U; i < count; i++) {
-            if ((uint8_t)chars[i] == SOLAR_OS_KEY_APP_EXIT) {
+            const uint8_t ch = (uint8_t)chars[i];
+            if (ch == SOLAR_OS_KEY_APP_EXIT ||
+                ch == SOLAR_OS_KEY_ESCAPE ||
+                ch == 0x03U) {
                 return true;
             }
         }
@@ -406,7 +409,9 @@ static bool pkg_install_cancelled(void *user)
         }
         for (size_t i = 0U; i < count; i++) {
             if (port_chars[i] == 0x1dU ||
-                port_chars[i] == SOLAR_OS_KEY_APP_EXIT) {
+                port_chars[i] == SOLAR_OS_KEY_APP_EXIT ||
+                port_chars[i] == SOLAR_OS_KEY_ESCAPE ||
+                port_chars[i] == 0x03U) {
                 return true;
             }
         }
@@ -444,7 +449,7 @@ static void pkg_print_available(solar_os_shell_io_t *term)
     }
 
     solar_os_shell_io_printf(term,
-                             "Native modules for SolarOS %s, %s, ABI %u (signature verified):\n",
+                             "Native modules for SolarOS %s, %s, host ABI %u (signature verified):\n",
                              catalog->host_version,
                              catalog->target,
                              (unsigned)catalog->native_abi);
@@ -454,7 +459,9 @@ static void pkg_print_available(solar_os_shell_io_t *term)
     for (size_t i = 0U; i < catalog->count; i++) {
         const solar_os_module_package_t *package = &catalog->packages[i];
         solar_os_shell_io_printf(term,
-                                 "  %-16s %-10s %s%s%s\n",
+                                 "  %-7s ABI %-3u %-16s %-10s %s%s%s\n",
+                                 solar_os_module_type_name(package->type),
+                                 (unsigned)package->lifecycle_abi,
                                  package->id,
                                  package->version,
                                  package->installed ? "[installed] " : "",
@@ -484,7 +491,7 @@ static void pkg_install_module(solar_os_shell_io_t *term, const char *id)
     char detail[128];
 
     solar_os_shell_io_printf(term,
-                             "pkg: installing %s; %s stops\n",
+                             "pkg: installing %s; Ctrl+C, Esc, or %s stops\n",
                              id,
                              solar_os_shell_io_app_exit_key(term));
     solar_os_shell_io_flush(term);
@@ -498,7 +505,8 @@ static void pkg_install_module(solar_os_shell_io_t *term, const char *id)
         return;
     }
     solar_os_shell_io_printf(term,
-                             "pkg: installed %s %s (%u bytes) -> %s\n",
+                             "pkg: installed %s %s %s (%u bytes) -> %s\n",
+                             solar_os_module_type_name(result.type),
                              result.id,
                              result.version,
                              (unsigned)result.bytes,

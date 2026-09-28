@@ -1351,7 +1351,7 @@ static void expansion_print_attach_error(solar_os_shell_io_t *term,
                                  "expansion attach: driver '%s' is unavailable\n",
                                  driver);
         solar_os_shell_io_writeln(term,
-                                  "run 'expansion drivers' to list compiled drivers");
+                                  "run 'expansion drivers' to list registered drivers");
         break;
     case ESP_ERR_INVALID_STATE:
         solar_os_shell_io_writeln(term, "expansion attach: device name or resource already in use");
@@ -1406,13 +1406,13 @@ static void expansion_cmd_attach(solar_os_shell_io_t *term, int argc, char **arg
     }
     if (!expansion_find_driver(argv[2], &driver)) {
         solar_os_shell_io_printf(term, "expansion attach: unknown driver '%s'\n", argv[2]);
-        solar_os_shell_io_writeln(term, "run 'expansion drivers' to list compiled drivers");
+        solar_os_shell_io_writeln(term, "run 'expansion drivers' to list registered drivers");
         return;
     }
     if (!solar_os_expansion_driver_supported(driver.name)) {
         solar_os_shell_io_printf(
             term,
-            "expansion attach: driver '%s' is compiled but unsupported on this board\n",
+            "expansion attach: driver '%s' is registered but unsupported on this board\n",
             driver.name);
         solar_os_shell_io_writeln(term,
                                   "run 'expansion drivers' to inspect driver support");

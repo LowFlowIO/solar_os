@@ -104,7 +104,7 @@ creating a named expansion bus.
 
 ## Typical Workflow
 
-Start by inspecting the live resource map and compiled drivers:
+Start by inspecting the live resource map and registered drivers:
 
 ```text
 expansion layout
@@ -242,7 +242,7 @@ Fixed-pin board buses reject detach.
 
 ## Drivers and Bindings
 
-Run `expansion drivers` on the device to see the exact compiled set.
+Run `expansion drivers` on the device to see the exact registered set.
 
 | Driver | Device | Required bindings | Result after attach |
 | --- | --- | --- | --- |

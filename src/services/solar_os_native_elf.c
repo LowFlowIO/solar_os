@@ -28,7 +28,11 @@ enum {
     ELF_SECTION_INDEX_UNDEFINED = 0,
 };
 
-static const char native_host_symbol[] = "solar_os_native_host_v1";
+static const char *const native_host_symbols[] = {
+    "solar_os_native_host_v1",
+    "solar_os_native_job_host_v1",
+    "solar_os_native_driver_host_v1",
+};
 
 typedef struct {
     uint32_t name;
@@ -173,8 +177,17 @@ static esp_err_t validate_symbol_names(const uint8_t *data,
             set_detail(detail, detail_len, "symbol name escapes its string table");
             return ESP_ERR_INVALID_RESPONSE;
         }
-        if (host_import_found != NULL &&
-            strcmp((const char *)string_data + name, native_host_symbol) == 0) {
+        bool known_host_symbol = false;
+        for (size_t host = 0U;
+             host < sizeof(native_host_symbols) / sizeof(native_host_symbols[0]);
+             host++) {
+            if (strcmp((const char *)string_data + name,
+                       native_host_symbols[host]) == 0) {
+                known_host_symbol = true;
+                break;
+            }
+        }
+        if (host_import_found != NULL && known_host_symbol) {
             const uint8_t symbol_info = symbol[12U];
             const uint8_t binding = symbol_info >> 4U;
             const uint8_t type = symbol_info & 0x0fU;
@@ -380,7 +393,7 @@ esp_err_t solar_os_native_elf_validate(const uint8_t *data,
         !host_import_found) {
         set_detail(detail,
                    detail_len,
-                   "ELF needs executable .text, an entry within it, .dynsym, and the SolarOS ABI v1 import");
+                   "ELF needs executable .text, an entry within it, .dynsym, and a SolarOS ABI v1 import");
         return ESP_ERR_INVALID_RESPONSE;
     }
 

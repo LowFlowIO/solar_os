@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "solar_os_module_packages.h"
 #include "solar_os_native_abi.h"
 #include "solar_os_native_elf.h"
 
@@ -33,6 +34,17 @@ esp_err_t solar_os_native_run(const char *path,
                               solar_os_native_run_result_t *result,
                               char *detail,
                               size_t detail_len);
+esp_err_t solar_os_native_module_activate(solar_os_module_type_t type,
+                                          const char *id,
+                                          const char *path,
+                                          char *detail,
+                                          size_t detail_len);
+esp_err_t solar_os_native_module_deactivate(solar_os_module_type_t type,
+                                            const char *id,
+                                            char *detail,
+                                            size_t detail_len);
+bool solar_os_native_module_active(solar_os_module_type_t type,
+                                   const char *id);
 
 #ifdef __cplusplus
 }

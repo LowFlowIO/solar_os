@@ -27,8 +27,8 @@ hello SolarOS
 ```
 
 The expected output is `Hello from a SolarOS native module, SolarOS!`. Installed
-application modules are resolved as `/modules/<command>.app.elf`; built-in
+application modules are resolved as `/modules/apps/<command>.elf`; built-in
 commands, compiled applications, and aliases take precedence. The initial
 runtime unloads the module as soon as `main` returns, so this example does not
-create tasks or retain callbacks. Use `load /modules/hello.app.elf SolarOS` to
+create tasks or retain callbacks. Use `load /modules/apps/hello.elf SolarOS` to
 exercise the low-level loader directly.
