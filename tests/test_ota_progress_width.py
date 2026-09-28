@@ -9,6 +9,14 @@ COMMANDS = (ROOT / "src/shell/solar_os_shell_commands.c").read_text(
 
 
 class OtaProgressWidthTest(unittest.TestCase):
+    def test_check_uses_a_dedicated_network_worker(self):
+        self.assertIn("#define OTA_CHECK_TASK_STACK 16384", COMMANDS)
+        self.assertIn(
+            "solar_os_task_create_pinned_internal(ota_check_task", COMMANDS
+        )
+        self.assertIn("ota_run_check_worker(result)", COMMANDS)
+        self.assertNotIn("solar_os_ota_check(&result)", COMMANDS)
+
     def test_upgrade_progress_reserves_one_column_before_wrapping(self):
         start = COMMANDS.index("static void ota_render_progress_line(")
         end = COMMANDS.index("static void ota_shell_progress_cb(", start)

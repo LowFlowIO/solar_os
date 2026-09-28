@@ -92,8 +92,11 @@ static const char * const sshkey_commands[] = {"status", "gen", "pub", "rm"};
 #define LOG_SHOW_DEFAULT 40
 #define OTA_PROGRESS_BAR_WIDTH 24
 #define OTA_PROGRESS_STEP_BYTES (64U * 1024U)
+#define OTA_CHECK_TASK_STACK 16384
 #define OTA_UPGRADE_TASK_STACK 16384
+SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(OTA_CHECK_TASK_STACK);
 SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(OTA_UPGRADE_TASK_STACK);
+#define OTA_CHECK_WAIT_MS 100U
 #define OTA_UPGRADE_WAIT_MS 100U
 
 #ifndef SOLAR_OS_VERSION
@@ -888,6 +891,12 @@ typedef struct {
     volatile bool done;
 } ota_upgrade_worker_t;
 
+typedef struct {
+    solar_os_ota_check_result_t *check;
+    esp_err_t result;
+    volatile bool done;
+} ota_check_worker_t;
+
 static const char *ota_stage_name(solar_os_ota_progress_stage_t stage)
 {
     switch (stage) {
@@ -1051,6 +1060,60 @@ static void ota_upgrade_task(void *arg)
     solar_os_task_delete_internal(NULL);
 }
 
+static void ota_check_task(void *arg)
+{
+    ota_check_worker_t *worker = (ota_check_worker_t *)arg;
+    if (worker != NULL) {
+        worker->result = solar_os_ota_check(worker->check);
+        SOLAR_OS_LOGI("solar_os_shell",
+                      "OTA check task stopped stack_min_free=%u bytes",
+                      (unsigned)uxTaskGetStackHighWaterMark(NULL));
+        worker->done = true;
+    }
+    solar_os_task_delete_internal(NULL);
+}
+
+static esp_err_t ota_run_check_worker(solar_os_ota_check_result_t *result)
+{
+    if (result == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    ota_check_worker_t worker = {
+        .check = result,
+        .result = ESP_FAIL,
+        .done = false,
+    };
+
+    TaskHandle_t task = NULL;
+    if (solar_os_task_create_pinned_internal(ota_check_task,
+                                             "ota_check",
+                                             OTA_CHECK_TASK_STACK,
+                                             &worker,
+                                             tskIDLE_PRIORITY + 2,
+                                             &task,
+                                             tskNO_AFFINITY,
+                                             SOLAR_OS_TASK_ROLE_FOREGROUND) != pdPASS) {
+        SOLAR_OS_LOGW("solar_os_shell",
+                      "OTA check task create failed stack=%u internal_free=%u "
+                      "internal_largest=%u",
+                      (unsigned)OTA_CHECK_TASK_STACK,
+                      (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),
+                      (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
+        return ESP_ERR_NO_MEM;
+    }
+
+    TickType_t wait_ticks = pdMS_TO_TICKS(OTA_CHECK_WAIT_MS);
+    if (wait_ticks == 0) {
+        wait_ticks = 1;
+    }
+    while (!worker.done) {
+        vTaskDelay(wait_ticks);
+    }
+
+    return worker.result;
+}
+
 static esp_err_t ota_run_upgrade_worker(ota_shell_progress_t *progress)
 {
     if (progress == NULL) {
@@ -1128,8 +1191,6 @@ void solar_os_shell_cmd_ota(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     if (strcmp(argv[1], "check") == 0) {
-        solar_os_ota_check_result_t result;
-
         if (argc != 2) {
             solar_os_shell_diag_unexpected(term, "ota check", argv[2], "ota check");
             return;
@@ -1138,30 +1199,43 @@ void solar_os_shell_cmd_ota(solar_os_context_t *ctx, int argc, char **argv)
             return;
         }
 
-        memset(&result, 0, sizeof(result));
-        result.status_code = -1;
+        solar_os_ota_check_result_t *result =
+            solar_os_memory_alloc(sizeof(*result),
+                                  SOLAR_OS_MEMORY_TRANSIENT,
+                                  "ota_check");
+        if (result == NULL) {
+            solar_os_shell_diag_esp(term,
+                                    "ota check",
+                                    ESP_ERR_NO_MEM,
+                                    "could not allocate the check result",
+                                    NULL);
+            return;
+        }
+        memset(result, 0, sizeof(*result));
+        result->status_code = -1;
         solar_os_shell_io_writeln(term, "ota: checking");
         solar_os_shell_io_flush(term);
-        const esp_err_t err = solar_os_ota_check(&result);
+        const esp_err_t err = ota_run_check_worker(result);
         if (err == ESP_OK) {
-            ota_print_check_result(term, &result);
+            ota_print_check_result(term, result);
         } else if (err == ESP_ERR_NOT_FOUND &&
                    solar_os_ota_available_flavors_checked() &&
                    solar_os_ota_available_flavor_count() > 0U) {
             solar_os_shell_io_printf(term,
                                      "ota: no release for %s/%s\n",
-                                     result.board_id,
-                                     result.target_flavor);
+                                     result->board_id,
+                                     result->target_flavor);
             ota_print_available_flavors(term);
         } else {
             solar_os_shell_io_printf(term,
                                      "ota: check failed: %s",
                                      solar_os_shell_error_text(err));
-            if (result.status_code > 0) {
-                solar_os_shell_io_printf(term, " HTTP %d", result.status_code);
+            if (result->status_code > 0) {
+                solar_os_shell_io_printf(term, " HTTP %d", result->status_code);
             }
             solar_os_shell_io_put_char(term, '\n');
         }
+        solar_os_memory_free(result);
         return;
     }
 
