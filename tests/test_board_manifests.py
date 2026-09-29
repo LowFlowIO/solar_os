@@ -501,10 +501,17 @@ bindings = { gpio = 7 }
             self.manifest_dir,
         )
         header = generate_header(board, self.drivers)
+        runtime_driver = (
+            ROOT / "src" / "services" / "solar_os_cl32_core.c"
+        ).read_text(encoding="utf-8")
         self.assertNotIn("SOLAR_OS_BOARD_HEADLESS_PREFER_CDC", header)
         self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_CONTROLLER "ST7305"', header)
         self.assertIn("#define SOLAR_OS_BOARD_DISPLAY_WIDTH 384", header)
         self.assertIn("#define SOLAR_OS_BOARD_DISPLAY_HEIGHT 168", header)
+        self.assertIn(
+            "#define CL32_CORE_REG_BATTERY_VOLTAGE 0x14U",
+            runtime_driver,
+        )
         self.assertIn("display", board["build"]["capabilities"])
         self.assertIn("battery", board["build"]["capabilities"])
         self.assertIn("streaming_display", board["build"]["capabilities"])
