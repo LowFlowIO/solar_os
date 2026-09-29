@@ -5,6 +5,11 @@
 #include "nimble_test_support.h"
 static bool fail_allocation;
 static bool include_next_characteristic;
+static esp_err_t keyboard_lease_result = ESP_OK;
+static size_t keyboard_lease_acquires, keyboard_lease_releases;
+esp_err_t solar_os_ble_keyboard_client_acquire(uint32_t timeout_ms)
+{ (void)timeout_ms; keyboard_lease_acquires++; return keyboard_lease_result; }
+void solar_os_ble_keyboard_client_release(void) { keyboard_lease_releases++; }
 static void *test_calloc(size_t n, size_t size) { return fail_allocation ? NULL : calloc(n, size); }
 #define calloc test_calloc
 #include "../../src/services/solar_os_ble_nimble.c"
@@ -203,6 +208,10 @@ static void test_pairing(void)
 int main(void)
 {
     solar_os_ble_backend_register();
+    keyboard_lease_result = ESP_ERR_TIMEOUT;
+    assert(solar_os_ble_backend_connect(99,100,address,0)==ESP_ERR_TIMEOUT);
+    assert(!clients && keyboard_lease_acquires==1 && keyboard_lease_releases==0);
+    keyboard_lease_result = ESP_OK;
     /* Cancellation before the queued connect must not cancel the HID attempt. */
     solar_os_ble_backend_connect(1,2,address,0);
     solar_os_ble_backend_cancel(1);
@@ -293,5 +302,6 @@ int main(void)
     test_multiple_peers();
     test_notifications();
     test_pairing();
+    assert(keyboard_lease_acquires==keyboard_lease_releases+1);
     puts("NimBLE adapter: cancellation, request identity, bounds, MTU and byte-copy tests passed");
 }

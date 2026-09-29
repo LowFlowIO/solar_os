@@ -838,13 +838,50 @@ The job requires PSRAM and a packet-radio expansion capability. It claims the
 radio, applies the explicit regional profile, sends one zero-hop startup
 advert, and continuously handles adverts, direct messages, ACKs, and group
 messages. Its complete protocol context is allocated as external-required
-PSRAM; the 6144-byte worker stack remains internal and its minimum watermark is
+PSRAM; the 7168-byte worker stack remains internal and its minimum watermark is
 reported by `meshcore status`.
 
 Stopping restores the previous radio configuration and state before releasing
 ownership. MeshCore and `radio-link` therefore report normal ownership
 conflicts when pointed at the same radio. See [meshcore.md](meshcore.md) for
 identity, trust, channel, regional-profile, and security details.
+
+## meshcore-ble
+
+MeshCore companion-protocol client for a separate BLE radio device. The job
+connects to one explicit peer, synchronizes its contacts and channels, drains
+queued messages, and carries Chat messages through the standard MeshCore
+messaging provider.
+
+Usage:
+
+```text
+job start meshcore-ble <address> <public|random|rpa_public|rpa_random> [six-digit-pin]
+job status meshcore-ble
+job stop meshcore-ble
+```
+
+Example:
+
+```text
+job start meshcore-ble 68:ee:8f:69:5f:35 public 123456
+contacts
+chat
+```
+
+The job requires BLE and PSRAM. The optional PIN requests Secure Connections
+pairing; inspect `job status meshcore-ble` and confirm `encrypted=yes` and
+`bonded=yes`. The PIN is retained only while the job runs, but the start command
+can remain in shell history. The worker reconnects with exponential backoff and
+coexists with the BLE keyboard; a concurrent keyboard connection attempt can
+delay a reconnect but does not tear down either established link.
+
+`meshcore` and `meshcore-ble` are alternative transports for the same messaging
+provider and cannot run at the same time. Contacts, direct conversations, Chat,
+and Inbox remain provider-neutral. Channels and the external device's radio and
+identity are configured on the companion device; the `meshcore` shell command
+continues to configure only SolarOS's local packet-radio implementation. See
+[meshcore.md](meshcore.md) for transport and security details.
 
 ## espnow-link
 

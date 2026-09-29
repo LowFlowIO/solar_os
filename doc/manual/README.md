@@ -191,6 +191,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [httpd job](jobs.reference.md#httpd) — Static HTTP file server for a folder on mounted storage.
 - [log job](jobs.reference.md#log) — Runtime SolarOS log follower. It mirrors log entries to a byte-stream port or appends them to a file.
 - [meshcore job](jobs.reference.md#meshcore) — Non-forwarding MeshCore companion provider for Contacts and Messages.
+- [meshcore-ble job](jobs.reference.md#meshcore-ble) — Connect a MeshCore companion device over BLE and expose its contacts, channels, and messages through the same Contacts, Chat, and Inbox services.
 - [midi job](jobs.reference.md#midi) — Bidirectional MIDI transport on an exclusive named MIDI bus. The bus selects an available UART controller internally; users supply only its MIDI name, TX and RX pins, and an optional baud rate.
 - [ntp-sync job](jobs.reference.md#ntp-sync) — Network time synchronization job. It updates the SolarOS wall clock from NTP and also updates the hardware RTC when the board provides one.
 - [osc job](jobs.reference.md#osc) — OSC 1.0 IPv4 UDP adapter for automatic incoming native-parameter writes and explicit named outbound stream, event-stream, or normalized-control bindings.

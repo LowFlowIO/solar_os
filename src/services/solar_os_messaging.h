@@ -147,6 +147,9 @@ esp_err_t solar_os_messaging_get_status(solar_os_messaging_status_t *status);
 esp_err_t solar_os_messaging_provider_register(
     solar_os_messaging_provider_id_t provider,
     const char *name);
+esp_err_t solar_os_messaging_provider_claim(
+    solar_os_messaging_provider_id_t provider,
+    const char *detail);
 esp_err_t solar_os_messaging_provider_set_status(
     solar_os_messaging_provider_id_t provider,
     bool running,

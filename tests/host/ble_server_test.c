@@ -7,6 +7,9 @@
 #include "solar_os_ble_hid_report_map.h"
 static int allocation, fail_at;
 static uint32_t local_service, local_char;
+esp_err_t solar_os_ble_keyboard_client_acquire(uint32_t timeout_ms)
+{ (void)timeout_ms; return ESP_OK; }
+void solar_os_ble_keyboard_client_release(void) {}
 static void *server_test_calloc(size_t n, size_t size)
 { return ++allocation == fail_at ? NULL : calloc(n, size); }
 #define calloc server_test_calloc

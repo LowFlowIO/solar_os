@@ -104,8 +104,10 @@ static TaskHandle_t reconnect_task_handle;
 static portMUX_TYPE key_state_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE reconnect_task_lock = portMUX_INITIALIZER_UNLOCKED;
 static portMUX_TYPE bond_remove_lock = portMUX_INITIALIZER_UNLOCKED;
+static portMUX_TYPE client_lease_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool reconnect_stop_requested;
 static bool reconnect_open_in_progress;
+static uint32_t client_leases;
 static ble_address_t deferred_forget_bda;
 static bool deferred_forget_valid;
 static bool initialized;
@@ -128,6 +130,7 @@ static uint8_t keyboard_battery_level;
 static bool reconnect_suppressed_for_sleep;
 static bool reconnect_suppressed_for_pairing;
 static bool reconnect_suppressed_for_forget;
+static bool reconnect_suppressed_for_client;
 static bool pairing_retry_pending;
 static bool pairing_scan_stop_requested;
 static bool reconnect_scan_stop_requested;
@@ -480,6 +483,7 @@ static bool reconnect_is_suppressed(void)
     return reconnect_suppressed_for_sleep ||
         reconnect_suppressed_for_pairing ||
         reconnect_suppressed_for_forget ||
+        reconnect_suppressed_for_client ||
         pairing_retry_pending;
 }
 
@@ -566,6 +570,49 @@ static bool stop_reconnect_task(const char *reason, uint32_t timeout_ms)
                   reason != NULL ? reason : "ble",
                   open_in_progress ? " by active HID open" : "");
     return false;
+}
+
+esp_err_t solar_os_ble_keyboard_client_acquire(uint32_t timeout_ms)
+{
+    portENTER_CRITICAL(&client_lease_lock);
+    if (client_leases != 0U) {
+        ++client_leases;
+        portEXIT_CRITICAL(&client_lease_lock);
+        return ESP_OK;
+    }
+    client_leases = 1U;
+    reconnect_suppressed_for_client = true;
+    portEXIT_CRITICAL(&client_lease_lock);
+
+    const bool stopped = stop_reconnect_task("GATT client", timeout_ms);
+    const bool keyboard_busy = scan_task_handle != NULL ||
+        state == BLE_KEYBOARD_SCANNING ||
+        state == BLE_KEYBOARD_CONNECTING ||
+        state == BLE_KEYBOARD_PASSKEY;
+    if (stopped && !keyboard_busy) {
+        return ESP_OK;
+    }
+
+    portENTER_CRITICAL(&client_lease_lock);
+    client_leases = 0U;
+    reconnect_suppressed_for_client = false;
+    portEXIT_CRITICAL(&client_lease_lock);
+    schedule_reconnect(0U);
+    return stopped ? ESP_ERR_INVALID_STATE : ESP_ERR_TIMEOUT;
+}
+
+void solar_os_ble_keyboard_client_release(void)
+{
+    bool resume = false;
+    portENTER_CRITICAL(&client_lease_lock);
+    if (client_leases != 0U && --client_leases == 0U) {
+        reconnect_suppressed_for_client = false;
+        resume = true;
+    }
+    portEXIT_CRITICAL(&client_lease_lock);
+    if (resume) {
+        schedule_reconnect(0U);
+    }
 }
 
 static void stop_scan_task_for_sleep(uint32_t timeout_ms)

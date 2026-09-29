@@ -100,3 +100,8 @@ const char *solar_os_ble_keyboard_layout_name(solar_os_ble_keyboard_layout_t lay
 bool solar_os_ble_keyboard_parse_layout(const char *name, solar_os_ble_keyboard_layout_t *layout);
 const char *solar_os_ble_keyboard_addr_type_name(uint8_t addr_type);
 bool solar_os_ble_keyboard_parse_addr_type(const char *name, uint8_t *addr_type);
+
+/* Internal host arbitration. Generic central links pause an unavailable
+ * keyboard's reconnect scanner, but never disconnect an attached keyboard. */
+esp_err_t solar_os_ble_keyboard_client_acquire(uint32_t timeout_ms);
+void solar_os_ble_keyboard_client_release(void);

@@ -1224,6 +1224,10 @@ esp_err_t solar_os_messaging_provider_register(
     messaging_lock();
     solar_os_messaging_provider_status_t *status =
         &messaging.providers[messaging_provider_index(provider)];
+    if (status->registered && strcmp(status->name, name) == 0) {
+        messaging_unlock();
+        return ESP_OK;
+    }
     memset(status, 0, sizeof(*status));
     status->id = provider;
     status->registered = true;
@@ -1280,6 +1284,44 @@ esp_err_t solar_os_messaging_provider_set_status(
                                     0,
                                     SOLAR_OS_DELIVERY_RECEIVED,
                                     error);
+    messaging_unlock();
+    return ESP_OK;
+}
+
+esp_err_t solar_os_messaging_provider_claim(
+    solar_os_messaging_provider_id_t provider,
+    const char *detail)
+{
+    if (!messaging_provider_valid(provider)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t error = solar_os_messaging_init();
+    if (error != ESP_OK) {
+        return error;
+    }
+    messaging_lock();
+    solar_os_messaging_provider_status_t *status =
+        &messaging.providers[messaging_provider_index(provider)];
+    if (!status->registered) {
+        messaging_unlock();
+        return ESP_ERR_NOT_FOUND;
+    }
+    if (status->running) {
+        messaging_unlock();
+        return ESP_ERR_INVALID_STATE;
+    }
+    status->running = true;
+    status->connected = false;
+    status->last_error = ESP_OK;
+    strlcpy(status->detail, detail != NULL ? detail : "starting",
+            sizeof(status->detail));
+    messaging_note_generation_locked();
+    messaging_publish_event_locked(SOLAR_OS_MESSAGING_EVENT_PROVIDER,
+                                    provider,
+                                    0,
+                                    0,
+                                    SOLAR_OS_DELIVERY_RECEIVED,
+                                    ESP_OK);
     messaging_unlock();
     return ESP_OK;
 }

@@ -9,6 +9,9 @@
 #include "host/ble_store.h"
 #include "services/gap/ble_svc_gap.h"
 #include "solar_os_hid.h"
+#include "solar_os_ble_keyboard.h"
+
+#define BLE_KEYBOARD_CLIENT_PAUSE_TIMEOUT_MS 1500U
 
 typedef enum { OP_NONE, OP_CONNECT, OP_READ, OP_WRITE, OP_SUBSCRIBE, OP_PAIR } operation_t;
 typedef struct {
@@ -40,6 +43,7 @@ typedef struct ble_client {
     uint8_t bda[6];
     operation_t op;
     bool retiring, connecting, response;
+    bool keyboard_lease;
     bool encrypted, bonded, passkey_valid, pairing_io;
     uint8_t addr_type;
     uint32_t passkey;
@@ -63,6 +67,13 @@ static void restore_pairing_io_locked(ble_client_t *client)
     }
     client->passkey = 0;
     client->passkey_valid = false;
+}
+
+static void release_keyboard_lease_locked(ble_client_t *client)
+{
+    if (!client->keyboard_lease) return;
+    client->keyboard_lease = false;
+    solar_os_ble_keyboard_client_release();
 }
 
 static ble_client_t *find_epoch(uint32_t epoch)
@@ -155,6 +166,7 @@ static void clear_locked(ble_client_t *client)
     while (*entry && *entry != client) entry = &(*entry)->next;
     if (*entry) *entry = client->next;
     for (size_t i = 0; i < client->count; ++i) free(client->services[i].chars);
+    release_keyboard_lease_locked(client);
     free(client);
     if (command_ready && !server_idle_locked())
         ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &command_event);
@@ -431,7 +443,12 @@ static int gap_callback(struct ble_gap_event *event, void *arg)
     if (event->type == BLE_GAP_EVENT_CONNECT) {
         client->connecting = false;
         int rc = event->connect.status;
-        if (!rc) client->conn = event->connect.conn_handle;
+        if (!rc) {
+            client->conn = event->connect.conn_handle;
+            /* Once the generic link exists, normal scanning and the reserved
+             * HID connection may coexist with it. */
+            release_keyboard_lease_locked(client);
+        }
         if (client->retiring && !rc) { retire_locked(client); unlock(); return 0; }
         e = event_locked(client, SOLAR_OS_BLE_BACKEND_OPENED, rc);
         e.mtu = rc ? 23 : ble_att_mtu(client->conn);
@@ -534,22 +551,30 @@ static int gap_callback(struct ble_gap_event *event, void *arg)
 esp_err_t solar_os_ble_backend_connect(uint32_t epoch, uint32_t request,
                                        const uint8_t bda[6], uint8_t type)
 {
+    esp_err_t lease = solar_os_ble_keyboard_client_acquire(
+        BLE_KEYBOARD_CLIENT_PAUSE_TIMEOUT_MS);
+    if (lease != ESP_OK) return lease;
     lock();
     size_t count = server_used_locked();
     for (ble_client_t *c = clients; c; c = c->next) {
         ++count;
         if (c->epoch == epoch || (c->addr_type == type && !memcmp(c->bda, bda, 6))) {
-            unlock(); return ESP_ERR_INVALID_STATE;
+            unlock(); solar_os_ble_keyboard_client_release(); return ESP_ERR_INVALID_STATE;
         }
     }
-    if (count >= solar_os_ble_backend_capacity()) { unlock(); return SOLAR_OS_BLE_ERR_CAPACITY; }
+    if (count >= solar_os_ble_backend_capacity()) {
+        unlock(); solar_os_ble_keyboard_client_release(); return SOLAR_OS_BLE_ERR_CAPACITY;
+    }
     ble_client_t *client = calloc(1, sizeof(*client));
-    if (!client) { unlock(); return ESP_ERR_NO_MEM; }
+    if (!client) {
+        unlock(); solar_os_ble_keyboard_client_release(); return ESP_ERR_NO_MEM;
+    }
     client->conn = BLE_HS_CONN_HANDLE_NONE;
     client->epoch = epoch;
     client->request = request;
     client->op = OP_CONNECT;
     client->queued = true;
+    client->keyboard_lease = true;
     memcpy(client->bda, bda, sizeof(client->bda));
     client->addr_type = type;
     client->next = clients;

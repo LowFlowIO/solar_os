@@ -982,9 +982,15 @@ void solar_os_ble_service_event(const solar_os_ble_backend_event_t *event)
             s->link.info.encrypted = event->encrypted;
             s->link.info.bonded = event->bonded;
             if (matched && s->op == BLE_OP_PAIR) {
-                strlcpy(s->link.info.status,
-                    event->result == ESP_OK ? "secured" : "pairing failed",
-                    sizeof(s->link.info.status));
+                if (event->result == ESP_OK) {
+                    strlcpy(s->link.info.status, "secured",
+                            sizeof(s->link.info.status));
+                } else {
+                    snprintf(s->link.info.status,
+                             sizeof(s->link.info.status),
+                             "pairing failed (backend=%u)",
+                             (unsigned)event->status);
+                }
                 finish_locked(s, event->result);
             }
         }
