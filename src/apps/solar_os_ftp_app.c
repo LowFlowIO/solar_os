@@ -21,6 +21,7 @@
 #include "freertos/queue.h"
 #include "freertos/task.h"
 #include "solar_os_app_registry.h"
+#include "solar_os_file_shortcuts.h"
 #ifndef SOLAR_OS_FTP_APP_SFTP
 #include "solar_os_ftp.h"
 #endif
@@ -32,6 +33,7 @@
 #include "solar_os_shell.h"
 #include "solar_os_storage.h"
 #include "solar_os_task.h"
+#include "solar_os_text_search.h"
 #include "solar_os_tui.h"
 #include "solar_os_tui_widgets.h"
 
@@ -89,6 +91,7 @@ typedef enum {
     FTP_APP_INPUT_MKDIR,
     FTP_APP_INPUT_DELETE,
     FTP_APP_INPUT_CONNECT,
+    FTP_APP_INPUT_SEARCH,
 } ftp_app_input_t;
 
 typedef enum {
@@ -171,6 +174,8 @@ typedef struct {
     ftp_app_input_t input_mode;
     char input[FTP_APP_INPUT_MAX];
     size_t input_len;
+    solar_os_text_search_state_t search;
+    bool alt_prefix_pending;
     char message[FTP_APP_MESSAGE_MAX];
     char host[SOLAR_OS_NET_HOST_MAX];
     char username[64];
@@ -293,6 +298,23 @@ static void ftp_app_parent(const char *path, char *parent, size_t parent_len)
     while (len > 1U && parent[len - 1U] == '/') {
         parent[--len] = '\0';
     }
+}
+
+static size_t ftp_app_trimmed_path_len(const char *path)
+{
+    size_t len = path != NULL ? strlen(path) : 0U;
+    while (len > 1U && path[len - 1U] == '/') {
+        len--;
+    }
+    return len;
+}
+
+static bool ftp_app_paths_equal(const char *a, const char *b)
+{
+    const size_t a_len = ftp_app_trimmed_path_len(a);
+    const size_t b_len = ftp_app_trimmed_path_len(b);
+    return a != NULL && b != NULL && a_len == b_len &&
+        strncmp(a, b, a_len) == 0;
 }
 
 static const char *ftp_app_basename(const char *path)
@@ -1015,7 +1037,7 @@ static void ftp_app_draw_connection(size_t rows, size_t cols)
 static void ftp_app_draw_operation_help(size_t cols)
 {
     static const char help[] =
-        "F2 Connect F3 View F5 Copy F6 Move F7 mKdir F8 Delete";
+        "F2 Connect F3 View F5 Copy F6 Move F7 mKdir F8 Delete Alt+S Search";
     static const struct {
         const char *label;
         size_t offset;
@@ -1026,6 +1048,7 @@ static void ftp_app_draw_operation_help(size_t cols)
         {"Move", 0U},
         {"mKdir", 1U},
         {"Delete", 0U},
+        {"Search", 0U},
     };
     solar_os_tui_draw_help(&ftp_app.tui, help);
     if (!solar_os_tui_screen_fullscreen(&ftp_app.tui)) {
@@ -1054,7 +1077,8 @@ static void ftp_app_render(void)
     const size_t cols = solar_os_tui_cols(&ftp_app.tui);
     solar_os_tui_set_cursor_visible(&ftp_app.tui,
                                     ftp_app.input_mode == FTP_APP_INPUT_MKDIR ||
-                                        ftp_app.input_mode == FTP_APP_INPUT_CONNECT);
+                                        ftp_app.input_mode == FTP_APP_INPUT_CONNECT ||
+                                        ftp_app.input_mode == FTP_APP_INPUT_SEARCH);
     solar_os_tui_clear(&ftp_app.tui);
     if (rows < 6U || cols < FTP_APP_PANEL_MIN_WIDTH * 2U) {
         solar_os_tui_draw_too_small(&ftp_app.tui, FTP_APP_COMMAND);
@@ -1098,12 +1122,20 @@ static void ftp_app_render(void)
     }
     solar_os_tui_fill(&ftp_app.tui, message_row, 0, 1, cols, ' ',
                       SOLAR_OS_TUI_ATTR_NORMAL);
-    if (ftp_app.input_mode == FTP_APP_INPUT_MKDIR) {
+    if (ftp_app.input_mode == FTP_APP_INPUT_MKDIR ||
+        ftp_app.input_mode == FTP_APP_INPUT_SEARCH) {
+        const bool search = ftp_app.input_mode == FTP_APP_INPUT_SEARCH;
+        const char *label = search ? "search: " : "mkdir: ";
+        const char *value = search ? ftp_app.search.input : ftp_app.input;
+        const size_t value_len = search ?
+            ftp_app.search.input_len : ftp_app.input_len;
         char prompt[FTP_APP_INPUT_MAX + 12U];
-        snprintf(prompt, sizeof(prompt), "mkdir: %s", ftp_app.input);
+        snprintf(prompt, sizeof(prompt), "%s%s", label, value);
         solar_os_tui_write_cell(&ftp_app.tui, message_row, 0, cols,
                                 prompt, SOLAR_OS_TUI_ATTR_NORMAL);
-        solar_os_tui_move(&ftp_app.tui, message_row, 7U + ftp_app.input_len);
+        solar_os_tui_move(&ftp_app.tui,
+                          message_row,
+                          strlen(label) + value_len);
     } else {
         solar_os_tui_write_cell(&ftp_app.tui, message_row, 0, cols,
                                 ftp_app.message,
@@ -1192,6 +1224,48 @@ static void ftp_app_restore_position(ftp_app_pane_t *pane,
     pane->top = top < pane->count ? top : pane->count - 1U;
 }
 
+static void ftp_app_select_child_path(ftp_app_pane_t *pane,
+                                      const char *child_path)
+{
+    if (pane == NULL || child_path == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < pane->count; i++) {
+        const ftp_app_entry_t *entry = &pane->entries[i];
+        char entry_path[SOLAR_OS_STORAGE_PATH_MAX];
+        if (entry->parent || !entry->is_directory ||
+            !ftp_app_join(entry_path,
+                          sizeof(entry_path),
+                          pane->path,
+                          entry->name)) {
+            continue;
+        }
+        if (ftp_app_paths_equal(entry_path, child_path)) {
+            pane->cursor = i;
+            return;
+        }
+    }
+}
+
+static esp_err_t ftp_app_change_local_dir(ftp_app_pane_t *pane,
+                                          const char *path)
+{
+    char previous_path[SOLAR_OS_STORAGE_PATH_MAX];
+    char previous_parent[SOLAR_OS_STORAGE_PATH_MAX];
+    strlcpy(previous_path, pane->path, sizeof(previous_path));
+    ftp_app_parent(previous_path, previous_parent, sizeof(previous_parent));
+    const bool moving_to_parent =
+        ftp_app_paths_equal(previous_parent, path) &&
+        !ftp_app_paths_equal(previous_path, path);
+
+    const esp_err_t err = ftp_app_load_local(pane, path);
+    if (err == ESP_OK && moving_to_parent) {
+        ftp_app_select_child_path(pane, previous_path);
+    }
+    return err;
+}
+
 static esp_err_t ftp_app_refresh_local(void)
 {
     ftp_app_pane_t *pane = &ftp_app.panes[0];
@@ -1229,7 +1303,19 @@ static void ftp_app_poll(solar_os_context_t *ctx)
                 ftp_app.connected = true;
             }
             ftp_app_pane_t *remote = &ftp_app.panes[1];
-            const bool same_remote_path = strcmp(remote->path, result.remote_path) == 0;
+            char previous_remote_path[SOLAR_OS_STORAGE_PATH_MAX];
+            char previous_remote_parent[SOLAR_OS_STORAGE_PATH_MAX];
+            strlcpy(previous_remote_path,
+                    remote->path,
+                    sizeof(previous_remote_path));
+            ftp_app_parent(previous_remote_path,
+                           previous_remote_parent,
+                           sizeof(previous_remote_parent));
+            const bool same_remote_path =
+                ftp_app_paths_equal(previous_remote_path, result.remote_path);
+            const bool moving_to_remote_parent =
+                ftp_app_paths_equal(previous_remote_parent, result.remote_path) &&
+                !same_remote_path;
             const size_t old_remote_cursor = remote->cursor;
             const size_t old_remote_top = remote->top;
             solar_os_memory_free(remote->entries);
@@ -1241,6 +1327,8 @@ static void ftp_app_poll(solar_os_context_t *ctx)
             strlcpy(remote->path, result.remote_path, sizeof(remote->path));
             if (same_remote_path) {
                 ftp_app_restore_position(remote, old_remote_cursor, old_remote_top);
+            } else if (moving_to_remote_parent) {
+                ftp_app_select_child_path(remote, previous_remote_path);
             }
             (void)ftp_app_refresh_local();
             ftp_app_set_message(result.kind == FTP_APP_WORK_CONNECT ? "connected" : "done");
@@ -1284,7 +1372,7 @@ static void ftp_app_open_selected(void)
         return;
     }
     if (ftp_app.active == 0) {
-        if (ftp_app_load_local(&ftp_app.panes[0], path) != ESP_OK) {
+        if (ftp_app_change_local_dir(&ftp_app.panes[0], path) != ESP_OK) {
             ftp_app_set_message("cannot open local directory");
         }
     } else {
@@ -1691,6 +1779,59 @@ static void ftp_app_connect_from_form(void)
     (void)ftp_app_submit(&request, "connecting...");
 }
 
+static bool ftp_app_search_segment(void *user,
+                                   size_t segment_index,
+                                   const char **text,
+                                   size_t *text_len)
+{
+    const ftp_app_pane_t *pane = (const ftp_app_pane_t *)user;
+    if (pane == NULL || text == NULL || text_len == NULL ||
+        segment_index >= pane->count || pane->entries[segment_index].parent) {
+        return false;
+    }
+    *text = pane->entries[segment_index].name;
+    *text_len = strlen(*text);
+    return true;
+}
+
+static void ftp_app_begin_search(void)
+{
+    solar_os_text_search_begin_input(&ftp_app.search);
+    ftp_app.input_mode = FTP_APP_INPUT_SEARCH;
+    ftp_app_set_message("");
+}
+
+static void ftp_app_submit_search(void)
+{
+    ftp_app.input_mode = FTP_APP_INPUT_NONE;
+    if (!solar_os_text_search_submit_input(&ftp_app.search)) {
+        ftp_app_set_message("");
+        return;
+    }
+
+    ftp_app_pane_t *pane = &ftp_app.panes[ftp_app.active];
+    solar_os_text_search_match_t match;
+    if (!solar_os_text_search_find_segments(pane->count,
+                                            ftp_app_search_segment,
+                                            pane,
+                                            ftp_app.search.query,
+                                            pane->cursor,
+                                            SIZE_MAX,
+                                            true,
+                                            SOLAR_OS_TEXT_SEARCH_FORWARD,
+                                            &match)) {
+        char message[FTP_APP_MESSAGE_MAX];
+        snprintf(message, sizeof(message), "not found: %s", ftp_app.search.query);
+        ftp_app_set_message(message);
+        return;
+    }
+
+    ftp_app.search.match = match;
+    ftp_app.search.match_valid = true;
+    pane->cursor = match.segment_index;
+    ftp_app_set_message(match.wrapped ? "search wrapped" : "");
+}
+
 static bool ftp_app_input_event(uint8_t ch)
 {
     if (ftp_app.input_mode == FTP_APP_INPUT_CONNECT) {
@@ -1736,6 +1877,29 @@ static bool ftp_app_input_event(uint8_t ch)
         }
         return true;
     }
+    if (ftp_app.input_mode == FTP_APP_INPUT_SEARCH) {
+        switch (ch) {
+        case SOLAR_OS_KEY_ESCAPE:
+            solar_os_text_search_cancel_input(&ftp_app.search);
+            ftp_app.input_mode = FTP_APP_INPUT_NONE;
+            ftp_app_set_message("");
+            break;
+        case '\r':
+        case '\n':
+            ftp_app_submit_search();
+            break;
+        case '\b':
+        case 0x7f:
+            (void)solar_os_text_search_input_backspace(&ftp_app.search);
+            break;
+        default:
+            if (isprint(ch) || ch >= 0xa0) {
+                (void)solar_os_text_search_input_append(&ftp_app.search, (char)ch);
+            }
+            break;
+        }
+        return true;
+    }
     if (ftp_app.input_mode == FTP_APP_INPUT_DELETE) {
         if (ch == 'y' || ch == 'Y') {
             ftp_app_delete();
@@ -1773,10 +1937,32 @@ static bool ftp_app_event(solar_os_context_t *ctx, const solar_os_event_t *event
         ftp_app_poll(ctx);
         return true;
     }
-    if (event->type != SOLAR_OS_EVENT_CHAR) {
+    solar_os_file_shortcut_t shortcut = SOLAR_OS_FILE_SHORTCUT_NONE;
+    uint8_t ch = 0U;
+    if (event->type == SOLAR_OS_EVENT_CHAR) {
+        ch = (uint8_t)event->data.ch;
+    } else if (event->type == SOLAR_OS_EVENT_KEY) {
+        shortcut = solar_os_file_shortcut_from_key_event(&event->data.key);
+        if (event->data.key.action == SOLAR_OS_INPUT_KEY_RELEASE) {
+            return true;
+        }
+        if (shortcut == SOLAR_OS_FILE_SHORTCUT_FULLSCREEN) {
+            (void)solar_os_tui_screen_key(&ftp_app.tui,
+                                          SOLAR_OS_KEY_ALT_PREFIX);
+            if (solar_os_tui_screen_key(&ftp_app.tui,
+                                        SOLAR_OS_KEY_ENTER) ==
+                SOLAR_OS_TUI_SCREEN_KEY_TOGGLED) {
+                ftp_app_render();
+            }
+            return true;
+        }
+        ch = event->data.key.key;
+        if (ch == 0U && shortcut == SOLAR_OS_FILE_SHORTCUT_SEARCH) {
+            ch = 's';
+        }
+    } else {
         return true;
     }
-    const uint8_t ch = (uint8_t)event->data.ch;
     if (ftp_app.busy) {
         if (ch == SOLAR_OS_KEY_APP_EXIT || ch == SOLAR_OS_KEY_F10) {
             solar_os_context_finish(ctx, 0, NULL);
@@ -1786,6 +1972,23 @@ static bool ftp_app_event(solar_os_context_t *ctx, const solar_os_event_t *event
     if (ftp_app_input_event(ch)) {
         ftp_app_render();
         return true;
+    }
+    if (shortcut == SOLAR_OS_FILE_SHORTCUT_SEARCH) {
+        ftp_app_begin_search();
+        ftp_app_render();
+        return true;
+    }
+    if (ch == SOLAR_OS_KEY_ALT_PREFIX) {
+        ftp_app.alt_prefix_pending = true;
+        return true;
+    }
+    if (ftp_app.alt_prefix_pending) {
+        ftp_app.alt_prefix_pending = false;
+        if (ch == 's' || ch == 'S') {
+            ftp_app_begin_search();
+            ftp_app_render();
+            return true;
+        }
     }
     ftp_app_pane_t *pane = &ftp_app.panes[ftp_app.active];
     switch (ch) {
@@ -1940,7 +2143,7 @@ const solar_os_app_t solar_os_ftp_app = {
     .name = FTP_APP_COMMAND,
     .summary = FTP_APP_SUMMARY,
     .app_class = SOLAR_OS_APP_CLASS_TUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_KEY_EVENTS,
     .start = ftp_app_start,
     .resume = ftp_app_resume,
     .stop = ftp_app_stop,

@@ -1009,6 +1009,11 @@ static void flash_app_tree_left(flash_app_state_t *state) {
   if (!flash_app_visible_node_at(state, state->cursor, &node_index))
     return;
   flash_app_node_t *node = &state->nodes[node_index];
+  if (node->kind == FLASH_APP_NODE_ARTIFACT && node->parent != SIZE_MAX) {
+    state->nodes[node->parent].expanded = false;
+    state->cursor = flash_app_visible_index_of(state, node->parent);
+    return;
+  }
   if (node->kind != FLASH_APP_NODE_ARTIFACT && node->expanded) {
     node->expanded = false;
     return;

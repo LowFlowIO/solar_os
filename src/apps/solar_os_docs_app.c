@@ -507,6 +507,7 @@ static bool docs_app_event(solar_os_context_t *ctx,
         if (selected && node.kind == DOCS_NODE_SECTION) {
             docs_toggle_section(&node, false);
         } else if (selected) {
+            docs_set_section_collapsed(node.section.index, true);
             docs_app.cursor =
                 docs_section_visible_index(node.section.index);
         }
