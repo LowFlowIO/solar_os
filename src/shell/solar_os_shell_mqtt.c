@@ -13,7 +13,7 @@
 #include "esp_err.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
-#include "solar_os_ble_keyboard.h"
+#include "solar_os_input.h"
 #include "solar_os_keys.h"
 #include "solar_os_mqtt.h"
 #include "solar_os_shell_common.h"
@@ -66,12 +66,12 @@ static bool mqtt_parse_retain(const char *text, bool *retain)
     return false;
 }
 
-static bool mqtt_read_stop_key(void)
+static bool mqtt_read_stop_key(solar_os_shell_io_t *term)
 {
     char chars[8];
     size_t count;
 
-    while ((count = solar_os_ble_keyboard_read_chars(chars, sizeof(chars))) > 0) {
+    while ((count = solar_os_input_read_chars(chars, sizeof(chars))) > 0) {
         for (size_t i = 0; i < count; i++) {
             if ((uint8_t)chars[i] == SOLAR_OS_KEY_APP_EXIT ||
                 chars[i] == 'q') {
@@ -79,6 +79,32 @@ static bool mqtt_read_stop_key(void)
             }
         }
     }
+
+    if (term == NULL ||
+        solar_os_shell_io_kind(term) != SOLAR_OS_SHELL_IO_KIND_PORT ||
+        !solar_os_port_handle_valid(&term->port)) {
+        return false;
+    }
+
+    uint8_t port_chars[8];
+    do {
+        count = 0;
+        const esp_err_t err = solar_os_port_read(&term->port,
+                                                 port_chars,
+                                                 sizeof(port_chars),
+                                                 0,
+                                                 &count);
+        if (err != ESP_OK) {
+            return false;
+        }
+        for (size_t i = 0; i < count; i++) {
+            if (port_chars[i] == SOLAR_OS_KEY_APP_EXIT ||
+                port_chars[i] == 0x1dU ||
+                port_chars[i] == 'q') {
+                return true;
+            }
+        }
+    } while (count > 0);
 
     return false;
 }
@@ -282,7 +308,7 @@ static void mqtt_cmd_subscribe(solar_os_shell_io_t *term, int argc, char **argv)
 
     bool stopped = false;
     while (!stopped) {
-        if (mqtt_read_stop_key()) {
+        if (mqtt_read_stop_key(term)) {
             stopped = true;
             break;
         }

@@ -6,7 +6,6 @@ description = "Custom SolarOS flavor created for Rover."
 hardware_shell = true
 filesystem = true
 wifi = true
-bluetooth = true
 sd_storage = true
 audio_support = true
 control_bindings = true

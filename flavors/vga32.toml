@@ -6,7 +6,6 @@ description = "Custom flavor for LilyGo VGA32"
 hardware_shell = true
 filesystem = true
 wifi = true
-bluetooth = true
 sd_storage = true
 audio_support = true
 signal_processing = true

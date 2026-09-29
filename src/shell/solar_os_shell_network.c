@@ -21,8 +21,8 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lwip/inet.h"
-#include "solar_os_ble_keyboard.h"
 #include "solar_os_config.h"
+#include "solar_os_input.h"
 #include "solar_os_keys.h"
 #if SOLAR_OS_PACKAGE_SERVICE_NET
 #include "solar_os_net.h"
@@ -733,7 +733,7 @@ static bool shell_read_stop_key(void *user, bool allow_ping_keys)
     char chars[8];
     size_t count;
 
-    while ((count = solar_os_ble_keyboard_read_chars(chars, sizeof(chars))) > 0) {
+    while ((count = solar_os_input_read_chars(chars, sizeof(chars))) > 0) {
         for (size_t i = 0; i < count; i++) {
             const uint8_t ch = (uint8_t)chars[i];
             if (shell_stop_key_matches(ch, false, allow_ping_keys)) {

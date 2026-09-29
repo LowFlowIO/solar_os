@@ -462,7 +462,6 @@ class FlavorPackagesTest(unittest.TestCase):
             "http_client",
             "ftp",
             "audio_commands",
-            "speech",
             "reader",
             "writer",
             "notes",
@@ -473,6 +472,9 @@ class FlavorPackagesTest(unittest.TestCase):
             "pcm5102",
         ):
             self.assertTrue(groups[group], group)
+        self.assertFalse(groups["speech"])
+        self.assertFalse(packages["service_speech"])
+        self.assertFalse(packages["job_speechd"])
         for package in (
             "app_edit",
             "app_less",
@@ -489,7 +491,6 @@ class FlavorPackagesTest(unittest.TestCase):
             "app_python",
             "app_playground",
             "app_aplay",
-            "job_speechd",
             "app_view",
             "expansion_audio_pwm",
             "expansion_pcm5102",
@@ -549,7 +550,7 @@ class FlavorPackagesTest(unittest.TestCase):
             self.assertFalse(packages[package], package)
 
     def test_speech_survives_with_attachable_audio_output(self):
-        _, _, groups, packages = self.resolve("writerdeck")
+        _, _, groups, packages = self.resolve("full")
         for capabilities in ({"psram", "expansion_i2s"},
                              {"psram", "expansion_pwm"}):
             _, pruned = generate_flavor_config.apply_board_capability_pruning(
@@ -731,8 +732,14 @@ class FlavorPackagesTest(unittest.TestCase):
 
         self.assertEqual(rover_name, "rover")
         self.assertTrue(rover_groups["hardware_shell"])
+        self.assertFalse(rover_groups["bluetooth"])
         self.assertTrue(rover_groups["rfm69"])
         self.assertTrue(rover_groups["meshcore"])
+        for group in (
+            "mqtt", "slip", "ppp", "osc", "chat", "chat_gateway",
+            "gateway_sync", "espnow", "radio_link",
+        ):
+            self.assertTrue(rover_groups[group], group)
         self.assertFalse(rover_groups["ota"])
         self.assertTrue(rover_groups["logging"])
         self.assertTrue(rover_groups["bridge"])
@@ -760,9 +767,13 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertFalse(rover_packages["app_lua"])
 
     def test_vga32_keeps_its_public_flavor_name(self):
-        vga32_name, _, _, _ = self.resolve("vga32")
+        vga32_name, _, groups, packages = self.resolve("vga32")
 
         self.assertEqual(vga32_name, "vga32")
+        self.assertFalse(groups["bluetooth"])
+        self.assertFalse(packages["service_ble"])
+        self.assertTrue(groups["ps2_keyboard"])
+        self.assertTrue(packages["job_ps2_keyboard"])
 
     def test_existing_flavors_preserve_hardware_job_selection(self):
         for flavor in ("core", "full", "netrunner"):

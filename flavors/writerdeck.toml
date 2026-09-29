@@ -22,7 +22,6 @@ http_client = true
 ftp = true
 ntp = true
 audio_commands = true
-speech = true
 reader = true
 writer = true
 notes = true
