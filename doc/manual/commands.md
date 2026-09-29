@@ -259,6 +259,7 @@ job for periodic polling.
 | `mem` | `mem [policy]` | Print heap status; `policy` also shows allocation-class counters, guarded fallback limits, and the last tagged failure. |
 | `top` | `top` | Print a one-shot cumulative FreeRTOS task snapshot. Use `ltop` for live interval CPU, memory, and stack monitoring. |
 | `sleep` | `sleep` | Enter explicit light sleep. |
+| `deepsleep` | `deepsleep` | Turn off the ESP32 radios and enter deep sleep. KEY, an armed RTC or scheduled timer, or RESET starts a fresh boot. |
 | `suspend` | `suspend` | Turn off the primary display and temporarily use the `lowpower` profile while services and jobs continue. Press KEY to resume. |
 | `power` | `power [status]` | Show the selected and effective profiles, suspend state, sleep policy, and wake statistics. |
 | `power` | `power profile [performance\|balanced\|battery\|lowpower]` | Show or save the power profile. |
@@ -411,6 +412,14 @@ the selected profile, effective profile, and suspend state.
 sleep path, and `suspend` toggles the runtime suspend state. The default for a
 new or cleared NVS configuration is `suspend`; an existing saved value remains
 unchanged.
+
+`deepsleep` is a standalone command. It turns off the ESP32 radios and enters
+ESP32 deep sleep after configuring the same KEY, compatible RTC interrupt, and
+next scheduled timer wake sources used by explicit light sleep. KEY, an armed
+RTC or scheduled timer, and RESET start a normal fresh boot; running jobs,
+sessions, and RAM state are not restored. BLE and Wi-Fi are off and cannot wake
+the device. This is not a hardware power-off: the board remains powered, and a
+separate board power control must still be used to remove its supply.
 
 `rtc` is the low-level hardware interface. `rtc status` remains useful on
 boards without RTC hardware and reports `unavailable` there.

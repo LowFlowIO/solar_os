@@ -542,6 +542,7 @@ static const shell_command_t shell_builtin_commands[] = {
     {"echo", "print text", cmd_echo},
     {"wait", "pause the calling shell", cmd_wait},
     {"sleep", "enter light sleep", solar_os_shell_cmd_sleep},
+    {"deepsleep", "enter deep sleep and cold boot on wake", solar_os_shell_cmd_deepsleep},
     {"suspend", "keep services running with the display off", solar_os_shell_cmd_suspend},
     {"power", "power profile and sleep policy", solar_os_shell_cmd_power},
     {"rtc", "real-time clock hardware", solar_os_shell_cmd_rtc},

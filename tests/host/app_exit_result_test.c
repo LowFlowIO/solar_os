@@ -100,6 +100,9 @@ int main(void)
     assert(strcmp(message, "could not load") == 0);
 
     solar_os_context_set_app_class(&ctx, SOLAR_OS_APP_CLASS_COMMAND);
+    solar_os_context_request_deep_sleep(&ctx);
+    assert(solar_os_context_take_deep_sleep_request(&ctx));
+    assert(!solar_os_context_take_deep_sleep_request(&ctx));
     solar_os_context_finish(&ctx, 0, NULL);
     assert(solar_os_context_take_exit_request(&ctx));
     assert(solar_os_context_take_terminal_preserve(&ctx));

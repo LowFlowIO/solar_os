@@ -703,6 +703,36 @@ class RuntimeBoundaryTest(unittest.TestCase):
         self.assertIn("note_wake_activity();", report)
         self.assertIn("note_wake_activity();", opened)
 
+    def test_deepsleep_is_a_cold_boot_power_command(self):
+        main = (ROOT / "src/main.c").read_text(encoding="utf-8")
+        shell = (ROOT / "src/apps/solar_os_shell.c").read_text(
+            encoding="utf-8"
+        )
+        system = (ROOT / "src/shell/solar_os_shell_system.c").read_text(
+            encoding="utf-8"
+        )
+        manual = (ROOT / "doc/manual/commands.md").read_text(encoding="utf-8")
+
+        sleep_path = main.split("static void enter_sleep", 1)[1].split(
+            "static void enter_light_sleep", 1
+        )[0]
+        command = system.split("void solar_os_shell_cmd_deepsleep", 1)[1].split(
+            "void solar_os_shell_cmd_suspend", 1
+        )[0]
+
+        self.assertIn(
+            '{"deepsleep", "enter deep sleep and cold boot on wake",', shell
+        )
+        self.assertIn("solar_os_context_request_deep_sleep(ctx);", command)
+        self.assertIn("esp_sleep_enable_ext1_wakeup_io", sleep_path)
+        self.assertIn("esp_sleep_enable_timer_wakeup", sleep_path)
+        self.assertIn("solar_os_ble_keyboard_prepare_sleep", sleep_path)
+        self.assertIn("solar_os_wifi_prepare_sleep", sleep_path)
+        self.assertIn("solar_os_display_suspend_primary", sleep_path)
+        self.assertIn("esp_deep_sleep_start();", sleep_path)
+        self.assertIn("fresh boot", manual)
+        self.assertIn("not a hardware power-off", manual)
+
     def test_audio_stream_direction_and_shell_capabilities(self):
         audio = (ROOT / "src/services/solar_os_audio.c").read_text(
             encoding="utf-8"
