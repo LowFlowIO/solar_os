@@ -2,6 +2,13 @@
 
 ## 4.x
 
+- **4.15.4** — 2026-09-29 — Updated CL-32 support for its current core
+  firmware battery register and serialized ST7305 display transactions. ADC
+  battery monitoring now uses a smoothed voltage trend with hysteresis to avoid
+  erratic charger detection. Files, FTP, and SFTP add `Alt+S` and `AltGr+S`
+  entry search; FTP and SFTP preserve the selected directory when returning to
+  a parent. Tree views in Docs, Flash, and Playground now collapse the current
+  branch with Left even when a leaf is selected.
 - **4.15.3** — 2026-09-29 — Added the built-in `meshcore-ble` job for an
   external MeshCore companion. It pairs over BLE, synchronizes contacts,
   channels, and queued messages, and carries direct and group Chat traffic
