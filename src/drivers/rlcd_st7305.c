@@ -680,12 +680,15 @@ static esp_err_t rlcd_cmd_data(rlcd_st7305_t *display, uint8_t command, const ui
         return err;
     }
 
-    err = gpio_set_level(display->config.cs_pin, 0);
+    err = spi_device_acquire_bus(display->spi, portMAX_DELAY);
     if (err != ESP_OK) {
         return err;
     }
 
-    err = rlcd_write_bytes(display, &command, sizeof(command));
+    err = gpio_set_level(display->config.cs_pin, 0);
+    if (err == ESP_OK) {
+        err = rlcd_write_bytes(display, &command, sizeof(command));
+    }
     if (err == ESP_OK && length > 0) {
         err = gpio_set_level(display->config.dc_pin, 1);
         if (err == ESP_OK) {
@@ -694,6 +697,7 @@ static esp_err_t rlcd_cmd_data(rlcd_st7305_t *display, uint8_t command, const ui
     }
 
     const esp_err_t cs_err = gpio_set_level(display->config.cs_pin, 1);
+    spi_device_release_bus(display->spi);
     return err == ESP_OK ? cs_err : err;
 }
 
@@ -710,6 +714,11 @@ static esp_err_t rlcd_begin_ram_write(rlcd_st7305_t *display)
         return err;
     }
 
+    err = spi_device_acquire_bus(display->spi, portMAX_DELAY);
+    if (err != ESP_OK) {
+        return err;
+    }
+
     err = gpio_set_level(display->config.cs_pin, 0);
     if (err == ESP_OK) {
         err = rlcd_write_bytes(display, &command, sizeof(command));
@@ -719,13 +728,16 @@ static esp_err_t rlcd_begin_ram_write(rlcd_st7305_t *display)
     }
     if (err != ESP_OK) {
         (void)gpio_set_level(display->config.cs_pin, 1);
+        spi_device_release_bus(display->spi);
     }
     return err;
 }
 
 static esp_err_t rlcd_end_ram_write(rlcd_st7305_t *display)
 {
-    return gpio_set_level(display->config.cs_pin, 1);
+    const esp_err_t err = gpio_set_level(display->config.cs_pin, 1);
+    spi_device_release_bus(display->spi);
+    return err;
 }
 
 static void rlcd_invalidate_shadow(rlcd_st7305_t *display)
@@ -1479,8 +1491,10 @@ esp_err_t rlcd_st7305_present_mono_xbm(rlcd_st7305_t *display,
         !rlcd_checked_cmd_data(display, 0x2B, row_bounds, sizeof(row_bounds))) {
         ret = display->last_error;
     }
+    bool ram_write_active = false;
     if (ret == ESP_OK) {
         ret = rlcd_begin_ram_write(display);
+        ram_write_active = ret == ESP_OK;
     }
 
     uint8_t rows[display->controller_row_bytes * RLCD_CONTROLLER_ROWS_PER_TILE];
@@ -1507,13 +1521,13 @@ esp_err_t rlcd_st7305_present_mono_xbm(rlcd_st7305_t *display,
         }
     }
 
-    if (ret == ESP_OK) {
-        ret = rlcd_end_ram_write(display);
-        if (ret != ESP_OK) {
-            rlcd_invalidate_shadow(display);
+    if (ram_write_active) {
+        const esp_err_t end_err = rlcd_end_ram_write(display);
+        if (ret == ESP_OK) {
+            ret = end_err;
         }
-    } else {
-        (void)rlcd_end_ram_write(display);
+    }
+    if (ret != ESP_OK) {
         rlcd_invalidate_shadow(display);
     }
 
