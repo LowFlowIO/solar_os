@@ -198,6 +198,32 @@ static size_t playground_visible_count(void)
     return visible;
 }
 
+static size_t playground_category_visible_index(size_t wanted)
+{
+    size_t visible = 0U;
+    const size_t category_count = solar_os_playground_category_count();
+    for (size_t category_index = 0U;
+         category_index < category_count;
+         category_index++) {
+        solar_os_playground_category_t category;
+        if (!solar_os_playground_get_category(category_index, &category)) {
+            continue;
+        }
+        const size_t app_count = playground_category_app_count(&category);
+        if (app_count == 0U) {
+            continue;
+        }
+        if (category_index == wanted) {
+            return visible;
+        }
+        visible++;
+        if (!playground_category_collapsed(category_index)) {
+            visible += app_count;
+        }
+    }
+    return 0U;
+}
+
 static bool playground_node_at(size_t visible_index,
                                playground_node_t *node)
 {
@@ -1245,6 +1271,10 @@ static bool playground_event(solar_os_context_t *ctx,
     case SOLAR_OS_KEY_LEFT:
         if (selected && node.kind == PLAYGROUND_NODE_CATEGORY) {
             playground_set_category_collapsed(node.category_index, true);
+        } else if (selected) {
+            playground_set_category_collapsed(node.category_index, true);
+            playground.cursor =
+                playground_category_visible_index(node.category_index);
         }
         break;
     case SOLAR_OS_KEY_RIGHT:
