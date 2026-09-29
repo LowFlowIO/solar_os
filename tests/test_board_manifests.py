@@ -307,6 +307,67 @@ bindings = { gpio = 7 }
         with self.assertRaisesRegex(ManifestError, "more than 8 bindings"):
             validate_board(too_many_bindings, self.drivers)
 
+    def test_waveshare_397_uses_ssd1677_portrait_profile(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "waveshare_esp32_s3_epaper_3_97.toml",
+            self.manifest_dir,
+        )
+        self.assertNotIn("battery", board["build"]["capabilities"])
+        self.assertNotIn("imu", board["build"]["capabilities"])
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_NATIVE_WIDTH"], "800")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_NATIVE_HEIGHT"], "480")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_WIDTH"], "480")
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_HEIGHT"], "800")
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_DISPLAY_U8G2_ROTATION"],
+            "U8G2_R3",
+        )
+
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(
+            set(devices),
+            {"display0", "rtc0", "environment0", "audio0", "storage0"},
+        )
+        self.assertEqual(devices["display0"]["driver"], "ssd1677")
+        self.assertEqual(
+            devices["display0"]["bindings"],
+            {
+                "spi": "spi0", "cs": 10, "dc": 9, "reset": 46,
+                "busy": 3, "rotation": 3, "power_i2c": "i2c0",
+                "power_addr": 0x34,
+            },
+        )
+        self.assertEqual(
+            devices["storage0"]["bindings"],
+            {"clk": 16, "cmd": 17, "d0": 15, "d1": 7, "d2": 8, "d3": 18},
+        )
+        self.assertEqual(
+            devices["audio0"]["bindings"],
+            {
+                "i2c": "i2c0", "i2s": 0, "mclk": 13, "bck": 14,
+                "ws": 47, "din": 48, "dout": 21, "pa": 39,
+            },
+        )
+
+        header = generate_header(board, self.drivers)
+        self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_CONTROLLER "SSD1677"', header)
+        self.assertIn('.driver = "ssd1677", .name = "display0"', header)
+        self.assertIn('.role = "rotation", .value = 3', header)
+        self.assertIn(
+            'SOLAR_OS_EXPANSION_BINDING_I2C_BUS, .role = "power", .target = "i2c0"',
+            header,
+        )
+        self.assertIn('.role = "power", .value = 52', header)
+        self.assertIn("expansion_ssd1677", required_packages(board, self.drivers))
+
+        hardware = json.loads(
+            (ROOT / "boards/waveshare_esp32_s3_epaper_3_97.json").read_text(
+                encoding="utf-8"
+            )
+        )
+        self.assertEqual(hardware["upload"]["flash_size"], "16MB")
+        self.assertEqual(hardware["build"]["psram_type"], "opi")
+
     def test_t_lora_exposes_a_real_spi_cs_and_claims_keyboard_pwm(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "t_lora_pager.toml",

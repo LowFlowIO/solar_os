@@ -4,7 +4,7 @@ title = "Boards and hardware targets"
 section = "build"
 summary = "Supported boards, capabilities, porting structure, and validation"
 aliases = ["board", "targets"]
-keywords = "boards targets custom board profile fixed expansion platformio waveshare devkit odroid elecrow freenove wrover ttgo vga32 composite vga capabilities porting validation"
+keywords = "boards targets custom board profile fixed expansion platformio waveshare epaper e-paper ssd1677 devkit odroid elecrow freenove wrover ttgo vga32 composite vga capabilities porting validation"
 packages_any = []
 +++
 # Defining SolarOS Boards
@@ -206,6 +206,7 @@ The current tree includes these board targets:
 | `qdtech_es3n28p` | `qdtech_es3n28p` | [QDtech ES3N28P 2.8-inch ESP32-S3 Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Non-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
 | `elecrow_crowpanel_esp32_s3_4_2_epaper` | `elecrow_crowpanel_esp32_s3_4_2_epaper` | Elecrow CrowPanel ESP32-S3 4.2-inch E-paper | ESP32-S3-WROOM-1-N8R8 target with a 400x300 SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
 | `elecrow_crowpanel_esp32_s3_5_79_epaper` | `elecrow_crowpanel_esp32_s3_5_79_epaper` | [Elecrow CrowPanel ESP32-S3 5.79-inch E-paper](https://www.elecrow.com/wiki/CrowPanel_ESP32_E-paper_5.79-inch_HMI_Display.html) | ESP32-S3-WROOM-1-N8R8 target with a 792x272 dual-SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
+| `waveshare_esp32_s3_epaper_3_97` | `waveshare_esp32_s3_epaper_3_97` | [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97) | ESP32-S3-WROOM-1-N16R8 target with a portrait 480x800 SSD1677 e-paper display, four-bit SDMMC, native USB CDC, UART, PCF85063 RTC, SHTC3 temperature/humidity sensor, ES8311 speaker/microphone audio, rotary navigation, Wi-Fi, BLE, and expansion I2C/UART. |
 | `cl_32` | `cl_32` | CL-32 | ESP32-S3-WROOM-1-N16R8 target with a 384x168 ST7305 reflective LCD, an ATmega808-backed keyboard and battery monitor, native USB CDC, UART, microSD over SDSPI, PCF85063 RTC, onboard PWM buzzer, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S. |
 | `odroid_go` | `odroid_go` | Hardkernel ODROID-GO | Classic ESP32 target with ILI9341 display, SD over VSPI/SDSPI, battery ADC, ESP32 DAC speaker, buttons, ADC D-pad, status LED, display brightness, expansion SPI/UART/GPIO/PWM, and runtime GPIO4/GPIO15. |
 | `freenove_esp32_wrover_v3` | `freenove_esp32_wrover_v3` | Freenove ESP32-WROVER v3.0 (FNK0060) | Classic ESP32 target with 8 MB PSRAM, CH340/UART console, one-bit SDMMC, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, and a 384x288 monochrome PAL composite display on GPIO25. |
@@ -903,6 +904,54 @@ actual serial-device path reported by the host when it differs.
 
 The same 8 MB OTA and serial partition layouts documented for the 4.2-inch
 CrowPanel apply to this board.
+
+## Waveshare ESP32-S3-ePaper-3.97
+
+The built-in `waveshare_esp32_s3_epaper_3_97` target covers Waveshare's 3.97-inch
+board with an ESP32-S3-WROOM-1-N16R8 module. SolarOS presents the native
+800x480 monochrome SSD1677 panel as a 480x800 portrait display. The fixed
+devices include four-bit SDMMC storage, a PCF85063 RTC, an SHTC3 temperature and
+humidity sensor, and ES8311 duplex speaker/microphone audio. Native USB provides
+the primary CDC console; GPIO43/GPIO44 remain available as `uart0` on the
+breakout pads.
+
+The SSD1677 runs at the vendor reference clock of 20 MHz. Automatic refresh
+starts with a full cleanup waveform, skips unchanged frames, uses byte-aligned
+dirty partial windows, and performs another full cleanup after 19 partial
+updates. The display attachment sets the AXP2101 ALDO3 rail to 3.3 V, enables
+it before controller initialization, and disables it when the panel sleeps.
+This profile follows Waveshare's current AXP2101 reference source and schematic;
+a board revision fitted with a different power-management IC needs a separate
+profile or power callback before it is safe to use.
+Override the refresh policy when testing or clearing ghosting:
+
+```text
+display mode display0 refresh=auto
+display mode display0 refresh=partial
+display mode display0 refresh=full
+```
+
+The onboard controls are mapped as follows:
+
+- GPIO0 BOOT: foreground app exit.
+- GPIO4 rotary up: Up.
+- GPIO6 rotary down: Down.
+- GPIO5 rotary press: Enter.
+
+The exposed SDA/SCL pads share the fixed `i2c0` bus with the onboard RTC,
+environment sensor, audio codec, PMIC, and IMU. The RX/TX pads expose `uart0`.
+SolarOS does not currently expose the board's QMI8658 IMU or its PMIC as a
+battery/charger service, so this target deliberately does not advertise IMU,
+battery, or charger capabilities; only the PMIC's required e-paper power rail
+is managed.
+The display and the peripherals listed above still require physical-target
+validation; a successful firmware build only validates the software profile.
+
+Build the target with:
+
+```sh
+pio run -e waveshare_esp32_s3_epaper_3_97
+```
 
 ## Headless Boards
 

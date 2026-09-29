@@ -409,6 +409,14 @@ class FlavorPackagesTest(unittest.TestCase):
             ("gfx", "expansion_gpio"),
         )
         self.assertEqual(
+            self.catalog.package_defs["expansion_ssd1677"].depends,
+            ("service_expansion", "service_spi"),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["expansion_ssd1677"].capabilities,
+            ("gfx",),
+        )
+        self.assertEqual(
             self.catalog.package_defs["service_espnow"].depends,
             ("service_wifi",),
         )

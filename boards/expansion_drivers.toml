@@ -388,6 +388,85 @@ role = "panel"
 min = 0
 max = 4
 
+[drivers.ssd1677]
+summary = "SSD1677 800x480 e-paper"
+package = "expansion_ssd1677"
+targets = ["esp32s3"]
+capabilities = ["gfx"]
+board_capabilities = ["display", "gfx"]
+board_driver = "display_ssd1677"
+board_defines = { SOLAR_OS_BOARD_DISPLAY_CONTROLLER = '"SSD1677"', SOLAR_OS_BOARD_DISPLAY_WIDTH = "800", SOLAR_OS_BOARD_DISPLAY_HEIGHT = "480" }
+early = true
+default_name = "display0"
+
+[[drivers.ssd1677.bindings]]
+key = "spi"
+kind = "spi_bus"
+hint = "bus"
+required = true
+
+[[drivers.ssd1677.bindings]]
+key = "cs"
+kind = "spi_cs"
+hint = "gpio"
+required = true
+
+[[drivers.ssd1677.bindings]]
+key = "dc"
+kind = "gpio"
+hint = "gpio"
+role = "dc"
+required = true
+
+[[drivers.ssd1677.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+role = "reset"
+required = true
+
+[[drivers.ssd1677.bindings]]
+key = "busy"
+kind = "gpio"
+hint = "gpio"
+role = "busy"
+required = true
+
+[[drivers.ssd1677.bindings]]
+key = "power"
+kind = "gpio"
+hint = "gpio"
+role = "power"
+
+[[drivers.ssd1677.bindings]]
+key = "power_i2c"
+kind = "i2c_bus"
+hint = "bus"
+role = "power"
+
+[[drivers.ssd1677.bindings]]
+key = "power_addr"
+kind = "i2c_address"
+hint = "0x34"
+role = "power"
+values = [0x34]
+
+[[drivers.ssd1677.bindings]]
+key = "clock"
+kind = "parameter"
+hint = "100..20000 kHz"
+role = "clock"
+min = 100
+max = 20000
+
+[[drivers.ssd1677.bindings]]
+key = "rotation"
+kind = "parameter"
+hint = "0..3"
+role = "rotation"
+min = 0
+max = 3
+
 [drivers.sdspi]
 summary = "SPI microSD"
 package = "expansion_sdspi"
