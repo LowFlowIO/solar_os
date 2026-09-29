@@ -135,6 +135,7 @@ static bool key_ignore_until_released;
 static solar_os_input_source_t key_input_source;
 #endif
 static bool deferred_sleep_pending;
+static bool deferred_sleep_deep;
 static char deferred_sleep_reason[SLEEP_REASON_MAX];
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
 static uint32_t suspend_ble_wake_generation;
@@ -702,10 +703,13 @@ static bool wait_key_rtc_released_stable(uint32_t stable_ms, uint32_t timeout_ms
     return false;
 }
 
-static void enter_light_sleep(const char *reason)
+static void enter_sleep(const char *reason, bool deep_sleep)
 {
     if (!board_has(SOLAR_OS_BOARD_CAP_KEY)) {
-        SOLAR_OS_LOGW(TAG, "%s: light sleep needs a KEY wake source", reason);
+        SOLAR_OS_LOGW(TAG,
+                      "%s: %s needs a KEY wake source",
+                      reason,
+                      deep_sleep ? "deep sleep" : "light sleep");
         return;
     }
 
@@ -722,7 +726,10 @@ static void enter_light_sleep(const char *reason)
     draw_terminal_if_needed();
     key_irq_pending = false;
 
-    SOLAR_OS_LOGI(TAG, "%s: entering light sleep", reason);
+    SOLAR_OS_LOGI(TAG,
+                  "%s: preparing %s",
+                  reason,
+                  deep_sleep ? "deep sleep" : "light sleep");
 
     esp_err_t err = solar_os_power_begin_explicit_sleep();
     if (err != ESP_OK) {
@@ -821,6 +828,7 @@ static void enter_light_sleep(const char *reason)
         if (ble_sleep_err != ESP_OK) {
             if (ble_sleep_err == ESP_ERR_NOT_FINISHED) {
                 deferred_sleep_pending = true;
+                deferred_sleep_deep = deep_sleep;
                 strlcpy(deferred_sleep_reason,
                         reason != NULL ? reason : "deferred sleep",
                         sizeof(deferred_sleep_reason));
@@ -873,6 +881,18 @@ static void enter_light_sleep(const char *reason)
 #endif
 
     solar_os_power_note_sleep_enter(millis_u32());
+    if (deep_sleep) {
+        const esp_err_t display_err = solar_os_display_suspend_primary();
+        if (display_err != ESP_OK && display_err != ESP_ERR_NOT_SUPPORTED) {
+            SOLAR_OS_LOGW(TAG,
+                          "display deep-sleep prepare failed: %s",
+                          esp_err_to_name(display_err));
+        }
+        SOLAR_OS_LOGI(TAG, "%s: entering deep sleep", reason);
+        (void)fflush(NULL);
+        esp_deep_sleep_start();
+    }
+
     err = esp_light_sleep_start();
 
     const esp_sleep_wakeup_cause_t wake_cause = esp_sleep_get_wakeup_cause();
@@ -946,6 +966,16 @@ static void enter_light_sleep(const char *reason)
     resume_display_after_sleep(now_ms);
 }
 
+static void enter_light_sleep(const char *reason)
+{
+    enter_sleep(reason, false);
+}
+
+static void enter_deep_sleep(const char *reason)
+{
+    enter_sleep(reason, true);
+}
+
 static void maybe_enter_deferred_sleep(void)
 {
     if (!deferred_sleep_pending) {
@@ -960,11 +990,13 @@ static void maybe_enter_deferred_sleep(void)
 #endif
 
     char reason[SLEEP_REASON_MAX];
+    const bool deep_sleep = deferred_sleep_deep;
     strlcpy(reason, deferred_sleep_reason, sizeof(reason));
     deferred_sleep_pending = false;
+    deferred_sleep_deep = false;
     deferred_sleep_reason[0] = '\0';
     SOLAR_OS_LOGI(TAG, "%s: deferred sleep is ready", reason);
-    enter_light_sleep(reason);
+    enter_sleep(reason, deep_sleep);
 }
 
 static void handle_key_short_press(void)
@@ -1669,6 +1701,9 @@ static void process_app_requests(void)
 
     if (solar_os_context_take_sleep_request(&os_ctx)) {
         enter_light_sleep("shell sleep");
+    }
+    if (solar_os_context_take_deep_sleep_request(&os_ctx)) {
+        enter_deep_sleep("deepsleep command");
     }
     if (solar_os_context_take_suspend_request(&os_ctx)) {
         enter_suspend("shell suspend");

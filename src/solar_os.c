@@ -147,6 +147,7 @@ void solar_os_context_init(solar_os_context_t *ctx,
     ctx->exit_result_pending = false;
     ctx->exit_code = 0;
     ctx->sleep_requested = false;
+    ctx->deep_sleep_requested = false;
     ctx->suspend_requested = false;
     ctx->session_request = SOLAR_OS_SESSION_REQUEST_NONE;
     ctx->session_request_id = 0;
@@ -403,6 +404,7 @@ esp_err_t solar_os_context_request_launch_ex(solar_os_context_t *ctx,
     ctx->status_message_pending = false;
     ctx->status_message[0] = '\0';
     ctx->sleep_requested = false;
+    ctx->deep_sleep_requested = false;
     ctx->suspend_requested = false;
     ctx->graphics_active = false;
     return ESP_OK;
@@ -487,6 +489,23 @@ bool solar_os_context_take_sleep_request(solar_os_context_t *ctx)
     }
 
     ctx->sleep_requested = false;
+    return true;
+}
+
+void solar_os_context_request_deep_sleep(solar_os_context_t *ctx)
+{
+    if (ctx != NULL) {
+        ctx->deep_sleep_requested = true;
+    }
+}
+
+bool solar_os_context_take_deep_sleep_request(solar_os_context_t *ctx)
+{
+    if (ctx == NULL || !ctx->deep_sleep_requested) {
+        return false;
+    }
+
+    ctx->deep_sleep_requested = false;
     return true;
 }
 

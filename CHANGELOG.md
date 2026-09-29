@@ -2,6 +2,11 @@
 
 ## 4.x
 
+- **4.15.2** — 2026-09-29 — Added the standalone display-shell `deepsleep`
+  command. It stops the ESP32 radios, powers down the primary display, and
+  enters deep sleep with KEY, compatible RTC interrupt, scheduled timer, and
+  RESET wake paths. Wake starts a fresh boot rather than restoring RAM state;
+  this is ESP32 deep sleep, not hardware power-off.
 - **4.15.1** — 2026-09-29 — Suspended devices now resume their configured
   power profile and display when a remembered BLE keyboard reconnects or sends
   a new key press. Release-only keyboard reports do not wake the device.

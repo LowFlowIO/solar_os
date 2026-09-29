@@ -721,6 +721,29 @@ void solar_os_shell_cmd_sleep(solar_os_context_t *ctx, int argc, char **argv)
     solar_os_context_request_sleep(ctx);
 }
 
+void solar_os_shell_cmd_deepsleep(solar_os_context_t *ctx, int argc, char **argv)
+{
+    solar_os_shell_io_t *term = terminal(ctx);
+
+    (void)argv;
+
+    if (argc != 1) {
+        solar_os_shell_diag_unexpected(term, "deepsleep", argv[1], "deepsleep");
+        return;
+    }
+
+    if (solar_os_shell_io_kind(term) == SOLAR_OS_SHELL_IO_KIND_PORT) {
+        solar_os_shell_io_writeln(term,
+                                  "deepsleep is only available from the display shell");
+        return;
+    }
+
+    solar_os_shell_io_writeln(term,
+                              "entering deep sleep; press KEY or RESET to boot");
+    (void)solar_os_shell_io_flush(term);
+    solar_os_context_request_deep_sleep(ctx);
+}
+
 void solar_os_shell_cmd_suspend(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);

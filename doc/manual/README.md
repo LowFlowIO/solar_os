@@ -33,6 +33,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [cp command](commands.md) — Copy a file or matched set.
 - [daq command](commands.md) — Print DAQ usage.
 - [date command](commands.md) — Show or set the local date.
+- [deepsleep command](commands.md) — Turn off the ESP32 radios and enter deep sleep. KEY, an armed RTC or scheduled timer, or RESET starts a fresh boot.
 - [df command](commands.md) — Show free space on mounted storage volumes.
 - [disk command](commands.md) — Show persistent-storage status.
 - [display command](commands.md) — List drawable targets, join or split display layouts, draw a test pattern, or change driver-specific settings.
