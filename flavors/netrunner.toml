@@ -63,6 +63,7 @@ espnow = true
 pocsag = true
 radio_link = true
 meshcore = true
+meshcore_ble = true
 webradio = true
 rfm69 = true
 rfm95 = true

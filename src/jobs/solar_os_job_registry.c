@@ -55,6 +55,9 @@
 #if SOLAR_OS_PACKAGE_JOB_MESHCORE
 #include "solar_os_meshcore_job.h"
 #endif
+#if SOLAR_OS_PACKAGE_JOB_MESHCORE_BLE
+#include "solar_os_meshcore_ble_job.h"
+#endif
 #if SOLAR_OS_PACKAGE_JOB_NTP_SYNC
 #include "solar_os_ntp_sync_job.h"
 #endif
@@ -112,7 +115,7 @@ static const solar_os_job_registry_entry_t registered_jobs[] = {
     {"httpd", "static HTTP file server", &solar_os_httpd_job},
 #endif
 #if SOLAR_OS_PACKAGE_JOB_GESTURE_LISTENER
-    {"gesture-listener", "run gesture-to-command bindings", &solar_os_gesture_listener_job},
+    {"gestures", "run gesture-to-command bindings", &solar_os_gesture_listener_job},
 #endif
 #if SOLAR_OS_PACKAGE_JOB_FTPD
     {"ftpd", "FTP file server", &solar_os_ftpd_job},
@@ -137,6 +140,9 @@ static const solar_os_job_registry_entry_t registered_jobs[] = {
 #endif
 #if SOLAR_OS_PACKAGE_JOB_MESHCORE
     {"meshcore", "MeshCore secure radio messaging", &solar_os_meshcore_job},
+#endif
+#if SOLAR_OS_PACKAGE_JOB_MESHCORE_BLE
+    {"meshcore-ble", "MeshCore companion over BLE", &solar_os_meshcore_ble_job},
 #endif
 #if SOLAR_OS_PACKAGE_JOB_NTP_SYNC
     {"ntp-sync", "periodic RTC NTP sync", &solar_os_ntp_sync_job},

@@ -240,6 +240,18 @@ esp_err_t solar_os_ble_backend_write(uint32_t epoch, uint32_t request, uint16_t 
     return ESP_OK;
 }
 
+esp_err_t solar_os_ble_backend_pair(uint32_t epoch, uint32_t request, uint32_t passkey)
+{
+    solar_os_ble_backend_event_t event = {
+        .type = SOLAR_OS_BLE_BACKEND_PAIRED, .epoch = epoch, .request = request,
+        .conn_id = 7, .encrypted = true, .bonded = true,
+    };
+    assert(passkey <= 999999U);
+    record(event);
+    solar_os_ble_service_event(&event);
+    return ESP_OK;
+}
+
 esp_err_t solar_os_ble_backend_subscribe(uint32_t epoch, uint32_t request, uint16_t handle, uint8_t mode)
 {
     solar_os_ble_backend_event_t e = {.type=SOLAR_OS_BLE_BACKEND_SUBSCRIBED,
@@ -378,6 +390,10 @@ int main(void)
     solar_os_ble_session_info_t info;
     assert(solar_os_ble_session_get_info(ids[0], &info) == ESP_OK);
     assert(info.gatt.connected && info.gatt.mtu == 247 && info.gatt.conn_id == 7);
+    assert(solar_os_ble_session_pair(ids[0], 1000000U, 100) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_ble_session_pair(ids[0], 123456U, 100) == ESP_OK);
+    assert(solar_os_ble_session_get_info(ids[0], &info) == ESP_OK &&
+           info.gatt.encrypted && info.gatt.bonded);
     assert(info.gatt.service_count == SOLAR_OS_BLE_GATT_MAX_SERVICES);
     solar_os_ble_scan_result_t scan;
     size_t found = 123;
@@ -486,6 +502,7 @@ int main(void)
     /* The reserved compatibility client still works when app slots are released. */
     defer_read = false;
     assert(solar_os_ble_gatt_connect(peer, SOLAR_OS_BLE_ADDR_RANDOM, 100) == ESP_OK);
+    assert(solar_os_ble_gatt_pair(123456U, 100) == ESP_OK);
     assert(solar_os_ble_gatt_read(3, value, 2, &count, 100) == ESP_OK);
     assert(solar_os_ble_gatt_disconnect() == ESP_OK);
     retired();

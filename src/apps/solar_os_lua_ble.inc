@@ -279,7 +279,7 @@ static void solua_ble_server_value(lua_State *L, int index, solar_os_ble_server_
     size_t len;
     luaL_checktype(L, index, LUA_TSTRING);
     const char *value = luaL_checklstring(L, index, &len);
-    if (len > sizeof(r->value)) luaL_error(L, "BLE value exceeds 128 bytes");
+    if (len > sizeof(r->value)) luaL_error(L, "BLE value is too large");
     r->value_len = len; memcpy(r->value, value, len);
 }
 static int solua_ble_server_create(lua_State *L)

@@ -38,6 +38,42 @@ class NativeModulePackagesTest(unittest.TestCase):
             source = next((module / "main").glob("*.c")).read_text(encoding="utf-8")
             self.assertIn(symbol, source)
 
+    def test_job_host_exposes_versioned_ble_service_without_nimble_types(self):
+        job_header = (ROOT / "include" / "solar_os_native_job_abi.h").read_text(
+            encoding="utf-8"
+        )
+        ble_header = (ROOT / "include" / "solar_os_native_ble_abi.h").read_text(
+            encoding="utf-8"
+        )
+        native = (ROOT / "src" / "services" / "solar_os_native.c").read_text(
+            encoding="utf-8"
+        )
+
+        self.assertGreater(job_header.index("get_service"), job_header.index("register_job"))
+        self.assertIn('SOLAR_OS_NATIVE_BLE_CLIENT_SERVICE "ble.client"', ble_header)
+        self.assertIn("SOLAR_OS_NATIVE_BLE_VALUE_MAX 176U", ble_header)
+        self.assertNotIn("nimble", ble_header.lower())
+        self.assertNotIn("esp_err", ble_header)
+        for operation in (
+            "session_create",
+            "session_cancel",
+            "session_close",
+            "peer_connect",
+            "peer_disconnect",
+            "peer_pair",
+            "peer_services",
+            "peer_characteristics",
+            "peer_configure_queue",
+            "peer_subscribe",
+            "peer_poll",
+            "peer_read",
+            "peer_write",
+        ):
+            self.assertIn(f"(*{operation})", ble_header)
+        self.assertIn("#if SOLAR_OS_PACKAGE_SERVICE_BLE", native)
+        self.assertIn(".get_service = native_job_get_service", native)
+        self.assertIn("SOLAR_OS_MEMORY_TRANSIENT", native)
+
     def test_resident_slots_are_allocated_lazily_in_external_memory(self):
         native = (ROOT / "src/services/solar_os_native.c").read_text(
             encoding="utf-8"

@@ -13,7 +13,7 @@
 #define SOLAR_OS_BLE_GATT_UUID_MAX 37
 #define SOLAR_OS_BLE_GATT_MAX_SERVICES 24
 #define SOLAR_OS_BLE_GATT_MAX_CHARACTERISTICS 64
-#define SOLAR_OS_BLE_GATT_VALUE_MAX 128
+#define SOLAR_OS_BLE_GATT_VALUE_MAX 176
 #define SOLAR_OS_BLE_CONNECTION_INVALID UINT16_MAX
 #define SOLAR_OS_BLE_OWNER_MAX 32
 #define SOLAR_OS_BLE_SESSION_INVALID 0U
@@ -178,6 +178,8 @@ typedef struct {
 
 typedef struct {
     bool connected;
+    bool encrypted;
+    bool bonded;
     uint8_t bda[6];
     uint8_t addr_type;
     uint16_t conn_id;
@@ -239,6 +241,8 @@ esp_err_t solar_os_ble_session_get_info(solar_os_ble_session_t session,
                                       solar_os_ble_session_info_t *info);
 esp_err_t solar_os_ble_session_connect(solar_os_ble_session_t session,
     const uint8_t bda[6], uint8_t addr_type, uint32_t timeout_ms);
+esp_err_t solar_os_ble_session_pair(solar_os_ble_session_t session,
+    uint32_t passkey, uint32_t timeout_ms);
 esp_err_t solar_os_ble_session_services(solar_os_ble_session_t session,
     solar_os_ble_gatt_service_t *services, size_t max_services, size_t *count);
 esp_err_t solar_os_ble_session_characteristics(solar_os_ble_session_t session,
@@ -278,6 +282,11 @@ esp_err_t solar_os_ble_peer_subscribe(solar_os_ble_session_t session,
 esp_err_t solar_os_ble_peer_connect(solar_os_ble_session_t session,
     const uint8_t bda[6], uint8_t addr_type, uint32_t timeout_ms, solar_os_ble_peer_t *peer);
 esp_err_t solar_os_ble_peer_disconnect(solar_os_ble_session_t session, solar_os_ble_peer_t peer);
+/* Starts Secure Connections pairing for one connected peer and supplies the
+ * six-digit passkey when the peer displays it. Security state is peer-local;
+ * unrelated HID and GATT links keep their existing pairing behavior. */
+esp_err_t solar_os_ble_peer_pair(solar_os_ble_session_t session,
+    solar_os_ble_peer_t peer, uint32_t passkey, uint32_t timeout_ms);
 esp_err_t solar_os_ble_peer_get_info(solar_os_ble_session_t session, solar_os_ble_peer_t peer,
     solar_os_ble_session_info_t *info);
 esp_err_t solar_os_ble_peer_services(solar_os_ble_session_t session, solar_os_ble_peer_t peer,
@@ -307,6 +316,7 @@ void solar_os_ble_resume(void);
  * connection. Writes without response wait for local completion, not peer ACK.
  * Reconnect may return INVALID_STATE until backend retirement completes. */
 esp_err_t solar_os_ble_gatt_connect(const uint8_t bda[6], uint8_t addr_type, uint32_t timeout_ms);
+esp_err_t solar_os_ble_gatt_pair(uint32_t passkey, uint32_t timeout_ms);
 esp_err_t solar_os_ble_gatt_disconnect(void);
 void solar_os_ble_gatt_get_status(solar_os_ble_gatt_status_t *status);
 esp_err_t solar_os_ble_gatt_services(solar_os_ble_gatt_service_t *services,

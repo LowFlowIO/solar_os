@@ -19,6 +19,13 @@
 #define BLE_ERR_AUTH_FAIL 0x05
 #define BLE_GAP_REPEAT_PAIRING_RETRY 1
 #define BLE_GAP_REPEAT_PAIRING_IGNORE 2
+#define BLE_SM_IOACT_DISP 1
+#define BLE_SM_IOACT_INPUT 2
+#define BLE_HS_IO_DISPLAY_ONLY 0
+#define BLE_HS_IO_KEYBOARD_ONLY 2
+#define BLE_HS_IO_KEYBOARD_DISPLAY 4
+struct ble_hs_cfg_stub { uint8_t sm_io_cap; };
+extern struct ble_hs_cfg_stub ble_hs_cfg;
 #define BLE_GAP_SUBSCRIBE_REASON_WRITE 1
 #define BLE_GAP_SUBSCRIBE_REASON_TERM 2
 #define BLE_GAP_SUBSCRIBE_REASON_RESTORE 3
@@ -51,7 +58,9 @@ int os_mbuf_copydata(const struct os_mbuf *om, int offset, int len, void *out);
 struct ble_gatt_attr { uint16_t handle; struct os_mbuf *om; };
 struct ble_gap_sec_state { unsigned encrypted:1, authenticated:1, bonded:1, key_size:5, authorize:1; };
 struct ble_gap_conn_desc { struct ble_gap_sec_state sec_state; ble_addr_t peer_id_addr; uint8_t role; };
+struct ble_sm_io { uint8_t action; uint32_t passkey; uint8_t numcmp_accept; };
 int ble_gap_conn_find(uint16_t conn, struct ble_gap_conn_desc *desc);
+int ble_sm_inject_io(uint16_t conn, struct ble_sm_io *io);
 enum { BLE_GAP_EVENT_CONNECT, BLE_GAP_EVENT_DISCONNECT, BLE_GAP_EVENT_ENC_CHANGE, BLE_GAP_EVENT_NOTIFY_RX,
     BLE_GAP_EVENT_ADV_COMPLETE, BLE_GAP_EVENT_SUBSCRIBE, BLE_GAP_EVENT_NOTIFY_TX,
     BLE_GAP_EVENT_PASSKEY_ACTION, BLE_GAP_EVENT_REPEAT_PAIRING };

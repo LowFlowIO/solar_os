@@ -294,6 +294,10 @@ class FlavorPackagesTest(unittest.TestCase):
             ("job_meshcore",),
         )
         self.assertEqual(
+            self.catalog.group_defs["meshcore_ble"].members,
+            ("job_meshcore_ble",),
+        )
+        self.assertEqual(
             self.catalog.group_defs["gameboy"].members,
             ("app_gameboy",),
         )
@@ -515,6 +519,7 @@ class FlavorPackagesTest(unittest.TestCase):
             "pocsag",
             "radio_link",
             "meshcore",
+            "meshcore_ble",
             "rfm69",
             "rfm95",
             "sx1262",
@@ -537,6 +542,7 @@ class FlavorPackagesTest(unittest.TestCase):
             "job_pocsag",
             "job_radio_link",
             "job_meshcore",
+            "job_meshcore_ble",
             "app_lua",
             "app_com",
             "app_web",

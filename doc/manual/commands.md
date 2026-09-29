@@ -251,7 +251,7 @@ job for periodic polling.
 | `input` | `input calibrate <source> [set <min-x> <max-x> <min-y> <max-y> <width> <height>\|reset]` | Show, save, or reset coordinate calibration for an absolute-pointer source. |
 | `input` | `input emit <key\|chord>` | Emit a local key tap, such as `RIGHT`, `ALT+RIGHT`, `ENTER`, or one literal character, through the normal input-focus path. |
 | `gesture` | `gesture [status]` | List gesture-capable input sources, readiness, and the gesture kinds each source advertises. |
-| `gesture` | `gesture bind source=<name\|*> gesture=<name> [direction=<name\|*>] [cooldown=<ms>] -- <command> [args...]` | Configure a volatile gesture-to-command rule for the `gesture-listener` job. |
+| `gesture` | `gesture bind source=<name\|*> gesture=<name> [direction=<name\|*>] [cooldown=<ms>] -- <command> [args...]` | Configure a volatile gesture-to-command rule for the `gestures` job. |
 | `gesture` | `gesture bindings` | Show listener state and list volatile gesture bindings, trigger counts, queue drops, cooldowns, and commands. |
 | `gesture` | `gesture unbind <id\|all>` | Remove one volatile gesture binding or all of them. |
 | `status` | `status` | Print a compact system summary, including the last foreground-app exit code. |
@@ -667,8 +667,9 @@ job start bridge cdc0 vser0
 job start gpio-keys gpio17:UP gpio2:ENTER
 job start gpio-keys --config /flash/gpio-keys.conf
 job start graffiti
-job start gesture-listener
+job start gestures
 job start httpd /www
+job start meshcore-ble 68:ee:8f:69:5f:35 public 123456
 job start displayd [display-target]   # display0 by default, web0 when headless
 job start ntp-sync once
 job start batmon 60
@@ -833,6 +834,7 @@ xfer recv <port> <file> --zmodem [--append|--replace]
 | `ble` | `ble forget` | Erase the remembered keyboard, its BLE bond, and its cached GATT service database. |
 | `ble gatt` | `ble gatt status` | Show the generic GATT connection state and discovered-service count. |
 | `ble gatt` | `ble gatt connect <aa:bb:cc:dd:ee:ff> <public\|random\|rpa_public\|rpa_random>` | Connect to a BLE peripheral by address and address type. |
+| `ble gatt` | `ble gatt pair <six-digit-pin>` | Secure and bond the connected GATT peripheral with its six-digit PIN. |
 | `ble gatt` | `ble gatt disconnect` | Request disconnect of the shell's GATT session and cancel its pending operation. |
 | `ble gatt` | `ble gatt services` | List discovered services and their indexes and handle ranges. |
 | `ble gatt` | `ble gatt chars <service-index>` | List the characteristics discovered for one service. |
@@ -902,6 +904,7 @@ BLE GATT usage:
 ```text
 ble gatt status
 ble gatt connect <aa:bb:cc:dd:ee:ff> <public|random|rpa_public|rpa_random>
+ble gatt pair <six-digit-pin>
 ble gatt disconnect
 ble gatt services
 ble gatt chars <service-index>

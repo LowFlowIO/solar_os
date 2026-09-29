@@ -185,12 +185,13 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [espnow-link job](jobs.reference.md#espnow-link) — ESP-NOW adapter for the transport-independent SolarOS Link service.
 - [ftpd job](jobs.reference.md#ftpd) — Unencrypted FTP file server for one exported folder. The job supports one client at a time and passive IPv4 data connections.
 - [gateway-sync job](jobs.reference.md#gateway-sync) — Background synchronizer for the gateway messaging provider. Start and stop it explicitly, using the same lifecycle as email-sync:
-- [gesture-listener job](jobs.reference.md#gesture-listener) — Gesture-to-command listener. Rules are configured independently with `gesture bind`, while this job owns observation and dispatch:
+- [gestures job](jobs.reference.md#gestures) — Gesture-to-command listener. Rules are configured independently with `gesture bind`, while this job owns observation and dispatch:
 - [gpio-keys job](jobs.reference.md#gpio-keys) — Maps runtime-safe GPIO inputs to SolarOS keyboard presses. The job configures each pin as an input with its internal pull-up enabled, treats a low level as pressed, and applies the same 25 ms debounce used by fixed board buttons. Each debounced transition publishes a generic SolarOS key press or release. Held keys use the system repeat rate configured by setterm keyrate.
 - [graffiti job](jobs.reference.md#graffiti) — Full-screen Palm Graffiti handwriting input for boards with absolute touch and PSRAM. The job does not draw an overlay or change the active application.
 - [httpd job](jobs.reference.md#httpd) — Static HTTP file server for a folder on mounted storage.
 - [log job](jobs.reference.md#log) — Runtime SolarOS log follower. It mirrors log entries to a byte-stream port or appends them to a file.
 - [meshcore job](jobs.reference.md#meshcore) — Non-forwarding MeshCore companion provider for Contacts and Messages.
+- [meshcore-ble job](jobs.reference.md#meshcore-ble) — Connect a MeshCore companion device over BLE and expose its contacts, channels, and messages through the same Contacts, Chat, and Inbox services.
 - [midi job](jobs.reference.md#midi) — Bidirectional MIDI transport on an exclusive named MIDI bus. The bus selects an available UART controller internally; users supply only its MIDI name, TX and RX pins, and an optional baud rate.
 - [ntp-sync job](jobs.reference.md#ntp-sync) — Network time synchronization job. It updates the SolarOS wall clock from NTP and also updates the hardware RTC when the board provides one.
 - [osc job](jobs.reference.md#osc) — OSC 1.0 IPv4 UDP adapter for automatic incoming native-parameter writes and explicit named outbound stream, event-stream, or normalized-control bindings.

@@ -7,6 +7,9 @@
 #include "solar_os_ble_hid_report_map.h"
 static int allocation, fail_at;
 static uint32_t local_service, local_char;
+esp_err_t solar_os_ble_keyboard_client_acquire(uint32_t timeout_ms)
+{ (void)timeout_ms; return ESP_OK; }
+void solar_os_ble_keyboard_client_release(void) {}
 static void *server_test_calloc(size_t n, size_t size)
 { return ++allocation == fail_at ? NULL : calloc(n, size); }
 #define calloc server_test_calloc
@@ -147,7 +150,7 @@ int main(void)
     assert(execute(42,&r)==ESP_OK && r.event.type==SOLAR_OS_BLE_SERVER_WRITE && r.event.value_len==64);
     assert(r.event.value[1]==7 && server_characteristic(local_char,0)->value[1]==7);
     ctx.offset=1; assert(access_value(21,&ctx)==BLE_ATT_ERR_INVALID_OFFSET); ctx.offset=0;
-    om.next=NULL; om.len=129; assert(access_value(21,&ctx)==BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN);
+    om.next=NULL; om.len=177; assert(access_value(21,&ctx)==BLE_ATT_ERR_INVALID_ATTR_VALUE_LEN);
     struct os_mbuf read={0}; ctx=(struct ble_gatt_access_ctxt){.op=BLE_GATT_ACCESS_OP_READ_CHR,.om=&read,.offset=10};
     assert(access_value(21,&ctx)==0 && read.len==64 && read.data[1]==7); free(read.data);
     read=(struct os_mbuf){0}; ctx.offset=65;

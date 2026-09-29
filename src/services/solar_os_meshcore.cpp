@@ -1362,6 +1362,34 @@ private:
     bool acquired_ = false;
 };
 
+class ProviderStartClaim {
+public:
+    explicit ProviderStartClaim(const char *detail)
+        : error_(solar_os_messaging_provider_claim(
+              SOLAR_OS_MESSAGING_PROVIDER_MESHCORE, detail))
+    {
+    }
+
+    ~ProviderStartClaim()
+    {
+        if (error_ == ESP_OK && !committed_) {
+            (void)solar_os_messaging_provider_set_status(
+                SOLAR_OS_MESSAGING_PROVIDER_MESHCORE,
+                false,
+                false,
+                ESP_OK,
+                "start failed");
+        }
+    }
+
+    esp_err_t error() const { return error_; }
+    void commit() { committed_ = true; }
+
+private:
+    esp_err_t error_ = ESP_FAIL;
+    bool committed_ = false;
+};
+
 static esp_err_t nvs_public_get(bool *enabled)
 {
     if (enabled == nullptr) {
@@ -2068,6 +2096,10 @@ extern "C" esp_err_t solar_os_meshcore_start(const char *radio,
         !text_valid(owner, SOLAR_OS_RADIO_OWNER_MAX - 1U, false)) {
         return ESP_ERR_INVALID_ARG;
     }
+    ProviderStartClaim provider_claim("local radio starting");
+    if (provider_claim.error() != ESP_OK) {
+        return provider_claim.error();
+    }
     StoppedTransition transition;
     if (!transition.acquired()) {
         return ESP_ERR_INVALID_STATE;
@@ -2192,6 +2224,7 @@ extern "C" esp_err_t solar_os_meshcore_start(const char *radio,
         true,
         ESP_OK,
         "radio active");
+    provider_claim.commit();
     return ESP_OK;
 }
 

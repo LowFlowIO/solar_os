@@ -55,7 +55,7 @@ static const char * const battery_subcommands[] = {"status", "config", "capacity
 static const char * const ble_subcommands[] = {
     "status", "enable", "disable", "default", "keepalive", "scan", "pair", "forget", "gatt",
 };
-static const char * const ble_gatt_subcommands[] = {"status", "connect", "disconnect", "services", "chars", "read", "write", "write-nr"};
+static const char * const ble_gatt_subcommands[] = {"status", "connect", "pair", "disconnect", "services", "chars", "read", "write", "write-nr"};
 static const char * const audio_subcommands[] = {
     "status", "devices", "device", "default", "tone", "tone-async", "queue", "cancel", "level", "mic", "loopback", "off",
 };
@@ -974,12 +974,16 @@ static void ble_cmd_scan(solar_os_shell_io_t *term)
                                                      sizeof(results) / sizeof(results[0]),
                                                      &found);
     ble_set_scan_indicator(term, false);
-    if (err == ESP_ERR_NOT_FOUND || found == 0) {
-        solar_os_shell_io_writeln(term, "no BLE devices found");
+    if (err != ESP_OK) {
+        if (err == ESP_ERR_NOT_FOUND) {
+            solar_os_shell_io_writeln(term, "no BLE devices found");
+            return;
+        }
+        solar_os_shell_io_printf(term, "BLE scan failed: %s\n", solar_os_shell_error_text(err));
         return;
     }
-    if (err != ESP_OK) {
-        solar_os_shell_io_printf(term, "BLE scan failed: %s\n", solar_os_shell_error_text(err));
+    if (found == 0) {
+        solar_os_shell_io_writeln(term, "no BLE devices found");
         return;
     }
 
@@ -1013,6 +1017,7 @@ static void ble_gatt_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "usage:");
     solar_os_shell_io_writeln(term, "  ble gatt status");
     solar_os_shell_io_writeln(term, "  ble gatt connect <aa:bb:cc:dd:ee:ff> <public|random|rpa_public|rpa_random>");
+    solar_os_shell_io_writeln(term, "  ble gatt pair <six-digit-pin>");
     solar_os_shell_io_writeln(term, "  ble gatt disconnect");
     solar_os_shell_io_writeln(term, "  ble gatt services");
     solar_os_shell_io_writeln(term, "  ble gatt chars <service-index>");
@@ -1034,13 +1039,15 @@ static void ble_gatt_print_status(solar_os_shell_io_t *term)
     char bda[18];
     ble_format_bda(status.bda, bda, sizeof(bda));
     solar_os_shell_io_printf(term,
-                             "GATT: %s %s %s conn=%u mtu=%u services=%u\n",
+                             "GATT: %s %s %s conn=%u mtu=%u services=%u encrypted=%s bonded=%s\n",
                              status.status,
                              bda,
                              solar_os_ble_keyboard_addr_type_name(status.addr_type),
                              (unsigned)status.conn_id,
                              (unsigned)status.mtu,
-                             (unsigned)status.service_count);
+                             (unsigned)status.service_count,
+                             status.encrypted ? "yes" : "no",
+                             status.bonded ? "yes" : "no");
 }
 
 static void ble_gatt_cmd_connect(solar_os_shell_io_t *term, int argc, char **argv)
@@ -1119,6 +1126,51 @@ static void ble_gatt_cmd_services(solar_os_shell_io_t *term)
     }
     if (count > shown) {
         solar_os_shell_io_printf(term, "%u more services not shown\n", (unsigned)(count - shown));
+    }
+}
+
+static void ble_gatt_cmd_pair(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    if (argc != 4) {
+        if (argc < 4) {
+            solar_os_shell_diag_missing(term, "ble gatt pair", "<six-digit-pin>",
+                                        "ble gatt pair <six-digit-pin>");
+        } else {
+            solar_os_shell_diag_unexpected(term, "ble gatt pair", argv[4],
+                                           "ble gatt pair <six-digit-pin>");
+        }
+        return;
+    }
+
+    uint32_t passkey = 0;
+    if (strlen(argv[3]) != 6U) {
+        solar_os_shell_diag_invalid(term, "ble gatt pair", "PIN", argv[3],
+                                    "exactly six decimal digits",
+                                    "ble gatt pair <six-digit-pin>", false);
+        return;
+    }
+    for (size_t i = 0; i < 6U; ++i) {
+        if (argv[3][i] < '0' || argv[3][i] > '9') {
+            solar_os_shell_diag_invalid(term, "ble gatt pair", "PIN", argv[3],
+                                        "exactly six decimal digits",
+                                        "ble gatt pair <six-digit-pin>", false);
+            return;
+        }
+        passkey = passkey * 10U + (uint32_t)(argv[3][i] - '0');
+    }
+
+    solar_os_shell_io_writeln(term, "BLE GATT pairing...");
+    solar_os_shell_io_flush(term);
+    const esp_err_t err = solar_os_ble_gatt_pair(passkey, 0);
+    if (err == ESP_OK) {
+        ble_gatt_print_status(term);
+    } else if (err == ESP_ERR_INVALID_STATE) {
+        solar_os_shell_io_writeln(term, "ble gatt: not connected or busy");
+    } else if (err == ESP_ERR_TIMEOUT) {
+        solar_os_shell_io_writeln(term, "ble gatt: pairing timeout");
+    } else {
+        solar_os_shell_io_printf(term, "ble gatt pair failed: %s\n",
+                                 solar_os_shell_error_text(err));
     }
 }
 
@@ -1297,6 +1349,11 @@ static void ble_cmd_gatt(solar_os_shell_io_t *term, int argc, char **argv)
         return;
     }
 
+    if (strcmp(argv[2], "pair") == 0) {
+        ble_gatt_cmd_pair(term, argc, argv);
+        return;
+    }
+
     if (strcmp(argv[2], "disconnect") == 0) {
         if (argc != 3) {
             solar_os_shell_diag_unexpected(term, "ble gatt disconnect", argv[3],
@@ -1346,7 +1403,7 @@ static void ble_cmd_gatt(solar_os_shell_io_t *term, int argc, char **argv)
                                                     ble_gatt_subcommands,
                                                     sizeof(ble_gatt_subcommands) / sizeof(ble_gatt_subcommands[0]));
     solar_os_shell_diag_unknown(term, "ble gatt", "subcommand", argv[2], suggestion,
-                                "ble gatt [status|connect|disconnect|services|chars|read|write|write-nr] ...");
+                                "ble gatt [status|connect|pair|disconnect|services|chars|read|write|write-nr] ...");
 }
 
 static void ble_print_keyboard_keepalive(solar_os_shell_io_t *term)

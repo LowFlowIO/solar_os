@@ -562,7 +562,7 @@ static void gesture_bind(solar_os_shell_io_t *io, int argc, char **argv)
         solar_os_shell_io_printf(
             io,
             "gesture binding %" PRIu32
-            " created; start with: job start gesture-listener\n",
+            " created; start with: job start gestures\n",
             id);
     }
 }

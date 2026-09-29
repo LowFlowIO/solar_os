@@ -2,8 +2,9 @@
 #include "host/ble_hs.h"
 #include "host/ble_store.h"
 #include "nimble/nimble_port.h"
+#include "solar_os_ble.h"
 extern struct nimble_test_state {
-    int submit_error, connect_calls, cancel_calls, terminate_calls, security_calls, read_calls, write_calls;
+    int submit_error, connect_calls, cancel_calls, terminate_calls, security_calls, inject_calls, read_calls, write_calls;
     uint16_t mtu, last_handle, last_start, last_end;
     ble_addr_t address;
     ble_gap_event_fn *gap;
@@ -15,8 +16,9 @@ extern struct nimble_test_state {
     ble_gatt_dsc_fn *dsc;
     ble_gatt_attr_fn *attr;
     void *arg;
-    uint8_t written[128];
+    uint8_t written[SOLAR_OS_BLE_GATT_VALUE_MAX];
     size_t written_len;
+    struct ble_sm_io injected;
     int server_add_error, server_delete_error, server_add_calls, server_delete_calls, adv_calls, notify_calls;
     int store_delete_error, store_delete_calls;
     int store_cccd_read_calls, store_cccd_write_calls;

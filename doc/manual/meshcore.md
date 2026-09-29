@@ -2,21 +2,28 @@
 id = "meshcore"
 title = "MeshCore companion messaging"
 section = "service"
-summary = "Secure messages and trusted virtual serial ports over a claimed packet radio"
+summary = "Secure MeshCore messaging over a local packet radio or BLE companion device"
 aliases = ["meshcore.job", "meshcore.radio"]
-keywords = "meshcore lora radio identity advert contacts direct group public psk trust stream serial com shell bridge repeater"
-packages_any = ["service_meshcore", "job_meshcore"]
+keywords = "meshcore lora radio ble companion identity advert contacts direct group public psk trust stream serial com shell bridge repeater"
+packages_any = ["service_meshcore", "job_meshcore", "service_meshcore_ble", "job_meshcore_ble"]
 +++
 # MeshCore companion messaging
 
-SolarOS implements a non-forwarding MeshCore companion node. It exchanges
-signed adverts, end-to-end encrypted direct messages, acknowledgements, and
-shared-key group messages through the provider-neutral Contacts and Messages
-services. It can also carry a peer-bound SolarOS virtual serial port through
-ordinary encrypted MeshCore direct packets. SolarOS does not repeat traffic or
-include MeshCore's Arduino interface, companion protocol, room server, remote
-administration, sensors, or telemetry. SolarOS Link remains a separate
-protocol; the virtual serial feature only reuses its reliable stream framing.
+SolarOS exposes MeshCore through two alternative background jobs. `meshcore`
+implements a non-forwarding companion node on a locally attached packet radio.
+`meshcore-ble` uses the companion protocol to connect to a separate MeshCore
+device and lets that device own the radio, identity, contact table, and channel
+configuration. Both publish through the provider-neutral Contacts and Messages
+services, so Contacts, Chat, and Inbox use the same interfaces. Only one of the
+two jobs can run at a time.
+
+The local-radio implementation exchanges signed adverts, end-to-end encrypted
+direct messages, acknowledgements, and shared-key group messages. It can also
+carry a peer-bound SolarOS virtual serial port through ordinary encrypted
+MeshCore direct packets. SolarOS does not repeat traffic or include MeshCore's
+Arduino interface, room server, remote administration, sensors, or telemetry.
+SolarOS Link remains a separate protocol; the virtual serial feature only
+reuses its reliable stream framing.
 
 ## Quick start
 
@@ -46,6 +53,39 @@ state and releases ownership when stopped or when startup fails. Starting
 job status meshcore
 job stop meshcore
 ```
+
+## BLE companion transport
+
+Use the peer address and address type reported by `ble scan`. Supply the
+companion's six-digit PIN to request BLE encryption and bonding:
+
+```text
+job start meshcore-ble 68:ee:8f:69:5f:35 public 123456
+job status meshcore-ble
+contacts
+chat
+```
+
+The job discovers the MeshCore UART-style GATT service, subscribes to device
+notifications, starts protocol version 3, sets the device time, and synchronizes
+contacts, all eight channel slots, and queued messages. New adverts trigger a
+contact refresh, and a messages-waiting notification drains the device queue.
+Direct sends remain in `sending` state until the companion reports the expected
+MeshCore acknowledgement; group sends become `sent` after the device accepts
+them.
+
+The optional PIN is kept in memory only while the job runs, but the command can
+remain in shell history. Verify `encrypted=yes` and `bonded=yes` in job status
+when BLE link security is required. MeshCore's direct-message and shared-channel
+protection remains independent of BLE transport encryption. The job reconnects
+with bounded exponential backoff after a disconnect. SolarOS's multi-peer BLE
+host lets an established BLE keyboard remain connected while the companion is
+online.
+
+The external device remains authoritative for its identity, channels, radio
+region, and contact routing. Configure those on the companion device. The
+`meshcore` shell command applies only to the local-radio job, and virtual serial
+ports are currently available only with that local implementation.
 
 ## Identity, name, and adverts
 
@@ -173,11 +213,15 @@ port with `meshcore stream remove <port>`.
 ## Implementation and limits
 
 The complete provider context and its 16-packet pool use external-required
-PSRAM. Runtime measurement tuned the worker to a 7168-byte internal stack.
-`meshcore status`
+PSRAM. Runtime measurement tuned the local-radio worker to a 7168-byte internal
+stack. `meshcore status`
 reports packet usage, traffic, retries, duplicate counts, whether the context
-is in PSRAM, and the measured minimum stack watermark. Firmware packages omit
-MeshCore unless the board has PSRAM and packet-radio expansion capability.
+is in PSRAM, and the measured minimum stack watermark. The BLE companion uses
+an 8192-byte internal stack because Contacts and Messages can perform persistent
+filesystem writes; its endpoint and GATT discovery buffers use PSRAM. Firmware
+packages omit the local-radio transport unless the board has PSRAM and
+packet-radio expansion capability, and omit the BLE transport unless the board
+has PSRAM and BLE.
 
 SolarOS vendors the audited protocol subset from MeshCore commit
 `03b6ef4b0de98fc70b49ef10a6d0d61f8381fb7a`. Updates are explicit source
@@ -205,4 +249,7 @@ meshcore stream remove <port>
 job start meshcore <radio> <profile>
 job status meshcore
 job stop meshcore
+job start meshcore-ble <address> <public|random|rpa_public|rpa_random> [six-digit-pin]
+job status meshcore-ble
+job stop meshcore-ble
 ```

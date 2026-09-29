@@ -28,6 +28,8 @@ typedef struct {
     const char *target;
     const char *firmware_version;
     int (*register_job)(const solar_os_native_job_descriptor_v1_t *descriptor);
+    const void *(*get_service)(const char *name, uint32_t abi_version,
+                               uint32_t minimum_struct_size);
 } solar_os_native_job_host_api_v1_t;
 
 const solar_os_native_job_host_api_v1_t *solar_os_native_job_host_v1(void);

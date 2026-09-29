@@ -87,7 +87,7 @@ class InputActionsTest(unittest.TestCase):
         self.assertIn("solar_os_input_actions_clear", SHELL_INPUT)
 
     def test_listener_uses_the_job_lifecycle(self):
-        self.assertIn('"gesture-listener"', JOB)
+        self.assertIn('"gestures"', JOB)
         self.assertIn("solar_os_input_actions_start()", JOB)
         self.assertIn("solar_os_input_actions_stop()", JOB)
         self.assertIn(".worker_stack_bytes = SOLAR_OS_INPUT_ACTION_WORKER_STACK", JOB)

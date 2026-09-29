@@ -5,6 +5,11 @@
 #include "nimble_test_support.h"
 static bool fail_allocation;
 static bool include_next_characteristic;
+static esp_err_t keyboard_lease_result = ESP_OK;
+static size_t keyboard_lease_acquires, keyboard_lease_releases;
+esp_err_t solar_os_ble_keyboard_client_acquire(uint32_t timeout_ms)
+{ (void)timeout_ms; keyboard_lease_acquires++; return keyboard_lease_result; }
+void solar_os_ble_keyboard_client_release(void) { keyboard_lease_releases++; }
 static void *test_calloc(size_t n, size_t size) { return fail_allocation ? NULL : calloc(n, size); }
 #define calloc test_calloc
 #include "../../src/services/solar_os_ble_nimble.c"
@@ -12,7 +17,7 @@ static void *test_calloc(size_t n, size_t size) { return fail_allocation ? NULL 
 
 static solar_os_ble_backend_event_t received[128];
 static size_t received_count;
-static uint8_t received_value[128];
+static uint8_t received_value[SOLAR_OS_BLE_GATT_VALUE_MAX];
 void solar_os_ble_service_event(const solar_os_ble_backend_event_t *e)
 {
     assert(received_count < 128);
@@ -152,7 +157,7 @@ static void test_notifications(void)
     before=received_count;gap_callback(&event,(void *)(uintptr_t)500);assert(received_count==before);
     event.notify_rx.indication=true;gap_callback(&event,(void *)(uintptr_t)500);
     assert(received[received_count-1].indication);
-    uint8_t big[129]={0};struct os_mbuf large={.len=129,.data=big};event.notify_rx.om=&large;
+    uint8_t big[177]={0};struct os_mbuf large={.len=177,.data=big};event.notify_rx.om=&large;
     gap_callback(&event,(void *)(uintptr_t)500);
     assert(received[received_count-1].result==ESP_ERR_INVALID_SIZE && !received[received_count-1].value);
     assert(solar_os_ble_backend_subscribe(500,505,3,0)==ESP_OK);nimble_test_drain();
@@ -167,9 +172,46 @@ static void test_notifications(void)
     assert(received_count==before);
 }
 
+static void test_pairing(void)
+{
+    connected(600);
+    assert(solar_os_ble_backend_pair(600, 602, 123456)==ESP_OK);
+    assert(fake.security_calls==0);
+    nimble_test_drain();
+    assert(fake.security_calls==1 && find_epoch(600)->op==OP_PAIR);
+    assert(ble_hs_cfg.sm_io_cap==BLE_HS_IO_KEYBOARD_ONLY);
+    struct ble_gap_event passkey={.type=BLE_GAP_EVENT_PASSKEY_ACTION,
+        .passkey={.conn_handle=7,.params={.action=BLE_SM_IOACT_INPUT}}};
+    gap_callback(&passkey,(void *)(uintptr_t)600);
+    assert(fake.inject_calls==1 && fake.injected.passkey==123456);
+    assert(ble_hs_cfg.sm_io_cap==BLE_HS_IO_DISPLAY_ONLY);
+    fake.encrypted=true; fake.bonded=true;
+    struct ble_gap_event secured={.type=BLE_GAP_EVENT_ENC_CHANGE,
+        .enc_change={.conn_handle=7}};
+    gap_callback(&secured,(void *)(uintptr_t)600);
+    assert(received[received_count-1].type==SOLAR_OS_BLE_BACKEND_PAIRED);
+    assert(received[received_count-1].result==ESP_OK);
+    assert(received[received_count-1].encrypted && received[received_count-1].bonded);
+    assert(find_epoch(600)->op==OP_NONE);
+    assert(solar_os_ble_backend_pair(600,603,1000000)==ESP_ERR_INVALID_ARG);
+    retire(600);
+    connected(610);
+    assert(solar_os_ble_backend_pair(610,612,654321)==ESP_OK);
+    nimble_test_drain();
+    assert(ble_hs_cfg.sm_io_cap==BLE_HS_IO_KEYBOARD_ONLY);
+    assert(solar_os_ble_backend_cancel(610)==ESP_OK);
+    nimble_test_drain();
+    assert(ble_hs_cfg.sm_io_cap==BLE_HS_IO_DISPLAY_ONLY);
+    nimble_test_disconnect();
+}
+
 int main(void)
 {
     solar_os_ble_backend_register();
+    keyboard_lease_result = ESP_ERR_TIMEOUT;
+    assert(solar_os_ble_backend_connect(99,100,address,0)==ESP_ERR_TIMEOUT);
+    assert(!clients && keyboard_lease_acquires==1 && keyboard_lease_releases==0);
+    keyboard_lease_result = ESP_OK;
     /* Cancellation before the queued connect must not cancel the HID attempt. */
     solar_os_ble_backend_connect(1,2,address,0);
     solar_os_ble_backend_cancel(1);
@@ -193,11 +235,11 @@ int main(void)
     assert(solar_os_ble_backend_read(30,32,3)==ESP_OK);
     nimble_test_drain();
     void *old_request=fake.arg;
-    uint8_t data[140]; for(size_t i=0;i<sizeof(data);++i)data[i]=i;
-    struct os_mbuf tail={.len=70,.data=data+70}, head={.len=70,.data=data,.next=&tail};
+    uint8_t data[190]; for(size_t i=0;i<sizeof(data);++i)data[i]=i;
+    struct os_mbuf tail={.len=95,.data=data+95}, head={.len=95,.data=data,.next=&tail};
     struct ble_gatt_attr attr={.handle=3,.om=&head};
     fake.attr(7,&ok,&attr,fake.arg);
-    assert(received[received_count-1].value_len==128 && !memcmp(received_value,data,128));
+    assert(received[received_count-1].value_len==176 && !memcmp(received_value,data,176));
     assert(solar_os_ble_backend_read(30,33,3)==ESP_OK);
     nimble_test_drain();
     size_t before=received_count;
@@ -259,5 +301,7 @@ int main(void)
     connected(70); retire(70);
     test_multiple_peers();
     test_notifications();
+    test_pairing();
+    assert(keyboard_lease_acquires==keyboard_lease_releases+1);
     puts("NimBLE adapter: cancellation, request identity, bounds, MTU and byte-copy tests passed");
 }

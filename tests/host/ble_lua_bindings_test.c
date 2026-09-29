@@ -154,14 +154,14 @@ int main(void)
         "local s = gatt.status(peer); "
         "assert(s.connected and not s.retiring and s.mtu == 247); "
         "assert(s.owner == 'lua.app' and s.address == '01:02:03:04:05:06'); "
-        "assert(s.addr_type == 1 and s.max_value_bytes == 128); "
+        "assert(s.addr_type == 1 and s.max_value_bytes == 176); "
         "local services = gatt.services(peer); "
         "assert(#services == 24 and services[1].index == 0); "
         "assert(services[1].uuid == '0x180f' and services[1].primary); "
         "local chars = gatt.characteristics(peer, services[1].index); "
         "assert(#chars == 1 and chars[1].handle == 3 and chars[1].properties == 2); "
         "assert(chars[1].uuid == '0x2a19'); "
-        "assert(gatt.read(peer, 3) == string.rep('B', 128)); "
+        "assert(gatt.read(peer, 3) == string.rep('B', 176)); "
         "gatt.write(peer, 3, string.char(0, 255)); "
         "assert(not pcall(gatt.read, peer, 0)); "
         "assert(not pcall(gatt.read, peer, 65536)); "
@@ -172,7 +172,7 @@ int main(void)
         "assert(not pcall(gatt.characteristics, peer, 4294967296)); "
         "assert(not pcall(gatt.write, peer, 3, 123)); "
         "assert(not pcall(gatt.write, peer, 3, '')); "
-        "assert(not pcall(gatt.write, peer, 3, string.rep('x', 129))); "
+        "assert(not pcall(gatt.write, peer, 3, string.rep('x', 177))); "
         "assert(not pcall(gatt.write, peer, 3, 'xx', 0));");
     assert(write_response);
     run(L, "gatt.subscribe(peer, 3, true)");
@@ -245,7 +245,7 @@ int main(void)
     assert(fake_server_request.indicate && fake_server_request.value_len==2 && fake_server_request.value[0]==128);
     run(L, "assert(not pcall(server.create,'name',0)); assert(not pcall(server.service,'a'..string.char(0)..'b'))");
     run(L, "assert(not pcall(server.characteristic,svc,'abcd',256)); assert(not pcall(server.set,0,'x'))");
-    run(L, "assert(not pcall(server.set,chr,string.rep('x',129))); assert(not pcall(server.send,7,chr,'x',1))");
+    run(L, "assert(not pcall(server.set,chr,string.rep('x',177))); assert(not pcall(server.send,7,chr,'x',1))");
     run(L, "server.disconnect(7); server.stop(); server.close(); server.create('again')");
     assert(fake_server_owner==solua_ble_session);
     solar_os_ble_session_t outsider;
@@ -253,7 +253,7 @@ int main(void)
     solar_os_ble_server_request_t request={.op=SOLAR_OS_BLE_SERVER_STATUS};
     assert(solar_os_ble_server_request(outsider,&request)==ESP_ERR_INVALID_STATE);
     assert(solar_os_ble_session_close(outsider)==ESP_OK && fake_server_owner==solua_ble_session);
-    request.value_len=129;
+    request.value_len=177;
     assert(solar_os_ble_server_request(solua_ble_session,&request)==ESP_ERR_INVALID_ARG);
     request.value_len=0; memset(request.text,'x',sizeof(request.text));
     assert(solar_os_ble_server_request(solua_ble_session,&request)==ESP_ERR_INVALID_ARG);

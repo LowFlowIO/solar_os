@@ -70,6 +70,7 @@ espnow = true
 pocsag = true
 radio_link = true
 meshcore = true
+meshcore_ble = true
 audio_commands = true
 speech = true
 player = true

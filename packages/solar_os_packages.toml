@@ -362,6 +362,11 @@ label = "MeshCore"
 category = "Radio"
 members = ["job_meshcore"]
 
+[groups.meshcore_ble]
+label = "MeshCore BLE companion"
+category = "Radio"
+members = ["job_meshcore_ble"]
+
 [groups.audio_commands]
 label = "Audio playback and recording commands"
 category = "Audio"
@@ -1333,6 +1338,15 @@ sources = [
 requires = ["mbedtls", "nvs_flash"]
 capabilities = ["psram"]
 any_capabilities = ["expansion_spi", "expansion_gpio", "expansion_uart"]
+
+[packages.service_meshcore_ble]
+label = "service.meshcore-ble"
+depends = ["service_ble", "service_contacts", "service_messaging"]
+sources = [
+  "services/solar_os_meshcore_ble.c",
+  "services/solar_os_meshcore_ble_protocol.c",
+]
+capabilities = ["ble", "psram"]
 
 [packages.expansion_rfm69]
 label = "expansion.rfm69"
@@ -2483,3 +2497,9 @@ sources = [
 ]
 capabilities = ["psram"]
 any_capabilities = ["expansion_spi", "expansion_gpio", "expansion_uart"]
+
+[packages.job_meshcore_ble]
+label = "job.meshcore-ble"
+depends = ["service_meshcore_ble"]
+sources = ["jobs/solar_os_meshcore_ble_job.c"]
+capabilities = ["ble", "psram"]
