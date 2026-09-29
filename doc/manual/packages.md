@@ -75,6 +75,11 @@ gauge, and publishes battery percentage, voltage, external-power, charging,
 and charger-control data through the common battery and charger services. The
 Waveshare board declares it as the fixed early `power0` attachment and exposes
 the charger as `charger0`.
+`expansion.qmi8658` configures the six-axis IMU for the Waveshare reference
+profile's 8 g accelerometer and 512 degrees-per-second gyroscope ranges at
+1 kHz, then publishes SI-unit acceleration and angular velocity through
+`imu0`. It polls the data-ready register, so the fixed board attachment does
+not claim either interrupt pin.
 `expansion.cardkb` polls the M5Stack Unit CardKB at its fixed I2C address and
 publishes its character taps and navigation keys through the shared input
 service used by shells and foreground apps.

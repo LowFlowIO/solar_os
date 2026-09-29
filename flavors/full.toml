@@ -98,6 +98,7 @@ ublox_mia_m10q = true
 sim7670 = true
 st25r3916 = true
 bhi260ap = true
+qmi8658 = true
 drv2605 = true
 bq25896 = true
 axp2101 = true

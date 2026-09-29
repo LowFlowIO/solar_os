@@ -202,6 +202,27 @@ hint = "gpio"
 role = "irq"
 required = true
 
+[drivers.qmi8658]
+summary = "QMI8658 six-axis IMU"
+package = "qmi8658"
+targets = ["esp32", "esp32s3"]
+capabilities = ["i2c"]
+early = true
+default_name = "imu0"
+
+[[drivers.qmi8658.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+
+[[drivers.qmi8658.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x6a|0x6b"
+required = true
+allowed = [0x6a, 0x6b]
+
 [drivers.mgc3130]
 summary = "MGC3130 3D gesture and hover sensor"
 package = "driver_mgc3130"

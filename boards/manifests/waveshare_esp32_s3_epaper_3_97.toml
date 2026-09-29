@@ -119,6 +119,11 @@ name = "power0"
 bindings = { i2c = "i2c0", addr = 0x34, input_current = 1500, charge_current = 200, charge_voltage = 4200 }
 
 [[devices]]
+driver = "qmi8658"
+name = "imu0"
+bindings = { i2c = "i2c0", addr = 0x6a }
+
+[[devices]]
 driver = "ssd1677"
 name = "display0"
 bindings = { spi = "spi0", cs = 10, dc = 9, reset = 46, busy = 3, rotation = 3, power_i2c = "i2c0", power_addr = 0x34 }
