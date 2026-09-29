@@ -136,6 +136,9 @@ static solar_os_input_source_t key_input_source;
 #endif
 static bool deferred_sleep_pending;
 static char deferred_sleep_reason[SLEEP_REASON_MAX];
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+static uint32_t suspend_ble_wake_generation;
+#endif
 static uint32_t key_pressed_ms;
 static uint32_t last_app_tick_ms;
 static uint32_t last_status_update_ms;
@@ -151,6 +154,7 @@ static void process_app_requests(void);
 static void maybe_enter_deferred_sleep(void);
 static void maybe_enter_idle_sleep(void);
 static void update_status(void);
+static void exit_suspend(const char *reason);
 
 static uint32_t millis_u32(void)
 {
@@ -506,6 +510,14 @@ static void enter_suspend(const char *reason)
     update_status();
     draw_terminal_if_needed();
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+    if (board_has(SOLAR_OS_BOARD_CAP_BLE) &&
+        solar_os_ble_keyboard_enabled_for_current_boot()) {
+        suspend_ble_wake_generation =
+            solar_os_ble_keyboard_wake_generation();
+    }
+#endif
+
     esp_err_t err = solar_os_power_begin_suspend();
     if (err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "%s: suspend power policy failed: %s",
@@ -536,6 +548,29 @@ static void enter_suspend(const char *reason)
                   "%s: suspended; profile=lowpower restore=%s",
                   reason,
                   solar_os_power_profile_name(status.profile));
+}
+
+static void maybe_exit_suspend_for_ble_keyboard(void)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+    if (!board_has(SOLAR_OS_BOARD_CAP_BLE) ||
+        !solar_os_ble_keyboard_enabled_for_current_boot()) {
+        return;
+    }
+
+    solar_os_power_status_t status;
+    solar_os_power_get_status(&status);
+    if (!status.suspend_active) {
+        return;
+    }
+
+    const uint32_t generation = solar_os_ble_keyboard_wake_generation();
+    if (generation == suspend_ble_wake_generation) {
+        return;
+    }
+    suspend_ble_wake_generation = generation;
+    exit_suspend("BLE keyboard activity");
+#endif
 }
 
 static void exit_suspend(const char *reason)
@@ -1174,6 +1209,7 @@ static void dispatch_input_key(const solar_os_input_key_event_t *event)
         return;
     }
 
+    maybe_exit_suspend_for_ble_keyboard();
     solar_os_power_note_activity(millis_u32());
     const bool alt_active =
         (event->modifiers & SOLAR_OS_INPUT_MOD_ALT) != 0U;
@@ -1862,6 +1898,7 @@ void app_main(void)
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
         if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {
             solar_os_ble_keyboard_poll(millis_u32());
+            maybe_exit_suspend_for_ble_keyboard();
         }
 #endif
         poll_key_button();

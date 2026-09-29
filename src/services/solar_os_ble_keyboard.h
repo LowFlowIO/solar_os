@@ -86,6 +86,8 @@ void solar_os_ble_keyboard_get_keepalive_status(
 const char *solar_os_ble_keyboard_keepalive_method_name(
     solar_os_ble_keyboard_keepalive_method_t method);
 void solar_os_ble_keyboard_poll(uint32_t now_ms);
+/* Advances when a keyboard reconnects or reports a new physical key press. */
+uint32_t solar_os_ble_keyboard_wake_generation(void);
 size_t solar_os_ble_keyboard_remembered_count(void);
 void solar_os_ble_keyboard_get_status(char *buffer, size_t buffer_len);
 size_t solar_os_ble_keyboard_read_chars(char *buffer, size_t buffer_len);
