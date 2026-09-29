@@ -2058,7 +2058,7 @@ capabilities = ["wifi"]
 
 [packages.app_sftp]
 label = "app.sftp"
-depends = ["service_sftp"]
+depends = ["service_sftp", "service_text_search"]
 sources = ["apps/solar_os_sftp_app.c"]
 capabilities = ["wifi"]
 
@@ -2250,6 +2250,7 @@ capabilities = ["psram", "gfx"]
 
 [packages.app_files]
 label = "app.files"
+depends = ["service_text_search"]
 sources = ["apps/solar_os_files.c"]
 
 [packages.app_launcher]
@@ -2263,7 +2264,7 @@ capabilities = ["gfx"]
 
 [packages.app_ftp]
 label = "app.ftp"
-depends = ["service_ftp"]
+depends = ["service_ftp", "service_text_search"]
 sources = ["apps/solar_os_ftp_app.c"]
 capabilities = ["wifi"]
 

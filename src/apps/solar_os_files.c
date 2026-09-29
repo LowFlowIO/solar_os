@@ -17,6 +17,7 @@
 #include "freertos/task.h"
 #include "solar_os_app_file_types.h"
 #include "solar_os_app_registry.h"
+#include "solar_os_file_shortcuts.h"
 #include "solar_os_keys.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
@@ -26,6 +27,7 @@
 #include "solar_os_storage.h"
 #include "solar_os_task.h"
 #include "solar_os_terminal.h"
+#include "solar_os_text_search.h"
 #include "solar_os_tui.h"
 #include "solar_os_tui_widgets.h"
 #include "solar_os_zip.h"
@@ -67,6 +69,7 @@ typedef enum {
     FILES_INPUT_MKDIR,
     FILES_INPUT_DELETE_CONFIRM,
     FILES_INPUT_ZIP,
+    FILES_INPUT_SEARCH,
 } files_input_mode_t;
 
 typedef enum {
@@ -135,6 +138,8 @@ typedef struct {
     files_input_mode_t input_mode;
     char input[FILES_INPUT_MAX];
     size_t input_len;
+    solar_os_text_search_state_t search;
+    bool alt_prefix_pending;
     char message[FILES_MESSAGE_MAX];
     files_transaction_t transaction;
     files_worker_t worker;
@@ -861,7 +866,7 @@ static void files_draw_pane(files_pane_t *pane,
 static void files_draw_bottom(size_t rows, size_t cols)
 {
     static const char help[] =
-        "F3 View F4 Edit F5 Copy F6 Move F7 mKdir F8 Delete F9 Zip";
+        "F3 View F4 Edit F5 Copy F6 Move F7 mKdir F8 Delete F9 Zip Alt+S Search";
     static const struct {
         const char *label;
         size_t offset;
@@ -873,6 +878,7 @@ static void files_draw_bottom(size_t rows, size_t cols)
         {"mKdir", 1U},
         {"Delete", 0U},
         {"Zip", 0U},
+        {"Search", 0U},
     };
     const bool input_active = files.input_mode != FILES_INPUT_NONE;
     if (solar_os_tui_screen_fullscreen(&files.tui) && !input_active) {
@@ -882,12 +888,19 @@ static void files_draw_bottom(size_t rows, size_t cols)
     const size_t bottom_rows = solar_os_tui_screen_fullscreen(&files.tui) ? 1U : 2U;
     const size_t msg_row = rows >= bottom_rows ? rows - bottom_rows : 0U;
     solar_os_tui_fill(&files.tui, msg_row, 0, 1, cols, ' ', SOLAR_OS_TUI_ATTR_NORMAL);
-    if (files.input_mode == FILES_INPUT_MKDIR || files.input_mode == FILES_INPUT_ZIP) {
-        const char *label = files.input_mode == FILES_INPUT_ZIP ? "zip: " : "mkdir: ";
+    if (files.input_mode == FILES_INPUT_MKDIR ||
+        files.input_mode == FILES_INPUT_ZIP ||
+        files.input_mode == FILES_INPUT_SEARCH) {
+        const char *label = files.input_mode == FILES_INPUT_ZIP ? "zip: " :
+            files.input_mode == FILES_INPUT_SEARCH ? "search: " : "mkdir: ";
+        const char *value = files.input_mode == FILES_INPUT_SEARCH ?
+            files.search.input : files.input;
+        const size_t value_len = files.input_mode == FILES_INPUT_SEARCH ?
+            files.search.input_len : files.input_len;
         char prompt[FILES_INPUT_MAX + 12];
-        snprintf(prompt, sizeof(prompt), "%s%s", label, files.input);
+        snprintf(prompt, sizeof(prompt), "%s%s", label, value);
         solar_os_tui_write_cell(&files.tui, msg_row, 0, cols, prompt, SOLAR_OS_TUI_ATTR_NORMAL);
-        solar_os_tui_move(&files.tui, msg_row, strlen(label) + files.input_len);
+        solar_os_tui_move(&files.tui, msg_row, strlen(label) + value_len);
     } else if (files.input_mode == FILES_INPUT_DELETE_CONFIRM) {
         solar_os_tui_write_cell(&files.tui, msg_row, 0, cols, files.message, SOLAR_OS_TUI_ATTR_BOLD);
     } else {
@@ -920,7 +933,8 @@ static void files_render(solar_os_context_t *ctx)
     (void)ctx;
     solar_os_tui_set_cursor_visible(&files.tui,
                                     files.input_mode == FILES_INPUT_MKDIR ||
-                                    files.input_mode == FILES_INPUT_ZIP);
+                                    files.input_mode == FILES_INPUT_ZIP ||
+                                    files.input_mode == FILES_INPUT_SEARCH);
     const size_t rows = solar_os_tui_rows(&files.tui);
     const size_t cols = solar_os_tui_cols(&files.tui);
     const size_t min_cols = files.launcher_mode ?
@@ -1993,6 +2007,59 @@ static void files_begin_zip(void)
     files_set_message("");
 }
 
+static bool files_search_segment(void *user,
+                                 size_t segment_index,
+                                 const char **text,
+                                 size_t *text_len)
+{
+    const files_pane_t *pane = (const files_pane_t *)user;
+    if (pane == NULL || text == NULL || text_len == NULL ||
+        segment_index >= pane->count || pane->entries[segment_index].parent) {
+        return false;
+    }
+    *text = pane->entries[segment_index].name;
+    *text_len = strlen(*text);
+    return true;
+}
+
+static void files_begin_search(void)
+{
+    solar_os_text_search_begin_input(&files.search);
+    files.input_mode = FILES_INPUT_SEARCH;
+    files_set_message("");
+}
+
+static void files_submit_search(void)
+{
+    files.input_mode = FILES_INPUT_NONE;
+    if (!solar_os_text_search_submit_input(&files.search)) {
+        files_set_message("");
+        return;
+    }
+
+    files_pane_t *pane = files_active_pane();
+    solar_os_text_search_match_t match;
+    if (!solar_os_text_search_find_segments(pane->count,
+                                            files_search_segment,
+                                            pane,
+                                            files.search.query,
+                                            pane->cursor,
+                                            SIZE_MAX,
+                                            true,
+                                            SOLAR_OS_TEXT_SEARCH_FORWARD,
+                                            &match)) {
+        char message[FILES_MESSAGE_MAX];
+        snprintf(message, sizeof(message), "not found: %s", files.search.query);
+        files_set_message(message);
+        return;
+    }
+
+    files.search.match = match;
+    files.search.match_valid = true;
+    pane->cursor = match.segment_index;
+    files_set_message(match.wrapped ? "search wrapped" : "");
+}
+
 static bool files_input_event(solar_os_context_t *ctx, uint8_t ch)
 {
     if (files.input_mode == FILES_INPUT_DELETE_CONFIRM) {
@@ -2001,6 +2068,30 @@ static bool files_input_event(solar_os_context_t *ctx, uint8_t ch)
         } else {
             files.input_mode = FILES_INPUT_NONE;
             files_set_message("");
+        }
+        return true;
+    }
+
+    if (files.input_mode == FILES_INPUT_SEARCH) {
+        switch (ch) {
+        case SOLAR_OS_KEY_ESCAPE:
+            solar_os_text_search_cancel_input(&files.search);
+            files.input_mode = FILES_INPUT_NONE;
+            files_set_message("");
+            break;
+        case '\r':
+        case '\n':
+            files_submit_search();
+            break;
+        case '\b':
+        case 0x7f:
+            (void)solar_os_text_search_input_backspace(&files.search);
+            break;
+        default:
+            if (isprint(ch) || ch >= 0xa0) {
+                (void)solar_os_text_search_input_append(&files.search, (char)ch);
+            }
+            break;
         }
         return true;
     }
@@ -2133,11 +2224,32 @@ static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         files_worker_poll(ctx);
         return true;
     }
-    if (event->type != SOLAR_OS_EVENT_CHAR) {
+    solar_os_file_shortcut_t shortcut = SOLAR_OS_FILE_SHORTCUT_NONE;
+    uint8_t ch = 0U;
+    if (event->type == SOLAR_OS_EVENT_CHAR) {
+        ch = (uint8_t)event->data.ch;
+    } else if (event->type == SOLAR_OS_EVENT_KEY) {
+        shortcut = solar_os_file_shortcut_from_key_event(&event->data.key);
+        if (event->data.key.action == SOLAR_OS_INPUT_KEY_RELEASE) {
+            return true;
+        }
+        if (shortcut == SOLAR_OS_FILE_SHORTCUT_FULLSCREEN) {
+            (void)solar_os_tui_screen_key(&files.tui,
+                                          SOLAR_OS_KEY_ALT_PREFIX);
+            if (solar_os_tui_screen_key(&files.tui,
+                                        SOLAR_OS_KEY_ENTER) ==
+                SOLAR_OS_TUI_SCREEN_KEY_TOGGLED) {
+                files_render(ctx);
+            }
+            return true;
+        }
+        ch = event->data.key.key;
+        if (ch == 0U && shortcut == SOLAR_OS_FILE_SHORTCUT_SEARCH) {
+            ch = 's';
+        }
+    } else {
         return true;
     }
-
-    const uint8_t ch = (uint8_t)event->data.ch;
     files_pane_t *pane = files_active_pane();
 
     if (files.worker.running) {
@@ -2154,6 +2266,25 @@ static bool files_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     if (files_input_event(ctx, ch)) {
         files_render(ctx);
         return true;
+    }
+
+    if (shortcut == SOLAR_OS_FILE_SHORTCUT_SEARCH) {
+        files_begin_search();
+        files_render(ctx);
+        return true;
+    }
+
+    if (ch == SOLAR_OS_KEY_ALT_PREFIX) {
+        files.alt_prefix_pending = true;
+        return true;
+    }
+    if (files.alt_prefix_pending) {
+        files.alt_prefix_pending = false;
+        if (ch == 's' || ch == 'S') {
+            files_begin_search();
+            files_render(ctx);
+            return true;
+        }
     }
 
     switch (ch) {
@@ -2307,7 +2438,7 @@ const solar_os_app_t solar_os_files_app = {
     .name = "files",
     .summary = "file manager and launcher",
     .app_class = SOLAR_OS_APP_CLASS_TUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_KEY_EVENTS,
     .start = files_start,
     .resume = files_resume,
     .stop = files_stop,
