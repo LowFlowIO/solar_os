@@ -573,7 +573,10 @@ static void battery_print_monitor_status(solar_os_shell_io_t *term)
     solar_os_shell_io_printf(term,
                              "Trend: %s, power %s, %" PRId32 " mV/hour\n",
                              solar_os_battery_trend_name(monitor.trend),
-                             monitor.external_power ? "external" : "battery",
+                             monitor.external_power ?
+                                "external" :
+                                (monitor.trend == SOLAR_OS_BATTERY_TREND_DISCHARGING ?
+                                    "battery" : "unknown"),
                              monitor.slope_mvh);
     if (monitor.time_left_valid) {
         char eta[24];
@@ -605,9 +608,17 @@ static void battery_print_status(solar_os_shell_io_t *term)
                              (unsigned)status.percent,
                              status.percent_estimated ? " estimated" : "",
                              status.adc_calibrated ? "" : " (uncalibrated ADC)");
-    solar_os_shell_io_printf(term,
-                             "Power: %s\n",
-                             status.external_power ? "external" : "battery");
+    const char *power = status.external_power ? "external" : "unknown";
+    if (!status.external_power && status.charging_known && !status.charging) {
+        power = "battery";
+    } else if (!status.external_power && !status.charging_known) {
+        solar_os_battery_monitor_status_t monitor;
+        solar_os_battery_monitor_get_status(&monitor);
+        if (monitor.running && monitor.trend == SOLAR_OS_BATTERY_TREND_DISCHARGING) {
+            power = "battery";
+        }
+    }
+    solar_os_shell_io_printf(term, "Power: %s\n", power);
     if (status.charging_known) {
         solar_os_shell_io_printf(term,
                                  "Charging: %s\n",

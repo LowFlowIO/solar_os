@@ -86,13 +86,21 @@ static void batmon_log_status(void)
         strlcpy(eta, "unknown", sizeof(eta));
     }
 
+    const char *power = "unknown";
+    if (status.trend == SOLAR_OS_BATTERY_TREND_CHARGING &&
+        status.external_power) {
+        power = "external";
+    } else if (status.trend == SOLAR_OS_BATTERY_TREND_DISCHARGING) {
+        power = "battery";
+    }
+
     SOLAR_OS_LOGI(TAG,
              "%u.%03u V %u%% trend=%s power=%s slope=%" PRId32 " mV/h eta=%s samples=%" PRIu32,
              (unsigned)(status.last_voltage_mv / 1000U),
              (unsigned)(status.last_voltage_mv % 1000U),
              (unsigned)status.last_percent,
              solar_os_battery_trend_name(status.trend),
-             status.external_power ? "external" : "battery",
+             power,
              status.slope_mvh,
              eta,
              status.sample_count);
@@ -110,7 +118,8 @@ static void batmon_check_low_voltage_sleep(solar_os_context_t *ctx)
         batmon.low_voltage_sleep_requested = false;
         return;
     }
-    if (status.external_power) {
+    if (status.trend != SOLAR_OS_BATTERY_TREND_DISCHARGING ||
+        status.external_power) {
         batmon.low_voltage_samples = 0;
         batmon.low_voltage_sleep_requested = false;
         return;

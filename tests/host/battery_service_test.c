@@ -162,7 +162,7 @@ int main(void)
         .calibrated = true,
     };
     status = read_status();
-    assert(status.external_power);
+    assert(!status.external_power);
     assert(!status.charging);
     assert(!status.charging_known);
 
