@@ -1896,6 +1896,9 @@ esp_err_t solar_os_ble_backend_init(void)
     }
     ble_hs_cfg.sync_cb = host_sync;
     ble_hs_cfg.reset_cb = host_reset;
+    /* Generic GATT clients temporarily lease keyboard-only capability while
+     * an explicit peer pairing is active. The default preserves the existing
+     * displayed-passkey behavior for HID central and peripheral links. */
     ble_hs_cfg.sm_io_cap = BLE_HS_IO_DISPLAY_ONLY;
     ble_hs_cfg.sm_bonding = 1;
     ble_hs_cfg.sm_mitm = 1;

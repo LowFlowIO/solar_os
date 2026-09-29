@@ -1,4 +1,5 @@
 #include <stdbool.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #include "solar_os_native_job_abi.h"
@@ -37,7 +38,7 @@ int main(int argc, char **argv)
         solar_os_native_job_host_v1();
     if (host == NULL ||
         host->abi_version != SOLAR_OS_NATIVE_JOB_LIFECYCLE_ABI ||
-        host->struct_size < sizeof(*host) ||
+        host->struct_size < offsetof(solar_os_native_job_host_api_v1_t, get_service) ||
         host->register_job == NULL) {
         return 1;
     }

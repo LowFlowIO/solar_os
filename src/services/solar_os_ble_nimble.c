@@ -10,7 +10,7 @@
 #include "services/gap/ble_svc_gap.h"
 #include "solar_os_hid.h"
 
-typedef enum { OP_NONE, OP_CONNECT, OP_READ, OP_WRITE, OP_SUBSCRIBE } operation_t;
+typedef enum { OP_NONE, OP_CONNECT, OP_READ, OP_WRITE, OP_SUBSCRIBE, OP_PAIR } operation_t;
 typedef struct {
     solar_os_ble_gatt_characteristic_t info;
     uint16_t definition, cccd;
@@ -40,7 +40,9 @@ typedef struct ble_client {
     uint8_t bda[6];
     operation_t op;
     bool retiring, connecting, response;
+    bool encrypted, bonded, passkey_valid, pairing_io;
     uint8_t addr_type;
+    uint32_t passkey;
     uint8_t value[SOLAR_OS_BLE_GATT_VALUE_MAX];
     size_t value_len;
     size_t count, discovering;
@@ -52,6 +54,16 @@ static size_t server_used_locked(void);
 static bool server_idle_locked(void);
 static void server_reset_locked(void);
 static void server_commands_locked(void);
+
+static void restore_pairing_io_locked(ble_client_t *client)
+{
+    if (client->pairing_io) {
+        ble_hs_cfg.sm_io_cap = BLE_HS_IO_DISPLAY_ONLY;
+        client->pairing_io = false;
+    }
+    client->passkey = 0;
+    client->passkey_valid = false;
+}
 
 static ble_client_t *find_epoch(uint32_t epoch)
 {
@@ -138,6 +150,7 @@ esp_err_t solar_os_ble_backend_register(void)
 
 static void clear_locked(ble_client_t *client)
 {
+    restore_pairing_io_locked(client);
     ble_client_t **entry = &clients;
     while (*entry && *entry != client) entry = &(*entry)->next;
     if (*entry) *entry = client->next;
@@ -192,6 +205,7 @@ static solar_os_ble_backend_event_t event_locked(ble_client_t *client, solar_os_
 
 static void retire_locked(ble_client_t *client)
 {
+    restore_pairing_io_locked(client);
     client->retiring = true;
     if (client->conn != BLE_HS_CONN_HANDLE_NONE) {
         (void)ble_gap_terminate(client->conn, BLE_ERR_REM_USER_CONN_TERM);
@@ -463,6 +477,56 @@ static int gap_callback(struct ble_gap_event *event, void *arg)
         solar_os_ble_service_event(&e);
         return 0;
     }
+    if (event->type == BLE_GAP_EVENT_PASSKEY_ACTION &&
+        client->conn == event->passkey.conn_handle && client->op == OP_PAIR &&
+        client->passkey_valid &&
+        event->passkey.params.action == BLE_SM_IOACT_INPUT) {
+        struct ble_sm_io io = {
+            .action = BLE_SM_IOACT_INPUT,
+            .passkey = client->passkey,
+        };
+        restore_pairing_io_locked(client);
+        const int rc = ble_sm_inject_io(client->conn, &io);
+        if (rc) {
+            e = event_locked(client, SOLAR_OS_BLE_BACKEND_PAIRED, rc);
+            client->op = OP_NONE;
+            client->request = 0;
+            unlock();
+            solar_os_ble_service_event(&e);
+            return rc;
+        }
+        unlock();
+        return 0;
+    }
+    if (event->type == BLE_GAP_EVENT_REPEAT_PAIRING &&
+        client->conn == event->repeat_pairing.conn_handle && client->op == OP_PAIR) {
+        struct ble_gap_conn_desc desc = {0};
+        int rc = ble_gap_conn_find(client->conn, &desc);
+        if (!rc) rc = ble_store_util_delete_peer(&desc.peer_id_addr);
+        if (rc == BLE_HS_ENOENT) rc = 0;
+        unlock();
+        return rc ? BLE_GAP_REPEAT_PAIRING_IGNORE : BLE_GAP_REPEAT_PAIRING_RETRY;
+    }
+    if (event->type == BLE_GAP_EVENT_ENC_CHANGE &&
+        client->conn == event->enc_change.conn_handle) {
+        struct ble_gap_conn_desc desc = {0};
+        int rc = event->enc_change.status ? event->enc_change.status :
+            ble_gap_conn_find(client->conn, &desc);
+        restore_pairing_io_locked(client);
+        client->encrypted = !rc && desc.sec_state.encrypted;
+        client->bonded = !rc && desc.sec_state.bonded;
+        if (!rc && !client->encrypted) rc = BLE_ERR_AUTH_FAIL;
+        e = event_locked(client, SOLAR_OS_BLE_BACKEND_PAIRED, rc);
+        e.encrypted = client->encrypted;
+        e.bonded = client->bonded;
+        if (client->op == OP_PAIR) {
+            client->op = OP_NONE;
+            client->request = 0;
+        }
+        unlock();
+        solar_os_ble_service_event(&e);
+        return 0;
+    }
     unlock();
     return solar_os_ble_nimble_security(event);
 }
@@ -646,6 +710,29 @@ esp_err_t solar_os_ble_backend_read(uint32_t epoch, uint32_t request, uint16_t h
     return ESP_OK;
 }
 
+esp_err_t solar_os_ble_backend_pair(uint32_t epoch, uint32_t request,
+    uint32_t passkey)
+{
+    if (passkey > 999999U) return ESP_ERR_INVALID_ARG;
+    lock();
+    ble_client_t *client = find_epoch(epoch);
+    if (!ready(client, epoch)) { unlock(); return ESP_ERR_INVALID_STATE; }
+    for (ble_client_t *entry = clients; entry; entry = entry->next) {
+        if (entry != client && entry->op == OP_PAIR) {
+            unlock();
+            return ESP_ERR_INVALID_STATE;
+        }
+    }
+    client->op = OP_PAIR;
+    client->request = request;
+    client->passkey = passkey;
+    client->passkey_valid = true;
+    client->queued = true;
+    unlock();
+    ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &command_event);
+    return ESP_OK;
+}
+
 esp_err_t solar_os_ble_backend_write(uint32_t epoch, uint32_t request, uint16_t handle,
     const uint8_t *value, size_t len, bool response)
 {
@@ -693,6 +780,22 @@ static void command_client(ble_client_t *client)
         if (rc) subscription_complete_locked(client, rc);
         else unlock();
         return;
+    } else if (client->op == OP_PAIR) {
+        type = SOLAR_OS_BLE_BACKEND_PAIRED;
+        ble_hs_cfg.sm_io_cap = BLE_HS_IO_KEYBOARD_ONLY;
+        client->pairing_io = true;
+        rc = ble_gap_security_initiate(client->conn);
+        if (!rc) { unlock(); return; }
+        if (rc == BLE_HS_EALREADY) {
+            struct ble_gap_conn_desc desc = {0};
+            rc = ble_gap_conn_find(client->conn, &desc);
+            if (!rc && desc.sec_state.encrypted) {
+                client->encrypted = true;
+                client->bonded = desc.sec_state.bonded;
+            } else if (!rc) {
+                rc = BLE_ERR_AUTH_FAIL;
+            }
+        }
     } else if (client->op == OP_READ) {
         type = SOLAR_OS_BLE_BACKEND_READ;
         rc = ble_gattc_read(client->conn, client->handle, value_callback,
@@ -708,6 +811,11 @@ static void command_client(ble_client_t *client)
     } else { unlock(); return; }
     solar_os_ble_backend_event_t e = event_locked(client, type, rc);
     if (rc == BLE_HS_EMSGSIZE) e.result = ESP_ERR_INVALID_SIZE;
+    if (type == SOLAR_OS_BLE_BACKEND_PAIRED) {
+        restore_pairing_io_locked(client);
+        e.encrypted = client->encrypted;
+        e.bonded = client->bonded;
+    }
     client->op = OP_NONE;
     client->request = 0;
     unlock();

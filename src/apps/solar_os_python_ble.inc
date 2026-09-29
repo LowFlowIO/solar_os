@@ -287,7 +287,7 @@ static void python_ble_server_value(mp_obj_t arg, solar_os_ble_server_request_t 
 {
     mp_buffer_info_t buffer;
     mp_get_buffer_raise(arg, &buffer, MP_BUFFER_READ);
-    if (buffer.len > sizeof(r->value)) mp_raise_ValueError(MP_ERROR_TEXT("BLE value exceeds 128 bytes"));
+    if (buffer.len > sizeof(r->value)) mp_raise_ValueError(MP_ERROR_TEXT("BLE value is too large"));
     r->value_len = buffer.len; memcpy(r->value, buffer.buf, buffer.len);
 }
 static mp_obj_t solaros_ble_server_create(size_t n_args, const mp_obj_t *args)

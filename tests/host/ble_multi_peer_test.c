@@ -90,6 +90,15 @@ esp_err_t solar_os_ble_backend_write(uint32_t epoch,uint32_t request,uint16_t ha
     solar_os_ble_service_event(&e); return ESP_OK;
 }
 
+esp_err_t solar_os_ble_backend_pair(uint32_t epoch,uint32_t request,uint32_t passkey)
+{
+    assert(passkey<=999999U);
+    solar_os_ble_backend_event_t e={.type=SOLAR_OS_BLE_BACKEND_PAIRED,
+        .epoch=epoch,.request=request,.conn_id=peer_for(epoch)->conn,
+        .encrypted=true,.bonded=true};
+    solar_os_ble_service_event(&e); return ESP_OK;
+}
+
 esp_err_t solar_os_ble_backend_subscribe(uint32_t epoch, uint32_t request, uint16_t handle, uint8_t mode)
 {
     solar_os_ble_backend_event_t e={.type=SOLAR_OS_BLE_BACKEND_SUBSCRIBED,
@@ -143,7 +152,7 @@ static void test_notifications(void)
     assert(solar_os_ble_peer_subscribe(owner,a,4,0,100)==ESP_OK);
     assert(solar_os_ble_peer_poll(owner,a,&event)==ESP_OK && event.handle==5);
     assert(solar_os_ble_peer_poll(owner,a,&event)==ESP_ERR_NOT_FOUND);
-    notify_peer(a,3,false,129);
+    notify_peer(a,3,false,SOLAR_OS_BLE_GATT_VALUE_MAX+1);
     assert(solar_os_ble_peer_get_info(owner,a,&info)==ESP_OK && info.events_dropped==2 && !info.event_count);
     assert(solar_os_ble_peer_poll(owner,b,&event)==ESP_OK && event.indication);
     assert(solar_os_ble_peer_configure_queue(owner,a,4)==ESP_OK);
@@ -191,6 +200,11 @@ int main(void)
     assert(entries()==5);check_read(owner,a,7);check_read(owner,b,8);check_read(other,c,9);
     solar_os_ble_session_info_t info;
     assert(solar_os_ble_peer_get_info(other,a,&info)==ESP_ERR_INVALID_STATE);
+    assert(solar_os_ble_peer_pair(other,a,123456,100)==ESP_ERR_INVALID_STATE);
+    assert(solar_os_ble_peer_pair(owner,a,1000000,100)==ESP_ERR_INVALID_ARG);
+    assert(solar_os_ble_peer_pair(owner,a,123456,100)==ESP_OK);
+    assert(solar_os_ble_peer_get_info(owner,a,&info)==ESP_OK &&
+        info.gatt.encrypted && info.gatt.bonded && !strcmp(info.gatt.status,"secured"));
     assert(solar_os_ble_peer_disconnect(other,a)==ESP_ERR_INVALID_STATE);
     solar_os_ble_gatt_service_t svc;size_t count;
     assert(solar_os_ble_peer_services(owner,b,&svc,1,&count)==ESP_OK && !strcmp(svc.uuid,"peer-2"));

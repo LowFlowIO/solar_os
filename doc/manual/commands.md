@@ -833,6 +833,7 @@ xfer recv <port> <file> --zmodem [--append|--replace]
 | `ble` | `ble forget` | Erase the remembered keyboard, its BLE bond, and its cached GATT service database. |
 | `ble gatt` | `ble gatt status` | Show the generic GATT connection state and discovered-service count. |
 | `ble gatt` | `ble gatt connect <aa:bb:cc:dd:ee:ff> <public\|random\|rpa_public\|rpa_random>` | Connect to a BLE peripheral by address and address type. |
+| `ble gatt` | `ble gatt pair <six-digit-pin>` | Secure and bond the connected GATT peripheral with its six-digit PIN. |
 | `ble gatt` | `ble gatt disconnect` | Request disconnect of the shell's GATT session and cancel its pending operation. |
 | `ble gatt` | `ble gatt services` | List discovered services and their indexes and handle ranges. |
 | `ble gatt` | `ble gatt chars <service-index>` | List the characteristics discovered for one service. |
@@ -902,6 +903,7 @@ BLE GATT usage:
 ```text
 ble gatt status
 ble gatt connect <aa:bb:cc:dd:ee:ff> <public|random|rpa_public|rpa_random>
+ble gatt pair <six-digit-pin>
 ble gatt disconnect
 ble gatt services
 ble gatt chars <service-index>
