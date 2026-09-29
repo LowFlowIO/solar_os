@@ -2,6 +2,16 @@
 
 ## 4.x
 
+- **4.15.3** — 2026-09-29 — Added the built-in `meshcore-ble` job for an
+  external MeshCore companion. It pairs over BLE, synchronizes contacts,
+  channels, and queued messages, and carries direct and group Chat traffic
+  through the existing Contacts, Messages, and Inbox services while leaving
+  the companion's identity and configuration authoritative. The BLE host can
+  keep a keyboard and companion connected together, and native jobs now have
+  an owned multi-peer GATT client ABI with passkey pairing. The gesture binding
+  job is now named `gestures`. To remain within their flash limits, Rover and
+  VGA32 no longer include Bluetooth, and Writerdeck no longer includes offline
+  speech.
 - **4.15.2** — 2026-09-29 — Added the standalone display-shell `deepsleep`
   command. It stops the ESP32 radios, powers down the primary display, and
   enters deep sleep with KEY, compatible RTC interrupt, scheduled timer, and
