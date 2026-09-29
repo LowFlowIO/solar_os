@@ -3,6 +3,7 @@
 #include <stdbool.h>
 #include <string.h>
 
+#include "axp2101.h"
 #include "epd_ssd1677.h"
 #include "esp_check.h"
 #include "esp_heap_caps.h"
@@ -13,12 +14,6 @@
 
 #define SOLAR_OS_SSD1677_MAX 2
 #define SOLAR_OS_SSD1677_DEFAULT_SPI_CLOCK_KHZ 20000
-#define AXP2101_CHIP_ID_REG 0x03
-#define AXP2101_CHIP_ID 0x4a
-#define AXP2101_LDO_ONOFF_CTRL0_REG 0x90
-#define AXP2101_LDO_VOL2_CTRL_REG 0x94
-#define AXP2101_ALDO3_ENABLE (1U << 2)
-#define AXP2101_ALDO3_3300MV 0x1c
 
 typedef struct {
     char spi_bus[SOLAR_OS_EXPANSION_TARGET_MAX];
@@ -40,6 +35,7 @@ typedef struct {
     char spi_bus[SOLAR_OS_EXPANSION_TARGET_MAX];
     char power_i2c_bus[SOLAR_OS_EXPANSION_TARGET_MAX];
     int power_i2c_address;
+    axp2101_t power_chip;
     epd_ssd1677_t driver;
     solar_os_board_display_t display;
 } solar_os_ssd1677_device_t;
@@ -96,6 +92,32 @@ static const u8g2_cb_t *rotation_callback(int rotation)
     }
 }
 
+static esp_err_t axp2101_power_read(void *context,
+                                    uint8_t reg,
+                                    uint8_t *data,
+                                    size_t len)
+{
+    solar_os_ssd1677_device_t *device = context;
+    return solar_os_bus_i2c_read_reg(device->power_i2c_bus,
+                                     (uint8_t)device->power_i2c_address,
+                                     reg,
+                                     data,
+                                     len);
+}
+
+static esp_err_t axp2101_power_write(void *context,
+                                     uint8_t reg,
+                                     const uint8_t *data,
+                                     size_t len)
+{
+    solar_os_ssd1677_device_t *device = context;
+    return solar_os_bus_i2c_write_reg(device->power_i2c_bus,
+                                      (uint8_t)device->power_i2c_address,
+                                      reg,
+                                      data,
+                                      len);
+}
+
 static esp_err_t axp2101_set_epaper_power(void *context, bool on)
 {
     solar_os_ssd1677_device_t *device = context;
@@ -103,51 +125,7 @@ static esp_err_t axp2101_set_epaper_power(void *context, bool on)
         device->power_i2c_address != 0x34) {
         return ESP_ERR_INVALID_STATE;
     }
-    uint8_t chip_id = 0;
-    ESP_RETURN_ON_ERROR(solar_os_bus_i2c_read_reg(device->power_i2c_bus,
-                                                   (uint8_t)device->power_i2c_address,
-                                                   AXP2101_CHIP_ID_REG,
-                                                   &chip_id,
-                                                   1),
-                        TAG,
-                        "AXP2101 identification failed");
-    if (chip_id != AXP2101_CHIP_ID) {
-        ESP_LOGE(TAG, "unexpected PMIC chip ID 0x%02x", chip_id);
-        return ESP_ERR_NOT_FOUND;
-    }
-    if (on) {
-        uint8_t voltage = 0;
-        ESP_RETURN_ON_ERROR(solar_os_bus_i2c_read_reg(device->power_i2c_bus,
-                                                       (uint8_t)device->power_i2c_address,
-                                                       AXP2101_LDO_VOL2_CTRL_REG,
-                                                       &voltage,
-                                                       1),
-                            TAG,
-                            "AXP2101 ALDO3 voltage read failed");
-        voltage = (uint8_t)((voltage & 0xe0U) | AXP2101_ALDO3_3300MV);
-        ESP_RETURN_ON_ERROR(solar_os_bus_i2c_write_reg(device->power_i2c_bus,
-                                                        (uint8_t)device->power_i2c_address,
-                                                        AXP2101_LDO_VOL2_CTRL_REG,
-                                                        &voltage,
-                                                        1),
-                            TAG,
-                            "AXP2101 ALDO3 voltage setup failed");
-    }
-    uint8_t outputs = 0;
-    ESP_RETURN_ON_ERROR(solar_os_bus_i2c_read_reg(device->power_i2c_bus,
-                                                   (uint8_t)device->power_i2c_address,
-                                                   AXP2101_LDO_ONOFF_CTRL0_REG,
-                                                   &outputs,
-                                                   1),
-                        TAG,
-                        "AXP2101 output state read failed");
-    outputs = on ? (uint8_t)(outputs | AXP2101_ALDO3_ENABLE) :
-        (uint8_t)(outputs & (uint8_t)~AXP2101_ALDO3_ENABLE);
-    return solar_os_bus_i2c_write_reg(device->power_i2c_bus,
-                                      (uint8_t)device->power_i2c_address,
-                                      AXP2101_LDO_ONOFF_CTRL0_REG,
-                                      &outputs,
-                                      1);
+    return axp2101_set_aldo3(&device->power_chip, on, 3300U);
 }
 
 static esp_err_t parse_bindings(const solar_os_expansion_binding_t *bindings,
@@ -365,6 +343,19 @@ esp_err_t solar_os_ssd1677_attach(const char *name,
             binding_config.power_i2c_bus,
             sizeof(device->power_i2c_bus));
     device->power_i2c_address = binding_config.power_i2c_address;
+    if (binding_config.power_i2c_address >= 0) {
+        const axp2101_io_t power_io = {
+            .read = axp2101_power_read,
+            .write = axp2101_power_write,
+            .ctx = device,
+        };
+        const esp_err_t power_ret = axp2101_init(&device->power_chip, &power_io);
+        if (power_ret != ESP_OK) {
+            heap_caps_free(device);
+            devices[slot] = NULL;
+            return power_ret;
+        }
+    }
     const epd_ssd1677_config_t config = {
         .spi_bus = device->spi_bus,
         .cs_pin = binding_config.cs_pin,

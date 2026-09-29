@@ -16,6 +16,7 @@ drivers = [
   "uart_esp_idf",
   "display_ssd1677",
   "storage_expansion",
+  "battery_expansion",
   "i2c_esp_idf",
   "spi_esp_idf",
   "rtc_pcf85063",
@@ -25,7 +26,7 @@ drivers = [
 ]
 capabilities = [
   "psram", "simd", "display", "gfx", "cdc", "uart", "sd", "i2c", "spi",
-  "rtc", "audio", "audio_input", "wifi", "ble", "gpio", "expansion_gpio",
+  "rtc", "battery", "audio", "audio_input", "wifi", "ble", "gpio", "expansion_gpio",
   "expansion_i2c", "expansion_uart", "expansion_i2s", "key", "buttons",
   "temperature", "humidity",
 ]
@@ -111,6 +112,11 @@ port = "UART_NUM_0"
 tx = 43
 rx = 44
 baud_rate = "SOLAR_OS_BUS_UART_DEFAULT_BAUD_RATE"
+
+[[devices]]
+driver = "axp2101"
+name = "power0"
+bindings = { i2c = "i2c0", addr = 0x34, input_current = 1500, charge_current = 200, charge_voltage = 4200 }
 
 [[devices]]
 driver = "ssd1677"

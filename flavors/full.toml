@@ -100,6 +100,7 @@ st25r3916 = true
 bhi260ap = true
 drv2605 = true
 bq25896 = true
+axp2101 = true
 tdeck_keyboard = true
 analog_joystick = true
 ps2_mouse = true

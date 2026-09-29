@@ -70,6 +70,11 @@ partial-update waveform.
 automatic mode uses byte-aligned dirty windows and periodic full cleanup
 refreshes. It can control a GPIO power gate or the AXP2101 ALDO3 rail used by
 the Waveshare ESP32-S3-ePaper-3.97 fixed `display0`.
+`expansion.axp2101` verifies the PMIC identity, enables its battery ADC and fuel
+gauge, and publishes battery percentage, voltage, external-power, charging,
+and charger-control data through the common battery and charger services. The
+Waveshare board declares it as the fixed early `power0` attachment and exposes
+the charger as `charger0`.
 `expansion.cardkb` polls the M5Stack Unit CardKB at its fixed I2C address and
 publishes its character taps and navigation keys through the shared input
 service used by shells and foreground apps.

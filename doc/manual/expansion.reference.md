@@ -249,6 +249,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | Driver | Device | Required bindings | Result after attach |
 | --- | --- | --- | --- |
 | `manual` | Resource-only profile | Any valid bus, address, chip-select, GPIO, ADC, or PWM bindings | Claims resources without initializing hardware. |
+| `axp2101` | AXP2101 PMIC, fuel gauge, and battery charger | `i2c=<bus> addr=0x34`; optional `input_current=<mA> charge_current=<mA> charge_voltage=<mV>` | Registers the board battery provider and `charger0`; also supplies the reusable ALDO3 control used by the Waveshare SSD1677 display. |
 | `rfm69` | HopeRF RFM69W/CW packet radio | `spi=<bus> cs=<pin>`; optional `irq=<pin> reset=<pin>` | Registers a packet-radio target with PA0 power from -18 through 13 dBm. |
 | `rfm69h` | HopeRF RFM69HW/HCW high-power packet radio | `spi=<bus> cs=<pin>`; optional `irq=<pin> reset=<pin>` | Registers a packet-radio target with PA_BOOST power from -2 through 20 dBm. |
 | `rfm95` | HopeRF RFM95W multimode radio | `spi=<bus> cs=<pin>`; optional `irq=<pin> reset=<pin>` | Registers an FSK/GFSK/MSK/GMSK/OOK/LoRa target for the `radio` command. |

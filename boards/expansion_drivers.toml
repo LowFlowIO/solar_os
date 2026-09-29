@@ -314,6 +314,53 @@ role = "charge_voltage"
 min = 3840
 max = 4608
 
+[drivers.axp2101]
+summary = "AXP2101 PMIC, fuel gauge, and battery charger"
+package = "axp2101"
+targets = ["esp32s3"]
+capabilities = ["i2c"]
+board_capabilities = ["battery"]
+board_driver = "battery_expansion"
+early = true
+default_name = "power0"
+
+[[drivers.axp2101.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+
+[[drivers.axp2101.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x34"
+required = true
+allowed = [0x34]
+
+[[drivers.axp2101.bindings]]
+key = "input_current"
+kind = "parameter"
+hint = "100|500|900|1000|1500|2000mA"
+role = "input_current"
+min = 100
+max = 2000
+
+[[drivers.axp2101.bindings]]
+key = "charge_current"
+kind = "parameter"
+hint = "100..1000mA"
+role = "charge_current"
+min = 100
+max = 1000
+
+[[drivers.axp2101.bindings]]
+key = "charge_voltage"
+kind = "parameter"
+hint = "4000|4100|4200|4350|4400mV"
+role = "charge_voltage"
+min = 4000
+max = 4400
+
 [drivers.ssd1683]
 summary = "SSD1683 e-paper"
 package = "expansion_ssd1683"

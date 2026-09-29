@@ -410,11 +410,26 @@ class FlavorPackagesTest(unittest.TestCase):
         )
         self.assertEqual(
             self.catalog.package_defs["expansion_ssd1677"].depends,
-            ("service_expansion", "service_spi"),
+            ("driver_axp2101", "service_expansion", "service_spi"),
         )
         self.assertEqual(
             self.catalog.package_defs["expansion_ssd1677"].capabilities,
             ("gfx",),
+        )
+        self.assertEqual(
+            self.catalog.group_defs["axp2101"].members,
+            ("axp2101",),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["axp2101"].depends,
+            (
+                "driver_axp2101", "service_battery", "service_charger",
+                "service_expansion", "service_i2c",
+            ),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["driver_axp2101"].sources,
+            ("drivers/axp2101.c",),
         )
         self.assertEqual(
             self.catalog.package_defs["service_espnow"].depends,

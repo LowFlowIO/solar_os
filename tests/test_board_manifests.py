@@ -312,7 +312,7 @@ bindings = { gpio = 7 }
             self.manifest_dir / "waveshare_esp32_s3_epaper_3_97.toml",
             self.manifest_dir,
         )
-        self.assertNotIn("battery", board["build"]["capabilities"])
+        self.assertIn("battery", board["build"]["capabilities"])
         self.assertNotIn("imu", board["build"]["capabilities"])
         self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_NATIVE_WIDTH"], "800")
         self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_NATIVE_HEIGHT"], "480")
@@ -326,7 +326,18 @@ bindings = { gpio = 7 }
         devices = {device["name"]: device for device in board["devices"]}
         self.assertEqual(
             set(devices),
-            {"display0", "rtc0", "environment0", "audio0", "storage0"},
+            {
+                "power0", "display0", "rtc0", "environment0", "audio0",
+                "storage0",
+            },
+        )
+        self.assertEqual(devices["power0"]["driver"], "axp2101")
+        self.assertEqual(
+            devices["power0"]["bindings"],
+            {
+                "i2c": "i2c0", "addr": 0x34, "input_current": 1500,
+                "charge_current": 200, "charge_voltage": 4200,
+            },
         )
         self.assertEqual(devices["display0"]["driver"], "ssd1677")
         self.assertEqual(
