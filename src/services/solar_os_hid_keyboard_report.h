@@ -40,3 +40,9 @@ bool solar_os_hid_keyboard_report_update(
     const uint8_t *data,
     size_t length,
     solar_os_hid_keyboard_report_state_t *state);
+
+/* Return true when the current union adds a modifier or nonzero key usage. */
+bool solar_os_hid_keyboard_report_has_new_press(
+    uint8_t previous_modifiers,
+    const uint8_t previous_keys[SOLAR_OS_HID_KEYBOARD_REPORT_KEYS],
+    const solar_os_hid_keyboard_report_state_t *state);

@@ -96,3 +96,35 @@ bool solar_os_hid_keyboard_report_update(
     }
     return true;
 }
+
+bool solar_os_hid_keyboard_report_has_new_press(
+    uint8_t previous_modifiers,
+    const uint8_t previous_keys[SOLAR_OS_HID_KEYBOARD_REPORT_KEYS],
+    const solar_os_hid_keyboard_report_state_t *state)
+{
+    if (previous_keys == NULL || state == NULL) {
+        return false;
+    }
+    if ((state->modifiers & (uint8_t)~previous_modifiers) != 0U) {
+        return true;
+    }
+    for (size_t i = 0; i < SOLAR_OS_HID_KEYBOARD_REPORT_KEYS; i++) {
+        const uint8_t key = state->keys[i];
+        if (key == 0U) {
+            continue;
+        }
+        bool was_pressed = false;
+        for (size_t previous = 0;
+             previous < SOLAR_OS_HID_KEYBOARD_REPORT_KEYS;
+             previous++) {
+            if (previous_keys[previous] == key) {
+                was_pressed = true;
+                break;
+            }
+        }
+        if (!was_pressed) {
+            return true;
+        }
+    }
+    return false;
+}

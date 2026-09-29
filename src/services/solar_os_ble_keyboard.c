@@ -137,6 +137,7 @@ static ble_keyboard_scan_mode_t active_scan_mode = BLE_KEYBOARD_SCAN_DISCOVERY;
 static bool caps_lock;
 static uint8_t previous_keys[BLE_KEYBOARD_MAX_KEYS];
 static uint8_t previous_modifiers;
+static uint32_t wake_generation;
 static solar_os_hid_keyboard_report_tracker_t keyboard_report_tracker;
 static solar_os_input_source_t input_source;
 static solar_os_ble_keyboard_key_state_t key_state;
@@ -1497,6 +1498,21 @@ static bool key_in_report(uint8_t key, const uint8_t *keys)
     return false;
 }
 
+static void note_wake_activity(void)
+{
+    portENTER_CRITICAL(&key_state_lock);
+    wake_generation++;
+    portEXIT_CRITICAL(&key_state_lock);
+}
+
+uint32_t solar_os_ble_keyboard_wake_generation(void)
+{
+    portENTER_CRITICAL(&key_state_lock);
+    const uint32_t generation = wake_generation;
+    portEXIT_CRITICAL(&key_state_lock);
+    return generation;
+}
+
 static void keyboard_report_state_publish(uint8_t modifiers, const uint8_t *keys)
 {
     solar_os_ble_keyboard_key_state_t next = {
@@ -1540,6 +1556,12 @@ static void handle_keyboard_report(uint8_t map_index,
         keyboard_report_state_reset(connected);
         previous_modifiers = modifiers;
         return;
+    }
+
+    if (solar_os_hid_keyboard_report_has_new_press(previous_modifiers,
+                                                    previous_keys,
+                                                    &report_state)) {
+        note_wake_activity();
     }
 
     const uint8_t changed_modifiers = (uint8_t)(previous_modifiers ^ modifiers);
@@ -1663,6 +1685,7 @@ static void hidh_callback(solar_os_ble_hid_event_type_t id, solar_os_ble_hid_eve
             connected_dev = param->open.dev;
             set_keyboard_battery(false, 0);
             keyboard_report_state_reset(true);
+            note_wake_activity();
             const char *name = pending_name;
             const char *display_name = name != NULL && name[0] ? name : pending_name;
             strlcpy(connected_name, display_name[0] ? display_name : "keyboard", sizeof(connected_name));

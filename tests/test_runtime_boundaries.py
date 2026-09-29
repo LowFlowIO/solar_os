@@ -675,6 +675,34 @@ class RuntimeBoundaryTest(unittest.TestCase):
             hid,
         )
 
+    def test_ble_keyboard_activity_resumes_suspend(self):
+        main = (ROOT / "src/main.c").read_text(encoding="utf-8")
+        ble = (ROOT / "src/services/solar_os_ble_keyboard.c").read_text(
+            encoding="utf-8"
+        )
+
+        suspend = main.split("static void enter_suspend", 1)[1].split(
+            "static void exit_suspend", 1
+        )[0]
+        dispatch = main.split("static void dispatch_input_key", 1)[1].split(
+            "static void dispatch_input_pointer", 1
+        )[0]
+        runtime = main.split("while (true)", 1)[1]
+        report = ble.split("static void handle_keyboard_report", 1)[1].split(
+            "static int scan_callback", 1
+        )[0]
+        opened = ble.split("case SOLAR_OS_BLE_HID_OPEN:", 1)[1].split(
+            "case SOLAR_OS_BLE_HID_BATTERY:", 1
+        )[0]
+
+        self.assertIn("suspend_ble_wake_generation =", suspend)
+        self.assertIn("solar_os_ble_keyboard_wake_generation()", suspend)
+        self.assertIn("maybe_exit_suspend_for_ble_keyboard();", dispatch)
+        self.assertIn("maybe_exit_suspend_for_ble_keyboard();", runtime)
+        self.assertIn("solar_os_hid_keyboard_report_has_new_press", report)
+        self.assertIn("note_wake_activity();", report)
+        self.assertIn("note_wake_activity();", opened)
+
     def test_audio_stream_direction_and_shell_capabilities(self):
         audio = (ROOT / "src/services/solar_os_audio.c").read_text(
             encoding="utf-8"

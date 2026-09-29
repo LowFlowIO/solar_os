@@ -29,6 +29,20 @@ int main(void)
                                                &state));
     assert(state.modifiers == 0);
     assert(state_has_key(&state, 0x04));
+    const uint8_t no_keys[SOLAR_OS_HID_KEYBOARD_REPORT_KEYS] = {0};
+    assert(solar_os_hid_keyboard_report_has_new_press(0, no_keys, &state));
+    assert(!solar_os_hid_keyboard_report_has_new_press(0,
+                                                       state.keys,
+                                                       &state));
+    const solar_os_hid_keyboard_report_state_t modifier_only = {
+        .modifiers = 0x01,
+    };
+    assert(solar_os_hid_keyboard_report_has_new_press(0,
+                                                       no_keys,
+                                                       &modifier_only));
+    assert(!solar_os_hid_keyboard_report_has_new_press(0x01,
+                                                        no_keys,
+                                                        &modifier_only));
 
     /* An idle report from another collection must not release map 0's key. */
     const uint8_t boot_idle[8] = {0};
@@ -74,6 +88,13 @@ int main(void)
                                                &state));
     assert(state.modifiers == 0x02);
     assert(state_has_key(&state, 0x05));
+    assert(solar_os_hid_keyboard_report_has_new_press(0, no_keys, &state));
+
+    const uint8_t held_b[SOLAR_OS_HID_KEYBOARD_REPORT_KEYS] = {0x05};
+    const solar_os_hid_keyboard_report_state_t release_b = {0};
+    assert(!solar_os_hid_keyboard_report_has_new_press(0x02,
+                                                       held_b,
+                                                       &release_b));
 
     const solar_os_hid_keyboard_report_state_t previous = state;
     const uint8_t invalid[6] = {0};

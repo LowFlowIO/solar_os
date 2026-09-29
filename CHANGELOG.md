@@ -2,6 +2,9 @@
 
 ## 4.x
 
+- **4.15.1** — 2026-09-29 — Suspended devices now resume their configured
+  power profile and display when a remembered BLE keyboard reconnects or sends
+  a new key press. Release-only keyboard reports do not wake the device.
 - **4.15.0** — 2026-09-28 — Added signed native ELF module packages for
   ESP32-S3 targets with PSRAM. The `pkg` package manager browses the versioned
   repository, verifies catalog signatures and host compatibility, and
