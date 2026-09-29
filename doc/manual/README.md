@@ -185,7 +185,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [espnow-link job](jobs.reference.md#espnow-link) — ESP-NOW adapter for the transport-independent SolarOS Link service.
 - [ftpd job](jobs.reference.md#ftpd) — Unencrypted FTP file server for one exported folder. The job supports one client at a time and passive IPv4 data connections.
 - [gateway-sync job](jobs.reference.md#gateway-sync) — Background synchronizer for the gateway messaging provider. Start and stop it explicitly, using the same lifecycle as email-sync:
-- [gesture-listener job](jobs.reference.md#gesture-listener) — Gesture-to-command listener. Rules are configured independently with `gesture bind`, while this job owns observation and dispatch:
+- [gestures job](jobs.reference.md#gestures) — Gesture-to-command listener. Rules are configured independently with `gesture bind`, while this job owns observation and dispatch:
 - [gpio-keys job](jobs.reference.md#gpio-keys) — Maps runtime-safe GPIO inputs to SolarOS keyboard presses. The job configures each pin as an input with its internal pull-up enabled, treats a low level as pressed, and applies the same 25 ms debounce used by fixed board buttons. Each debounced transition publishes a generic SolarOS key press or release. Held keys use the system repeat rate configured by setterm keyrate.
 - [graffiti job](jobs.reference.md#graffiti) — Full-screen Palm Graffiti handwriting input for boards with absolute touch and PSRAM. The job does not draw an overlay or change the active application.
 - [httpd job](jobs.reference.md#httpd) — Static HTTP file server for a folder on mounted storage.

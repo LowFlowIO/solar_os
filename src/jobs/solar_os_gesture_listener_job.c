@@ -33,14 +33,14 @@ static esp_err_t gesture_listener_job_start(solar_os_context_t *ctx,
     if (err != ESP_OK) {
         return err;
     }
-    (void)solar_os_jobs_note_resource("gesture-listener",
+    (void)solar_os_jobs_note_resource("gestures",
                                       SOLAR_OS_JOB_RESOURCE_CUSTOM,
                                       "gesture-observer",
                                       "gesture bindings");
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
     if (io != NULL) {
         solar_os_shell_io_printf(io,
-                                 "gesture-listener started: %u bindings\n",
+                                 "gestures started: %u bindings\n",
                                  (unsigned)solar_os_input_actions_count());
     }
     return ESP_OK;
@@ -55,7 +55,7 @@ static void gesture_listener_job_stop(solar_os_context_t *ctx)
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
     if (io != NULL) {
         solar_os_shell_io_printf(io,
-                                 "gesture-listener stopped: %lu triggered, %lu dropped\n",
+                                 "gestures stopped: %lu triggered, %lu dropped\n",
                                  (unsigned long)triggered,
                                  (unsigned long)dropped);
     }
@@ -81,7 +81,7 @@ static void gesture_listener_job_detail(solar_os_context_t *ctx)
 }
 
 const solar_os_job_t solar_os_gesture_listener_job = {
-    .name = "gesture-listener",
+    .name = "gestures",
     .summary = "run gesture-to-command bindings",
     .kind = SOLAR_OS_JOB_KIND_BACKGROUND,
     .start = gesture_listener_job_start,

@@ -125,9 +125,9 @@ becomes idle. The cooldown suppresses repeated sensor reports; it defaults to
 gesture bind source=gesture0 gesture=flick direction=east -- input emit ALT+RIGHT
 gesture bind source=gesture0 gesture=flick direction=west cooldown=400 -- input emit ALT+LEFT
 gesture bind source=* gesture=double-tap -- /flash/bin/toggle-light.sh
-job start gesture-listener
+job start gestures
 gesture bindings
-job stop gesture-listener
+job stop gestures
 gesture unbind 2
 ```
 
@@ -137,8 +137,8 @@ tap into the normal input-focus path. Modifier chords use `CTRL`, `SHIFT`,
 send USB or BLE HID reports. A chord tap releases its modifiers together with
 the named key.
 Bindings are deliberately volatile and remain configured when the
-`gesture-listener` job stops. Put the required `gesture bind` commands followed
-by `job start gesture-listener` in the selected startup shell script to recreate
+`gestures` job stops. Put the required `gesture bind` commands followed
+by `job start gestures` in the selected startup shell script to recreate
 and activate them after boot. `gesture unbind all` removes every rule and resets
 the next binding ID to 1. Background commands may use shell built-ins or invoke
 scripts, but they cannot launch a foreground application. Stopping the job
