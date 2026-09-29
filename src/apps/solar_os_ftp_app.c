@@ -295,6 +295,23 @@ static void ftp_app_parent(const char *path, char *parent, size_t parent_len)
     }
 }
 
+static size_t ftp_app_trimmed_path_len(const char *path)
+{
+    size_t len = path != NULL ? strlen(path) : 0U;
+    while (len > 1U && path[len - 1U] == '/') {
+        len--;
+    }
+    return len;
+}
+
+static bool ftp_app_paths_equal(const char *a, const char *b)
+{
+    const size_t a_len = ftp_app_trimmed_path_len(a);
+    const size_t b_len = ftp_app_trimmed_path_len(b);
+    return a != NULL && b != NULL && a_len == b_len &&
+        strncmp(a, b, a_len) == 0;
+}
+
 static const char *ftp_app_basename(const char *path)
 {
     const char *slash = path != NULL ? strrchr(path, '/') : NULL;
@@ -1192,6 +1209,48 @@ static void ftp_app_restore_position(ftp_app_pane_t *pane,
     pane->top = top < pane->count ? top : pane->count - 1U;
 }
 
+static void ftp_app_select_child_path(ftp_app_pane_t *pane,
+                                      const char *child_path)
+{
+    if (pane == NULL || child_path == NULL) {
+        return;
+    }
+
+    for (size_t i = 0; i < pane->count; i++) {
+        const ftp_app_entry_t *entry = &pane->entries[i];
+        char entry_path[SOLAR_OS_STORAGE_PATH_MAX];
+        if (entry->parent || !entry->is_directory ||
+            !ftp_app_join(entry_path,
+                          sizeof(entry_path),
+                          pane->path,
+                          entry->name)) {
+            continue;
+        }
+        if (ftp_app_paths_equal(entry_path, child_path)) {
+            pane->cursor = i;
+            return;
+        }
+    }
+}
+
+static esp_err_t ftp_app_change_local_dir(ftp_app_pane_t *pane,
+                                          const char *path)
+{
+    char previous_path[SOLAR_OS_STORAGE_PATH_MAX];
+    char previous_parent[SOLAR_OS_STORAGE_PATH_MAX];
+    strlcpy(previous_path, pane->path, sizeof(previous_path));
+    ftp_app_parent(previous_path, previous_parent, sizeof(previous_parent));
+    const bool moving_to_parent =
+        ftp_app_paths_equal(previous_parent, path) &&
+        !ftp_app_paths_equal(previous_path, path);
+
+    const esp_err_t err = ftp_app_load_local(pane, path);
+    if (err == ESP_OK && moving_to_parent) {
+        ftp_app_select_child_path(pane, previous_path);
+    }
+    return err;
+}
+
 static esp_err_t ftp_app_refresh_local(void)
 {
     ftp_app_pane_t *pane = &ftp_app.panes[0];
@@ -1229,7 +1288,19 @@ static void ftp_app_poll(solar_os_context_t *ctx)
                 ftp_app.connected = true;
             }
             ftp_app_pane_t *remote = &ftp_app.panes[1];
-            const bool same_remote_path = strcmp(remote->path, result.remote_path) == 0;
+            char previous_remote_path[SOLAR_OS_STORAGE_PATH_MAX];
+            char previous_remote_parent[SOLAR_OS_STORAGE_PATH_MAX];
+            strlcpy(previous_remote_path,
+                    remote->path,
+                    sizeof(previous_remote_path));
+            ftp_app_parent(previous_remote_path,
+                           previous_remote_parent,
+                           sizeof(previous_remote_parent));
+            const bool same_remote_path =
+                ftp_app_paths_equal(previous_remote_path, result.remote_path);
+            const bool moving_to_remote_parent =
+                ftp_app_paths_equal(previous_remote_parent, result.remote_path) &&
+                !same_remote_path;
             const size_t old_remote_cursor = remote->cursor;
             const size_t old_remote_top = remote->top;
             solar_os_memory_free(remote->entries);
@@ -1241,6 +1312,8 @@ static void ftp_app_poll(solar_os_context_t *ctx)
             strlcpy(remote->path, result.remote_path, sizeof(remote->path));
             if (same_remote_path) {
                 ftp_app_restore_position(remote, old_remote_cursor, old_remote_top);
+            } else if (moving_to_remote_parent) {
+                ftp_app_select_child_path(remote, previous_remote_path);
             }
             (void)ftp_app_refresh_local();
             ftp_app_set_message(result.kind == FTP_APP_WORK_CONNECT ? "connected" : "done");
@@ -1284,7 +1357,7 @@ static void ftp_app_open_selected(void)
         return;
     }
     if (ftp_app.active == 0) {
-        if (ftp_app_load_local(&ftp_app.panes[0], path) != ESP_OK) {
+        if (ftp_app_change_local_dir(&ftp_app.panes[0], path) != ESP_OK) {
             ftp_app_set_message("cannot open local directory");
         }
     } else {
