@@ -1307,11 +1307,6 @@ static esp_err_t expansion_attach(const char *driver,
     if (!solar_os_expansion_available()) {
         return ESP_ERR_NOT_SUPPORTED;
     }
-    solar_os_expansion_binding_t normalized[SOLAR_OS_EXPANSION_DEVICE_BINDING_MAX];
-    for (size_t i = 0; i < binding_count; i++) {
-        normalized[i] = bindings[i];
-    }
-
     expansion_device_node_t *node = solar_os_memory_calloc(
         1,
         sizeof(*node),
@@ -1326,9 +1321,10 @@ static esp_err_t expansion_attach(const char *driver,
     node->device.autostart = autostart;
     node->device.detachable = detachable;
     node->device.binding_count = binding_count;
-    memcpy(node->device.bindings,
-           normalized,
-           binding_count * sizeof(normalized[0]));
+    solar_os_expansion_binding_t *normalized = node->device.bindings;
+    if (binding_count > 0U) {
+        memcpy(normalized, bindings, binding_count * sizeof(normalized[0]));
+    }
     node->state = EXPANSION_SLOT_ATTACHING;
 
     if (!devices_lock_take()) {

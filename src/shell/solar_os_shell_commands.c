@@ -2828,6 +2828,11 @@ void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv)
                 (unsigned)info.audio.channels,
                 (unsigned)info.audio.bits_per_sample,
                 (unsigned)info.audio.frames_per_block);
+        } else if (info.type == SOLAR_OS_STREAM_TYPE_VIDEO) {
+            solar_os_shell_io_printf(term, "Video default: JPEG, %ux%u, quality %u\n",
+                                     (unsigned)info.video.width,
+                                     (unsigned)info.video.height,
+                                     (unsigned)info.video.jpeg_quality);
         } else if (solar_os_stream_csv_header(&info, header, sizeof(header)) == ESP_OK) {
             solar_os_shell_io_printf(term, "CSV: %s\n", header);
         }

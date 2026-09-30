@@ -147,6 +147,16 @@ esp_err_t solar_os_jobs_mark_stopped(const char *job, uint32_t generation, esp_e
 esp_err_t solar_os_stream_get_info(const char *id, solar_os_stream_info_t *info)
 {
     if (!strcmp(id, "missing")) return ESP_ERR_NOT_FOUND;
+    if (!strcmp(id, "camera0")) {
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+        *info = (solar_os_stream_info_t){.type = SOLAR_OS_STREAM_TYPE_VIDEO,
+            .direction = SOLAR_OS_STREAM_DIRECTION_SOURCE,
+            .video = {.codec = SOLAR_OS_STREAM_VIDEO_JPEG, .width = 320, .height = 240}};
+        return ESP_OK;
+#else
+        return ESP_ERR_NOT_SUPPORTED;
+#endif
+    }
     *info = (solar_os_stream_info_t) {
         .type = SOLAR_OS_STREAM_TYPE_AUDIO,
         .direction = SOLAR_OS_STREAM_DIRECTION_SOURCE,
@@ -161,10 +171,28 @@ esp_err_t solar_os_stream_get_info(const char *id, solar_os_stream_info_t *info)
 esp_err_t solar_os_stream_open_ex(const char *id, const char *owner,
     const solar_os_stream_open_options_t *options, solar_os_stream_handle_t *handle)
 {
-    assert(!strcmp(id, "mic0")); assert(!strcmp(owner, "job:rtspd"));
+    assert(!strcmp(owner, "job:rtspd"));
     assert(options->direction == SOLAR_OS_STREAM_DIRECTION_SOURCE);
+    if (!strcmp(id, "camera0")) {
+        solar_os_camera_owner_t token = {0};
+        esp_err_t error = solar_os_camera_acquire(owner, &token);
+        if (error != ESP_OK) return error;
+        const solar_os_camera_config_t config = {
+            .frame_size = options->requested_video.width == 640 ?
+                SOLAR_OS_CAMERA_FRAME_SIZE_VGA : SOLAR_OS_CAMERA_FRAME_SIZE_QVGA,
+            .jpeg_quality = options->requested_video.jpeg_quality,
+        };
+        assert(solar_os_camera_start(&token, &config) == ESP_OK);
+        handle->private_data[0] = token.generation;
+        handle->type = SOLAR_OS_STREAM_TYPE_VIDEO;
+        handle->video = options->requested_video;
+        handle->slot = 0;
+        return ESP_OK;
+    }
+    assert(!strcmp(id, "mic0"));
     if (audio_busy) return ESP_ERR_INVALID_STATE;
     audio_owner = pthread_self();
+    handle->slot = 1;
     handle->audio = options->requested_audio;
     handle->context = (void *)1;
     audio_opens++;
@@ -185,6 +213,43 @@ void solar_os_stream_close(solar_os_stream_handle_t *handle)
     if (!handle->context) return;
     assert(pthread_equal(audio_owner, pthread_self()));
     audio_closes++; handle->context = NULL;
+}
+
+esp_err_t solar_os_stream_close_ex(solar_os_stream_handle_t *handle)
+{
+    if (handle->slot < 0 || handle->leased_frame != NULL) return ESP_ERR_INVALID_STATE;
+    if (handle->type == SOLAR_OS_STREAM_TYPE_VIDEO) {
+        solar_os_camera_owner_t token = {.generation = handle->private_data[0]};
+        assert(solar_os_camera_stop(&token) == ESP_OK);
+        assert(solar_os_camera_release_owner(&token) == ESP_OK);
+    } else solar_os_stream_close(handle);
+    *handle = (solar_os_stream_handle_t)SOLAR_OS_STREAM_HANDLE_INIT;
+    return ESP_OK;
+}
+
+esp_err_t solar_os_stream_acquire_frame(solar_os_stream_handle_t *handle,
+                                       solar_os_stream_video_frame_t *frame)
+{
+    assert(handle->slot == 0 && handle->leased_frame == NULL);
+    const solar_os_camera_owner_t token = {.generation = handle->private_data[0]};
+    const solar_os_camera_frame_t *captured;
+    assert(solar_os_camera_capture(&token, &captured) == ESP_OK);
+    *frame = (solar_os_stream_video_frame_t){.data = captured->data,
+        .length = captured->length, .width = captured->width, .height = captured->height,
+        .timestamp_us = captured->timestamp_us};
+    handle->leased_frame = frame;
+    return ESP_OK;
+}
+
+esp_err_t solar_os_stream_release_frame(solar_os_stream_handle_t *handle,
+                                       solar_os_stream_video_frame_t *frame)
+{
+    assert(handle->leased_frame == frame);
+    const solar_os_camera_owner_t token = {.generation = handle->private_data[0]};
+    assert(solar_os_camera_release_frame(&token, &fake_frame) == ESP_OK);
+    handle->leased_frame = NULL;
+    memset(frame, 0, sizeof(*frame));
+    return ESP_OK;
 }
 
 esp_err_t solar_os_camera_acquire(const char *owner, solar_os_camera_owner_t *token)
@@ -239,12 +304,17 @@ static void options_test(void)
     solar_os_rtspd_options_t options;
     assert(solar_os_rtspd_parse_options(0, NULL, &options));
     assert(options.video && !options.audio[0] && options.fps == 5 && options.port == 554);
+    assert(!strcmp(options.video_source, "camera0"));
     char *audio[] = {"rtspd", "video=none", "audio=mic0", "port=8554"};
     assert(solar_os_rtspd_parse_options(4, audio, &options));
     assert(!options.video && !strcmp(options.audio, "mic0"));
     char *both[] = {"video=camera", "audio=mic0", "size=vga", "fps=0"};
     assert(solar_os_rtspd_parse_options(4, both, &options));
     assert(options.fps == 0 && options.camera.frame_size == SOLAR_OS_CAMERA_FRAME_SIZE_VGA);
+    assert(!strcmp(options.video_source, "camera0"));
+    char *explicit_video[] = {"video=mycam"};
+    assert(solar_os_rtspd_parse_options(1, explicit_video, &options));
+    assert(!strcmp(options.video_source, "mycam"));
     char *none[] = {"video=none", "audio=none"};
     assert(!solar_os_rtspd_parse_options(2, none, &options));
     char *duplicate[] = {"audio=mic0", "audio=none"};
@@ -252,7 +322,7 @@ static void options_test(void)
     char *audio_size[] = {"video=none", "audio=mic0", "size=qvga"};
     assert(!solar_os_rtspd_parse_options(3, audio_size, &options));
     const char *invalid[] = {"fps=31", "fps=-1", "fps=1x", "fps=", "port=0",
-        "port=65536", "audio=", "audio=mic/0", "video=mic0", "size=qqvga", "5", "wat=1"};
+        "port=65536", "audio=", "audio=mic/0", "video=", "video=cam/0", "size=qqvga", "5", "wat=1"};
     for (size_t i = 0; i < sizeof(invalid) / sizeof(invalid[0]); i++) {
         char *arg = (char *)invalid[i];
         assert(!solar_os_rtspd_parse_options(1, &arg, &options));
@@ -346,7 +416,7 @@ static void run_sessions(bool video)
     assert(solar_os_rtspd_job.start(NULL, video ? 4 : 3, args) == ESP_OK);
     assert(live_allocations == (video ? 3U : 2U));
     assert(live_bytes == sizeof(rtspd_session_t) + sizeof(rtspd_audio_scratch_t) +
-                         (video ? SOLAR_OS_MEDIA_RTP_PACKET_MAX : 0U));
+                         (video ? sizeof(rtspd_video_scratch_t) : 0U));
     assert((rtspd.sources[RTSPD_VIDEO].scratch != NULL) == video);
     for (unsigned round = 0; round < 2; round++) {
         uint16_t audio_port, video_port;
@@ -416,7 +486,7 @@ static void run_sessions(bool video)
     solar_os_rtspd_job.stop(NULL);
     assert(recv(active_control, active_packet, sizeof(active_packet), 0) == 0);
     close(active_control); close(active_udp);
-    assert(!rtspd.running && !live_tasks && !rtspd.camera_owner.generation);
+    assert(!rtspd.running && !live_tasks && !rtspd.session);
     assert(!rtspd.session && !live_allocations && !live_bytes);
     assert(!rtspd.sources[0].scratch && !rtspd.sources[1].scratch);
     assert(rtspd.sources[RTSPD_AUDIO].stack_min_free == 3072U);

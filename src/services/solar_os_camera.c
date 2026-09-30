@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 
@@ -24,7 +25,7 @@ typedef struct {
 
 static SemaphoreHandle_t camera_mutex;
 static StaticSemaphore_t camera_mutex_storage;
-static camera_service_state_t camera_state;
+static EXT_RAM_BSS_ATTR camera_service_state_t camera_state;
 static uint32_t camera_next_owner_generation;
 
 static esp_err_t ensure_mutex(void)
@@ -91,6 +92,14 @@ esp_err_t solar_os_camera_register_backend(
     camera_state.backend_registered = true;
     strlcpy(camera_state.driver, backend->driver, sizeof(camera_state.driver));
     camera_state.last_error = ESP_OK;
+    if (backend->ops->publish != NULL) {
+        const esp_err_t error = backend->ops->publish(backend->ctx);
+        if (error != ESP_OK) {
+            memset(&camera_state, 0, sizeof(camera_state));
+            xSemaphoreGive(camera_mutex);
+            return error;
+        }
+    }
     xSemaphoreGive(camera_mutex);
     return ESP_OK;
 }
@@ -115,6 +124,14 @@ esp_err_t solar_os_camera_unregister_backend(const char *driver)
         camera_state.frame_leased) {
         xSemaphoreGive(camera_mutex);
         return ESP_ERR_INVALID_STATE;
+    }
+    if (camera_state.backend.ops->unpublish != NULL) {
+        const esp_err_t error = camera_state.backend.ops->unpublish(
+            camera_state.backend.ctx);
+        if (error != ESP_OK) {
+            xSemaphoreGive(camera_mutex);
+            return error;
+        }
     }
     memset(&camera_state, 0, sizeof(camera_state));
     xSemaphoreGive(camera_mutex);

@@ -5,6 +5,7 @@
 
 typedef struct {
     bool video;
+    char video_source[SOLAR_OS_STREAM_ID_MAX];
     char audio[SOLAR_OS_STREAM_ID_MAX];
     solar_os_camera_config_t camera;
     uint8_t fps;

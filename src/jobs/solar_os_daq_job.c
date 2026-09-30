@@ -256,7 +256,8 @@ static esp_err_t daq_parse_args(int argc, char **argv, daq_start_config_t *confi
         if (err != ESP_OK) {
             return err;
         }
-        if (config->infos[config->stream_count].direction ==
+        if (config->infos[config->stream_count].type == SOLAR_OS_STREAM_TYPE_VIDEO ||
+            config->infos[config->stream_count].direction ==
             SOLAR_OS_STREAM_DIRECTION_SINK) {
             return ESP_ERR_NOT_SUPPORTED;
         }

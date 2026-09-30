@@ -7366,9 +7366,9 @@ static bool shell_daq_stream_type_allowed(solar_os_stream_type_t type,
             type == SOLAR_OS_STREAM_TYPE_AUDIO;
     case SHELL_DAQ_COMPLETION_STREAMS_CSV:
         return type != SOLAR_OS_STREAM_TYPE_BYTES &&
-            type != SOLAR_OS_STREAM_TYPE_AUDIO;
+            type != SOLAR_OS_STREAM_TYPE_AUDIO && type != SOLAR_OS_STREAM_TYPE_VIDEO;
     case SHELL_DAQ_COMPLETION_STREAMS_ALL:
-        return true;
+        return type != SOLAR_OS_STREAM_TYPE_VIDEO;
     default:
         return false;
     }

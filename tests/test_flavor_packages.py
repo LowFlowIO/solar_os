@@ -158,6 +158,18 @@ class FlavorPackagesTest(unittest.TestCase):
             self.assertTrue(pruned["driver_battery_adc"], target)
             self.assertTrue(pruned["expansion_sdmmc"], target)
 
+    def test_camera_expansion_is_available_without_fitted_camera_on_s3(self):
+        _, _, groups, packages = self.resolve("full")
+        _, pruned = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"psram", "expansion_gpio", "wifi"})
+        s3 = generate_flavor_config.apply_target_pruning(self.catalog, pruned, "esp32s3")
+        classic = generate_flavor_config.apply_target_pruning(self.catalog, pruned, "esp32")
+        for name in ("driver_camera_esp32", "service_camera", "job_cam_webd"):
+            self.assertTrue(s3[name], name)
+            self.assertFalse(classic[name], name)
+        self.assertTrue(s3["job_rtspd"])
+        self.assertTrue(classic["job_rtspd"])
+
     def test_full_exposes_reusable_t_lora_expansion_drivers(self):
         _, _, groups, packages = self.resolve("full")
         reusable = {

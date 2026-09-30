@@ -1,5 +1,5 @@
 #pragma once
 
-#include "esp_err.h"
+#include "solar_os_expansion.h"
 
-esp_err_t solar_os_camera_esp32_register(void);
+extern const solar_os_expansion_driver_t solar_os_camera_esp32_expansion_driver;

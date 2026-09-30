@@ -87,6 +87,12 @@ typedef struct {
 } rtspd_source_t;
 
 typedef struct {
+    solar_os_stream_handle_t source;
+    solar_os_stream_video_frame_t frame;
+    uint8_t packet[SOLAR_OS_MEDIA_RTP_PACKET_MAX];
+} rtspd_video_scratch_t;
+
+typedef struct {
     int16_t samples[(SOLAR_OS_MEDIA_RTP_PACKET_MAX - SOLAR_OS_RTP_HEADER_BYTES) / 2U];
     uint8_t packet[SOLAR_OS_MEDIA_RTP_PACKET_MAX];
 } rtspd_audio_scratch_t;
@@ -100,7 +106,6 @@ typedef struct {
     int client_fd;
     solar_os_rtspd_options_t options;
     solar_os_stream_audio_format_t audio_format;
-    solar_os_camera_owner_t camera_owner;
     rtspd_source_t sources[RTSPD_TRACKS];
     rtspd_session_t *session;
     rtspd_session_t *active_session;
@@ -608,18 +613,28 @@ static void rtspd_send_error(rtspd_session_t *session, esp_err_t error)
     portEXIT_CRITICAL(&rtspd_lock);
 }
 
-#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
 static void rtspd_video_reader(void *arg)
 {
     (void)arg;
-    uint8_t *packet = rtspd.sources[RTSPD_VIDEO].scratch;
+    rtspd_video_scratch_t *scratch = rtspd.sources[RTSPD_VIDEO].scratch;
+    uint8_t *packet = scratch->packet;
+    const bool vga = rtspd.options.camera.frame_size == SOLAR_OS_CAMERA_FRAME_SIZE_VGA;
+    const solar_os_stream_open_options_t options = {
+        .direction = SOLAR_OS_STREAM_DIRECTION_SOURCE,
+        .requested_video = {.codec = SOLAR_OS_STREAM_VIDEO_JPEG,
+            .width = vga ? 640U : 320U, .height = vga ? 480U : 240U,
+            .jpeg_quality = rtspd.options.camera.jpeg_quality},
+    };
+    esp_err_t error = solar_os_stream_open_ex(rtspd.options.video_source,
+                                              RTSPD_OWNER, &options, &scratch->source);
     rtspd_note_stack(RTSPD_VIDEO);
     portENTER_CRITICAL(&rtspd_lock);
+    rtspd.sources[RTSPD_VIDEO].start_error = error;
     rtspd.sources[RTSPD_VIDEO].ready = true;
     portEXIT_CRITICAL(&rtspd_lock);
-    while (!rtspd_should_stop()) {
-        const solar_os_camera_frame_t *frame = NULL;
-        esp_err_t error = solar_os_camera_capture(&rtspd.camera_owner, &frame);
+    while (error == ESP_OK && !rtspd_should_stop()) {
+        solar_os_stream_video_frame_t *frame = &scratch->frame;
+        error = solar_os_stream_acquire_frame(&scratch->source, frame);
         rtspd_note_stack(RTSPD_VIDEO);
         if (error != ESP_OK) {
             portENTER_CRITICAL(&rtspd_lock);
@@ -627,6 +642,7 @@ static void rtspd_video_reader(void *arg)
             rtspd.last_error = error;
             portEXIT_CRITICAL(&rtspd_lock);
             vTaskDelay(pdMS_TO_TICKS(1U));
+            error = ESP_OK;
             continue;
         }
         rtspd_session_t *session = rtspd_source_enter(RTSPD_VIDEO);
@@ -665,17 +681,26 @@ static void rtspd_video_reader(void *arg)
                 portEXIT_CRITICAL(&rtspd_lock);
             }
         }
-        error = solar_os_camera_release_frame(&rtspd.camera_owner, frame);
+        error = solar_os_stream_release_frame(&scratch->source, frame);
         if (session) {
             rtspd_send_error(session, error);
             rtspd_source_leave(RTSPD_VIDEO);
         }
         rtspd_note_stack(RTSPD_VIDEO);
     }
+    if (scratch->source.slot >= 0 && scratch->source.leased_frame == NULL) {
+        const esp_err_t close_error = solar_os_stream_close_ex(&scratch->source);
+        if (error == ESP_OK) error = close_error;
+    }
+    if (error != ESP_OK) {
+        portENTER_CRITICAL(&rtspd_lock);
+        rtspd.last_error = error;
+        rtspd.stop_requested = true;
+        portEXIT_CRITICAL(&rtspd_lock);
+    }
     rtspd.sources[RTSPD_VIDEO].done = true;
     solar_os_task_delete_internal(NULL);
 }
-#endif
 
 static bool rtspd_audio_format_valid(const solar_os_stream_audio_format_t *format)
 {
@@ -931,16 +956,15 @@ static void rtspd_worker(void *arg)
     solar_os_task_delete_internal(NULL);
 }
 
-static esp_err_t rtspd_release_camera(void)
+static esp_err_t rtspd_release_video(void)
 {
-#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
-    if (!rtspd.camera_owner.generation) return ESP_OK;
-    esp_err_t error = solar_os_camera_stop(&rtspd.camera_owner);
-    if (error == ESP_OK) error = solar_os_camera_release_owner(&rtspd.camera_owner);
-    return error;
-#else
-    return ESP_OK;
-#endif
+    rtspd_video_scratch_t *scratch = rtspd.sources[RTSPD_VIDEO].scratch;
+    if (scratch == NULL || scratch->source.slot < 0) return ESP_OK;
+    if (scratch->source.leased_frame != NULL) {
+        const esp_err_t error = solar_os_stream_release_frame(&scratch->source, &scratch->frame);
+        if (error != ESP_OK) return error;
+    }
+    return solar_os_stream_close_ex(&scratch->source);
 }
 
 static bool rtspd_cleanup(void)
@@ -967,7 +991,7 @@ static bool rtspd_cleanup(void)
         for (unsigned i = 0; i < RTSPD_TRACKS; i++)
             rtspd_close_udp(&rtspd.session->tracks[i]);
     }
-    const esp_err_t error = rtspd_release_camera();
+    const esp_err_t error = rtspd_release_video();
     if (error != ESP_OK) {
         rtspd.last_error = error;
         return false;
@@ -1008,18 +1032,24 @@ static esp_err_t rtspd_job_start(solar_os_context_t *ctx, int argc, char **argv)
     solar_os_shell_io_t *io = ctx ? solar_os_context_shell_io(ctx) : NULL;
     if (!solar_os_rtspd_parse_options(argc, argv, &options)) {
         if (io) solar_os_shell_io_printf(io,
-            "usage: job start rtspd [video=camera|none] [audio=<stream>|none] "
+            "usage: job start rtspd [video=<stream>|none] [audio=<stream>|none] "
             "[size=qvga|vga] [fps=0..30] [port=<port>]\n");
         return ESP_ERR_INVALID_ARG;
     }
     if (rtspd.running || rtspd.worker_task || rtspd.session ||
         rtspd.sources[0].task || rtspd.sources[1].task) return ESP_ERR_INVALID_STATE;
-#if !SOLAR_OS_PACKAGE_SERVICE_CAMERA
     if (options.video) {
-        if (io) solar_os_shell_io_printf(io, "rtspd: camera service unavailable; select video=none\n");
-        return ESP_ERR_NOT_SUPPORTED;
+        solar_os_stream_info_t video_info;
+        esp_err_t error = solar_os_stream_get_info(options.video_source, &video_info);
+        if (error == ESP_OK && (video_info.type != SOLAR_OS_STREAM_TYPE_VIDEO ||
+            video_info.direction != SOLAR_OS_STREAM_DIRECTION_SOURCE ||
+            video_info.video.codec != SOLAR_OS_STREAM_VIDEO_JPEG)) error = ESP_ERR_NOT_SUPPORTED;
+        if (error != ESP_OK) {
+            if (io) solar_os_shell_io_printf(io, "rtspd: video=%s must be an available JPEG source: %s\n",
+                                             options.video_source, esp_err_to_name(error));
+            return error;
+        }
     }
-#endif
     solar_os_stream_info_t audio_info = {0};
     if (options.audio[0]) {
         esp_err_t error = solar_os_stream_get_info(options.audio, &audio_info);
@@ -1045,7 +1075,7 @@ static esp_err_t rtspd_job_start(solar_os_context_t *ctx, int argc, char **argv)
         rtspd.session->tracks[i].rtp_fd = rtspd.session->tracks[i].rtcp_fd = -1;
     for (unsigned i = 0; i < RTSPD_TRACKS; i++) {
         if (!rtspd_track_enabled(i)) continue;
-        const size_t size = i == RTSPD_VIDEO ? SOLAR_OS_MEDIA_RTP_PACKET_MAX :
+        const size_t size = i == RTSPD_VIDEO ? sizeof(rtspd_video_scratch_t) :
                                                sizeof(rtspd_audio_scratch_t);
         rtspd.sources[i].scratch = solar_os_memory_alloc(size,
             SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
@@ -1054,15 +1084,16 @@ static esp_err_t rtspd_job_start(solar_os_context_t *ctx, int argc, char **argv)
             (void)rtspd_cleanup();
             return ESP_ERR_NO_MEM;
         }
+        if (i == RTSPD_VIDEO) {
+            rtspd_video_scratch_t *scratch = rtspd.sources[i].scratch;
+            scratch->source = (solar_os_stream_handle_t)SOLAR_OS_STREAM_HANDLE_INIT;
+            memset(&scratch->frame, 0, sizeof(scratch->frame));
+        }
     }
     esp_err_t error = ESP_OK;
-#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
     if (options.video) {
-        error = solar_os_camera_acquire(RTSPD_OWNER, &rtspd.camera_owner);
-        if (error == ESP_OK) error = solar_os_camera_start(&rtspd.camera_owner, &options.camera);
-        if (error == ESP_OK) error = rtspd_start_reader(RTSPD_VIDEO, rtspd_video_reader);
+        error = rtspd_start_reader(RTSPD_VIDEO, rtspd_video_reader);
     }
-#endif
     if (error == ESP_OK && options.audio[0])
         error = rtspd_start_reader(RTSPD_AUDIO, rtspd_audio_reader);
     if (error == ESP_OK) error = rtspd_open_listener(options.port, &rtspd.listen_fd);
@@ -1078,7 +1109,7 @@ static esp_err_t rtspd_job_start(solar_os_context_t *ctx, int argc, char **argv)
     }
     if (options.video)
         (void)solar_os_jobs_note_resource(solar_os_rtspd_job.name,
-            SOLAR_OS_JOB_RESOURCE_CUSTOM, "camera", "exclusive lease");
+            SOLAR_OS_JOB_RESOURCE_STREAM, options.video_source, "JPEG source lease");
     if (options.audio[0])
         (void)solar_os_jobs_note_resource(solar_os_rtspd_job.name,
             SOLAR_OS_JOB_RESOURCE_STREAM, options.audio, "L16 source");
@@ -1089,10 +1120,10 @@ static esp_err_t rtspd_job_start(solar_os_context_t *ctx, int argc, char **argv)
     if (io) solar_os_shell_io_printf(io,
         "rtspd: rtsp://<device>:%u/media video=%s audio=%s\n"
         "rtspd: WARNING: unauthenticated media stream\n",
-        options.port, options.video ? "camera" : "none",
+        options.port, options.video ? options.video_source : "none",
         options.audio[0] ? options.audio : "none");
     SOLAR_OS_LOGI(TAG, "started: video=%s audio=%s fps-cap=%u port=%u",
-        options.video ? "camera" : "none", options.audio[0] ? options.audio : "none",
+        options.video ? options.video_source : "none", options.audio[0] ? options.audio : "none",
         options.fps, options.port);
     return ESP_OK;
 }
@@ -1140,7 +1171,7 @@ static void rtspd_job_detail(solar_os_context_t *ctx)
         "  RTSP: port=%u client=%s sessions=%" PRIu32 " rejected=%" PRIu32 "\n"
         "  video: source=%s size=%s fps-cap=%u frames=%" PRIu32 " dropped=%" PRIu32 "\n",
         rtspd.options.port, connected ? "connected" : "none", clients, rejected,
-        rtspd.options.video ? "camera" : "none",
+        rtspd.options.video ? rtspd.options.video_source : "none",
         rtspd.options.camera.frame_size == SOLAR_OS_CAMERA_FRAME_SIZE_VGA ? "vga" : "qvga",
         rtspd.options.fps, frames, dropped);
     solar_os_shell_io_printf(io,
@@ -1163,7 +1194,7 @@ static void rtspd_job_detail(solar_os_context_t *ctx)
     solar_os_shell_io_printf(io,
         "  runtime buffers: session=%u video=%u audio=%u bytes (PSRAM preferred)\n",
         rtspd.session ? (unsigned)sizeof(*rtspd.session) : 0U,
-        rtspd.sources[RTSPD_VIDEO].scratch ? SOLAR_OS_MEDIA_RTP_PACKET_MAX : 0U,
+        rtspd.sources[RTSPD_VIDEO].scratch ? (unsigned)sizeof(rtspd_video_scratch_t) : 0U,
         rtspd.sources[RTSPD_AUDIO].scratch ? (unsigned)sizeof(rtspd_audio_scratch_t) : 0U);
 }
 

@@ -1,0 +1,30 @@
+# esp32-camera 2.1.7 sensor settings are const but explicitly DRAM_ATTR.
+# SolarOS invokes sensor/SCCB control from ordinary tasks with cache enabled,
+# never from the capture ISR. Keep these immutable register tables in flash.
+# Do NOT move cam_hal/ll_cam ISR code, DMA descriptors or capture buffers.
+[scheme:solar_camera_sensor_settings]
+entries:
+    dram -> flash_rodata
+
+[mapping:solar_camera_sensor_settings]
+archive: libespressif__esp32-camera.a
+entries:
+    ov2640 (solar_camera_sensor_settings)
+    ov3660 (solar_camera_sensor_settings)
+    ov5640 (solar_camera_sensor_settings)
+    nt99141 (solar_camera_sensor_settings)
+    hm1055 (solar_camera_sensor_settings)
+    hm0360 (solar_camera_sensor_settings)
+
+# The new SCCB driver preallocates 254 address/handle slots. This is task-only
+# bookkeeping, not I2C transaction or ISR storage; place just that array in
+# PSRAM, leaving its controller state and all DMA-critical data internal.
+[scheme:solar_camera_sccb_devices]
+entries:
+    bss -> extern_ram
+
+[mapping:solar_camera_sccb_devices]
+archive: libespressif__esp32-camera.a
+entries:
+    if ESP_ALLOW_BSS_SEG_EXTERNAL_MEMORY = y:
+        sccb-ng:devices (solar_camera_sccb_devices)

@@ -25,7 +25,9 @@ class RtspdJobPolicyTest(unittest.TestCase):
 
     def test_job_owns_camera_and_uses_standard_media_core(self):
         self.assertIn('#define RTSPD_OWNER "job:rtspd"', JOB)
-        self.assertIn("solar_os_camera_acquire(RTSPD_OWNER", JOB)
+        self.assertIn("solar_os_stream_open_ex(rtspd.options.video_source", JOB)
+        self.assertIn("solar_os_stream_acquire_frame", JOB)
+        self.assertNotIn("solar_os_camera_capture", JOB)
         self.assertIn("solar_os_rtp_jpeg_parse", JOB)
         self.assertIn("solar_os_rtp_jpeg_packetize", JOB)
         self.assertIn("solar_os_rtcp_sender_report", JOB)
@@ -34,7 +36,7 @@ class RtspdJobPolicyTest(unittest.TestCase):
     def test_single_client_and_bounded_stop_are_explicit(self):
         self.assertIn("rtspd_reject_pending_client", JOB)
         self.assertIn("solar_os_task_wait_done", JOB)
-        self.assertIn("solar_os_camera_release_frame", JOB)
+        self.assertIn("solar_os_stream_release_frame", JOB)
         self.assertIn("RTSP/1.0 453 Not Enough Bandwidth", JOB)
 
     def test_bulk_buffers_are_runtime_policy_allocations(self):

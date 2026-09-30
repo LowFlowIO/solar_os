@@ -25,7 +25,9 @@ adapter; other serial, USB, or radio transports can reuse it without registering
 a cellular modem.
 
 `service.streams` owns the dynamic typed endpoint registry. Sensor, port, and
-audio providers register their endpoints there at runtime. `service.audio`
+audio and camera providers register their endpoints there at runtime. Video
+sources expose JPEG frame acquire/release operations, not byte-stream reads;
+listing endpoints does not open them or allocate capture buffers. `service.audio`
 also owns audio-device discovery; devices refer to their capture and playback
 stream IDs instead of exposing a board-specific global data path. It has no
 board-audio capability requirement. Concrete audio driver packages publish
@@ -37,7 +39,11 @@ network sources can share the same decoder without owning an audio device.
 `service.camera` owns camera configuration, exclusive owner tokens, subordinate
 frame leases, capture status, and the `camera` shell command.
 `driver.camera-esp32` is the ESP32-S3
-DVP/SCCB adapter backed by the pinned Espressif component. Camera consumers
+DVP/SCCB expansion adapter backed by the pinned Espressif component. Explicit
+GPIO bindings make it reusable on PSRAM-equipped ESP32-S3 boards, without a
+fitted-camera capability requirement. GOOUUU declares a fixed `camera0` board
+instance; runtime instances use the attached device name as their video stream
+ID. Detach fails while the camera or its stream is leased. Camera consumers
 must release each borrowed frame before reconfiguration or another capture;
 the initial backend uses one JPEG framebuffer in PSRAM and supports QVGA and
 VGA stills only.

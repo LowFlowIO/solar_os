@@ -535,20 +535,23 @@ RTP/RTCP UDP port pair, SSRC, and sender reports, with a shared RTCP CNAME and
 session start clock.
 
 ```text
-job start rtspd [video=camera|none] [audio=<stream>|none] [size=qvga|vga] [fps=0..30] [port=<port>]
-job start rtspd video=camera audio=none size=qvga fps=10
+job start rtspd [video=<stream>|none] [audio=<stream>|none] [size=qvga|vga] [fps=0..30] [port=<port>]
+job start rtspd video=camera0 audio=none size=qvga fps=10
 job start rtspd video=none audio=mic0
-job start rtspd video=camera audio=mic0
+job start rtspd video=camera0 audio=mic0
 job status rtspd
 job stop rtspd
 ```
 
-Defaults are `video=camera audio=none size=qvga fps=5 port=554`. At least one
-source must be enabled. `fps=` is a maximum video publication rate, not a
+Defaults are `video=camera0 audio=none size=qvga fps=5 port=554`. `video=camera`
+is a compatibility alias for `camera0`. Video selects a typed JPEG frame source
+from `streams`; opening it holds the same exclusive hardware lease as the camera
+service. At least one source must be enabled. `fps=` is a maximum video
+publication rate, not a
 capture timer; `fps=0` removes the cap. `size=` and `fps=` are invalid with
 `video=none`. JPEG quality is fixed at 12.
 
-Use `streams` to find available audio source IDs. Audio must be a source or
+Use `streams` to find available video and audio source IDs. Audio must be a source or
 duplex S16LE PCM endpoint with 16-bit samples, 1..8 channels, and a native rate
 of 8000..192000 Hz. The job advertises the source's native rate and channels;
 it does not resample. Only selected hardware is leased as `job:rtspd`.
@@ -592,7 +595,7 @@ video RTP timing; audio timestamps advance by sample frames. Images and audio
 blocks predating each `PLAY` are discarded.
 
 The camera lease excludes `cam-webd`, shell camera capture, and other camera
-owners only when `video=camera` is selected. Each packet is at most 1200 bytes.
+owners only when a camera source is selected. Each packet is at most 1200 bytes.
 Unsupported JPEG modes are counted and dropped, not sent using private payloads.
 Transport is UDP; RTSP-over-TCP interleaving is unsupported. VLC requires a
 build with Live555: if its log reports `satip` or `access_realrtsp` failures,

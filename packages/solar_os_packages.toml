@@ -1105,19 +1105,23 @@ capabilities = ["sd"]
 
 [packages.service_camera]
 label = "service.camera"
+depends = ["service_streams"]
 sources = [
   "services/solar_os_camera.c",
+  "services/solar_os_camera_stream.c",
   "shell/solar_os_shell_camera.c",
 ]
-capabilities = ["camera", "psram"]
+capabilities = ["psram"]
+targets = ["esp32s3"]
 
 [packages.driver_camera_esp32]
 label = "driver.camera-esp32"
-depends = ["service_camera"]
+depends = ["service_camera", "service_expansion", "service_resources"]
 sources = ["drivers/solar_os_camera_esp32.c"]
+expansion_drivers = ["solar_os_camera_esp32_expansion_driver"]
 requires = ["espressif__esp32-camera"]
 targets = ["esp32s3"]
-capabilities = ["camera", "psram"]
+capabilities = ["psram", "expansion_gpio"]
 
 [packages.service_audio]
 label = "service.audio"
@@ -2351,7 +2355,8 @@ capabilities = ["wifi"]
 label = "job.cam-webd"
 depends = ["service_camera", "service_http_server"]
 sources = ["jobs/solar_os_cam_webd_job.c"]
-capabilities = ["camera", "psram", "wifi"]
+capabilities = ["psram", "wifi"]
+targets = ["esp32s3"]
 
 [packages.job_rtspd]
 label = "job.rtspd"

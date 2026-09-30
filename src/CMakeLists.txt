@@ -458,12 +458,18 @@ set_property(SOURCE ${SOLAR_OS_SRCS} APPEND PROPERTY OBJECT_DEPENDS
     "${SOLAR_OS_VERSION_FILE}"
 )
 
+set(SOLAR_OS_LINKER_FRAGMENTS)
+if(SOLAR_OS_PACKAGE_DRIVER_CAMERA_ESP32)
+    list(APPEND SOLAR_OS_LINKER_FRAGMENTS "camera_memory.lf")
+endif()
+
 idf_component_register(
     SRCS ${SOLAR_OS_SRCS}
     INCLUDE_DIRS "." "apps" "board" "drivers" "jobs" "services" "shell"
                  "../include" "${SOLAR_OS_GENERATED_DIR}"
                  ${SOLAR_OS_EXTRA_INCLUDE_DIRS}
     REQUIRES ${SOLAR_OS_REQUIRES}
+    LDFRAGMENTS ${SOLAR_OS_LINKER_FRAGMENTS}
 )
 
 if(SOLAR_OS_PACKAGE_BHI260AP)

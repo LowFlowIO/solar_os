@@ -42,6 +42,10 @@ typedef struct {
     esp_err_t (*stop)(void *ctx);
     esp_err_t (*capture)(void *ctx, solar_os_camera_backend_frame_t *frame);
     void (*release)(void *ctx, void *release_token);
+    /* Registry lifecycle hooks run under the camera lock and must not call
+     * camera APIs. Failure leaves registration unchanged. */
+    esp_err_t (*publish)(void *ctx);
+    esp_err_t (*unpublish)(void *ctx);
 } solar_os_camera_backend_ops_t;
 
 typedef struct {

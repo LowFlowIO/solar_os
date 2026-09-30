@@ -19,7 +19,8 @@ class CameraWebJobTest(unittest.TestCase):
             "[packages.job_displayd]", 1
         )[0]
         self.assertIn('depends = ["service_camera", "service_http_server"]', package)
-        self.assertIn('capabilities = ["camera", "psram", "wifi"]', package)
+        self.assertIn('capabilities = ["psram", "wifi"]', package)
+        self.assertIn('targets = ["esp32s3"]', package)
         self.assertIn(
             '{"cam-webd", "HTTP camera stream", &solar_os_cam_webd_job}',
             REGISTRY,

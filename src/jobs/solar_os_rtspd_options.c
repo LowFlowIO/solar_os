@@ -23,6 +23,7 @@ bool solar_os_rtspd_parse_options(int argc, char **argv,
     if (!options || argc < 0 || (argc && !argv)) return false;
     *options = (solar_os_rtspd_options_t) {
         .video = true,
+        .video_source = "camera0",
         .camera = {.frame_size = SOLAR_OS_CAMERA_FRAME_SIZE_QVGA,
                    .jpeg_quality = 12U},
         .fps = 5U,
@@ -36,9 +37,14 @@ bool solar_os_rtspd_parse_options(int argc, char **argv,
         if (!arg) return false;
         if (!strncmp(arg, "video=", 6)) {
             bit = 1U;
-            if (!strcmp(arg + 6, "camera")) options->video = true;
-            else if (!strcmp(arg + 6, "none")) options->video = false;
-            else return false;
+            const char *id = arg + 6;
+            if (!*id || strlen(id) >= sizeof(options->video_source)) return false;
+            for (const char *p = id; *p; p++) {
+                if (!isalnum((unsigned char)*p) && *p != '-' && *p != '_' &&
+                    *p != '.') return false;
+            }
+            options->video = strcmp(id, "none") != 0;
+            strcpy(options->video_source, !strcmp(id, "camera") ? "camera0" : id);
         } else if (!strncmp(arg, "audio=", 6)) {
             bit = 2U;
             const char *id = arg + 6;

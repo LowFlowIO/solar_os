@@ -12,7 +12,7 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
-TARGETS += camera_service_test media_test mjpeg_test
+TARGETS += camera_service_test camera_expansion_test media_test mjpeg_test
 TARGETS += http_server_test
 TARGETS += rtspd_job_test rtspd_audio_only_test
 
@@ -250,6 +250,15 @@ haptic_service_test: haptic_service_test.c $(ROOT)/src/services/solar_os_haptic.
 charger_service_test: charger_service_test.c $(ROOT)/src/services/solar_os_charger.c $(ROOT)/src/services/solar_os_charger.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
 		charger_service_test.c $(ROOT)/src/services/solar_os_charger.c -o $@
+
+CAMERA_EXPANSION_SOURCES := camera_expansion_test.c $(ROOT)/src/drivers/solar_os_camera_esp32.c \
+	$(ROOT)/src/services/solar_os_camera.c $(ROOT)/src/services/solar_os_camera_stream.c \
+	$(ROOT)/src/services/solar_os_stream.c $(ROOT)/src/services/solar_os_resources.c
+camera_expansion_test: $(CAMERA_EXPANSION_SOURCES) $(wildcard camera_stubs/*.h camera_stubs/*/*.h) \
+	$(ROOT)/src/services/solar_os_camera.h $(ROOT)/src/services/solar_os_stream.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Icamera_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/include -I$(ROOT)/src -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		$(CAMERA_EXPANSION_SOURCES) -o $@
 
 camera_service_test: camera_service_test.c $(ROOT)/src/services/solar_os_camera.c $(ROOT)/src/services/solar_os_camera.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
@@ -575,6 +584,7 @@ test: $(TARGETS)
 	./cl32_keyboard_test
 	./battery_service_test
 	./camera_service_test
+	./camera_expansion_test
 	./media_test
 	./rtspd_job_test
 	./rtspd_audio_only_test
