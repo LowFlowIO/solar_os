@@ -293,13 +293,26 @@ static void test_rtsp_request_parser(void)
     assert(request.client_rtcp_port == 5001U);
     assert(strcmp(request.session, "abc123") == 0);
 
+    /* FFmpeg sends the explicit lower transport and may put CSeq last. */
+    static const char explicit_udp[] =
+        "SETUP rtsp://camera/media/trackID=0 RTSP/1.0\r\n"
+        "Transport: RTP/AVP/UDP;unicast;client_port=5000-5001\r\n"
+        "CSeq: 6\r\n\r\n";
+    assert(solar_os_rtsp_parse_request((const uint8_t *)explicit_udp,
+                                       sizeof(explicit_udp) - 1U,
+                                       &request) == ESP_OK);
+    assert(request.cseq == 6U);
+    assert(request.client_rtp_port == 5000U);
+    assert(request.client_rtcp_port == 5001U);
+
     static const char unsupported[] =
         "SETUP rtsp://camera/media/trackID=0 RTSP/1.0\r\n"
-        "CSeq: 5\r\n"
-        "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n\r\n";
+        "Transport: RTP/AVP/TCP;unicast;interleaved=0-1\r\n"
+        "CSeq: 5\r\n\r\n";
     assert(solar_os_rtsp_parse_request((const uint8_t *)unsupported,
                                        sizeof(unsupported) - 1U,
                                        &request) == ESP_ERR_NOT_SUPPORTED);
+    assert(request.cseq == 5U);
 }
 
 int main(void)

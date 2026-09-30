@@ -544,7 +544,7 @@ a standard RTSP client:
 
 ```text
 vlc rtsp://device/media
-ffplay rtsp://device/media
+ffplay -rtsp_transport udp rtsp://device/media
 ```
 
 The job leases the camera as `job:mediad`, so it cannot run at the same time as
@@ -558,6 +558,11 @@ Version 1 publishes video only. The service core already defines RTP/L16 and
 bounded media timing, but `mediad` does not advertise an audio track until a
 microphone source is configured. The stream is unauthenticated and unencrypted;
 use it only on a trusted LAN or protected network path.
+
+Media transport uses UDP; RTSP-over-TCP interleaving is unsupported. VLC requires
+a build with the Live555 RTSP module. If its log reports `satip` or
+`access_realrtsp` setup failures, check `vlc --version` for
+`--disable-live555` and use FFplay or a VLC build with Live555 support.
 
 ## displayd
 

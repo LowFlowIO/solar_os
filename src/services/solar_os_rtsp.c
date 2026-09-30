@@ -140,7 +140,7 @@ esp_err_t solar_os_rtsp_parse_request(const uint8_t *data,
     request->uri[uri_length] = '\0';
 
     bool cseq_seen = false;
-    bool content_length_seen = false;
+    esp_err_t header_error = ESP_OK;
     char *line = line_end + 2U;
     while (line[0] != '\0' && !(line[0] == '\r' && line[1] == '\n')) {
         line_end = strstr(line, "\r\n");
@@ -171,24 +171,25 @@ esp_err_t solar_os_rtsp_parse_request(const uint8_t *data,
             }
             strcpy(request->session, value);
         } else if (strcasecmp(line, "Transport") == 0) {
-            if (strncasecmp(value, "RTP/AVP;", 8U) != 0 ||
+            /* UDP is the default lower transport; clients may name it
+             * explicitly. TCP interleaving remains unsupported. */
+            if ((strncasecmp(value, "RTP/AVP;", 8U) != 0 &&
+                 strncasecmp(value, "RTP/AVP/UDP;", 12U) != 0) ||
                 strstr(value, "unicast") == NULL ||
                 !rtsp_parse_client_ports(value,
                                          &request->client_rtp_port,
                                          &request->client_rtcp_port)) {
-                return ESP_ERR_NOT_SUPPORTED;
+                header_error = ESP_ERR_NOT_SUPPORTED;
             }
         } else if (strcasecmp(line, "Content-Length") == 0) {
             uint32_t content_length = 0U;
             if (!rtsp_parse_u32(value, &content_length) || content_length != 0U) {
-                return ESP_ERR_NOT_SUPPORTED;
+                header_error = ESP_ERR_NOT_SUPPORTED;
             }
-            content_length_seen = true;
         }
         line = line_end + 2U;
     }
-    (void)content_length_seen;
-    return cseq_seen ? ESP_OK : ESP_ERR_INVALID_RESPONSE;
+    return cseq_seen ? header_error : ESP_ERR_INVALID_RESPONSE;
 }
 
 const char *solar_os_rtsp_method_name(solar_os_rtsp_method_t method)
