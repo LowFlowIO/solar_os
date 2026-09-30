@@ -672,6 +672,7 @@ job start httpd /www
 job start meshcore-ble 68:ee:8f:69:5f:35 public 123456
 job start displayd [display-target]   # display0 by default, web0 when headless
 job start cam-webd [qvga|vga] [fps] [auth=none|required]  # QVGA, 5 fps, no auth by default
+job start mediad [qvga|vga] [fps] [port=<port>]           # RTSP/RTP/JPEG on TCP 554
 job start ntp-sync once
 job start batmon 60
 job start slip uart0 115200

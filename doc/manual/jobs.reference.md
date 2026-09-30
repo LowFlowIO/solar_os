@@ -527,6 +527,38 @@ device can view the camera. Use it only on a trusted Wi-Fi network. The optional
 access code limits casual access but does not encrypt images and is not intended
 for exposure to an untrusted network.
 
+## mediad
+
+Publish the fitted camera as a standard single-client RTSP session carrying
+RTP/JPEG video and RTCP sender reports.
+
+```text
+job start mediad [qvga|vga] [fps] [port=<port>]
+job status mediad
+job stop mediad
+```
+
+The defaults are QVGA JPEG at five frames per second on RTSP TCP port 554. The
+frame rate range is `1..30`; JPEG quality is fixed at 12. Open the session with
+a standard RTSP client:
+
+```text
+vlc rtsp://device/media
+ffplay rtsp://device/media
+```
+
+The job leases the camera as `job:mediad`, so it cannot run at the same time as
+`cam-webd`, the `camera` shell capture path, or another camera owner. It admits
+one RTSP client, negotiates an RTP/RTCP UDP port pair, fragments each OV2640 JPEG
+into packets no larger than 1200 bytes, and releases the camera framebuffer
+after every transmitted or rejected frame. Unsupported JPEG modes are counted
+and dropped instead of being sent with a private payload format.
+
+Version 1 publishes video only. The service core already defines RTP/L16 and
+bounded media timing, but `mediad` does not advertise an audio track until a
+microphone source is configured. The stream is unauthenticated and unencrypted;
+use it only on a trusted LAN or protected network path.
+
 ## displayd
 
 Authenticated HTTP display and remote control. It has two modes:
