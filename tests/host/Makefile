@@ -14,6 +14,16 @@ TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble
 TARGETS += input_action_match_test gesture_completion_test
 TARGETS += camera_service_test media_test mjpeg_test
 TARGETS += http_server_test
+TARGETS += rtspd_job_test rtspd_audio_only_test
+
+RTSPD_TEST_SOURCES := rtspd_job_test.c $(ROOT)/src/jobs/solar_os_rtspd_options.c \
+	$(ROOT)/src/services/solar_os_media.c $(ROOT)/src/services/solar_os_rtp.c \
+	$(ROOT)/src/services/solar_os_rtp_jpeg.c $(ROOT)/src/services/solar_os_rtsp.c
+rtspd_job_test rtspd_audio_only_test: $(RTSPD_TEST_SOURCES) $(ROOT)/src/jobs/solar_os_rtspd_job.c \
+	$(wildcard rtspd_stubs/*.h) $(wildcard rtspd_stubs/*/*.h)
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread \
+		$(if $(filter rtspd_audio_only_test,$@),-DSOLAR_OS_PACKAGE_SERVICE_CAMERA=0,) \
+		-Irtspd_stubs -I. -I$(ROOT)/src/services -I$(ROOT)/src/jobs $(RTSPD_TEST_SOURCES) -o $@
 
 all: $(TARGETS)
 
@@ -566,6 +576,8 @@ test: $(TARGETS)
 	./battery_service_test
 	./camera_service_test
 	./media_test
+	./rtspd_job_test
+	./rtspd_audio_only_test
 	./mjpeg_test
 	./http_server_test
 	./sensors_service_test

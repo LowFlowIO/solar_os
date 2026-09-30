@@ -52,8 +52,8 @@
 #if SOLAR_OS_PACKAGE_JOB_LOG
 #include "solar_os_log_job.h"
 #endif
-#if SOLAR_OS_PACKAGE_JOB_MEDIAD
-#include "solar_os_mediad_job.h"
+#if SOLAR_OS_PACKAGE_JOB_RTSPD
+#include "solar_os_rtspd_job.h"
 #endif
 #if SOLAR_OS_PACKAGE_JOB_MIDI
 #include "solar_os_midi_job.h"
@@ -144,8 +144,8 @@ static const solar_os_job_registry_entry_t registered_jobs[] = {
 #if SOLAR_OS_PACKAGE_JOB_LOG
     {"log", "stream SolarOS logs to a port or file", &solar_os_log_job},
 #endif
-#if SOLAR_OS_PACKAGE_JOB_MEDIAD
-    {"mediad", "RTSP/RTP media publisher", &solar_os_mediad_job},
+#if SOLAR_OS_PACKAGE_JOB_RTSPD
+    {"rtspd", "RTSP/RTP media publisher", &solar_os_rtspd_job},
 #endif
 #if SOLAR_OS_PACKAGE_JOB_MIDI
     {"midi", "bidirectional MIDI transport", &solar_os_midi_job},

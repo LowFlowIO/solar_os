@@ -527,46 +527,70 @@ device can view the camera. Use it only on a trusted Wi-Fi network. The optional
 access code limits casual access but does not encrypt images and is not intended
 for exposure to an untrusted network.
 
-## mediad
+## rtspd
 
-Publish the fitted camera as a standard single-client RTSP session carrying
-RTP/JPEG video and RTCP sender reports.
+Publish explicitly selected sources as a standard single-client RTSP session.
+Video uses RTP/JPEG; audio uses RTP/L16 PCM. Each enabled track has its own
+RTP/RTCP UDP port pair, SSRC, and sender reports, with a shared RTCP CNAME and
+session start clock.
 
 ```text
-job start mediad [qvga|vga] [fps] [port=<port>]
-job status mediad
-job stop mediad
+job start rtspd [video=camera|none] [audio=<stream>|none] [size=qvga|vga] [fps=0..30] [port=<port>]
+job start rtspd video=camera audio=none size=qvga fps=10
+job start rtspd video=none audio=mic0
+job start rtspd video=camera audio=mic0
+job status rtspd
+job stop rtspd
 ```
 
-The defaults are QVGA JPEG at five frames per second on RTSP TCP port 554. The
-frame rate range is `1..30`; JPEG quality is fixed at 12. Open the session with
-a standard RTSP client:
+Defaults are `video=camera audio=none size=qvga fps=5 port=554`. At least one
+source must be enabled. `fps=` is a maximum video publication rate, not a
+capture timer; `fps=0` removes the cap. `size=` and `fps=` are invalid with
+`video=none`. JPEG quality is fixed at 12.
+
+Use `streams` to find available audio source IDs. Audio must be a source or
+duplex S16LE PCM endpoint with 16-bit samples, 1..8 channels, and a native rate
+of 8000..192000 Hz. The job advertises the source's native rate and channels;
+it does not resample. Only selected hardware is leased as `job:rtspd`.
+Audio-only publishing requires neither a camera nor the camera package.
+Selecting an absent, busy, sink-only, or incompatible source fails startup;
+there is no silent fallback to another source.
+
+Reader workers block on camera/audio availability and immediately publish or
+discard the completed frame/block. They continuously drain idle sources, so
+connecting does not expose a stale camera image or audio backlog. The video
+cap drops newly captured images rather than holding them until a timer expires.
+There is one leased PSRAM camera framebuffer, no JPEG copy or video queue,
+and at most one MTU-sized PCM block. Disabled sources allocate no reader stack.
+Temporary UDP transmit pressure drops the current frame/block and newly
+captured data during a short backoff instead of disconnecting or building a
+queue. Audio sample timestamps advance across dropped blocks. Status reports
+congestion drops and the last transmit errno separately from fatal send errors.
+Each enabled source uses an additional 4096-byte internal worker stack, shown
+by `job status rtspd`, and is closed by its owning reader during cancellation.
+
+Open the single RTSP client session:
 
 ```text
 vlc rtsp://device/media
-ffplay -rtsp_transport udp rtsp://device/media
+ffplay -rtsp_transport udp -fflags nobuffer -probesize 32 -analyzeduration 1 -max_delay 100000 rtsp://device/media
 ```
 
-The job leases the camera as `job:mediad`, so it cannot run at the same time as
-`cam-webd`, the `camera` shell capture path, or another camera owner. It admits
-one RTSP client, negotiates an RTP/RTCP UDP port pair, fragments each OV2640 JPEG
-into packets no larger than 1200 bytes, and releases the camera framebuffer
-after every transmitted or rejected frame. Unsupported JPEG modes are counted
-and dropped instead of being sent with a private payload format.
+FFplay's default probing/playback buffers can add seconds of latency; the
+example reduces client-side probing and UDP reordering delay. It does not
+guarantee a particular glass-to-glass latency. Capture timestamps determine
+video RTP timing; audio timestamps advance by sample frames. Images and audio
+blocks predating each `PLAY` are discarded.
 
-Each `PLAY` starts a new media clock and discards any buffered image captured
-before that session. Reconnecting after the camera has been idle therefore
-starts with fresh video, without a jump in playback timestamps.
+The camera lease excludes `cam-webd`, shell camera capture, and other camera
+owners only when `video=camera` is selected. Each packet is at most 1200 bytes.
+Unsupported JPEG modes are counted and dropped, not sent using private payloads.
+Transport is UDP; RTSP-over-TCP interleaving is unsupported. VLC requires a
+build with Live555: if its log reports `satip` or `access_realrtsp` failures,
+check for `--disable-live555` and use FFplay or a compatible VLC build.
 
-Version 1 publishes video only. The service core already defines RTP/L16 and
-bounded media timing, but `mediad` does not advertise an audio track until a
-microphone source is configured. The stream is unauthenticated and unencrypted;
-use it only on a trusted LAN or protected network path.
-
-Media transport uses UDP; RTSP-over-TCP interleaving is unsupported. VLC requires
-a build with the Live555 RTSP module. If its log reports `satip` or
-`access_realrtsp` setup failures, check `vlc --version` for
-`--disable-live555` and use FFplay or a VLC build with Live555 support.
+The stream is unauthenticated and unencrypted; use it only on a trusted LAN
+or protected network path.
 
 ## displayd
 

@@ -1,0 +1,4 @@
+#pragma once
+#ifndef SOLAR_OS_PACKAGE_SERVICE_CAMERA
+#define SOLAR_OS_PACKAGE_SERVICE_CAMERA 1
+#endif

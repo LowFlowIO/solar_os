@@ -44,7 +44,12 @@ members = ["service_audio"]
 [groups.camera]
 label = "Camera"
 category = "Hardware interfaces"
-members = ["driver_camera_esp32", "job_cam_webd", "job_mediad"]
+members = ["driver_camera_esp32", "job_cam_webd"]
+
+[groups.rtsp]
+label = "RTSP streaming"
+category = "Networking"
+members = ["job_rtspd"]
 
 [groups.control_bindings]
 label = "Control bindings"
@@ -2348,12 +2353,12 @@ depends = ["service_camera", "service_http_server"]
 sources = ["jobs/solar_os_cam_webd_job.c"]
 capabilities = ["camera", "psram", "wifi"]
 
-[packages.job_mediad]
-label = "job.mediad"
-depends = ["service_camera", "service_media", "service_wifi"]
-sources = ["jobs/solar_os_mediad_job.c"]
+[packages.job_rtspd]
+label = "job.rtspd"
+depends = ["service_media", "service_streams", "service_wifi"]
+sources = ["jobs/solar_os_rtspd_job.c", "jobs/solar_os_rtspd_options.c"]
 requires = ["esp_timer", "esp_hw_support"]
-capabilities = ["camera", "psram", "wifi"]
+capabilities = ["wifi"]
 
 [packages.job_displayd]
 label = "job.displayd"

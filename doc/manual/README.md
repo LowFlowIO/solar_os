@@ -22,7 +22,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [battery command](commands.md) — Show voltage, state of charge, power source, config, and monitor trend.
 - [camera command](commands.md) — Probe the fitted sensor and capture bounded QVGA or VGA JPEG stills.
 - [cam-webd job](jobs.reference.md#cam-webd) — Lease the camera for JPEG snapshots and a single-client MJPEG stream with optional authentication.
-- [mediad job](jobs.reference.md#mediad) — Publish the camera as a single-client RTSP/RTP/JPEG stream with RTCP timing.
+- [rtspd job](jobs.reference.md#rtspd) — Publish selected camera/audio sources over single-client RTSP/RTP with RTCP timing.
 - [ble command](commands.md) — Show BLE keyboard state and the current/next boot setting.
 - [board command](commands.md) — Print board ID, name, and capabilities.
 - [cat command](commands.md) — Print a small text file.

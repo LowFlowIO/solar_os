@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check live RTP/JPEG pacing and reconnect timing (requires running mediad).
+"""Check live RTP/JPEG pacing and reconnect timing (requires running rtspd).
 
 Example: python3 tests/hil/media_rtsp_timing.py rtsp://192.168.1.238/media
 The test occupies the single receiver slot, sends TEARDOWN, waits, and reconnects.
@@ -9,6 +9,8 @@ import argparse
 import re
 import select
 import socket
+import statistics
+import sys
 import struct
 import time
 from urllib.parse import urlsplit
@@ -18,6 +20,7 @@ def udp_pair():
     for _ in range(128):
         rtp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
         rtcp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        bound = False
         try:
             rtp.bind(("0.0.0.0", 0))
             port = rtp.getsockname()[1]
@@ -25,11 +28,12 @@ def udp_pair():
                 continue
             rtcp.bind(("0.0.0.0", port + 1))
             rtp.setsockopt(socket.SOL_SOCKET, socket.SO_RCVBUF, 1024 * 1024)
+            bound = True
             return rtp, rtcp, port
         except OSError:
             pass
         finally:
-            if rtcp.getsockname()[1] == 0:
+            if not bound:
                 rtp.close()
                 rtcp.close()
     raise RuntimeError("Could not bind an adjacent UDP port pair")
@@ -104,10 +108,10 @@ def check_session(url, seconds):
         rate = re.search(r"a=framerate:([\d.]+)", sdp)
         codec = re.search(r"a=rtpmap:(\d+) JPEG/90000", sdp)
         control = re.search(r"a=control:(trackID=\d+)", sdp)
-        if not rate or not codec or not control:
-            raise RuntimeError("Expected a JPEG/90000 video track and frame rate")
-        fps = float(rate[1])
-        if not 0 < fps <= 30:
+        if not codec or not control:
+            raise RuntimeError("Expected a JPEG/90000 video track")
+        fps = float(rate[1]) if rate else 0
+        if not 0 <= fps <= 30:
             raise RuntimeError("Unexpected publisher frame rate")
         base = re.search(r"Content-Base: ([^\r\n]+)", header, re.I)
         track_url = (base[1] if base else session.url) + control[1]
@@ -163,7 +167,7 @@ def check_session(url, seconds):
             for previous, current in zip(frames, frames[1:])
         ]
         max_gap = max(deltas)
-        if not all(0 < delta <= max(1, 4 / fps) for delta in deltas):
+        if not all(0 < delta <= max(1, 4 / fps if fps else 1) for delta in deltas):
             raise AssertionError(f"RTP frame clock jumps: max gap {max_gap:.3f}s")
         media_elapsed = ((frames[-1][0] - frames[0][0]) % 2**32) / 90000
         wall_elapsed = frames[-1][1] - frames[0][1]
@@ -172,17 +176,30 @@ def check_session(url, seconds):
                 f"Media clock elapsed {media_elapsed:.3f}s, wall {wall_elapsed:.3f}s"
             )
         if seconds >= 6 and not reports:
-            raise AssertionError("No RTCP sender report received")
+            raise AssertionError(
+                f"No RTCP sender report received ({len(frames)} frames, "
+                f"{packets} packets, {gaps} sequence gaps)"
+            )
+        wire_lag_ms = statistics.median(
+            arrival * 1000 - ((stamp - origin) % 2**32) / 90
+            for stamp, arrival in frames
+        )
         print(
-            f"PASS: {len(frames)} frames/{seconds:g}s, {fps:g} fps configured, "
+            f"PASS: {len(frames)} frames/{seconds:g}s, {fps:g} fps cap (0=native), "
             f"first RTP offset {initial_ms:.1f}ms, max gap {max_gap:.3f}s, "
             f"clock drift {media_elapsed - wall_elapsed:.3f}s, "
+            f"median wire clock lag {wire_lag_ms:.1f}ms, "
             f"{packets} packets, {gaps} sequence gaps, {reports} RTCP reports",
             flush=True,
         )
     finally:
+        failed = sys.exc_info()[0] is not None
         try:
-            session.close()
+            try:
+                session.close()
+            except (OSError, RuntimeError):
+                if not failed:
+                    raise
         finally:
             if rtp:
                 rtp.close()
