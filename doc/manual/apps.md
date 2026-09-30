@@ -63,6 +63,7 @@ Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.
 ```text
 rtsp rtsp://192.168.1.238/media
 rtsp --audio-only rtsp://192.168.1.113/media
+rtsp --stats rtsp://192.168.1.192:8554/youtube
 ```
 
 Graphical sessions show aspect-fit JPEG video when a video track is selected.
@@ -72,6 +73,14 @@ video negotiation and video buffers even when the publisher offers both tracks.
 Audio uses the selected default output and global volume; `+` and `-` adjust
 volume. `Q`, Escape, or the normal application-exit key closes playback.
 Suspending retains audio playback; video decoding pauses until resume.
+
+`--stats` writes bounded, approximately once-per-second `rtsp.stats` entries
+to the OS log (`log show`). These report received/decoded/presented frame counts,
+queue depth, drops, decode/scale/draw times, frame age and presentation gaps,
+plus audio conversion format, native block size, queue depth, concealment,
+write time and submission gaps. Maxima are for the current playback session;
+submission gaps and jitter-wait polls are not hardware underrun counters.
+Diagnostic timing is disabled without this flag.
 
 The reusable RTSP client service owns negotiation, sockets, frame leases, audio
 conversion, and bounded jitter buffering. Its compressed JPEG assembler is a

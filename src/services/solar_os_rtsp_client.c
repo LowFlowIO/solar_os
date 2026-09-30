@@ -199,11 +199,22 @@ static void audio_worker(void *arg)
         size_t frames = output.frames_per_block ? output.frames_per_block : output.sample_rate / 100U;
         quantum = frames * output.channels;
         if (!quantum || quantum > 2048) err = ESP_ERR_NOT_SUPPORTED;
+        if (err == ESP_OK && c->options.diagnostics) {
+            lock(c);
+            c->status.audio_output_rate = output.sample_rate;
+            c->status.audio_output_channels = output.channels;
+            c->status.audio_block_frames = frames;
+            unlock(c);
+        }
     }
     while (err == ESP_OK && !c->cancel) {
         lock(c);
         bool have = solar_os_rtsp_audio_jitter_pop(c->jitter, now_us(), &s->packet);
         c->status.audio_dropped = c->jitter->dropped;
+        if (c->options.diagnostics) {
+            c->status.audio_concealed = c->jitter->concealed;
+            if (!have) c->status.audio_wait_polls++;
+        }
         unlock(c);
         if (!have) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
         size_t samples = s->packet.length / 2;
@@ -222,12 +233,22 @@ static void audio_worker(void *arg)
                 memcpy(s->pcm + s->filled, s->output + consumed, n * sizeof(int16_t));
                 consumed += n; s->filled += n; frames += n / output.channels;
                 if (s->filled != quantum) continue;
+                uint64_t before = c->options.diagnostics ? now_us() : 0;
                 err = solar_os_audio_player_write(player, s->pcm, quantum * sizeof(int16_t), &c->cancel);
                 s->filled = 0;
                 lock(c);
                 c->audio_timestamp = s->packet.timestamp;
                 c->audio_frames = (uint32_t)((uint64_t)frames * f->sample_rate / output.sample_rate);
-                c->audio_played_us = now_us(); c->status.audio_playing = err == ESP_OK;
+                uint64_t submitted = now_us();
+                if (c->options.diagnostics && err == ESP_OK) {
+                    uint32_t duration = submitted - before;
+                    uint32_t gap = c->audio_played_us ? submitted - c->audio_played_us : 0;
+                    if (duration > c->status.audio_write_max_us) c->status.audio_write_max_us = duration;
+                    if (gap > c->status.audio_gap_max_us) c->status.audio_gap_max_us = gap;
+                    c->status.audio_blocks++;
+                    c->status.audio_output_frames += quantum / output.channels;
+                }
+                c->audio_played_us = submitted; c->status.audio_playing = err == ESP_OK;
                 unlock(c);
             }
         }
@@ -423,7 +444,11 @@ void solar_os_rtsp_client_status(solar_os_rtsp_client_t *c, solar_os_rtsp_client
 {
     if (!s) return;
     if (!c) { *s = (solar_os_rtsp_client_status_t){.error = ESP_ERR_INVALID_ARG}; return; }
-    lock(c); *s = c->status; unlock(c);
+    lock(c); *s = c->status;
+    if (c->options.diagnostics && c->jitter) {
+        for (size_t i = 0; i < SOLAR_OS_RTSP_AUDIO_SLOTS; i++) s->audio_queued += c->jitter->slots[i].used;
+    }
+    unlock(c);
 }
 
 bool solar_os_rtsp_client_take_video(solar_os_rtsp_client_t *c, solar_os_rtp_jpeg_frame_t *frame,

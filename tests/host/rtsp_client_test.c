@@ -296,7 +296,8 @@ static void test_relay_playback(uint32_t output_rate, uint8_t output_channels, u
     test_server_t server = {.offer_video = true, .offer_audio = true, .relay = true};
     server_start(&server);
     char url[192]; snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", server.port);
-    solar_os_rtsp_client_options_t options = {.video = true, .audio = true, .samples = samples_callback};
+    solar_os_rtsp_client_options_t options = {.video = true, .audio = true, .samples = samples_callback,
+        .diagnostics = true};
     solar_os_rtsp_client_t *c; assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
     unsigned before = atomic_load(&samples_played);
     pthread_t thread; assert(!pthread_create(&thread, NULL, run_client, c));
@@ -326,6 +327,11 @@ static void test_relay_playback(uint32_t output_rate, uint8_t output_channels, u
     }
     solar_os_rtsp_client_status(c, &status);
     assert(status.audio_playing && status.sample_rate == 44100 && !status.audio_dropped);
+    assert(status.audio_output_rate == sink_rate && status.audio_output_channels == sink_channels);
+    assert(status.audio_block_frames == sink_block && status.audio_blocks > 0);
+    assert(status.audio_output_frames == status.audio_blocks * sink_block);
+    assert(status.audio_write_max_us > 0 && status.audio_gap_max_us > 0);
+    assert(status.audio_queued <= SOLAR_OS_RTSP_AUDIO_SLOTS && !status.audio_concealed);
     lock(c); assert(!c->jitter->concealed); unlock(c); /* Silence must not hide lost large packets. */
     /* At least 800 ms of intact resampled audio. The old
      * payload cap lost most samples and cannot satisfy this assertion. */

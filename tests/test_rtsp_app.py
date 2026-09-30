@@ -53,6 +53,14 @@ class RtspAppTest(unittest.TestCase):
         self.assertIn("for (unsigned i = 0; i < rtsp.queued; i++) solar_os_memory_free", APP)
         self.assertIn("prepare_image(pixels", APP)
 
+    def test_opt_in_diagnostics_and_port_safe_sampling(self):
+        self.assertIn('!strcmp(arg, "--stats")', APP)
+        self.assertIn("if (!rtsp.diagnostics) return", APP)
+        self.assertIn(".diagnostics = rtsp.diagnostics", APP)
+        self.assertIn("if (rtsp.image_mutex) xSemaphoreTake", APP)
+        self.assertIn('SOLAR_OS_LOGI("rtsp.stats"', APP)
+        self.assertIn("audio_gap_max_us", CLIENT)
+
 
 if __name__ == "__main__":
     unittest.main()

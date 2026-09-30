@@ -8,6 +8,7 @@ typedef struct solar_os_rtsp_client solar_os_rtsp_client_t;
 typedef struct {
     bool video;
     bool audio;
+    bool diagnostics;
     /* Called by the audio owner after PCM has been submitted to the output.
      * Valid until run() returns; widgets must outlive that call. */
     void (*samples)(const int16_t *, size_t, uint8_t, void *);
@@ -20,6 +21,12 @@ typedef struct {
     uint32_t sample_rate;
     uint8_t channels;
     uint32_t video_frames, video_dropped, audio_dropped;
+    /* Optional diagnostics. Submission gaps are not hardware underrun counts. */
+    uint32_t audio_blocks, audio_output_frames, audio_output_rate;
+    uint32_t audio_write_max_us, audio_gap_max_us, audio_wait_polls;
+    uint32_t audio_concealed, audio_queued;
+    uint16_t audio_block_frames;
+    uint8_t audio_output_channels;
     esp_err_t error;
 } solar_os_rtsp_client_status_t;
 
