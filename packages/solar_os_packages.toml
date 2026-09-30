@@ -1043,7 +1043,10 @@ sources = [
 
 [packages.service_image]
 label = "media.image"
-sources = ["services/solar_os_raster_image.c"]
+sources = [
+  "services/solar_os_mjpeg.c",
+  "services/solar_os_raster_image.c",
+]
 requires = ["stb_image", "webp_decoder"]
 
 [packages.service_document]

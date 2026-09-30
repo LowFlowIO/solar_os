@@ -21,6 +21,7 @@
 #include "solar_os_keys.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
+#include "solar_os_mjpeg.h"
 #include "solar_os_queue.h"
 #include "solar_os_stb_image.h"
 #include "solar_os_task.h"
@@ -163,6 +164,28 @@ typedef struct {
 } web_event_t;
 
 typedef struct {
+    uint8_t *pixels;
+    uint32_t width;
+    uint32_t height;
+    uint32_t sequence;
+    uint32_t dropped_frames;
+    uint32_t decode_errors;
+    uint32_t bytes_read;
+    uint8_t channels;
+    web_image_decoder_t decoder;
+} web_mjpeg_frame_t;
+
+typedef struct {
+    bool mjpeg;
+    uint8_t *frame_buffer;
+    solar_os_mjpeg_parser_t parser;
+    uint32_t decoded_frames;
+    uint32_t dropped_frames;
+    uint32_t decode_errors;
+    uint32_t bytes_read;
+} web_http_worker_t;
+
+typedef struct {
     bool active;
     bool suspended;
     bool loading;
@@ -174,6 +197,7 @@ typedef struct {
     volatile bool task_done;
     TaskHandle_t task;
     QueueHandle_t events;
+    QueueHandle_t mjpeg_frames;
     solar_os_http_request_t *request;
     uint8_t *html;
     size_t html_len;
@@ -200,6 +224,7 @@ typedef struct {
     size_t wrap_cols;
     int zoom;
     bool direct_image_document;
+    bool mjpeg_stream;
     bool reflowing;
     size_t preserved_control_count;
     size_t preserved_image_count;
@@ -227,6 +252,9 @@ static SemaphoreHandle_t web_request_lock;
 
 static bool web_resolve_url(const char *base, const char *href, char *out, size_t out_len);
 static const char *web_current_base_url(void);
+static esp_err_t web_mjpeg_decode_frame(const uint8_t *jpeg,
+                                        size_t jpeg_len,
+                                        void *user);
 
 typedef struct {
     solar_os_gfx_font_t regular_font;
@@ -364,6 +392,52 @@ static void web_free_image_data(web_image_t *image)
     image->decoder = WEB_IMAGE_DECODE_NONE;
 }
 
+static void web_free_mjpeg_frame(web_mjpeg_frame_t *frame)
+{
+    if (frame == NULL || frame->pixels == NULL) {
+        return;
+    }
+    if (frame->decoder == WEB_IMAGE_DECODE_WEBP) {
+        solar_os_webp_free(frame->pixels);
+    } else {
+        solar_os_stb_image_free(frame->pixels);
+    }
+    frame->pixels = NULL;
+}
+
+static bool web_publish_mjpeg_frame(web_mjpeg_frame_t *frame,
+                                    web_http_worker_t *worker)
+{
+    if (frame == NULL || frame->pixels == NULL || worker == NULL ||
+        web.mjpeg_frames == NULL || web.stop_requested) {
+        return false;
+    }
+
+    web_mjpeg_frame_t stale = {0};
+    if (xQueueReceive(web.mjpeg_frames, &stale, 0) == pdPASS) {
+        web_free_mjpeg_frame(&stale);
+        worker->dropped_frames++;
+        frame->dropped_frames = worker->dropped_frames +
+            worker->parser.dropped_frames;
+    }
+    if (xQueueSend(web.mjpeg_frames, frame, 0) != pdPASS) {
+        return false;
+    }
+    frame->pixels = NULL;
+    return true;
+}
+
+static void web_discard_pending_mjpeg_frame(void)
+{
+    if (web.mjpeg_frames == NULL) {
+        return;
+    }
+    web_mjpeg_frame_t frame;
+    while (xQueueReceive(web.mjpeg_frames, &frame, 0) == pdPASS) {
+        web_free_mjpeg_frame(&frame);
+    }
+}
+
 static bool web_url_supported(const char *url)
 {
     return url != NULL &&
@@ -421,6 +495,7 @@ static void web_send_message(web_event_type_t type, const char *message)
 
 static void web_reset_document(void)
 {
+    web_discard_pending_mjpeg_frame();
     web.html_len = 0;
     web.html_truncated = false;
     web.line_count = 0;
@@ -438,6 +513,7 @@ static void web_reset_document(void)
     web.status_code = -1;
     web.bytes_read = 0;
     web.direct_image_document = false;
+    web.mjpeg_stream = false;
     web.reflowing = false;
     web.preserved_control_count = 0;
     web.preserved_image_count = 0;
@@ -482,6 +558,7 @@ static bool web_allocate_buffers(void)
     web.items = web_calloc(WEB_ITEM_COUNT, sizeof(web.items[0]), "web.items");
     web.events = solar_os_queue_create(WEB_EVENT_QUEUE_LEN,
                                         sizeof(web_event_t));
+    web.mjpeg_frames = solar_os_queue_create(1U, sizeof(web_mjpeg_frame_t));
 
     if (web.html == NULL ||
         web.lines == NULL ||
@@ -490,7 +567,8 @@ static bool web_allocate_buffers(void)
         web.forms == NULL ||
         web.images == NULL ||
         web.items == NULL ||
-        web.events == NULL) {
+        web.events == NULL ||
+        web.mjpeg_frames == NULL) {
         return false;
     }
     web_reset_document();
@@ -499,6 +577,11 @@ static bool web_allocate_buffers(void)
 
 static void web_free_buffers(void)
 {
+    web_discard_pending_mjpeg_frame();
+    if (web.mjpeg_frames != NULL) {
+        solar_os_queue_delete(web.mjpeg_frames);
+        web.mjpeg_frames = NULL;
+    }
     if (web.events != NULL) {
         solar_os_queue_delete(web.events);
         web.events = NULL;
@@ -565,9 +648,14 @@ static bool web_http_event_is_redirect_body(const solar_os_http_event_t *event)
     return event->status_code >= 300 && event->status_code < 400;
 }
 
+static bool web_content_type_is_mjpeg(const char *value)
+{
+    static const char type[] = "multipart/x-mixed-replace";
+    return value != NULL && strncasecmp(value, type, sizeof(type) - 1U) == 0;
+}
+
 static esp_err_t web_http_event(const solar_os_http_event_t *event, void *user_data)
 {
-    (void)user_data;
     if (event == NULL) {
         return ESP_OK;
     }
@@ -575,9 +663,51 @@ static esp_err_t web_http_event(const solar_os_http_event_t *event, void *user_d
         return ESP_FAIL;
     }
 
+    web_http_worker_t *worker = user_data;
+    if (event->type == SOLAR_OS_HTTP_EVENT_HEADER &&
+        event->status_code >= 200 && event->status_code < 300 &&
+        event->header_name != NULL &&
+        strcasecmp(event->header_name, "Content-Type") == 0 &&
+        web_content_type_is_mjpeg(event->header_value)) {
+        if (worker == NULL) {
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (!worker->mjpeg) {
+            worker->frame_buffer = web_malloc(WEB_IMAGE_MAX_BYTES,
+                                              "web.mjpeg.frame");
+            if (worker->frame_buffer == NULL) {
+                return ESP_ERR_NO_MEM;
+            }
+            const esp_err_t error = solar_os_mjpeg_parser_init(
+                &worker->parser,
+                worker->frame_buffer,
+                WEB_IMAGE_MAX_BYTES,
+                web_mjpeg_decode_frame,
+                worker);
+            if (error != ESP_OK) {
+                solar_os_memory_free(worker->frame_buffer);
+                worker->frame_buffer = NULL;
+                return error;
+            }
+            worker->mjpeg = true;
+            web_send_message(WEB_EVENT_STATUS, "MJPEG stream");
+        }
+        return ESP_OK;
+    }
+
     if (event->type == SOLAR_OS_HTTP_EVENT_DATA) {
         if (web_http_event_is_redirect_body(event)) {
             return ESP_OK;
+        }
+        if (worker != NULL && worker->mjpeg) {
+            if (UINT32_MAX - worker->bytes_read < event->data_len) {
+                worker->bytes_read = UINT32_MAX;
+            } else {
+                worker->bytes_read += (uint32_t)event->data_len;
+            }
+            return solar_os_mjpeg_parser_feed(&worker->parser,
+                                              event->data,
+                                              event->data_len);
         }
         web_append_html(event->data, event->data_len);
     }
@@ -1918,10 +2048,12 @@ static void web_apply_image_layout(web_image_t *image,
                   src != NULL ? src : "");
 }
 
-static esp_err_t web_decode_image_bytes(web_image_t *image,
-                                        const uint8_t *data,
-                                        size_t len,
-                                        const char *src)
+static esp_err_t web_decode_image_bytes_internal(web_image_t *image,
+                                                 const uint8_t *data,
+                                                 size_t len,
+                                                 const char *src,
+                                                 bool apply_layout,
+                                                 bool log_failure)
 {
     if (image == NULL || data == NULL || len == 0) {
         return ESP_ERR_INVALID_ARG;
@@ -1966,23 +2098,87 @@ static esp_err_t web_decode_image_bytes(web_image_t *image,
                                      &height);
     }
     if (err != ESP_OK || pixels == NULL || width == 0 || height == 0) {
-        SOLAR_OS_LOGW(TAG,
-                      "%s image decode failed: %s src=%s reason=%s bytes=%u",
-                      format,
-                      esp_err_to_name(err),
-                      src != NULL ? src : "",
-                      decoder == WEB_IMAGE_DECODE_STB ?
-                          solar_os_stb_failure_reason() :
-                          "webp decode failed",
-                      (unsigned)len);
-        return err;
+        if (pixels != NULL) {
+            if (decoder == WEB_IMAGE_DECODE_WEBP) {
+                solar_os_webp_free(pixels);
+            } else {
+                solar_os_stb_image_free(pixels);
+            }
+        }
+        if (log_failure) {
+            SOLAR_OS_LOGW(TAG,
+                          "%s image decode failed: %s src=%s reason=%s bytes=%u",
+                          format,
+                          esp_err_to_name(err),
+                          src != NULL ? src : "",
+                          decoder == WEB_IMAGE_DECODE_STB ?
+                              solar_os_stb_failure_reason() :
+                              "webp decode failed",
+                          (unsigned)len);
+        }
+        return err != ESP_OK ? err : ESP_FAIL;
     }
 
     web_free_image_data(image);
     image->pixels = pixels;
     image->channels = web.color_images ? 3U : 1U;
     image->decoder = decoder;
-    web_apply_image_layout(image, width, height, src, format);
+    if (apply_layout) {
+        web_apply_image_layout(image, width, height, src, format);
+    } else {
+        image->width = width;
+        image->height = height;
+        image->loaded = true;
+    }
+    return ESP_OK;
+}
+
+static esp_err_t web_decode_image_bytes(web_image_t *image,
+                                        const uint8_t *data,
+                                        size_t len,
+                                        const char *src)
+{
+    return web_decode_image_bytes_internal(image, data, len, src, true, true);
+}
+
+static esp_err_t web_mjpeg_decode_frame(const uint8_t *jpeg,
+                                        size_t jpeg_len,
+                                        void *user)
+{
+    web_http_worker_t *worker = user;
+    if (worker == NULL || web.stop_requested) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    web_image_t image = {0};
+    const esp_err_t error = web_decode_image_bytes_internal(
+        &image, jpeg, jpeg_len, web.url, false, false);
+    if (error != ESP_OK) {
+        worker->decode_errors++;
+        return ESP_OK;
+    }
+
+    worker->decoded_frames++;
+    web_mjpeg_frame_t frame = {
+        .pixels = image.pixels,
+        .width = image.width,
+        .height = image.height,
+        .sequence = worker->decoded_frames,
+        .dropped_frames = worker->dropped_frames +
+            worker->parser.dropped_frames,
+        .decode_errors = worker->decode_errors,
+        .bytes_read = worker->bytes_read,
+        .channels = image.channels,
+        .decoder = image.decoder,
+    };
+    image.pixels = NULL;
+    if (!web_publish_mjpeg_frame(&frame, worker)) {
+        web_free_mjpeg_frame(&frame);
+        if (web.stop_requested) {
+            return ESP_ERR_INVALID_STATE;
+        }
+        worker->dropped_frames++;
+    }
     return ESP_OK;
 }
 
@@ -2128,6 +2324,7 @@ static esp_err_t web_load_direct_image_document(uint32_t *out_bytes,
 static void web_task(void *arg)
 {
     (void)arg;
+    web_http_worker_t worker = {0};
 
     web_send_message(WEB_EVENT_STATUS, "connecting");
     web.html_len = 0;
@@ -2169,12 +2366,15 @@ static void web_task(void *arg)
         .url = web.url,
         .method = SOLAR_OS_HTTP_METHOD_GET,
         .timeout_ms = WEB_TIMEOUT_MS,
+        .read_poll_ms = 250U,
+        .cancel_flag = &web.stop_requested,
         .follow_redirects = true,
         .max_redirects = WEB_REDIRECT_MAX,
         .event_handler = web_http_event,
         .receive_buffer_size = 1024,
         .transmit_buffer_size = 512,
         .user_agent = "SolarOS-web/0.1",
+        .user_data = &worker,
     };
 
     SOLAR_OS_LOGI(TAG, "GET %s", web.url);
@@ -2185,7 +2385,9 @@ static void web_task(void *arg)
     }
     web_publish_request(request);
 
-    solar_os_http_response_t response;
+    solar_os_http_response_t response = {
+        .status_code = -1,
+    };
     err = solar_os_http_request_perform(request, &response);
     web.status_code = response.status_code;
     web_release_request(request);
@@ -2193,6 +2395,17 @@ static void web_task(void *arg)
 
     if (web.stop_requested) {
         web_send_message(WEB_EVENT_ERROR, "cancelled");
+    } else if (worker.mjpeg) {
+        web_event_t event = {
+            .type = WEB_EVENT_ERROR,
+            .status_code = response.status_code,
+            .bytes_read = worker.bytes_read,
+        };
+        snprintf(event.message,
+                 sizeof(event.message),
+                 "%s",
+                 err == ESP_OK ? "stream ended" : esp_err_to_name(err));
+        (void)web_send_event(&event);
     } else if (err != ESP_OK) {
         web_event_t event = {
             .type = WEB_EVENT_ERROR,
@@ -2235,6 +2448,7 @@ static void web_task(void *arg)
 
 done:
     web_release_request(request);
+    solar_os_memory_free(worker.frame_buffer);
     SOLAR_OS_LOGD(TAG,
                   "task done stack_high_water=%u",
                   (unsigned)uxTaskGetStackHighWaterMark(NULL));
@@ -3006,6 +3220,99 @@ static web_history_entry_t web_current_history_entry(void)
     return entry;
 }
 
+static void web_apply_mjpeg_layout(web_image_t *image, solar_os_gfx_t *gfx)
+{
+    if (image == NULL || gfx == NULL || image->width == 0U || image->height == 0U) {
+        return;
+    }
+
+    const int screen_width = (int)solar_os_gfx_width(gfx);
+    const int screen_height = (int)solar_os_gfx_height(gfx);
+    const uint32_t max_width = screen_width > 2 * WEB_MARGIN_X ?
+        (uint32_t)(screen_width - 2 * WEB_MARGIN_X) : 1U;
+    const uint32_t max_height = screen_height > WEB_HEADER_HEIGHT + WEB_FOOTER_HEIGHT + 4 ?
+        (uint32_t)(screen_height - WEB_HEADER_HEIGHT - WEB_FOOTER_HEIGHT - 4) : 1U;
+    uint32_t draw_width = image->width;
+    uint32_t draw_height = image->height;
+    if (draw_width > max_width) {
+        draw_height = (uint32_t)(((uint64_t)draw_height * max_width) / draw_width);
+        draw_width = max_width;
+    }
+    if (draw_height > max_height) {
+        draw_width = (uint32_t)(((uint64_t)draw_width * max_height) / draw_height);
+        draw_height = max_height;
+    }
+    image->draw_width = (uint16_t)(draw_width > 0U ? draw_width : 1U);
+    image->draw_height = (uint16_t)(draw_height > 0U ? draw_height : 1U);
+}
+
+static void web_adopt_mjpeg_frame(solar_os_context_t *ctx,
+                                  web_mjpeg_frame_t *frame)
+{
+    if (frame == NULL || frame->pixels == NULL || web.images == NULL) {
+        return;
+    }
+
+    if (!web.mjpeg_stream) {
+        web.line_count = 0U;
+        web.link_count = 0U;
+        web.control_count = 0U;
+        web.form_count = 0U;
+        web.image_count = 0U;
+        web.item_count = 0U;
+        web.direct_image_document = true;
+        const int image_index = web_add_image(web.url, "MJPEG stream");
+        if (image_index < 0) {
+            web_free_mjpeg_frame(frame);
+            return;
+        }
+        web_add_image_line(image_index, -1);
+        web_rebuild_items();
+        web.mjpeg_stream = true;
+    }
+
+    web_image_t *image = &web.images[0];
+    web_free_image_data(image);
+    image->pixels = frame->pixels;
+    image->width = frame->width;
+    image->height = frame->height;
+    image->channels = frame->channels;
+    image->decoder = frame->decoder;
+    image->attempted = true;
+    image->loaded = true;
+    image->status_code = 200;
+    frame->pixels = NULL;
+    web_apply_mjpeg_layout(image, solar_os_context_gfx(ctx));
+    web_update_image_line_heights();
+
+    web.loading = false;
+    web.loaded = true;
+    web.status_code = 200;
+    web.bytes_read = frame->bytes_read;
+    snprintf(web.status,
+             sizeof(web.status),
+             "MJPEG %lux%lu frame=%lu drop=%lu err=%lu",
+             (unsigned long)frame->width,
+             (unsigned long)frame->height,
+             (unsigned long)frame->sequence,
+             (unsigned long)frame->dropped_frames,
+             (unsigned long)frame->decode_errors);
+    web.redraw = true;
+}
+
+static void web_drain_mjpeg_frames(solar_os_context_t *ctx)
+{
+    if (web.mjpeg_frames == NULL) {
+        return;
+    }
+
+    web_mjpeg_frame_t frame;
+    while (xQueueReceive(web.mjpeg_frames, &frame, 0) == pdPASS) {
+        web_adopt_mjpeg_frame(ctx, &frame);
+        web_free_mjpeg_frame(&frame);
+    }
+}
+
 static void web_history_push_current(void)
 {
     if (!web.loaded || web.url[0] == '\0') {
@@ -3018,6 +3325,27 @@ static void web_history_push_current(void)
 
 static bool web_history_back(solar_os_context_t *ctx);
 static bool web_history_forward(solar_os_context_t *ctx);
+
+static bool web_stop_mjpeg_for_navigation(void)
+{
+    if (web.task == NULL || web.task_done) {
+        return true;
+    }
+    if (!web.mjpeg_stream) {
+        return false;
+    }
+
+    web.stop_requested = true;
+    web_cancel_request();
+    if (!solar_os_task_wait_done(web.task,
+                                 &web.task_done,
+                                 SOLAR_OS_TASK_STOP_WAIT_MS)) {
+        web_set_status("stream cancel timeout");
+        return false;
+    }
+    web.task = NULL;
+    return true;
+}
 
 static esp_err_t web_start_load(solar_os_context_t *ctx, const char *url, bool push_history)
 {
@@ -3038,7 +3366,7 @@ static esp_err_t web_start_load(solar_os_context_t *ctx, const char *url, bool p
         return ESP_ERR_INVALID_STATE;
     }
 
-    if (web.task != NULL && !web.task_done) {
+    if (!web_stop_mjpeg_for_navigation()) {
         return ESP_ERR_INVALID_STATE;
     }
     if (push_history) {
@@ -3085,6 +3413,7 @@ static esp_err_t web_start_load(solar_os_context_t *ctx, const char *url, bool p
 
 static void web_drain_events(solar_os_context_t *ctx)
 {
+    web_drain_mjpeg_frames(ctx);
     if (web.events == NULL) {
         return;
     }
@@ -3097,7 +3426,9 @@ static void web_drain_events(solar_os_context_t *ctx)
             break;
         case WEB_EVENT_ERROR:
             web.loading = false;
-            web.loaded = false;
+            if (!web.mjpeg_stream) {
+                web.loaded = false;
+            }
             snprintf(web.status,
                      sizeof(web.status),
                      "error: %s",

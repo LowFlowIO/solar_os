@@ -16,7 +16,11 @@ SERVICE = (ROOT / "src/services/solar_os_raster_image.c").read_text(
 
 class ScriptImageBindingsTest(unittest.TestCase):
     def test_image_service_owns_decode_and_draw(self):
-        self.assertIn('sources = ["services/solar_os_raster_image.c"]', PACKAGES)
+        image_package = PACKAGES.split("[packages.service_image]", 1)[1].split(
+            "\n[", 1
+        )[0]
+        self.assertIn('"services/solar_os_mjpeg.c"', image_package)
+        self.assertIn('"services/solar_os_raster_image.c"', image_package)
         self.assertIn("solar_os_stb_decode_rgb", SERVICE)
         self.assertIn("solar_os_webp_decode_rgb", SERVICE)
         self.assertIn("solar_os_raster_image_draw", SERVICE)

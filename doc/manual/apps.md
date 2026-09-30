@@ -1732,14 +1732,23 @@ Controls:
 Simple graphical web browser for lightweight HTML pages. It shares document and
 image rendering infrastructure with `reader` where possible. Embedded and
 direct PNG, JPEG, GIF, and WebP images retain color on indexed-color displays;
-one-bit displays keep the grayscale decode and dither path.
+one-bit displays keep the grayscale decode and dither path. Direct MJPEG URLs
+are shown as live video using the same JPEG renderer.
 
 Usage:
 
 ```text
 web http://host/
 web https://host/path
+web http://camera-host/camera.mjpeg
 ```
+
+MJPEG playback uses a bounded 512 KiB assembly buffer and a single pending
+decoded frame. If decoding or display presentation falls behind the source,
+`web` drops the stale pending frame and keeps the newest one instead of growing
+latency or memory use. Reload, Back, Forward, and app exit cancel the active
+HTTP stream. The stream inherits the security properties of its URL; plain
+HTTP provides no encryption or peer authentication.
 
 Controls:
 
