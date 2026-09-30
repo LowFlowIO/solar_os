@@ -545,7 +545,7 @@ esp_err_t solar_os_rtp_jpeg_receiver_init(
     uint8_t *buffer,
     size_t capacity)
 {
-    if (receiver == NULL || payload_type < 96U || payload_type > 127U ||
+    if (receiver == NULL || (payload_type != 26U && payload_type < 96U) || payload_type > 127U ||
         buffer == NULL || capacity < SOLAR_OS_RTP_JPEG_HEADER_RESERVE + 3U ||
         capacity > SOLAR_OS_MEDIA_VIDEO_FRAME_MAX) {
         return ESP_ERR_INVALID_ARG;

@@ -585,6 +585,7 @@ Open the single RTSP client session:
 
 ```text
 vlc rtsp://device/media
+rtsp rtsp://device/media
 ffplay -rtsp_transport udp -fflags nobuffer -probesize 32 -analyzeduration 1 -max_delay 100000 rtsp://device/media
 ```
 

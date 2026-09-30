@@ -56,6 +56,40 @@ Exit behavior:
   remain visible, and status or error feedback can temporarily cover the last
   content row.
 
+## rtsp
+
+Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.
+
+```text
+rtsp rtsp://192.168.1.238/media
+rtsp --audio-only rtsp://192.168.1.113/media
+```
+
+Graphical sessions show aspect-fit JPEG video when a video track is selected.
+Audio-only sessions use the common audio GUI oscilloscope, fed by playback PCM.
+Port shells select audio only and print playback status. `--audio-only` skips
+video negotiation and video buffers even when the publisher offers both tracks.
+Audio uses the selected default output and global volume; `+` and `-` adjust
+volume. `Q`, Escape, or the normal application-exit key closes playback.
+Suspending retains audio playback; video decoding pauses until resume.
+
+The reusable RTSP client service owns negotiation, sockets, frame leases, audio
+conversion, and bounded jitter buffering. Its compressed JPEG assembler is a
+single 512 KiB PSRAM allocation, created only when video is selected. The decoder
+leases it briefly; video packets are dropped while it is leased. Incomplete,
+superseded, or more than 150 ms late frames are discarded. L16 audio supports
+8–48 kHz mono/stereo with a 16-packet, 40 ms reorder buffer, bounded gap silence,
+and stale-packet dropping. RTCP sender reports align video to the audio playback
+clock when both tracks have timing reports; before that, video is shown on arrival.
+Runtime allocations are released on exit; the app reserves no idle bulk SRAM.
+
+V1 supports unauthenticated IPv4 RTSP 1.0, one JPEG and one L16 track, and unicast
+UDP. JPEG uses the publisher's explicit 8-bit quantization tables (Q=255), types
+0/1 with optional restart markers. TCP interleaving, multicast, authentication,
+encrypted RTSP, compressed audio, redirects, and automatic reconnection are not
+supported. Connection failures or five seconds without media return a diagnostic
+to the shell. The publisher must have a free receiver slot; `rtspd` is single-client.
+
 ## agent
 
 Native Responses/Chat-Completions LLM client and SolarOS agent control plane.

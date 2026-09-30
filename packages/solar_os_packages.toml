@@ -49,7 +49,7 @@ members = ["driver_camera_esp32", "job_cam_webd"]
 [groups.rtsp]
 label = "RTSP streaming"
 category = "Networking"
-members = ["job_rtspd"]
+members = ["job_rtspd", "app_rtsp"]
 
 [groups.control_bindings]
 label = "Control bindings"
@@ -2121,6 +2121,19 @@ depends = [
   "service_webradio",
 ]
 sources = ["apps/solar_os_webradio.c"]
+capabilities = ["wifi"]
+
+[packages.service_rtsp_client]
+label = "service.rtsp-client"
+depends = ["service_media", "service_audio", "service_net"]
+sources = ["services/solar_os_rtsp_receiver.c", "services/solar_os_rtsp_client.c"]
+capabilities = ["wifi"]
+
+[packages.app_rtsp]
+label = "app.rtsp"
+depends = ["service_rtsp_client", "service_signal_widgets", "service_media_widgets"]
+sources = ["apps/solar_os_rtsp_app.c"]
+requires = ["stb_image"]
 capabilities = ["wifi"]
 
 [packages.app_telnet]

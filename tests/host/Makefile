@@ -15,6 +15,15 @@ TARGETS += input_action_match_test gesture_completion_test
 TARGETS += camera_service_test camera_expansion_test media_test mjpeg_test
 TARGETS += http_server_test
 TARGETS += rtspd_job_test rtspd_audio_only_test
+TARGETS += rtsp_receiver_test
+TARGETS += rtsp_client_test
+
+RTSP_CLIENT_TEST_SOURCES := rtsp_client_test.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_rtp_jpeg.c $(ROOT)/src/services/solar_os_media.c $(ROOT)/src/services/solar_os_audio_pcm.c
+rtsp_client_test: $(RTSP_CLIENT_TEST_SOURCES) $(ROOT)/src/services/solar_os_rtsp_client.c $(wildcard rtsp_stubs/*.h) $(wildcard rtsp_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -pthread -Irtsp_stubs -Irtspd_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services $(RTSP_CLIENT_TEST_SOURCES) -o $@
+
+rtsp_receiver_test: rtsp_receiver_test.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_media.c
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -I. -I$(ROOT)/src/services $^ -o $@
 
 RTSPD_TEST_SOURCES := rtspd_job_test.c $(ROOT)/src/jobs/solar_os_rtspd_options.c \
 	$(ROOT)/src/services/solar_os_media.c $(ROOT)/src/services/solar_os_rtp.c \
@@ -588,6 +597,8 @@ test: $(TARGETS)
 	./media_test
 	./rtspd_job_test
 	./rtspd_audio_only_test
+	./rtsp_receiver_test
+	./rtsp_client_test
 	./mjpeg_test
 	./http_server_test
 	./sensors_service_test

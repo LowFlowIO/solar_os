@@ -23,6 +23,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [camera command](commands.md) — Probe the fitted sensor and capture bounded QVGA or VGA JPEG stills.
 - [cam-webd job](jobs.reference.md#cam-webd) — Lease the camera for JPEG snapshots and a single-client MJPEG stream with optional authentication.
 - [rtspd job](jobs.reference.md#rtspd) — Publish selected camera/audio sources over single-client RTSP/RTP with RTCP timing.
+- [rtsp app](apps.md#rtsp) — Receive JPEG video and L16 audio, with the shared oscilloscope for audio-only streams.
 - [ble command](commands.md) — Show BLE keyboard state and the current/next boot setting.
 - [board command](commands.md) — Print board ID, name, and capabilities.
 - [cat command](commands.md) — Print a small text file.

@@ -405,12 +405,16 @@ static void setup(int fd, unsigned track, uint16_t port)
               "Transport: RTP/AVP/UDP;unicast;client_port=%u-%u\r\n", port, port + 1);
     request(fd, "SETUP", uri, headers, 200);
 }
-static void run_sessions(bool video)
+static void free_control_port(char *port, size_t capacity)
 {
     int temp = socket(AF_INET, SOCK_STREAM, 0); assert(temp >= 0);
     struct sockaddr_in addr = {.sin_family = AF_INET}; socklen_t len = sizeof(addr);
     assert(!bind(temp, (struct sockaddr *)&addr, len)); assert(!getsockname(temp, (struct sockaddr *)&addr, &len));
-    char port[32]; snprintf(port, sizeof(port), "port=%u", ntohs(addr.sin_port)); close(temp);
+    snprintf(port, capacity, "port=%u", ntohs(addr.sin_port)); close(temp);
+}
+static void run_sessions(bool video)
+{
+    char port[32]; free_control_port(port, sizeof(port));
     char *args[] = {video ? "video=camera" : "video=none", "audio=mic0", port, "fps=0"};
     unsigned camera_before = camera_claims;
     assert(solar_os_rtspd_job.start(NULL, video ? 4 : 3, args) == ESP_OK);
@@ -505,7 +509,8 @@ static void failure_tests(void)
         assert(solar_os_rtspd_job.start(NULL, 2, args) != ESP_OK);
         assert(!live_tasks && camera_claims == camera_before);
     }
-    char *audio[] = {"video=none", "audio=mic0", "port=8554"};
+    char port[32]; free_control_port(port, sizeof(port));
+    char *audio[] = {"video=none", "audio=mic0", port};
     for (unsigned fail = 1; fail <= 2; fail++) {
         fail_allocation_call = allocation_calls + fail;
         assert(solar_os_rtspd_job.start(NULL, 3, audio) == ESP_ERR_NO_MEM);
@@ -525,7 +530,7 @@ static void failure_tests(void)
         fail_task_call = 0;
     }
 #if SOLAR_OS_PACKAGE_SERVICE_CAMERA
-    char *both[] = {"video=camera", "audio=mic0", "port=8554"};
+    char *both[] = {"video=camera", "audio=mic0", port};
     for (unsigned fail = 1; fail <= 3; fail++) {
         fail_allocation_call = allocation_calls + fail;
         assert(solar_os_rtspd_job.start(NULL, 3, both) == ESP_ERR_NO_MEM);

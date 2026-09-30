@@ -44,6 +44,7 @@ class NativeRasterBlitterTest(unittest.TestCase):
             {
                 "src/apps/solar_os_view.c",
                 "src/apps/solar_os_web.c",
+                "src/apps/solar_os_rtsp_app.c",
                 "src/apps/solar_os_sketch.c",
                 "src/services/solar_os_doc.c",
                 "src/services/solar_os_raster_image.c",
