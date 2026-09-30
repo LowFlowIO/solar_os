@@ -439,8 +439,14 @@ static esp_err_t mediad_play(mediad_session_t *session,
         session->client_fd, request->cseq, 200, "OK", headers, NULL);
     if (error == ESP_OK) {
         session->playing = true;
-        session->clock_ready = false;
         session->next_frame_us = esp_timer_get_time();
+        /* A single camera buffer can predate PLAY by minutes. Use the
+         * session start as the common RTP/RTCP origin, never that buffer. */
+        (void)solar_os_media_clock_init(&session->clock,
+                                        (uint64_t)session->next_frame_us,
+                                        session->sender.timestamp,
+                                        90000U);
+        session->clock_ready = true;
         session->next_rtcp_us = session->next_frame_us + MEDIAD_RTCP_INTERVAL_US;
     }
     return error;
@@ -583,15 +589,17 @@ static esp_err_t mediad_send_frame(mediad_session_t *session)
         portEXIT_CRITICAL(&mediad_lock);
         return error;
     }
+    if (frame->timestamp_us < session->clock.origin_us) {
+        /* Returning the stale frame permits the single-buffer driver to
+         * acquire a fresh one. Do not put a pre-session image on the wire. */
+        error = solar_os_camera_release_frame(&mediad.camera_owner, frame);
+        portENTER_CRITICAL(&mediad_lock);
+        mediad.dropped_frames++;
+        portEXIT_CRITICAL(&mediad_lock);
+        return error;
+    }
     solar_os_rtp_jpeg_view_t jpeg;
     error = solar_os_rtp_jpeg_parse(frame->data, frame->length, &jpeg);
-    if (error == ESP_OK && !session->clock_ready) {
-        error = solar_os_media_clock_init(&session->clock,
-                                          frame->timestamp_us,
-                                          session->sender.timestamp,
-                                          90000U);
-        session->clock_ready = error == ESP_OK;
-    }
     if (error == ESP_OK) {
         error = solar_os_media_clock_map(
             &session->clock, frame->timestamp_us, &session->sender.timestamp);

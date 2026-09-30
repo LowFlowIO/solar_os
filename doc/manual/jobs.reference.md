@@ -554,6 +554,10 @@ into packets no larger than 1200 bytes, and releases the camera framebuffer
 after every transmitted or rejected frame. Unsupported JPEG modes are counted
 and dropped instead of being sent with a private payload format.
 
+Each `PLAY` starts a new media clock and discards any buffered image captured
+before that session. Reconnecting after the camera has been idle therefore
+starts with fresh video, without a jump in playback timestamps.
+
 Version 1 publishes video only. The service core already defines RTP/L16 and
 bounded media timing, but `mediad` does not advertise an audio track until a
 microphone source is configured. The stream is unauthenticated and unencrypted;
