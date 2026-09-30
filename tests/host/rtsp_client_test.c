@@ -12,6 +12,9 @@
 static atomic_uint allocations, allocation_calls, fail_allocation, live_tasks;
 static atomic_uint samples_played, audio_opens, audio_closes, callbacks;
 static atomic_bool fail_audio;
+static bool live_probe;
+static uint32_t sink_rate = 48000, sink_block = 480;
+static uint8_t sink_channels = 2;
 static atomic_uint random_value = 1234;
 
 void *solar_os_memory_alloc(size_t n, solar_os_memory_class_t kind, const char *tag)
@@ -51,7 +54,12 @@ void solar_os_task_delete_internal(TaskHandle_t task)
     assert(task); pthread_join(task->thread, NULL); free(task); atomic_fetch_sub(&live_tasks, 1);
 }
 esp_err_t solar_os_net_resolve_host(const char *host, char *ip, size_t capacity)
-{ assert(!strcmp(host, "127.0.0.1")); snprintf(ip, capacity, "%s", host); return ESP_OK; }
+{
+    struct in_addr address;
+    assert(live_probe || !strcmp(host, "127.0.0.1"));
+    if (inet_pton(AF_INET, host, &address) != 1) return ESP_ERR_NOT_SUPPORTED;
+    snprintf(ip, capacity, "%s", host); return ESP_OK;
+}
 struct solar_os_audio_player { pthread_t owner; solar_os_audio_player_options_t options; };
 esp_err_t solar_os_audio_player_create(const solar_os_audio_player_options_t *o,
     solar_os_audio_player_t **p, solar_os_stream_audio_format_t *format, solar_os_audio_device_info_t *device)
@@ -60,8 +68,8 @@ esp_err_t solar_os_audio_player_create(const solar_os_audio_player_options_t *o,
     if (atomic_load(&fail_audio)) return ESP_ERR_NOT_FOUND;
     assert(!o->buffered && o->volume == SOLAR_OS_AUDIO_VOLUME_GLOBAL && o->open_timeout_ms == 500);
     *p = malloc(sizeof(**p)); assert(*p); (*p)->owner = pthread_self(); (*p)->options = *o;
-    *format = (solar_os_stream_audio_format_t){.sample_rate = 48000, .channels = 2,
-        .bits_per_sample = 16, .sample_format = SOLAR_OS_STREAM_AUDIO_S16_LE};
+    *format = (solar_os_stream_audio_format_t){.sample_rate = sink_rate, .channels = sink_channels,
+        .bits_per_sample = 16, .sample_format = SOLAR_OS_STREAM_AUDIO_S16_LE, .frames_per_block = sink_block};
     atomic_fetch_add(&audio_opens, 1); return ESP_OK;
 }
 esp_err_t solar_os_audio_player_write(solar_os_audio_player_t *p, const void *data,
@@ -69,10 +77,11 @@ esp_err_t solar_os_audio_player_write(solar_os_audio_player_t *p, const void *da
 {
     assert(pthread_equal(p->owner, pthread_self()));
     if (*cancelled) return ESP_ERR_TIMEOUT;
+    assert(bytes == sink_block * sink_channels * sizeof(int16_t)); /* Native sink blocks, not RTP fragments. */
     const int16_t *samples = data;
-    assert(samples[0] == 0x1234 || samples[0] == 0); /* L16 network byte order. */
-    vTaskDelay((uint32_t)(bytes / 4 * 1000 / 48000));
-    p->options.samples(data, bytes / 2, 2, p->options.user);
+    if (!live_probe) assert(samples[0] == 0x1234 || samples[0] == 0); /* L16 network byte order. */
+    vTaskDelay((uint32_t)(sink_block * 1000 / sink_rate));
+    p->options.samples(data, bytes / 2, sink_channels, p->options.user);
     atomic_fetch_add(&samples_played, bytes / 2); return ESP_OK;
 }
 void solar_os_audio_player_destroy(solar_os_audio_player_t *p)
@@ -83,7 +92,7 @@ void solar_os_audio_player_destroy(solar_os_audio_player_t *p)
 typedef struct {
     int listen, control;
     uint16_t port, video_port, audio_port;
-    bool offer_video, offer_audio, reject, stall;
+    bool offer_video, offer_audio, reject, stall, relay;
     atomic_bool stop, playing, teardown;
     unsigned setup_video, setup_audio;
     pthread_t thread;
@@ -118,11 +127,11 @@ static void *server_worker(void *arg)
     test_server_t *s = arg;
     s->control = accept(s->listen, NULL, NULL); assert(s->control >= 0);
     uint8_t input[2048]; size_t used = 0;
-    uint64_t origin = now_us(), last_audio = 0, last_video = 0, last_rtcp = 0;
+    uint64_t origin = now_us(), last_video = 0, last_rtcp = 0;
     uint16_t audio_seq = 65535;
     solar_os_rtp_sender_t video_sender = {.payload_type = 96, .sequence = 1, .ssrc = 1234, .max_packet_bytes = 1200};
     uint32_t audio_ts = 0xffffff00U;
-    uint8_t packet[1200], scan[80] = {0};
+    uint8_t packet[1500], scan[80] = {0};
     solar_os_rtp_jpeg_view_t view = {.scan = scan, .scan_len = sizeof(scan), .width = 320, .height = 240, .type = 1};
     memset(view.quant_tables, 1, sizeof(view.quant_tables));
     while (!atomic_load(&s->stop)) {
@@ -142,7 +151,8 @@ static void *server_worker(void *arg)
                     snprintf(headers, sizeof(headers), "Content-Base: rtsp://127.0.0.1:%u/media/\r\nContent-Type: application/sdp\r\n", s->port);
                     snprintf(body, sizeof(body), "v=0\r\na=control:*\r\n%s%s",
                         s->offer_video ? "m=video 0 RTP/AVP 96\r\na=rtpmap:96 JPEG/90000\r\na=control:trackID=0\r\n" : "",
-                        s->offer_audio ? "m=audio 0 RTP/AVP 97\r\na=rtpmap:97 L16/16000/1\r\na=control:trackID=1\r\n" : "");
+                        s->offer_audio ? (s->relay ? "m=audio 0 RTP/AVP 97\r\na=rtpmap:97 L16/44100/1\r\na=control:trackID=1\r\n" :
+                        "m=audio 0 RTP/AVP 97\r\na=rtpmap:97 L16/16000/1\r\na=control:trackID=1\r\n") : "");
                 } else if (r.method == SOLAR_OS_RTSP_METHOD_SETUP) {
                     bool video = strstr(r.uri, "trackID=0") != NULL;
                     if (video) s->setup_video++; else s->setup_audio++;
@@ -161,12 +171,18 @@ static void *server_worker(void *arg)
         }
         if (!atomic_load(&s->playing)) continue;
         uint64_t elapsed = now_us() - origin;
-        if (s->setup_audio && elapsed >= last_audio + 10000) {
-            solar_os_rtp_header_t h = {.payload_type = 97, .sequence = audio_seq++, .timestamp = audio_ts, .ssrc = 5678};
-            assert(solar_os_rtp_header_encode(&h, packet, sizeof(packet)) == ESP_OK);
-            for (size_t i = 12; i < 332; i += 2) { packet[i] = 0x12; packet[i + 1] = 0x34; }
-            assert(sendto(s->audio.rtp, packet, 332, 0, (struct sockaddr *)&s->audio_peer, sizeof(s->audio_peer)) == 332);
-            audio_ts += 160; last_audio += 10000;
+        uint32_t rate = s->relay ? 44100 : 16000;
+        uint32_t block = s->relay ? 1024 : 160;
+        uint64_t audio_due = ((uint64_t)(uint32_t)(audio_ts - 0xffffff00U) + block) * 1000000 / rate;
+        if (s->setup_audio && elapsed >= audio_due) {
+            for (unsigned part = 0; part < (s->relay ? 2U : 1U); part++) {
+                size_t payload = s->relay ? (part ? 660 : 1388) : 320;
+                solar_os_rtp_header_t h = {.payload_type = 97, .sequence = audio_seq++, .timestamp = audio_ts, .ssrc = 5678};
+                assert(solar_os_rtp_header_encode(&h, packet, sizeof(packet)) == ESP_OK);
+                for (size_t i = 12; i < 12 + payload; i += 2) { packet[i] = 0x12; packet[i + 1] = 0x34; }
+                assert(sendto(s->audio.rtp, packet, 12 + payload, 0, (struct sockaddr *)&s->audio_peer, sizeof(s->audio_peer)) == (ssize_t)(12 + payload));
+                audio_ts += payload / 2;
+            }
         }
         if (s->setup_video && elapsed >= last_video + 40000) {
             video_sender.timestamp = (uint32_t)(elapsed * 90000 / 1000000);
@@ -178,8 +194,8 @@ static void *server_worker(void *arg)
             struct sockaddr_in *peers[] = {&s->video_peer, &s->audio_peer};
             for (unsigned i = 0; i < 2; i++) {
                 if (!(i ? s->setup_audio : s->setup_video)) continue;
-                uint32_t rate = i ? 16000 : 90000;
-                uint32_t timestamp = (uint32_t)(elapsed * rate / 1000000) + (i ? 0xffffff00U : 0);
+                uint32_t clock_rate = i ? rate : 90000;
+                uint32_t timestamp = (uint32_t)(elapsed * clock_rate / 1000000) + (i ? 0xffffff00U : 0);
                 size_t bytes;
                 assert(solar_os_rtcp_sender_report(i ? 5678 : 1234, 100 + elapsed / 1000000,
                     (uint32_t)((elapsed % 1000000) * (1ULL << 32) / 1000000), timestamp,
@@ -210,7 +226,7 @@ static void server_stop(test_server_t *s)
     close(s->listen); close_track(&s->video); close_track(&s->audio);
 }
 static void samples_callback(const int16_t *samples, size_t count, uint8_t channels, void *user)
-{ (void)samples; (void)user; assert(count && channels == 2); atomic_fetch_add(&callbacks, 1); }
+{ (void)samples; (void)user; assert(count && channels == sink_channels); atomic_fetch_add(&callbacks, 1); }
 static void *run_client(void *arg) { solar_os_rtsp_client_run(arg); return NULL; }
 
 static void test_play(bool video, bool audio, bool audio_only)
@@ -229,13 +245,13 @@ static void test_play(bool video, bool audio, bool audio_only)
     assert(solar_os_rtsp_client_run(c) == ESP_ERR_INVALID_STATE);
     if (video && !audio_only) {
         solar_os_rtp_jpeg_frame_t frame;
-        while (!solar_os_rtsp_client_take_video(c, &frame) && now_us() < deadline) vTaskDelay(1);
+        while (!solar_os_rtsp_client_take_video(c, &frame, NULL) && now_us() < deadline) vTaskDelay(1);
         assert(c->leased && frame.length > 100);
         uint8_t saved[128]; memcpy(saved, frame.data, sizeof(saved));
         vTaskDelay(120); assert(!memcmp(saved, frame.data, sizeof(saved)));
-        assert(!solar_os_rtsp_client_take_video(c, &frame));
+        assert(!solar_os_rtsp_client_take_video(c, &frame, NULL));
         solar_os_rtsp_client_release_video(c);
-        while (!solar_os_rtsp_client_take_video(c, &frame) && now_us() < deadline) vTaskDelay(1);
+        while (!solar_os_rtsp_client_take_video(c, &frame, NULL) && now_us() < deadline) vTaskDelay(1);
         assert(c->leased); /* Keep the final frame leased across run() exit. */
     } else { assert(!c->jpeg); vTaskDelay(150); }
     if (audio) assert(atomic_load(&audio_opens) == opens_before + 1 && atomic_load(&samples_played) > 0 && atomic_load(&callbacks));
@@ -274,8 +290,108 @@ static void test_failure(bool rejected, bool stalled, bool output_failed, unsign
     assert(!atomic_load(&allocations) && !atomic_load(&live_tasks));
 }
 
-int main(void)
+static void test_relay_playback(uint32_t output_rate, uint8_t output_channels, uint32_t block)
 {
+    sink_rate = output_rate; sink_channels = output_channels; sink_block = block;
+    test_server_t server = {.offer_video = true, .offer_audio = true, .relay = true};
+    server_start(&server);
+    char url[192]; snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", server.port);
+    solar_os_rtsp_client_options_t options = {.video = true, .audio = true, .samples = samples_callback};
+    solar_os_rtsp_client_t *c; assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
+    unsigned before = atomic_load(&samples_played);
+    pthread_t thread; assert(!pthread_create(&thread, NULL, run_client, c));
+    solar_os_rtsp_client_status_t status;
+    uint64_t deadline = now_us() + 2000000;
+    do { vTaskDelay(1); solar_os_rtsp_client_status(c, &status); }
+    while (!status.playing && !c->cancel && now_us() < deadline);
+    assert(status.playing);
+    deadline = now_us() + 1100000;
+    unsigned frames = 0;
+    while (now_us() < deadline) {
+        solar_os_rtp_jpeg_frame_t frame;
+        uint64_t arrived;
+        if (solar_os_rtsp_client_take_video(c, &frame, &arrived)) {
+            assert(arrived <= now_us());
+            int64_t late = solar_os_rtsp_client_video_lateness(c, frame.timestamp, arrived);
+            assert(late < 150000);
+            /* Decode can be well ahead of audio, especially during startup
+             * with a large native output quantum. Presentation waits remain
+             * bounded even when RTSP setup queued early RTP packets. */
+            if (late < -150000)
+                assert(solar_os_rtsp_client_video_lateness(c, frame.timestamp, now_us() - 200000) == 0);
+            frames++;
+            solar_os_rtsp_client_release_video(c);
+        }
+        vTaskDelay(1);
+    }
+    solar_os_rtsp_client_status(c, &status);
+    assert(status.audio_playing && status.sample_rate == 44100 && !status.audio_dropped);
+    lock(c); assert(!c->jitter->concealed); unlock(c); /* Silence must not hide lost large packets. */
+    /* At least 800 ms of intact resampled audio. The old
+     * payload cap lost most samples and cannot satisfy this assertion. */
+    assert(atomic_load(&samples_played) - before >= sink_rate * sink_channels * 8 / 10 && frames >= 20);
+    solar_os_rtsp_client_cancel(c); pthread_join(thread, NULL);
+    assert(solar_os_rtsp_client_destroy(c) == ESP_OK); server_stop(&server);
+    assert(!atomic_load(&allocations) && !atomic_load(&live_tasks));
+    sink_rate = 48000; sink_channels = 2; sink_block = 480;
+}
+
+static void test_presentation_clock(void)
+{
+    solar_os_rtsp_client_options_t options = {.video = true, .audio = true};
+    solar_os_rtsp_client_t *c;
+    assert(solar_os_rtsp_client_create("rtsp://127.0.0.1/media", &options, &c) == ESP_OK);
+    uint64_t now = now_us();
+    int64_t late = solar_os_rtsp_client_video_lateness(c, 0, now);
+    assert(late >= -(int64_t)SOLAR_OS_RTSP_JITTER_US && late < -70000);
+    assert(solar_os_rtsp_client_video_lateness(c, 0, now - 100000) >= 20000);
+    c->description.audio.present = true;
+    c->description.audio.media.clock_rate = 44100;
+    c->audio.clock = c->video.clock = (solar_os_rtsp_sender_clock_t){.valid = true, .ntp_us = 100000000};
+    c->audio_timestamp = 4410; c->audio_played_us = now_us(); c->status.audio_playing = true;
+    late = solar_os_rtsp_client_video_lateness(c, 18000, now_us());
+    assert(late >= -100000 && late < -90000); /* Decode ahead; don't display yet. */
+    assert(solar_os_rtsp_client_video_lateness(c, 18000, now_us() - 200000) == 0);
+    c->audio_timestamp = 22050;
+    assert(solar_os_rtsp_client_video_lateness(c, 18000, now_us()) >= 300000); /* Drop late video. */
+    c->audio_played_us = now_us() - 200000;
+    late = solar_os_rtsp_client_video_lateness(c, 18000, now_us());
+    assert(late >= -(int64_t)SOLAR_OS_RTSP_JITTER_US && late < -70000); /* Stalled audio: fallback. */
+    assert(solar_os_rtsp_client_destroy(c) == ESP_OK && !atomic_load(&allocations));
+}
+
+static int probe_stream(const char *url)
+{
+    live_probe = true;
+    solar_os_rtsp_client_options_t options = {.video = true, .audio = true, .samples = samples_callback};
+    solar_os_rtsp_client_t *c;
+    assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
+    pthread_t thread; assert(!pthread_create(&thread, NULL, run_client, c));
+    unsigned frames = 0;
+    uint64_t deadline = now_us() + 5000000;
+    while (now_us() < deadline && !c->cancel) {
+        solar_os_rtp_jpeg_frame_t frame;
+        if (solar_os_rtsp_client_take_video(c, &frame, NULL)) {
+            assert(frame.length > 100); frames++;
+            solar_os_rtsp_client_release_video(c);
+        }
+        vTaskDelay(1);
+    }
+    solar_os_rtsp_client_status_t status; solar_os_rtsp_client_status(c, &status);
+    printf("Host probe (mock audio sink): frames=%u video_dropped=%u audio_dropped=%u "
+           "audio=%uHz/%uch output_samples=%u error=%d\n", frames,
+           status.video_dropped, status.audio_dropped, status.sample_rate, status.channels,
+           atomic_load(&samples_played), status.error);
+    solar_os_rtsp_client_cancel(c); pthread_join(thread, NULL);
+    assert(solar_os_rtsp_client_destroy(c) == ESP_OK);
+    assert(!atomic_load(&allocations) && !atomic_load(&live_tasks));
+    return status.error == ESP_OK && frames > 0 && atomic_load(&samples_played) > 0 ? 0 : 1;
+}
+
+int main(int argc, char **argv)
+{
+    if (argc == 2) return probe_stream(argv[1]);
+    assert(argc == 1);
     for (unsigned i = 1; i <= 3; i++) {
         atomic_store(&allocation_calls, 0); atomic_store(&fail_allocation, i);
         solar_os_rtsp_client_t *c = NULL;
@@ -284,8 +400,11 @@ int main(void)
         assert(!atomic_load(&allocations));
     }
     atomic_store(&fail_allocation, 0);
+    test_presentation_clock();
     test_play(true, false, false); test_play(false, true, false);
     test_play(true, true, false); test_play(true, true, true);
+    test_relay_playback(48000, 2, 480);
+    test_relay_playback(16000, 1, 512);
     test_failure(true, false, false, 0); test_failure(false, true, false, 0); test_failure(false, false, true, 0);
     for (unsigned i = 1; i <= 3; i++) test_failure(false, false, false, i);
     puts("rtsp_client_test: OK"); return 0;

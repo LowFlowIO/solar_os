@@ -41,6 +41,18 @@ class RtspAppTest(unittest.TestCase):
         self.assertIn("c->leased || c->pending", CLIENT)
         self.assertIn("CLIENT_TIMEOUT_US", CLIENT)
 
+    def test_bounded_decode_ahead_and_frame_driven_presentation(self):
+        self.assertIn("#define RTSP_VIDEO_SLOTS 2U", APP)
+        self.assertIn("bool full = rtsp.queued == RTSP_VIDEO_SLOTS", APP)
+        self.assertIn("if (full) { vTaskDelay", APP)
+        self.assertIn("solar_os_rtsp_client_video_lateness", APP)
+        self.assertIn("if (late < 0) break", APP)
+        self.assertIn("if (late > 150000)", APP)
+        self.assertIn("!changed && !dirty && !force", APP)
+        self.assertIn("SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, \"rtsp.image\"", APP)
+        self.assertIn("for (unsigned i = 0; i < rtsp.queued; i++) solar_os_memory_free", APP)
+        self.assertIn("prepare_image(pixels", APP)
+
 
 if __name__ == "__main__":
     unittest.main()

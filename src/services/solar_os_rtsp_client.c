@@ -35,6 +35,8 @@ typedef struct {
     solar_os_rtsp_audio_packet_t packet;
     int16_t input[SOLAR_OS_RTSP_AUDIO_PAYLOAD_MAX / 2];
     int16_t output[2048];
+    int16_t pcm[2048];
+    size_t filled;
     solar_os_audio_s16_converter_t converter;
 } client_audio_scratch_t;
 
@@ -192,6 +194,12 @@ static void audio_worker(void *arg)
         .should_cancel = audio_cancel, .cancel_user = c,
     };
     esp_err_t err = s ? solar_os_audio_player_create(&options, &player, &output, NULL) : ESP_ERR_NO_MEM;
+    size_t quantum = 0;
+    if (err == ESP_OK) {
+        size_t frames = output.frames_per_block ? output.frames_per_block : output.sample_rate / 100U;
+        quantum = frames * output.channels;
+        if (!quantum || quantum > 2048) err = ESP_ERR_NOT_SUPPORTED;
+    }
     while (err == ESP_OK && !c->cancel) {
         lock(c);
         bool have = solar_os_rtsp_audio_jitter_pop(c->jitter, now_us(), &s->packet);
@@ -206,13 +214,22 @@ static void audio_worker(void *arg)
             err = solar_os_audio_s16_convert(&s->converter, s->input, samples / f->channels, &input, &output,
                                              s->output, 2048, &count, &done);
             if (err != ESP_OK || !count) continue;
-            err = solar_os_audio_player_write(player, s->output, count * 2, &c->cancel);
-            frames += count / output.channels;
-            lock(c);
-            c->audio_timestamp = s->packet.timestamp;
-            c->audio_frames = (uint32_t)((uint64_t)frames * f->sample_rate / output.sample_rate);
-            c->audio_played_us = now_us(); c->status.audio_playing = err == ESP_OK;
-            unlock(c);
+            /* RTP packet boundaries are unrelated to the output's native
+             * quantum. Coalesce converted PCM into complete sink blocks. */
+            for (size_t consumed = 0; consumed < count && err == ESP_OK && !c->cancel;) {
+                size_t n = quantum - s->filled;
+                if (n > count - consumed) n = count - consumed;
+                memcpy(s->pcm + s->filled, s->output + consumed, n * sizeof(int16_t));
+                consumed += n; s->filled += n; frames += n / output.channels;
+                if (s->filled != quantum) continue;
+                err = solar_os_audio_player_write(player, s->pcm, quantum * sizeof(int16_t), &c->cancel);
+                s->filled = 0;
+                lock(c);
+                c->audio_timestamp = s->packet.timestamp;
+                c->audio_frames = (uint32_t)((uint64_t)frames * f->sample_rate / output.sample_rate);
+                c->audio_played_us = now_us(); c->status.audio_playing = err == ESP_OK;
+                unlock(c);
+            }
         }
     }
     solar_os_audio_player_destroy(player);
@@ -310,9 +327,7 @@ static bool receive(solar_os_rtsp_client_t *c, client_track_t *t, bool rtcp)
                 c->pending = false; c->skipped_frames++;
                 solar_os_rtp_jpeg_receiver_reset(&c->receiver);
             }
-            /* A complete frame holds the buffer while waiting for audio.
-             * Overwriting it every camera tick would starve the viewer when
-             * its jitter delay exceeds one frame interval. */
+            /* Keep a completed JPEG stable until the decoder leases it. */
             if (c->leased || c->pending) {
                 if (h.marker) c->skipped_frames++;
                 c->status.video_dropped = c->receiver.dropped_frames + c->skipped_frames;
@@ -411,24 +426,41 @@ void solar_os_rtsp_client_status(solar_os_rtsp_client_t *c, solar_os_rtsp_client
     lock(c); *s = c->status; unlock(c);
 }
 
-bool solar_os_rtsp_client_take_video(solar_os_rtsp_client_t *c, solar_os_rtp_jpeg_frame_t *frame)
+bool solar_os_rtsp_client_take_video(solar_os_rtsp_client_t *c, solar_os_rtp_jpeg_frame_t *frame,
+                                    uint64_t *arrived_us)
 {
     if (!c || !frame) return false;
     lock(c);
     bool ready = c->pending && !c->leased;
     if (ready) {
-        uint64_t now = now_us(); int64_t late = (int64_t)(now - c->frame_arrived_us);
-        if (c->description.audio.present && c->audio.clock.valid && c->video.clock.valid && c->status.audio_playing) {
-            uint64_t a = solar_os_rtsp_sender_time(&c->audio.clock, c->audio_timestamp + c->audio_frames,
-                                                   c->description.audio.media.clock_rate);
-            uint64_t v = solar_os_rtsp_sender_time(&c->video.clock, c->frame.timestamp, 90000);
-            late = (int64_t)a + (int64_t)(now - c->audio_played_us) - (int64_t)v;
-            if (late < 0 && now - c->frame_arrived_us < 150000) ready = false;
-        }
+        int64_t late = (int64_t)(now_us() - c->frame_arrived_us);
         if (late > 150000) { c->pending = ready = false; c->skipped_frames++; c->status.video_dropped++; }
     }
-    if (ready) { *frame = c->frame; c->pending = false; c->leased = true; }
+    if (ready) {
+        *frame = c->frame;
+        if (arrived_us) *arrived_us = c->frame_arrived_us;
+        c->pending = false; c->leased = true;
+    }
     unlock(c); return ready;
+}
+
+int64_t solar_os_rtsp_client_video_lateness(solar_os_rtsp_client_t *c,
+                                           uint32_t timestamp, uint64_t arrived_us)
+{
+    if (!c) return 0;
+    lock(c);
+    uint64_t now = now_us();
+    int64_t late = (int64_t)(now - arrived_us) - SOLAR_OS_RTSP_JITTER_US;
+    if (c->description.audio.present && c->audio.clock.valid && c->video.clock.valid &&
+        c->status.audio_playing && now - c->audio_played_us < 150000) {
+        uint64_t a = solar_os_rtsp_sender_time(&c->audio.clock,
+            c->audio_timestamp + c->audio_frames, c->description.audio.media.clock_rate);
+        uint64_t v = solar_os_rtsp_sender_time(&c->video.clock, timestamp, 90000);
+        late = (int64_t)a + (int64_t)(now - c->audio_played_us) - (int64_t)v;
+        /* A missing/inconsistent sender report must not freeze the viewer. */
+        if (late < 0 && now - arrived_us > 150000) late = 0;
+    }
+    unlock(c); return late;
 }
 
 void solar_os_rtsp_client_release_video(solar_os_rtsp_client_t *c)

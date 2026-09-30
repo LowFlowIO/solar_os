@@ -32,10 +32,15 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *client);
 void solar_os_rtsp_client_cancel(solar_os_rtsp_client_t *client);
 void solar_os_rtsp_client_status(solar_os_rtsp_client_t *client,
                                  solar_os_rtsp_client_status_t *status);
-/* One compressed frame, no queue. A successful take leases the assembler
- * buffer until release. Reception drops video while the decoder holds it. */
+/* One compressed frame, no queue. Take immediately for decoding, not at its
+ * presentation deadline. Reception drops video while the decoder holds it.
+ * Optional arrived_us receives the completed frame's monotonic arrival time. */
 bool solar_os_rtsp_client_take_video(solar_os_rtsp_client_t *client,
-                                    solar_os_rtp_jpeg_frame_t *frame);
+                                    solar_os_rtp_jpeg_frame_t *frame, uint64_t *arrived_us);
 void solar_os_rtsp_client_release_video(solar_os_rtsp_client_t *client);
+/* Presentation clock for a decoded frame: negative means wait, positive means
+ * late. Uses RTCP/audio when available, otherwise a bounded arrival delay. */
+int64_t solar_os_rtsp_client_video_lateness(solar_os_rtsp_client_t *client,
+                                           uint32_t timestamp, uint64_t arrived_us);
 /* Only after run() returned and the final video lease was released. */
 esp_err_t solar_os_rtsp_client_destroy(solar_os_rtsp_client_t *client);

@@ -98,17 +98,21 @@ static void test_jitter(void)
     feed_audio(&j, 65535, 0xffffff00U, 0);
     feed_audio(&j, 1, 0x40, 1000);
     feed_audio(&j, 0, 0xffffffa0U, 2000);
-    assert(!solar_os_rtsp_audio_jitter_pop(&j, 39999, &out));
-    assert(solar_os_rtsp_audio_jitter_pop(&j, 40000, &out) && out.sequence == 65535);
+    const uint64_t start = SOLAR_OS_RTSP_JITTER_US;
+    assert(!solar_os_rtsp_audio_jitter_pop(&j, start - 1, &out));
+    assert(solar_os_rtsp_audio_jitter_pop(&j, start, &out) && out.sequence == 65535);
     assert(out.payload[0] == 0x12 && out.payload[1] == 0x34);
-    assert(solar_os_rtsp_audio_jitter_pop(&j, 50000, &out) && out.sequence == 0);
-    assert(solar_os_rtsp_audio_jitter_pop(&j, 60000, &out) && out.sequence == 1);
+    assert(solar_os_rtsp_audio_jitter_pop(&j, start + 10000, &out) && out.sequence == 0);
+    assert(solar_os_rtsp_audio_jitter_pop(&j, start + 20000, &out) && out.sequence == 1);
     feed_audio(&j, 3, 0x180, 61000); /* Missing sequence 2: bounded silence. */
-    assert(solar_os_rtsp_audio_jitter_pop(&j, 70000, &out) && out.timestamp == 0xe0);
+    assert(solar_os_rtsp_audio_jitter_pop(&j, start + 30000, &out) && out.timestamp == 0xe0);
     assert(j.concealed == 1 && out.payload[0] == 0);
-    assert(solar_os_rtsp_audio_jitter_pop(&j, 80000, &out) && out.sequence == 3);
+    assert(solar_os_rtsp_audio_jitter_pop(&j, start + 40000, &out) && out.sequence == 3);
     feed_audio(&j, 4, 0x220, 90000);
     assert(!solar_os_rtsp_audio_jitter_pop(&j, 300000, &out) && j.dropped == 1);
+    feed_audio(&j, 5, 0x2c0, 400000); /* Sender resumes with a stalled RTP clock. */
+    assert(!solar_os_rtsp_audio_jitter_pop(&j, 400000 + start - 1, &out));
+    assert(solar_os_rtsp_audio_jitter_pop(&j, 400000 + start, &out) && out.sequence == 5);
     solar_os_rtsp_audio_jitter_init(&j, &track);
     for (unsigned i = 0; i < SOLAR_OS_RTSP_AUDIO_SLOTS; i++) feed_audio(&j, i, 160 * i, 0);
     uint8_t packet[332] = {0};
@@ -117,8 +121,50 @@ static void test_jitter(void)
     assert(solar_os_rtsp_audio_jitter_feed(&j, packet, sizeof(packet), 0) == ESP_ERR_NO_MEM);
 }
 
+static void test_relay_audio(void)
+{
+    solar_os_media_track_t track = {.payload_type = 97, .clock_rate = 44100,
+        .format.audio = {.sample_rate = 44100, .channels = 1, .bits_per_sample = 16}};
+    solar_os_rtsp_audio_jitter_t j;
+    solar_os_rtsp_audio_jitter_init(&j, &track);
+    uint8_t packet[1500] = {0}; solar_os_rtsp_audio_packet_t out;
+    uint32_t timestamp = 0xffffff00U;
+    /* Eight reordered relay blocks arrive as a burst, still bounded by the
+     * jitter slots. Both halves of each 1024-sample block must survive. */
+    for (unsigned i = 0; i < 16; i++) {
+        unsigned index = i ^ 1U;
+        size_t length = index % 2 ? 660 : 1388;
+        uint32_t offset = (index / 2) * 1024 + (index % 2 ? 694 : 0);
+        solar_os_rtp_header_t h = {.payload_type = 97, .sequence = index,
+            .timestamp = timestamp + offset, .ssrc = 123};
+        assert(solar_os_rtp_header_encode(&h, packet, sizeof(packet)) == ESP_OK);
+        memset(packet + 12, 0x12, length);
+        /* Establish origin with the earliest packet, then reorder the rest. */
+        if (i == 0) {
+            h.sequence = 0; h.timestamp = timestamp;
+            assert(solar_os_rtp_header_encode(&h, packet, sizeof(packet)) == ESP_OK);
+            assert(solar_os_rtsp_audio_jitter_feed(&j, packet, 12 + 1388, 0) == ESP_OK);
+            assert(solar_os_rtp_header_encode(&(solar_os_rtp_header_t){.payload_type = 97,
+                .sequence = index, .timestamp = timestamp + offset, .ssrc = 123}, packet, sizeof(packet)) == ESP_OK);
+        }
+        assert(solar_os_rtsp_audio_jitter_feed(&j, packet, 12 + length, 1000) == ESP_OK);
+    }
+    for (unsigned i = 0; i < 16; i++) {
+        uint32_t offset = (i / 2) * 1024 + (i % 2 ? 694 : 0);
+        uint64_t due = SOLAR_OS_RTSP_JITTER_US + (uint64_t)offset * 1000000 / 44100;
+        assert(!solar_os_rtsp_audio_jitter_pop(&j, due - 1, &out));
+        assert(solar_os_rtsp_audio_jitter_pop(&j, due, &out));
+        assert(out.sequence == i && out.length == (i % 2 ? 660 : 1388));
+    }
+    assert(!j.dropped && !j.concealed);
+    solar_os_rtp_header_t h = {.payload_type = 97, .timestamp = timestamp + 8192, .ssrc = 123};
+    assert(solar_os_rtp_header_encode(&h, packet, sizeof(packet)) == ESP_OK);
+    assert(solar_os_rtsp_audio_jitter_feed(&j, packet, 12 + SOLAR_OS_RTSP_AUDIO_PAYLOAD_MAX + 2, 0) == ESP_ERR_INVALID_SIZE);
+    assert(j.dropped == 1);
+}
+
 int main(void)
 {
-    test_urls(); test_response(); test_sdp(); test_transport(); test_clock(); test_jitter();
+    test_urls(); test_response(); test_sdp(); test_transport(); test_clock(); test_jitter(); test_relay_audio();
     puts("rtsp_receiver_test: OK"); return 0;
 }

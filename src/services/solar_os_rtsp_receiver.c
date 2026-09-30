@@ -276,13 +276,26 @@ esp_err_t solar_os_rtsp_audio_jitter_feed(solar_os_rtsp_audio_jitter_t *j,
     esp_err_t err = solar_os_rtp_header_decode(rtp, length, &h, &data, &len);
     if (err != ESP_OK) return err;
     if (!j->rate || !j->channels || h.payload_type != j->payload_type || !len ||
-        len > SOLAR_OS_RTSP_AUDIO_PAYLOAD_MAX || len % (2U * j->channels)) return ESP_ERR_INVALID_SIZE;
+        len > SOLAR_OS_RTSP_AUDIO_PAYLOAD_MAX || len % (2U * j->channels)) {
+        j->dropped++; return ESP_ERR_INVALID_SIZE;
+    }
     if (!j->started) {
         j->started = true; j->origin = j->next_timestamp = h.timestamp;
         j->origin_us = now + SOLAR_OS_RTSP_JITTER_US; j->ssrc = h.ssrc;
     }
     if (h.ssrc != j->ssrc || (int32_t)(h.timestamp - j->next_timestamp) < 0) {
         j->dropped++; return ESP_ERR_INVALID_STATE;
+    }
+    int64_t due = (int64_t)j->origin_us +
+        (int64_t)(int32_t)(h.timestamp - j->origin) * 1000000 / j->rate;
+    if ((int64_t)now - due > 100000) {
+        /* Rebuffer after a source/network stall instead of retaining a stale
+         * clock that would reject every subsequent packet as late. */
+        for (size_t i = 0; i < SOLAR_OS_RTSP_AUDIO_SLOTS; i++) {
+            if (j->slots[i].used) { j->slots[i].used = false; j->dropped++; }
+        }
+        j->origin = j->next_timestamp = h.timestamp;
+        j->origin_us = now + SOLAR_OS_RTSP_JITTER_US;
     }
     solar_os_rtsp_audio_packet_t *free_slot = NULL;
     for (size_t i = 0; i < SOLAR_OS_RTSP_AUDIO_SLOTS; i++) {

@@ -76,11 +76,17 @@ Suspending retains audio playback; video decoding pauses until resume.
 The reusable RTSP client service owns negotiation, sockets, frame leases, audio
 conversion, and bounded jitter buffering. Its compressed JPEG assembler is a
 single 512 KiB PSRAM allocation, created only when video is selected. The decoder
-leases it briefly; video packets are dropped while it is leased. Incomplete,
-superseded, or more than 150 ms late frames are discarded. L16 audio supports
-8–48 kHz mono/stereo with a 16-packet, 40 ms reorder buffer, bounded gap silence,
+leases it briefly; video packets are dropped while it is leased. Two decoded,
+display-sized frames are buffered in PSRAM, with frame-driven video presentation.
+Incomplete, superseded, or more than 150 ms late frames are discarded. L16 audio supports
+8–48 kHz mono/stereo with a 32-packet, 80 ms reorder buffer, bounded gap silence,
 and stale-packet dropping. RTCP sender reports align video to the audio playback
-clock when both tracks have timing reports; before that, video is shown on arrival.
+clock when both tracks have timing reports; before that, video uses an 80 ms
+arrival-based delay. The receiver accepts L16 payloads up to 1460 bytes,
+including standard-MTU packets from external RTSP relays.
+Converted PCM is coalesced into complete native output blocks rather than
+writing uneven RTP fragments directly to the audio device. A stalled audio
+source is rebuffered when it resumes.
 Runtime allocations are released on exit; the app reserves no idle bulk SRAM.
 
 V1 supports unauthenticated IPv4 RTSP 1.0, one JPEG and one L16 track, and unicast

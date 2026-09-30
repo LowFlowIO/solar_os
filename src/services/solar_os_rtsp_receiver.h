@@ -5,9 +5,10 @@
 
 #define SOLAR_OS_RTSP_CLIENT_SESSION_MAX 64U
 #define SOLAR_OS_RTSP_RESPONSE_MAX 8192U
-#define SOLAR_OS_RTSP_AUDIO_SLOTS 16U
-#define SOLAR_OS_RTSP_AUDIO_PAYLOAD_MAX 1188U
-#define SOLAR_OS_RTSP_JITTER_US 40000U
+#define SOLAR_OS_RTSP_AUDIO_SLOTS 32U
+/* Receiver limit, not the publisher's smaller packetization MTU. */
+#define SOLAR_OS_RTSP_AUDIO_PAYLOAD_MAX 1460U
+#define SOLAR_OS_RTSP_JITTER_US 80000U
 
 typedef struct {
     char host[128];
