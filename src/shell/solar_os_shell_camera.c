@@ -11,6 +11,7 @@
 #include "solar_os_storage.h"
 
 static const char * const camera_subcommands[] = {"status", "capture", "off"};
+#define CAMERA_SHELL_OWNER "shell:camera"
 
 static solar_os_shell_io_t *terminal(solar_os_context_t *ctx)
 {
@@ -35,9 +36,19 @@ static void print_status(solar_os_shell_io_t *io)
 {
     solar_os_camera_status_t status;
     esp_err_t error = solar_os_camera_get_status(&status);
-    if (error == ESP_OK && !status.initialized) {
+    if (error == ESP_OK && !status.initialized && !status.owner_leased) {
+        solar_os_camera_owner_t owner = {0};
         const solar_os_camera_config_t config = solar_os_camera_default_config();
-        error = solar_os_camera_start(&config);
+        error = solar_os_camera_acquire(CAMERA_SHELL_OWNER, &owner);
+        if (error == ESP_OK) {
+            error = solar_os_camera_start(&owner, &config);
+        }
+        if (owner.generation != 0U) {
+            const esp_err_t release_error = solar_os_camera_release_owner(&owner);
+            if (error == ESP_OK) {
+                error = release_error;
+            }
+        }
         if (error == ESP_OK) {
             error = solar_os_camera_get_status(&status);
         }
@@ -50,14 +61,15 @@ static void print_status(solar_os_shell_io_t *io)
     solar_os_shell_io_printf(
         io,
         "driver=%s sensor=%s pid=0x%04x format=jpeg size=%s "
-        "quality=%u buffers=1 storage=psram leased=%s captures=%lu "
+        "quality=%u buffers=1 storage=psram owner=%s frame=%s captures=%lu "
         "timeout=%ums last=%s\r\n",
         status.driver,
         status.sensor.name,
         (unsigned)status.sensor.product_id,
         solar_os_camera_frame_size_name(status.config.frame_size),
         (unsigned)status.config.jpeg_quality,
-        status.frame_leased ? "yes" : "no",
+        status.owner_leased ? status.owner : "-",
+        status.frame_leased ? "leased" : "free",
         (unsigned long)status.capture_count,
         (unsigned)SOLAR_OS_CAMERA_CAPTURE_TIMEOUT_MS,
         esp_err_to_name(status.last_error));
@@ -76,18 +88,35 @@ static void capture(solar_os_context_t *ctx,
 
     solar_os_camera_config_t config = solar_os_camera_default_config();
     config.frame_size = frame_size;
-    esp_err_t error = solar_os_camera_start(&config);
+    solar_os_camera_owner_t owner = {0};
+    esp_err_t error = solar_os_camera_acquire(CAMERA_SHELL_OWNER, &owner);
+    if (error != ESP_OK) {
+        solar_os_camera_status_t status;
+        if (error == ESP_ERR_INVALID_STATE &&
+            solar_os_camera_get_status(&status) == ESP_OK &&
+            status.owner_leased) {
+            solar_os_shell_io_printf(io, "camera: busy: owned by %s\r\n",
+                                     status.owner);
+        } else {
+            solar_os_shell_io_printf(io, "camera: acquire failed: %s (0x%x)\r\n",
+                                     esp_err_to_name(error), (unsigned)error);
+        }
+        return;
+    }
+    error = solar_os_camera_start(&owner, &config);
     if (error != ESP_OK) {
         solar_os_shell_io_printf(io, "camera: start failed: %s (0x%x)\r\n",
                                  esp_err_to_name(error), (unsigned)error);
+        (void)solar_os_camera_release_owner(&owner);
         return;
     }
 
     const solar_os_camera_frame_t *frame = NULL;
-    error = solar_os_camera_capture(&frame);
+    error = solar_os_camera_capture(&owner, &frame);
     if (error != ESP_OK) {
         solar_os_shell_io_printf(io, "camera: capture failed: %s (0x%x)\r\n",
                                  esp_err_to_name(error), (unsigned)error);
+        (void)solar_os_camera_release_owner(&owner);
         return;
     }
 
@@ -95,7 +124,8 @@ static void capture(solar_os_context_t *ctx,
     if (file == NULL) {
         solar_os_shell_io_printf(io, "camera: cannot open %s: %s\r\n",
                                  path_argument, strerror(errno));
-        (void)solar_os_camera_release(frame);
+        (void)solar_os_camera_release_frame(&owner, frame);
+        (void)solar_os_camera_release_owner(&owner);
         return;
     }
     const size_t written = fwrite(frame->data, 1U, frame->length, file);
@@ -105,7 +135,8 @@ static void capture(solar_os_context_t *ctx,
         (void)remove(path);
         solar_os_shell_io_printf(io, "camera: write failed for %s: %s\r\n",
                                  path_argument, strerror(write_errno));
-        (void)solar_os_camera_release(frame);
+        (void)solar_os_camera_release_frame(&owner, frame);
+        (void)solar_os_camera_release_owner(&owner);
         return;
     }
 
@@ -115,7 +146,8 @@ static void capture(solar_os_context_t *ctx,
                              (unsigned)frame->height,
                              frame->length,
                              path_argument);
-    (void)solar_os_camera_release(frame);
+    (void)solar_os_camera_release_frame(&owner, frame);
+    (void)solar_os_camera_release_owner(&owner);
 }
 
 void solar_os_shell_cmd_camera(solar_os_context_t *ctx, int argc, char **argv)
@@ -126,9 +158,29 @@ void solar_os_shell_cmd_camera(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
     if (argc == 2 && strcmp(argv[1], "off") == 0) {
-        const esp_err_t error = solar_os_camera_stop();
+        solar_os_camera_owner_t owner = {0};
+        esp_err_t error = solar_os_camera_acquire(CAMERA_SHELL_OWNER, &owner);
+        if (error == ESP_OK) {
+            error = solar_os_camera_stop(&owner);
+        }
+        if (owner.generation != 0U) {
+            const esp_err_t release_error = solar_os_camera_release_owner(&owner);
+            if (error == ESP_OK) {
+                error = release_error;
+            }
+        }
         if (error == ESP_OK) {
             solar_os_shell_io_writeln(io, "camera stopped");
+        } else if (error == ESP_ERR_INVALID_STATE) {
+            solar_os_camera_status_t status;
+            if (solar_os_camera_get_status(&status) == ESP_OK &&
+                status.owner_leased) {
+                solar_os_shell_io_printf(io, "camera: busy: owned by %s\r\n",
+                                         status.owner);
+            } else {
+                solar_os_shell_io_printf(io, "camera: stop failed: %s (0x%x)\r\n",
+                                         esp_err_to_name(error), (unsigned)error);
+            }
         } else {
             solar_os_shell_io_printf(io, "camera: stop failed: %s (0x%x)\r\n",
                                      esp_err_to_name(error), (unsigned)error);

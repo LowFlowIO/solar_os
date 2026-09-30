@@ -8,6 +8,7 @@
 
 #define SOLAR_OS_CAMERA_SENSOR_NAME_MAX 16U
 #define SOLAR_OS_CAMERA_DRIVER_NAME_MAX 24U
+#define SOLAR_OS_CAMERA_OWNER_NAME_MAX 24U
 #define SOLAR_OS_CAMERA_CAPTURE_TIMEOUT_MS 4000U
 
 typedef enum {
@@ -58,10 +59,16 @@ typedef struct {
 } solar_os_camera_frame_t;
 
 typedef struct {
+    uint32_t generation;
+} solar_os_camera_owner_t;
+
+typedef struct {
     bool backend_registered;
     bool initialized;
+    bool owner_leased;
     bool frame_leased;
     char driver[SOLAR_OS_CAMERA_DRIVER_NAME_MAX];
+    char owner[SOLAR_OS_CAMERA_OWNER_NAME_MAX];
     solar_os_camera_sensor_info_t sensor;
     solar_os_camera_config_t config;
     uint32_t capture_count;
@@ -72,10 +79,17 @@ solar_os_camera_config_t solar_os_camera_default_config(void);
 esp_err_t solar_os_camera_register_backend(
     const solar_os_camera_backend_t *backend);
 esp_err_t solar_os_camera_unregister_backend(const char *driver);
-esp_err_t solar_os_camera_start(const solar_os_camera_config_t *config);
-esp_err_t solar_os_camera_stop(void);
-esp_err_t solar_os_camera_capture(const solar_os_camera_frame_t **frame);
-esp_err_t solar_os_camera_release(const solar_os_camera_frame_t *frame);
+esp_err_t solar_os_camera_acquire(const char *owner,
+                                  solar_os_camera_owner_t *token);
+esp_err_t solar_os_camera_release_owner(solar_os_camera_owner_t *token);
+esp_err_t solar_os_camera_start(const solar_os_camera_owner_t *token,
+                                const solar_os_camera_config_t *config);
+esp_err_t solar_os_camera_stop(const solar_os_camera_owner_t *token);
+esp_err_t solar_os_camera_capture(const solar_os_camera_owner_t *token,
+                                  const solar_os_camera_frame_t **frame);
+esp_err_t solar_os_camera_release_frame(
+    const solar_os_camera_owner_t *token,
+    const solar_os_camera_frame_t *frame);
 esp_err_t solar_os_camera_get_status(solar_os_camera_status_t *status);
 const char *solar_os_camera_frame_size_name(
     solar_os_camera_frame_size_t frame_size);

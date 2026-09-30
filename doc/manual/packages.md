@@ -34,8 +34,9 @@ attachments for built-in hardware. The independent `service.audio-codecs`
 package owns incremental compressed-audio decoding, so file players and
 network sources can share the same decoder without owning an audio device.
 
-`service.camera` owns camera configuration, exclusive frame leases, capture
-status, and the `camera` shell command. `driver.camera-esp32` is the ESP32-S3
+`service.camera` owns camera configuration, exclusive owner tokens, subordinate
+frame leases, capture status, and the `camera` shell command.
+`driver.camera-esp32` is the ESP32-S3
 DVP/SCCB adapter backed by the pinned Espressif component. Camera consumers
 must release each borrowed frame before reconfiguration or another capture;
 the initial backend uses one JPEG framebuffer in PSRAM and supports QVGA and

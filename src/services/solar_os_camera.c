@@ -8,9 +8,12 @@
 typedef struct {
     bool backend_registered;
     bool initialized;
+    bool owner_leased;
     bool frame_leased;
     solar_os_camera_backend_t backend;
     char driver[SOLAR_OS_CAMERA_DRIVER_NAME_MAX];
+    char owner[SOLAR_OS_CAMERA_OWNER_NAME_MAX];
+    uint32_t owner_generation;
     solar_os_camera_sensor_info_t sensor;
     solar_os_camera_config_t config;
     solar_os_camera_backend_frame_t backend_frame;
@@ -22,6 +25,7 @@ typedef struct {
 static SemaphoreHandle_t camera_mutex;
 static StaticSemaphore_t camera_mutex_storage;
 static camera_service_state_t camera_state;
+static uint32_t camera_next_owner_generation;
 
 static esp_err_t ensure_mutex(void)
 {
@@ -44,6 +48,13 @@ static bool config_equal(const solar_os_camera_config_t *left,
 {
     return left->frame_size == right->frame_size &&
         left->jpeg_quality == right->jpeg_quality;
+}
+
+static bool owner_valid(const solar_os_camera_owner_t *token)
+{
+    return token != NULL && token->generation != 0U &&
+        camera_state.owner_leased &&
+        token->generation == camera_state.owner_generation;
 }
 
 solar_os_camera_config_t solar_os_camera_default_config(void)
@@ -100,7 +111,8 @@ esp_err_t solar_os_camera_unregister_backend(const char *driver)
         xSemaphoreGive(camera_mutex);
         return ESP_ERR_NOT_FOUND;
     }
-    if (camera_state.initialized || camera_state.frame_leased) {
+    if (camera_state.initialized || camera_state.owner_leased ||
+        camera_state.frame_leased) {
         xSemaphoreGive(camera_mutex);
         return ESP_ERR_INVALID_STATE;
     }
@@ -109,7 +121,71 @@ esp_err_t solar_os_camera_unregister_backend(const char *driver)
     return ESP_OK;
 }
 
-esp_err_t solar_os_camera_start(const solar_os_camera_config_t *config)
+esp_err_t solar_os_camera_acquire(const char *owner,
+                                  solar_os_camera_owner_t *token)
+{
+    if (owner == NULL || owner[0] == '\0' || token == NULL ||
+        strnlen(owner, SOLAR_OS_CAMERA_OWNER_NAME_MAX) >=
+            SOLAR_OS_CAMERA_OWNER_NAME_MAX) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    token->generation = 0U;
+    const esp_err_t mutex_error = ensure_mutex();
+    if (mutex_error != ESP_OK) {
+        return mutex_error;
+    }
+
+    xSemaphoreTake(camera_mutex, portMAX_DELAY);
+    if (!camera_state.backend_registered) {
+        xSemaphoreGive(camera_mutex);
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    if (camera_state.owner_leased) {
+        xSemaphoreGive(camera_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    camera_next_owner_generation++;
+    if (camera_next_owner_generation == 0U) {
+        camera_next_owner_generation++;
+    }
+    camera_state.owner_leased = true;
+    camera_state.owner_generation = camera_next_owner_generation;
+    strlcpy(camera_state.owner, owner, sizeof(camera_state.owner));
+    token->generation = camera_state.owner_generation;
+    xSemaphoreGive(camera_mutex);
+    return ESP_OK;
+}
+
+esp_err_t solar_os_camera_release_owner(solar_os_camera_owner_t *token)
+{
+    if (token == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const esp_err_t mutex_error = ensure_mutex();
+    if (mutex_error != ESP_OK) {
+        return mutex_error;
+    }
+
+    xSemaphoreTake(camera_mutex, portMAX_DELAY);
+    if (!owner_valid(token)) {
+        xSemaphoreGive(camera_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (camera_state.frame_leased) {
+        xSemaphoreGive(camera_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    camera_state.owner_leased = false;
+    camera_state.owner_generation = 0U;
+    camera_state.owner[0] = '\0';
+    token->generation = 0U;
+    xSemaphoreGive(camera_mutex);
+    return ESP_OK;
+}
+
+esp_err_t solar_os_camera_start(const solar_os_camera_owner_t *token,
+                                const solar_os_camera_config_t *config)
 {
     if (!config_valid(config)) {
         return ESP_ERR_INVALID_ARG;
@@ -120,9 +196,9 @@ esp_err_t solar_os_camera_start(const solar_os_camera_config_t *config)
     }
 
     xSemaphoreTake(camera_mutex, portMAX_DELAY);
-    if (!camera_state.backend_registered) {
+    if (!owner_valid(token)) {
         xSemaphoreGive(camera_mutex);
-        return ESP_ERR_NOT_SUPPORTED;
+        return ESP_ERR_INVALID_STATE;
     }
     if (camera_state.frame_leased) {
         xSemaphoreGive(camera_mutex);
@@ -158,16 +234,16 @@ esp_err_t solar_os_camera_start(const solar_os_camera_config_t *config)
     return start_error;
 }
 
-esp_err_t solar_os_camera_stop(void)
+esp_err_t solar_os_camera_stop(const solar_os_camera_owner_t *token)
 {
     const esp_err_t mutex_error = ensure_mutex();
     if (mutex_error != ESP_OK) {
         return mutex_error;
     }
     xSemaphoreTake(camera_mutex, portMAX_DELAY);
-    if (!camera_state.backend_registered) {
+    if (!owner_valid(token)) {
         xSemaphoreGive(camera_mutex);
-        return ESP_ERR_NOT_SUPPORTED;
+        return ESP_ERR_INVALID_STATE;
     }
     if (camera_state.frame_leased) {
         xSemaphoreGive(camera_mutex);
@@ -188,7 +264,8 @@ esp_err_t solar_os_camera_stop(void)
     return error;
 }
 
-esp_err_t solar_os_camera_capture(const solar_os_camera_frame_t **frame)
+esp_err_t solar_os_camera_capture(const solar_os_camera_owner_t *token,
+                                  const solar_os_camera_frame_t **frame)
 {
     if (frame == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -199,7 +276,8 @@ esp_err_t solar_os_camera_capture(const solar_os_camera_frame_t **frame)
         return mutex_error;
     }
     xSemaphoreTake(camera_mutex, portMAX_DELAY);
-    if (!camera_state.initialized || camera_state.frame_leased) {
+    if (!owner_valid(token) || !camera_state.initialized ||
+        camera_state.frame_leased) {
         xSemaphoreGive(camera_mutex);
         return ESP_ERR_INVALID_STATE;
     }
@@ -240,7 +318,9 @@ esp_err_t solar_os_camera_capture(const solar_os_camera_frame_t **frame)
     return ESP_OK;
 }
 
-esp_err_t solar_os_camera_release(const solar_os_camera_frame_t *frame)
+esp_err_t solar_os_camera_release_frame(
+    const solar_os_camera_owner_t *token,
+    const solar_os_camera_frame_t *frame)
 {
     if (frame == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -250,6 +330,10 @@ esp_err_t solar_os_camera_release(const solar_os_camera_frame_t *frame)
         return mutex_error;
     }
     xSemaphoreTake(camera_mutex, portMAX_DELAY);
+    if (!owner_valid(token)) {
+        xSemaphoreGive(camera_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
     if (!camera_state.frame_leased || frame != &camera_state.frame) {
         xSemaphoreGive(camera_mutex);
         return ESP_ERR_INVALID_ARG;
@@ -276,6 +360,7 @@ esp_err_t solar_os_camera_get_status(solar_os_camera_status_t *status)
     *status = (solar_os_camera_status_t) {
         .backend_registered = camera_state.backend_registered,
         .initialized = camera_state.initialized,
+        .owner_leased = camera_state.owner_leased,
         .frame_leased = camera_state.frame_leased,
         .sensor = camera_state.sensor,
         .config = camera_state.config,
@@ -283,6 +368,7 @@ esp_err_t solar_os_camera_get_status(solar_os_camera_status_t *status)
         .last_error = camera_state.last_error,
     };
     strlcpy(status->driver, camera_state.driver, sizeof(status->driver));
+    strlcpy(status->owner, camera_state.owner, sizeof(status->owner));
     xSemaphoreGive(camera_mutex);
     return ESP_OK;
 }
