@@ -332,6 +332,7 @@ bool solar_os_rtsp_audio_jitter_pop(solar_os_rtsp_audio_jitter_t *j,
         if (frames > gap) frames = gap;
         memset(out, 0, sizeof(*out)); out->length = frames * 2U * j->channels;
         out->timestamp = j->next_timestamp; j->next_timestamp += frames; j->concealed++;
+        j->concealed_frames += frames;
         return true;
     }
     due = (int64_t)j->origin_us + (int64_t)(int32_t)(next->timestamp - j->origin) * 1000000 / j->rate;

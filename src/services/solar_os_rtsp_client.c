@@ -213,6 +213,7 @@ static void audio_worker(void *arg)
         c->status.audio_dropped = c->jitter->dropped;
         if (c->options.diagnostics) {
             c->status.audio_concealed = c->jitter->concealed;
+            c->status.audio_concealed_frames = c->jitter->concealed_frames;
             if (!have) c->status.audio_wait_polls++;
         }
         unlock(c);

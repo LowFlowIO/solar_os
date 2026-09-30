@@ -106,7 +106,7 @@ static void test_jitter(void)
     assert(solar_os_rtsp_audio_jitter_pop(&j, start + 20000, &out) && out.sequence == 1);
     feed_audio(&j, 3, 0x180, 61000); /* Missing sequence 2: bounded silence. */
     assert(solar_os_rtsp_audio_jitter_pop(&j, start + 30000, &out) && out.timestamp == 0xe0);
-    assert(j.concealed == 1 && out.payload[0] == 0);
+    assert(j.concealed == 1 && j.concealed_frames == 160 && out.payload[0] == 0);
     assert(solar_os_rtsp_audio_jitter_pop(&j, start + 40000, &out) && out.sequence == 3);
     feed_audio(&j, 4, 0x220, 90000);
     assert(!solar_os_rtsp_audio_jitter_pop(&j, 300000, &out) && j.dropped == 1);

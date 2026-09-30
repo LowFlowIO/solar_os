@@ -60,6 +60,19 @@ class RtspAppTest(unittest.TestCase):
         self.assertIn("if (rtsp.image_mutex) xSemaphoreTake", APP)
         self.assertIn('SOLAR_OS_LOGI("rtsp.stats"', APP)
         self.assertIn("audio_gap_max_us", CLIENT)
+        self.assertIn("blit_max_us", APP)
+        self.assertIn("present_max_us", APP)
+        self.assertIn("audio_concealed_frames", CLIENT)
+        registry = (ROOT / "src/apps/solar_os_app_registry.c").read_text()
+        entry = registry.split('APP_ENTRY("rtsp"', 1)[1].split("\n", 1)[0]
+        self.assertIn("[--audio-only] [--stats]", entry)
+        self.assertIn(", 2, 4)", entry)
+
+    def test_monochrome_frames_stay_gray_and_color_retains_rgb(self):
+        self.assertIn("solar_os_stb_jpeg_decode_gray", APP)
+        self.assertIn("solar_os_stb_decode_jpeg_rgb_scaled", APP)
+        self.assertIn("SOLAR_OS_GFX_RASTER_GRAY8 : SOLAR_OS_GFX_RASTER_RGB888", APP)
+        self.assertIn("sy == previous_sy", APP)
 
 
 if __name__ == "__main__":

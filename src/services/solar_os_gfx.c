@@ -9,6 +9,7 @@
 #include "solar_os_fonts.h"
 #include "solar_os_log.h"
 #include "solar_os_memory.h"
+#include "solar_os_gfx_mono_raster.h"
 
 #define GFX_INDEX8_PALETTE_SIZE 256U
 #define GFX_INDEX8_COLOR_COUNT 216U
@@ -1524,12 +1525,22 @@ esp_err_t solar_os_gfx_blit_raster(solar_os_gfx_t *gfx,
         return ESP_OK;
     }
 
+    const bool index8 = gfx_uses_index8(gfx);
     gfx_mono_raster_target_t mono_target = {0};
-    if (!gfx_uses_index8(gfx) && !gfx_mono_raster_target(gfx, &mono_target)) {
+    if (!index8 && !gfx_mono_raster_target(gfx, &mono_target)) {
         return ESP_ERR_INVALID_STATE;
     }
     const bool unscaled =
         (uint32_t)width == raster->width && (uint32_t)height == raster->height;
+    if (!index8 && unscaled) {
+        solar_os_gfx_mono_blit_unscaled(mono_target.pixels, mono_target.row_bytes,
+            &mono_target.surface, raster->pixels, raster->stride,
+            raster->format == SOLAR_OS_GFX_RASTER_GRAY8 ? 1U : 3U,
+            x, y, (int)x0, (int)y0, (int)x1, (int)y1,
+            gfx->black_is_one != gfx->palette_inverted);
+        gfx_mark_dirty(gfx);
+        return ESP_OK;
+    }
     for (int draw_y = (int)y0; draw_y < (int)y1; draw_y++) {
         const uint32_t source_y = unscaled ? (uint32_t)(draw_y - y) :
             (uint32_t)(((uint64_t)((int64_t)draw_y - y) * raster->height) /
@@ -1538,7 +1549,7 @@ esp_err_t solar_os_gfx_blit_raster(solar_os_gfx_t *gfx,
             const uint32_t source_x = unscaled ? (uint32_t)(draw_x - x) :
                 (uint32_t)(((uint64_t)((int64_t)draw_x - x) * raster->width) /
                            (uint32_t)width);
-            if (gfx_uses_index8(gfx)) {
+            if (index8) {
                 gfx->index8->pixels[
                     (size_t)draw_y * gfx->index8->surface.stride + draw_x] =
                     gfx_index8_for_rgb888(
@@ -1556,7 +1567,7 @@ esp_err_t solar_os_gfx_blit_raster(solar_os_gfx_t *gfx,
         }
     }
 
-    if (gfx_uses_index8(gfx)) {
+    if (index8) {
         gfx_mark_index8_dirty_rect(gfx,
                                    (int)x0,
                                    (int)y0,

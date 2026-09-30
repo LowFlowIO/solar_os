@@ -17,6 +17,10 @@ TARGETS += http_server_test
 TARGETS += rtspd_job_test rtspd_audio_only_test
 TARGETS += rtsp_receiver_test
 TARGETS += rtsp_client_test
+TARGETS += gfx_mono_raster_test
+
+gfx_mono_raster_test: gfx_mono_raster_test.c $(ROOT)/src/services/solar_os_gfx_mono_raster.h $(ROOT)/src/services/solar_os_display_surface.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
 
 RTSP_CLIENT_TEST_SOURCES := rtsp_client_test.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_rtp_jpeg.c $(ROOT)/src/services/solar_os_media.c $(ROOT)/src/services/solar_os_audio_pcm.c
 rtsp_client_test: $(RTSP_CLIENT_TEST_SOURCES) $(ROOT)/src/services/solar_os_rtsp_client.c $(wildcard rtsp_stubs/*.h) $(wildcard rtsp_stubs/freertos/*.h)
@@ -599,6 +603,7 @@ test: $(TARGETS)
 	./rtspd_audio_only_test
 	./rtsp_receiver_test
 	./rtsp_client_test
+	./gfx_mono_raster_test
 	./mjpeg_test
 	./http_server_test
 	./sensors_service_test

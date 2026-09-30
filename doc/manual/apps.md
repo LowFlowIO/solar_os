@@ -64,6 +64,7 @@ Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.
 rtsp rtsp://192.168.1.238/media
 rtsp --audio-only rtsp://192.168.1.113/media
 rtsp --stats rtsp://192.168.1.192:8554/youtube
+rtsp --audio-only --stats rtsp://192.168.1.192:8554/youtube
 ```
 
 Graphical sessions show aspect-fit JPEG video when a video track is selected.
@@ -76,9 +77,11 @@ Suspending retains audio playback; video decoding pauses until resume.
 
 `--stats` writes bounded, approximately once-per-second `rtsp.stats` entries
 to the OS log (`log show`). These report received/decoded/presented frame counts,
-queue depth, drops, decode/scale/draw times, frame age and presentation gaps,
+queue depth, drops, decode/scale/draw times (including separate blit and present
+timings), frame age and presentation gaps,
 plus audio conversion format, native block size, queue depth, concealment,
-write time and submission gaps. Maxima are for the current playback session;
+write time, submission gaps, and concealed source sample frames (silence).
+Maxima are for the current playback session;
 submission gaps and jitter-wait polls are not hardware underrun counters.
 Diagnostic timing is disabled without this flag.
 
@@ -87,6 +90,8 @@ conversion, and bounded jitter buffering. Its compressed JPEG assembler is a
 single 512 KiB PSRAM allocation, created only when video is selected. The decoder
 leases it briefly; video packets are dropped while it is leased. Two decoded,
 display-sized frames are buffered in PSRAM, with frame-driven video presentation.
+Monochrome displays decode and buffer grayscale rather than RGB; color displays
+retain RGB video.
 Incomplete, superseded, or more than 150 ms late frames are discarded. L16 audio supports
 8–48 kHz mono/stereo with a 32-packet, 80 ms reorder buffer, bounded gap silence,
 and stale-packet dropping. RTCP sender reports align video to the audio playback
