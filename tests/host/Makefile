@@ -12,6 +12,7 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
+TARGETS += camera_service_test
 
 all: $(TARGETS)
 
@@ -238,6 +239,10 @@ haptic_service_test: haptic_service_test.c $(ROOT)/src/services/solar_os_haptic.
 charger_service_test: charger_service_test.c $(ROOT)/src/services/solar_os_charger.c $(ROOT)/src/services/solar_os_charger.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
 		charger_service_test.c $(ROOT)/src/services/solar_os_charger.c -o $@
+
+camera_service_test: camera_service_test.c $(ROOT)/src/services/solar_os_camera.c $(ROOT)/src/services/solar_os_camera.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
+		camera_service_test.c $(ROOT)/src/services/solar_os_camera.c -o $@
 
 drv2605_test: drv2605_test.c $(ROOT)/src/drivers/drv2605.c $(ROOT)/src/drivers/drv2605.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
@@ -536,6 +541,7 @@ test: $(TARGETS)
 	./cardkb_codec_test
 	./cl32_keyboard_test
 	./battery_service_test
+	./camera_service_test
 	./sensors_service_test
 	./midi_codec_test
 	./midi_service_test

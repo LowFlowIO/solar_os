@@ -593,6 +593,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     {"battery", "battery status and config", solar_os_shell_cmd_battery},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+    {"camera", "camera status and JPEG capture", solar_os_shell_cmd_camera},
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_ADC
     {"adc", "read expansion analog inputs", solar_os_shell_cmd_adc},
 #endif
@@ -1114,6 +1117,10 @@ static const char * const haptic_subcommands[] = {"list", "play", "stop"};
 static const char * const charger_subcommands[] = {
     "list", "status", "enable", "input-limit", "current", "voltage",
 };
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+static const char * const camera_subcommands[] = {"status", "capture", "off"};
+static const char * const camera_frame_sizes[] = {"qvga", "vga"};
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_IMU
 static const char * const imu_subcommands[] = {"list", "sample"};
@@ -2474,6 +2481,13 @@ static const char * const path_haptic[] = {"haptic"};
 static const char * const path_charger[] = {"charger"};
 static const char * const path_charger_enable[] = {"charger", "enable"};
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+static const char * const path_camera[] = {"camera"};
+static const char * const path_camera_capture[] = {"camera", "capture"};
+static const char * const path_camera_capture_file[] = {
+    "camera", "capture", SHELL_COMPLETION_ANY,
+};
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_IMU
 static const char * const path_imu[] = {"imu"};
 #endif
@@ -3482,6 +3496,11 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_CHARGER
     SHELL_COMPLETION_STATIC(path_charger, charger_subcommands),
     SHELL_COMPLETION_STATIC(path_charger_enable, on_off_values),
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+    SHELL_COMPLETION_STATIC(path_camera, camera_subcommands),
+    SHELL_COMPLETION_PATH(path_camera_capture, false),
+    SHELL_COMPLETION_STATIC(path_camera_capture_file, camera_frame_sizes),
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_IMU
     SHELL_COMPLETION_STATIC(path_imu, imu_subcommands),

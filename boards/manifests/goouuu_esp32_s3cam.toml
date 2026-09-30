@@ -27,7 +27,7 @@ capabilities = [
   "expansion_i2c", "expansion_spi", "expansion_uart", "expansion_adc",
   "expansion_pwm", "expansion_i2s",
 ]
-required_packages = []
+required_packages = ["driver_camera_esp32"]
 psram_bytes = 8388608
 
 [defines]

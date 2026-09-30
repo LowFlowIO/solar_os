@@ -30,6 +30,9 @@
 #include "solar_os_buttons.h"
 #include "solar_os_cdc.h"
 #include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_DRIVER_CAMERA_ESP32
+#include "solar_os_camera_esp32.h"
+#endif
 #include "solar_os_display.h"
 #if SOLAR_OS_PACKAGE_SERVICE_EXPANSION
 #include "solar_os_expansion.h"
@@ -1806,6 +1809,15 @@ void app_main(void)
     solar_os_input_actions_set_runner(solar_os_shell_run_background_command);
     print_boot_summary();
     key_button_init();
+
+#if SOLAR_OS_PACKAGE_DRIVER_CAMERA_ESP32
+    const esp_err_t camera_error = solar_os_camera_esp32_register();
+    if (camera_error != ESP_OK) {
+        SOLAR_OS_LOGW(TAG,
+                      "Camera backend unavailable: %s",
+                      esp_err_to_name(camera_error));
+    }
+#endif
 
     const bool reserve_port_shell =
         !board_has(SOLAR_OS_BOARD_CAP_DISPLAY);

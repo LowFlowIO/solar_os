@@ -64,6 +64,10 @@ class BoardManifestTest(unittest.TestCase):
             self.manifest_dir,
         )
         self.assertIn("camera", board["build"]["capabilities"])
+        self.assertIn(
+            "driver_camera_esp32",
+            required_packages(board, self.drivers),
+        )
         self.assertEqual(board["build"]["psram_bytes"], 8 * 1024 * 1024)
         self.assertEqual(
             board["defines"]["SOLAR_OS_BOARD_PIN_CAMERA_D0"],

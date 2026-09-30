@@ -41,6 +41,11 @@ label = "Audio support"
 category = "System"
 members = ["service_audio"]
 
+[groups.camera]
+label = "Camera"
+category = "Hardware interfaces"
+members = ["driver_camera_esp32"]
+
 [groups.control_bindings]
 label = "Control bindings"
 category = "System"
@@ -1080,6 +1085,22 @@ capabilities = ["cdc"]
 [packages.service_sd]
 label = "service.sd"
 capabilities = ["sd"]
+
+[packages.service_camera]
+label = "service.camera"
+sources = [
+  "services/solar_os_camera.c",
+  "shell/solar_os_shell_camera.c",
+]
+capabilities = ["camera", "psram"]
+
+[packages.driver_camera_esp32]
+label = "driver.camera-esp32"
+depends = ["service_camera"]
+sources = ["drivers/solar_os_camera_esp32.c"]
+requires = ["espressif__esp32-camera"]
+targets = ["esp32s3"]
+capabilities = ["camera", "psram"]
 
 [packages.service_audio]
 label = "service.audio"
