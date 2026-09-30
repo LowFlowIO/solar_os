@@ -654,6 +654,36 @@ static bool web_content_type_is_mjpeg(const char *value)
     return value != NULL && strncasecmp(value, type, sizeof(type) - 1U) == 0;
 }
 
+static esp_err_t web_prepare_mjpeg_worker(web_http_worker_t *worker)
+{
+    if (worker == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (worker->mjpeg) {
+        return ESP_OK;
+    }
+
+    worker->frame_buffer = web_malloc(WEB_IMAGE_MAX_BYTES,
+                                      "web.mjpeg.frame");
+    if (worker->frame_buffer == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
+    const esp_err_t error = solar_os_mjpeg_parser_init(
+        &worker->parser,
+        worker->frame_buffer,
+        WEB_IMAGE_MAX_BYTES,
+        web_mjpeg_decode_frame,
+        worker);
+    if (error != ESP_OK) {
+        solar_os_memory_free(worker->frame_buffer);
+        worker->frame_buffer = NULL;
+        return error;
+    }
+    worker->mjpeg = true;
+    web_send_message(WEB_EVENT_STATUS, "MJPEG stream");
+    return ESP_OK;
+}
+
 static esp_err_t web_http_event(const solar_os_http_event_t *event, void *user_data)
 {
     if (event == NULL) {
@@ -665,34 +695,10 @@ static esp_err_t web_http_event(const solar_os_http_event_t *event, void *user_d
 
     web_http_worker_t *worker = user_data;
     if (event->type == SOLAR_OS_HTTP_EVENT_HEADER &&
-        event->status_code >= 200 && event->status_code < 300 &&
         event->header_name != NULL &&
         strcasecmp(event->header_name, "Content-Type") == 0 &&
         web_content_type_is_mjpeg(event->header_value)) {
-        if (worker == NULL) {
-            return ESP_ERR_INVALID_ARG;
-        }
-        if (!worker->mjpeg) {
-            worker->frame_buffer = web_malloc(WEB_IMAGE_MAX_BYTES,
-                                              "web.mjpeg.frame");
-            if (worker->frame_buffer == NULL) {
-                return ESP_ERR_NO_MEM;
-            }
-            const esp_err_t error = solar_os_mjpeg_parser_init(
-                &worker->parser,
-                worker->frame_buffer,
-                WEB_IMAGE_MAX_BYTES,
-                web_mjpeg_decode_frame,
-                worker);
-            if (error != ESP_OK) {
-                solar_os_memory_free(worker->frame_buffer);
-                worker->frame_buffer = NULL;
-                return error;
-            }
-            worker->mjpeg = true;
-            web_send_message(WEB_EVENT_STATUS, "MJPEG stream");
-        }
-        return ESP_OK;
+        return web_prepare_mjpeg_worker(worker);
     }
 
     if (event->type == SOLAR_OS_HTTP_EVENT_DATA) {
@@ -1996,6 +2002,18 @@ static bool web_url_looks_like_image(const char *url)
         web_url_ext_eq(dot, end, ".webp");
 }
 
+static bool web_url_looks_like_mjpeg(const char *url)
+{
+    const char *end = NULL;
+    const char *dot = web_url_extension(url, &end);
+    if (dot == NULL || end == NULL) {
+        return false;
+    }
+
+    return web_url_ext_eq(dot, end, ".mjpeg") ||
+        web_url_ext_eq(dot, end, ".mjpg");
+}
+
 static bool web_url_is_unsupported_image(const char *url)
 {
     const char *end = NULL;
@@ -2362,6 +2380,14 @@ static void web_task(void *arg)
         goto done;
     }
 
+    if (web_url_looks_like_mjpeg(web.url)) {
+        const esp_err_t mjpeg_error = web_prepare_mjpeg_worker(&worker);
+        if (mjpeg_error != ESP_OK) {
+            web_send_message(WEB_EVENT_ERROR, esp_err_to_name(mjpeg_error));
+            goto done;
+        }
+    }
+
     const solar_os_http_request_options_t options = {
         .url = web.url,
         .method = SOLAR_OS_HTTP_METHOD_GET,
@@ -2401,10 +2427,17 @@ static void web_task(void *arg)
             .status_code = response.status_code,
             .bytes_read = worker.bytes_read,
         };
-        snprintf(event.message,
-                 sizeof(event.message),
-                 "%s",
-                 err == ESP_OK ? "stream ended" : esp_err_to_name(err));
+        if (response.status_code < 200 || response.status_code >= 300) {
+            snprintf(event.message,
+                     sizeof(event.message),
+                     "HTTP %d",
+                     response.status_code);
+        } else {
+            snprintf(event.message,
+                     sizeof(event.message),
+                     "%s",
+                     err == ESP_OK ? "stream ended" : esp_err_to_name(err));
+        }
         (void)web_send_event(&event);
     } else if (err != ESP_OK) {
         web_event_t event = {

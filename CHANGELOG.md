@@ -2,6 +2,10 @@
 
 ## 4.x
 
+- **4.15.6** — 2026-09-30 — Web now plays HTTP MJPEG camera feeds
+  alongside its existing static image formats. Multipart stream detection
+  accepts split headers and common server variations, while bounded frame
+  buffering and cancellation keep live viewing responsive.
 - **4.15.5** — 2026-09-30 — Added the GOOUUU ESP32-S3CAM board,
   OV2640 JPEG snapshots, and the `camera` command. Exclusive camera leases
   coordinate capture and streaming, with direct framebuffer DMA to PSRAM.

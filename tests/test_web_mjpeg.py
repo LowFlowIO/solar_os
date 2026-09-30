@@ -18,9 +18,15 @@ class WebMjpegPolicyTest(unittest.TestCase):
 
     def test_http_content_type_selects_streaming_path(self):
         self.assertIn('"multipart/x-mixed-replace"', WEB_SOURCE)
+        self.assertIn('web_url_ext_eq(dot, end, ".mjpeg")', WEB_SOURCE)
+        self.assertIn("web_prepare_mjpeg_worker(&worker)", WEB_SOURCE)
         self.assertIn("worker->mjpeg", WEB_SOURCE)
         self.assertIn(".read_poll_ms = 250U", WEB_SOURCE)
         self.assertIn(".cancel_flag = &web.stop_requested", WEB_SOURCE)
+        header_handler = WEB_SOURCE.split(
+            "static esp_err_t web_http_event", 1
+        )[1].split("static bool web_line_empty", 1)[0]
+        self.assertNotIn("event->status_code >= 200", header_handler)
 
     def test_ui_handoff_is_one_slot_and_drops_stale_frames(self):
         self.assertIn(
