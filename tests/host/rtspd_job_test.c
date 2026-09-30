@@ -28,12 +28,48 @@ static ssize_t test_sendto(int fd, const void *data, size_t len, int flags,
 
 struct test_task { pthread_t thread; TaskFunction_t fn; void *arg; };
 static unsigned task_calls, fail_task_call, live_tasks;
+static unsigned allocation_calls, fail_allocation_call, live_allocations;
+static size_t live_bytes;
+static bool force_wait_timeout;
 static unsigned camera_claims, camera_releases;
 static bool camera_busy, audio_busy;
 static unsigned audio_opens, audio_closes;
 static pthread_t audio_owner;
 static uint8_t jpeg_buffer[2048];
 static solar_os_camera_frame_t fake_frame;
+
+typedef struct { size_t size; uint32_t guard; } test_allocation_t;
+static const uint32_t allocation_guard = 0x5a5aa5a5U;
+void *solar_os_memory_alloc(size_t size, solar_os_memory_class_t kind, const char *tag)
+{
+    assert(kind == SOLAR_OS_MEMORY_EXTERNAL_PREFERRED);
+    assert(!strncmp(tag, "rtspd.", 6));
+    if (++allocation_calls == fail_allocation_call) return NULL;
+    test_allocation_t *allocation = malloc(sizeof(*allocation) + size + sizeof(allocation_guard));
+    assert(allocation);
+    *allocation = (test_allocation_t){.size = size, .guard = allocation_guard};
+    void *data = allocation + 1;
+    memcpy((uint8_t *)data + size, &allocation_guard, sizeof(allocation_guard));
+    live_allocations++; live_bytes += size;
+    return data;
+}
+void *solar_os_memory_calloc(size_t count, size_t size,
+                            solar_os_memory_class_t kind, const char *tag)
+{
+    void *data = solar_os_memory_alloc(count * size, kind, tag);
+    if (data) memset(data, 0, count * size);
+    return data;
+}
+void solar_os_memory_free(void *data)
+{
+    if (!data) return;
+    test_allocation_t *allocation = (test_allocation_t *)data - 1;
+    uint32_t tail;
+    memcpy(&tail, (uint8_t *)data + allocation->size, sizeof(tail));
+    assert(allocation->guard == allocation_guard && tail == allocation_guard);
+    live_allocations--; live_bytes -= allocation->size;
+    free(allocation);
+}
 
 int64_t esp_timer_get_time(void)
 {
@@ -47,6 +83,8 @@ void vTaskDelay(TickType_t ticks)
                              .tv_nsec = (ticks % 1000U) * 1000000L};
     nanosleep(&delay, NULL);
 }
+UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task)
+{ assert(!task); return 3072U; }
 uint32_t esp_random(void) { static uint32_t value = 1000; return ++value; }
 const char *esp_err_to_name(esp_err_t error)
 { (void)error; return "ESP_ERR_INVALID_RESPONSE"; }
@@ -78,6 +116,7 @@ void solar_os_task_delete_internal(TaskHandle_t task)
 bool solar_os_task_wait_done(TaskHandle_t task, volatile bool *done, uint32_t timeout)
 {
     if (!task) return true;
+    if (force_wait_timeout) return false;
     const int64_t deadline = esp_timer_get_time() + timeout * 1000LL;
     while (!*done && esp_timer_get_time() < deadline) vTaskDelay(1);
     if (!*done) return false;
@@ -305,6 +344,10 @@ static void run_sessions(bool video)
     char *args[] = {video ? "video=camera" : "video=none", "audio=mic0", port, "fps=0"};
     unsigned camera_before = camera_claims;
     assert(solar_os_rtspd_job.start(NULL, video ? 4 : 3, args) == ESP_OK);
+    assert(live_allocations == (video ? 3U : 2U));
+    assert(live_bytes == sizeof(rtspd_session_t) + sizeof(rtspd_audio_scratch_t) +
+                         (video ? SOLAR_OS_MEDIA_RTP_PACKET_MAX : 0U));
+    assert((rtspd.sources[RTSPD_VIDEO].scratch != NULL) == video);
     for (unsigned round = 0; round < 2; round++) {
         uint16_t audio_port, video_port;
         int audio_rtcp, video_rtcp;
@@ -374,6 +417,10 @@ static void run_sessions(bool video)
     assert(recv(active_control, active_packet, sizeof(active_packet), 0) == 0);
     close(active_control); close(active_udp);
     assert(!rtspd.running && !live_tasks && !rtspd.camera_owner.generation);
+    assert(!rtspd.session && !live_allocations && !live_bytes);
+    assert(!rtspd.sources[0].scratch && !rtspd.sources[1].scratch);
+    assert(rtspd.sources[RTSPD_AUDIO].stack_min_free == 3072U);
+    if (video) assert(rtspd.sources[RTSPD_VIDEO].stack_min_free == 3072U);
     assert(audio_opens == audio_closes);
     assert(camera_claims == camera_before + (video ? 1U : 0U));
     assert(camera_claims == camera_releases);
@@ -389,6 +436,13 @@ static void failure_tests(void)
         assert(!live_tasks && camera_claims == camera_before);
     }
     char *audio[] = {"video=none", "audio=mic0", "port=8554"};
+    for (unsigned fail = 1; fail <= 2; fail++) {
+        fail_allocation_call = allocation_calls + fail;
+        assert(solar_os_rtspd_job.start(NULL, 3, audio) == ESP_ERR_NO_MEM);
+        assert(!live_tasks && !live_allocations && !live_bytes && !rtspd.session);
+        assert(camera_claims == camera_before);
+        fail_allocation_call = 0;
+    }
     audio_busy = true;
     assert(solar_os_rtspd_job.start(NULL, 3, audio) == ESP_ERR_INVALID_STATE);
     audio_busy = false;
@@ -397,10 +451,18 @@ static void failure_tests(void)
         fail_task_call = task_calls + fail;
         assert(solar_os_rtspd_job.start(NULL, 3, audio) == ESP_ERR_NO_MEM);
         assert(!live_tasks && audio_opens == audio_closes);
+        assert(!live_allocations && !rtspd.session);
         fail_task_call = 0;
     }
 #if SOLAR_OS_PACKAGE_SERVICE_CAMERA
     char *both[] = {"video=camera", "audio=mic0", "port=8554"};
+    for (unsigned fail = 1; fail <= 3; fail++) {
+        fail_allocation_call = allocation_calls + fail;
+        assert(solar_os_rtspd_job.start(NULL, 3, both) == ESP_ERR_NO_MEM);
+        assert(!live_tasks && !live_allocations && !live_bytes && !rtspd.session);
+        assert(camera_claims == camera_before);
+        fail_allocation_call = 0;
+    }
     camera_busy = true;
     assert(solar_os_rtspd_job.start(NULL, 3, both) == ESP_ERR_INVALID_STATE);
     camera_busy = false; audio_busy = true;
@@ -411,9 +473,22 @@ static void failure_tests(void)
     assert(solar_os_rtspd_job.start(NULL, 0, NULL) == ESP_ERR_NOT_SUPPORTED);
     assert(camera_claims == 0);
 #endif
+    assert(!live_allocations && !rtspd.session);
+    assert(solar_os_rtspd_job.start(NULL, 3, audio) == ESP_OK);
+    force_wait_timeout = true;
+    solar_os_rtspd_job.stop(NULL);
+    /* Pending cancellation retains all storage until both workers are joined. */
+    assert(rtspd.session && live_allocations == 2U && live_tasks == 2U);
+    assert(solar_os_rtspd_job.start(NULL, 3, audio) == ESP_ERR_INVALID_STATE);
+    force_wait_timeout = false;
+    solar_os_rtspd_job.stop(NULL);
+    assert(!rtspd.session && !live_allocations && !live_bytes && !live_tasks);
+    solar_os_rtspd_job.stop(NULL); /* Cleanup is idempotent. */
 }
 int main(void)
 {
+    assert(!rtspd.session && !rtspd.sources[0].scratch && !rtspd.sources[1].scratch);
+    assert(!allocation_calls && !live_allocations);
     make_jpeg(); options_test(); failure_tests(); run_sessions(false);
 #if SOLAR_OS_PACKAGE_SERVICE_CAMERA
     run_sessions(true);

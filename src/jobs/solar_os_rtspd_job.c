@@ -25,6 +25,7 @@
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
 #include "solar_os_media.h"
+#include "solar_os_memory.h"
 #include "solar_os_rtp.h"
 #include "solar_os_rtp_jpeg.h"
 #include "solar_os_rtsp.h"
@@ -77,11 +78,18 @@ typedef struct {
 
 typedef struct {
     TaskHandle_t task;
+    void *scratch;
+    uint32_t stack_min_free;
     volatile bool ready;
     volatile bool done;
     bool busy;
     esp_err_t start_error;
 } rtspd_source_t;
+
+typedef struct {
+    int16_t samples[(SOLAR_OS_MEDIA_RTP_PACKET_MAX - SOLAR_OS_RTP_HEADER_BYTES) / 2U];
+    uint8_t packet[SOLAR_OS_MEDIA_RTP_PACKET_MAX];
+} rtspd_audio_scratch_t;
 
 typedef struct {
     bool running;
@@ -94,6 +102,7 @@ typedef struct {
     solar_os_stream_audio_format_t audio_format;
     solar_os_camera_owner_t camera_owner;
     rtspd_source_t sources[RTSPD_TRACKS];
+    rtspd_session_t *session;
     rtspd_session_t *active_session;
     uint32_t clients;
     uint32_t rejected_clients;
@@ -118,9 +127,16 @@ typedef struct {
 
 static const char *TAG = "rtspd";
 static rtspd_state_t rtspd = {.listen_fd = -1, .client_fd = -1};
-/* Persistent storage: never let a reader reference a control task's stack. */
-static rtspd_session_t rtspd_session;
 static portMUX_TYPE rtspd_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static void rtspd_note_stack(unsigned index)
+{
+    /* ESP-IDF reports bytes, unlike upstream FreeRTOS's word count. */
+    const uint32_t free_bytes = (uint32_t)uxTaskGetStackHighWaterMark(NULL);
+    portENTER_CRITICAL(&rtspd_lock);
+    rtspd.sources[index].stack_min_free = free_bytes;
+    portEXIT_CRITICAL(&rtspd_lock);
+}
 
 static bool rtspd_should_stop(void)
 {
@@ -596,12 +612,15 @@ static void rtspd_send_error(rtspd_session_t *session, esp_err_t error)
 static void rtspd_video_reader(void *arg)
 {
     (void)arg;
+    uint8_t *packet = rtspd.sources[RTSPD_VIDEO].scratch;
+    rtspd_note_stack(RTSPD_VIDEO);
     portENTER_CRITICAL(&rtspd_lock);
     rtspd.sources[RTSPD_VIDEO].ready = true;
     portEXIT_CRITICAL(&rtspd_lock);
     while (!rtspd_should_stop()) {
         const solar_os_camera_frame_t *frame = NULL;
         esp_err_t error = solar_os_camera_capture(&rtspd.camera_owner, &frame);
+        rtspd_note_stack(RTSPD_VIDEO);
         if (error != ESP_OK) {
             portENTER_CRITICAL(&rtspd_lock);
             rtspd.capture_errors++;
@@ -621,11 +640,10 @@ static void rtspd_video_reader(void *arg)
                     error = solar_os_media_clock_map(&track->clock, frame->timestamp_us,
                                                       &track->sender.timestamp);
                 }
-                uint8_t packet[SOLAR_OS_MEDIA_RTP_PACKET_MAX];
                 rtspd_packet_context_t context = {.session = session, .track = track};
                 if (error == ESP_OK) {
                     error = solar_os_rtp_jpeg_packetize(&track->sender, &jpeg, packet,
-                        sizeof(packet), rtspd_send_rtp_packet, &context);
+                        SOLAR_OS_MEDIA_RTP_PACKET_MAX, rtspd_send_rtp_packet, &context);
                 }
                 portENTER_CRITICAL(&rtspd_lock);
                 if (error == ESP_OK) {
@@ -652,6 +670,7 @@ static void rtspd_video_reader(void *arg)
             rtspd_send_error(session, error);
             rtspd_source_leave(RTSPD_VIDEO);
         }
+        rtspd_note_stack(RTSPD_VIDEO);
     }
     rtspd.sources[RTSPD_VIDEO].done = true;
     solar_os_task_delete_internal(NULL);
@@ -669,6 +688,7 @@ static bool rtspd_audio_format_valid(const solar_os_stream_audio_format_t *forma
 static void rtspd_audio_reader(void *arg)
 {
     (void)arg;
+    rtspd_audio_scratch_t *scratch = rtspd.sources[RTSPD_AUDIO].scratch;
     solar_os_stream_handle_t source = SOLAR_OS_STREAM_HANDLE_INIT;
     const solar_os_stream_open_options_t options = {
         .direction = SOLAR_OS_STREAM_DIRECTION_SOURCE,
@@ -679,6 +699,7 @@ static void rtspd_audio_reader(void *arg)
                                                &options, &source);
     if (error == ESP_OK && !rtspd_audio_format_valid(&source.audio))
         error = ESP_ERR_NOT_SUPPORTED;
+    rtspd_note_stack(RTSPD_AUDIO);
     portENTER_CRITICAL(&rtspd_lock);
     if (error == ESP_OK) rtspd.audio_format = source.audio;
     rtspd.sources[RTSPD_AUDIO].start_error = error;
@@ -687,15 +708,15 @@ static void rtspd_audio_reader(void *arg)
     if (error == ESP_OK) {
         /* At most one MTU-sized PCM block. No jitter/recording queue here.
          * Opening, draining and closing all occur on this reader task. */
-        int16_t samples[(SOLAR_OS_MEDIA_RTP_PACKET_MAX - SOLAR_OS_RTP_HEADER_BYTES) / 2U];
-        uint8_t packet[SOLAR_OS_MEDIA_RTP_PACKET_MAX];
         const size_t frame_bytes = source.audio.channels * sizeof(int16_t);
         size_t frames = source.audio.sample_rate / 50U; /* <=20ms, MTU limited */
-        if (frames > sizeof(samples) / frame_bytes) frames = sizeof(samples) / frame_bytes;
+        if (frames > sizeof(scratch->samples) / frame_bytes)
+            frames = sizeof(scratch->samples) / frame_bytes;
         const size_t bytes = frames * frame_bytes;
         while (!rtspd_should_stop()) {
             size_t read_len = 0U;
-            error = solar_os_stream_read(&source, samples, bytes, 100U, &read_len);
+            error = solar_os_stream_read(&source, scratch->samples, bytes, 100U, &read_len);
+            rtspd_note_stack(RTSPD_AUDIO);
             if (error == ESP_ERR_TIMEOUT || (error == ESP_OK && !read_len)) {
                 vTaskDelay(pdMS_TO_TICKS(1U));
                 continue;
@@ -726,8 +747,9 @@ static void rtspd_audio_reader(void *arg)
                 }
                 rtspd_packet_context_t context = {.session = session, .track = track};
                 if (error == ESP_OK) {
-                    error = solar_os_rtp_l16_packetize(&track->sender, samples,
-                        captured_frames, source.audio.channels, packet, sizeof(packet),
+                    error = solar_os_rtp_l16_packetize(&track->sender, scratch->samples,
+                        captured_frames, source.audio.channels, scratch->packet,
+                        sizeof(scratch->packet),
                         rtspd_send_rtp_packet, &context);
                 }
                 if (error == ESP_OK) {
@@ -738,9 +760,11 @@ static void rtspd_audio_reader(void *arg)
                 rtspd_send_error(session, error);
             }
             rtspd_source_leave(RTSPD_AUDIO);
+            rtspd_note_stack(RTSPD_AUDIO);
         }
     }
     solar_os_stream_close(&source);
+    rtspd_note_stack(RTSPD_AUDIO);
     rtspd.sources[RTSPD_AUDIO].done = true;
     solar_os_task_delete_internal(NULL);
 }
@@ -803,7 +827,8 @@ static void rtspd_reject_pending_client(int listen_fd)
 static void rtspd_serve_client(int client_fd, const struct sockaddr_in *peer,
                                 int listen_fd)
 {
-    rtspd_session_t *session = &rtspd_session;
+    /* Job-owned storage outlives every reader reference, including reconnects. */
+    rtspd_session_t *session = rtspd.session;
     memset(session, 0, sizeof(*session));
     session->client_fd = client_fd;
     session->peer = *peer;
@@ -938,11 +963,21 @@ static bool rtspd_cleanup(void)
         source->task = NULL;
     }
     rtspd_close_fd(&rtspd.listen_fd);
-    for (unsigned i = 0; i < RTSPD_TRACKS; i++) rtspd_close_udp(&rtspd_session.tracks[i]);
+    if (rtspd.session) {
+        for (unsigned i = 0; i < RTSPD_TRACKS; i++)
+            rtspd_close_udp(&rtspd.session->tracks[i]);
+    }
     const esp_err_t error = rtspd_release_camera();
     if (error != ESP_OK) {
         rtspd.last_error = error;
         return false;
+    }
+    /* Only reclaim storage after all users have quiesced and leases closed. */
+    solar_os_memory_free(rtspd.session);
+    rtspd.session = NULL;
+    for (unsigned i = 0; i < RTSPD_TRACKS; i++) {
+        solar_os_memory_free(rtspd.sources[i].scratch);
+        rtspd.sources[i].scratch = NULL;
     }
     rtspd.running = false;
     return true;
@@ -977,7 +1012,7 @@ static esp_err_t rtspd_job_start(solar_os_context_t *ctx, int argc, char **argv)
             "[size=qvga|vga] [fps=0..30] [port=<port>]\n");
         return ESP_ERR_INVALID_ARG;
     }
-    if (rtspd.running || rtspd.worker_task ||
+    if (rtspd.running || rtspd.worker_task || rtspd.session ||
         rtspd.sources[0].task || rtspd.sources[1].task) return ESP_ERR_INVALID_STATE;
 #if !SOLAR_OS_PACKAGE_SERVICE_CAMERA
     if (options.video) {
@@ -1003,9 +1038,23 @@ static esp_err_t rtspd_job_start(solar_os_context_t *ctx, int argc, char **argv)
     rtspd.listen_fd = rtspd.client_fd = -1;
     rtspd.options = options;
     rtspd.audio_format = audio_info.audio;
-    memset(&rtspd_session, 0, sizeof(rtspd_session));
+    rtspd.session = solar_os_memory_calloc(1U, sizeof(*rtspd.session),
+        SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "rtspd.session");
+    if (!rtspd.session) return ESP_ERR_NO_MEM;
     for (unsigned i = 0; i < RTSPD_TRACKS; i++)
-        rtspd_session.tracks[i].rtp_fd = rtspd_session.tracks[i].rtcp_fd = -1;
+        rtspd.session->tracks[i].rtp_fd = rtspd.session->tracks[i].rtcp_fd = -1;
+    for (unsigned i = 0; i < RTSPD_TRACKS; i++) {
+        if (!rtspd_track_enabled(i)) continue;
+        const size_t size = i == RTSPD_VIDEO ? SOLAR_OS_MEDIA_RTP_PACKET_MAX :
+                                               sizeof(rtspd_audio_scratch_t);
+        rtspd.sources[i].scratch = solar_os_memory_alloc(size,
+            SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
+            i == RTSPD_VIDEO ? "rtspd.video" : "rtspd.audio");
+        if (!rtspd.sources[i].scratch) {
+            (void)rtspd_cleanup();
+            return ESP_ERR_NO_MEM;
+        }
+    }
     esp_err_t error = ESP_OK;
 #if SOLAR_OS_PACKAGE_SERVICE_CAMERA
     if (options.video) {
@@ -1084,6 +1133,8 @@ static void rtspd_job_detail(solar_os_context_t *ctx)
     const uint32_t congestion = rtspd.congestion_drops;
     const int send_errno = rtspd.last_send_errno;
     const esp_err_t last_error = rtspd.last_error;
+    const uint32_t video_free = rtspd.sources[RTSPD_VIDEO].stack_min_free;
+    const uint32_t audio_free = rtspd.sources[RTSPD_AUDIO].stack_min_free;
     portEXIT_CRITICAL(&rtspd_lock);
     solar_os_shell_io_printf(io,
         "  RTSP: port=%u client=%s sessions=%" PRIu32 " rejected=%" PRIu32 "\n"
@@ -1106,6 +1157,14 @@ static void rtspd_job_detail(solar_os_context_t *ctx)
         capture_errors, jpeg_errors, send_errors, esp_err_to_name(last_error));
     solar_os_shell_io_printf(io, "  TX congestion: dropped=%" PRIu32 " errno=%d\n",
                               congestion, send_errno);
+    solar_os_shell_io_printf(io,
+        "  source stack min free: video=%" PRIu32 " audio=%" PRIu32 " bytes\n",
+        video_free, audio_free);
+    solar_os_shell_io_printf(io,
+        "  runtime buffers: session=%u video=%u audio=%u bytes (PSRAM preferred)\n",
+        rtspd.session ? (unsigned)sizeof(*rtspd.session) : 0U,
+        rtspd.sources[RTSPD_VIDEO].scratch ? SOLAR_OS_MEDIA_RTP_PACKET_MAX : 0U,
+        rtspd.sources[RTSPD_AUDIO].scratch ? (unsigned)sizeof(rtspd_audio_scratch_t) : 0U);
 }
 
 const solar_os_job_t solar_os_rtspd_job = {

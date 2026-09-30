@@ -2,6 +2,12 @@
 
 ## 4.x
 
+- **4.15.7** — 2026-09-30 — Added the `rtspd` job for single-client
+  RTSP publishing with RTP/JPEG video, RTP/L16 PCM audio, and RTCP timing.
+  Explicit `video=` and `audio=` sources support camera-only, audio-only,
+  or combined streams using standard UDP transport. Publishing follows source
+  availability; `fps=0` removes the video rate cap. Runtime buffers are
+  allocated only while the job runs, and stale data is discarded on reconnect.
 - **4.15.6** — 2026-09-30 — Web now plays HTTP MJPEG camera feeds
   alongside its existing static image formats. Multipart stream detection
   accepts split headers and common server variations, while bounded frame

@@ -23,7 +23,7 @@ rtspd_job_test rtspd_audio_only_test: $(RTSPD_TEST_SOURCES) $(ROOT)/src/jobs/sol
 	$(wildcard rtspd_stubs/*.h) $(wildcard rtspd_stubs/*/*.h)
 	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread \
 		$(if $(filter rtspd_audio_only_test,$@),-DSOLAR_OS_PACKAGE_SERVICE_CAMERA=0,) \
-		-Irtspd_stubs -I. -I$(ROOT)/src/services -I$(ROOT)/src/jobs $(RTSPD_TEST_SOURCES) -o $@
+		-Irtspd_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services -I$(ROOT)/src/jobs $(RTSPD_TEST_SOURCES) -o $@
 
 all: $(TARGETS)
 

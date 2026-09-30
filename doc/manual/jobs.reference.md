@@ -568,6 +568,15 @@ queue. Audio sample timestamps advance across dropped blocks. Status reports
 congestion drops and the last transmit errno separately from fatal send errors.
 Each enabled source uses an additional 4096-byte internal worker stack, shown
 by `job status rtspd`, and is closed by its owning reader during cancellation.
+Source stack minimum-free values are reported in bytes, including microphone
+startup and publishing. Packet scratch and RTSP session storage are allocated
+only when the job starts, using the PSRAM-preferred memory policy; disabled
+sources allocate no scratch. Audio scratch is one 1188-byte PCM block plus
+one 1200-byte RTP packet, off the reader's stack. I2S DMA buffers and task
+stacks remain internal. Runtime buffers are freed after workers and leases
+have closed, including failed startup; a pending stop retains them safely.
+An unused/stopped job reserves no session or media buffers, only its small
+internal control state and lock. `job status rtspd` reports runtime buffer sizes.
 
 Open the single RTSP client session:
 

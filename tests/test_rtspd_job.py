@@ -37,6 +37,18 @@ class RtspdJobPolicyTest(unittest.TestCase):
         self.assertIn("solar_os_camera_release_frame", JOB)
         self.assertIn("RTSP/1.0 453 Not Enough Bandwidth", JOB)
 
+    def test_bulk_buffers_are_runtime_policy_allocations(self):
+        self.assertNotIn("static rtspd_session_t rtspd_session;", JOB)
+        self.assertIn('SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "rtspd.session"', JOB)
+        self.assertIn("solar_os_memory_free(rtspd.session)", JOB)
+        reader = JOB.split("static void rtspd_audio_reader", 1)[1].split(
+            "static void rtspd_send_rtcp", 1
+        )[0]
+        self.assertNotIn("int16_t samples[", reader)
+        self.assertNotIn("uint8_t packet[", reader)
+        self.assertIn("rtspd_audio_scratch_t *scratch", reader)
+        self.assertIn("uxTaskGetStackHighWaterMark(NULL)", JOB)
+
     def test_manual_documents_rtsp_url_and_security(self):
         section = JOBS_MANUAL.split("## rtspd", 1)[1].split("\n## ", 1)[0]
         self.assertIn("rtsp://device/media", section)
