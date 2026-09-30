@@ -35,6 +35,7 @@ typedef struct {
     bool stop_requested;
     bool routes_registered;
     bool stream_active;
+    bool auth_required;
     uint8_t fps;
     solar_os_camera_config_t camera_config;
     solar_os_camera_owner_t camera_owner;
@@ -54,6 +55,7 @@ typedef struct {
     bool running;
     bool draining;
     bool stream_active;
+    bool auth_required;
     uint8_t fps;
     solar_os_camera_config_t camera_config;
     uint32_t stream_count;
@@ -80,6 +82,7 @@ static void cam_webd_snapshot(cam_webd_snapshot_t *snapshot)
         .running = cam_webd.running,
         .draining = cam_webd.draining,
         .stream_active = cam_webd.stream_active,
+        .auth_required = cam_webd.auth_required,
         .fps = cam_webd.fps,
         .camera_config = cam_webd.camera_config,
         .stream_count = cam_webd.stream_count,
@@ -185,6 +188,7 @@ static esp_err_t cam_webd_status_handler(httpd_req_t *req, void *user)
         response,
         sizeof(response),
         "{\"running\":%s,\"draining\":%s,\"stream_active\":%s,"
+        "\"auth\":\"%s\","
         "\"frame_size\":\"%s\",\"format\":\"jpeg\",\"jpeg_quality\":%u,"
         "\"fps\":%u,\"streams\":%" PRIu32 ",\"frames\":%" PRIu32 ","
         "\"jpeg_bytes\":%" PRIu64 ",\"capture_errors\":%" PRIu32 ","
@@ -192,6 +196,7 @@ static esp_err_t cam_webd_status_handler(httpd_req_t *req, void *user)
         state.running ? "true" : "false",
         state.draining ? "true" : "false",
         state.stream_active ? "true" : "false",
+        state.auth_required ? "required" : "none",
         solar_os_camera_frame_size_name(state.camera_config.frame_size),
         (unsigned)state.camera_config.jpeg_quality,
         (unsigned)state.fps,
@@ -285,19 +290,21 @@ static esp_err_t cam_webd_stream_handler(httpd_req_t *req, void *user)
 
 static esp_err_t cam_webd_register_routes(void)
 {
+    const solar_os_http_auth_t auth = cam_webd.auth_required ?
+        SOLAR_OS_HTTP_AUTH_VIEW : SOLAR_OS_HTTP_AUTH_PUBLIC;
     const solar_os_http_route_t routes[] = {
         {
             .owner = CAM_WEBD_ROUTE_OWNER,
             .uri = "/api/camera",
             .method = HTTP_GET,
-            .auth = SOLAR_OS_HTTP_AUTH_VIEW,
+            .auth = auth,
             .handler = cam_webd_status_handler,
         },
         {
             .owner = CAM_WEBD_ROUTE_OWNER,
             .uri = "/camera.jpg",
             .method = HTTP_GET,
-            .auth = SOLAR_OS_HTTP_AUTH_VIEW,
+            .auth = auth,
             .handler = cam_webd_snapshot_handler,
         },
         {
@@ -305,7 +312,7 @@ static esp_err_t cam_webd_register_routes(void)
             .uri = "/camera.mjpeg",
             .method = HTTP_GET,
             .asynchronous = true,
-            .auth = SOLAR_OS_HTTP_AUTH_VIEW,
+            .auth = auth,
             .handler = cam_webd_stream_handler,
         },
     };
@@ -336,11 +343,27 @@ static bool cam_webd_parse_fps(const char *text, uint8_t *fps)
     return true;
 }
 
+static bool cam_webd_parse_auth(const char *text, bool *auth_required)
+{
+    if (text == NULL || auth_required == NULL) {
+        return false;
+    }
+    if (strcmp(text, "auth=none") == 0) {
+        *auth_required = false;
+        return true;
+    }
+    if (strcmp(text, "auth=required") == 0) {
+        *auth_required = true;
+        return true;
+    }
+    return false;
+}
+
 static esp_err_t cam_webd_job_start(solar_os_context_t *ctx,
                                     int argc,
                                     char **argv)
 {
-    if (argc < 1 || argc > 3 || argv == NULL) {
+    if (argc < 1 || argc > 4 || argv == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -356,23 +379,34 @@ static esp_err_t cam_webd_job_start(solar_os_context_t *ctx,
 
     solar_os_camera_config_t config = solar_os_camera_default_config();
     config.jpeg_quality = CAM_WEBD_JPEG_QUALITY;
-    if (argc >= 2) {
-        if (strcmp(argv[1], "qvga") == 0) {
+    uint8_t fps = CAM_WEBD_DEFAULT_FPS;
+    bool auth_required = false;
+    bool frame_size_set = false;
+    bool fps_set = false;
+    bool auth_set = false;
+    for (int i = 1; i < argc; i++) {
+        if (argv[i] == NULL || argv[i][0] == '\0') {
+            return ESP_ERR_INVALID_ARG;
+        }
+        if (!frame_size_set && strcmp(argv[i], "qvga") == 0) {
             config.frame_size = SOLAR_OS_CAMERA_FRAME_SIZE_QVGA;
-        } else if (strcmp(argv[1], "vga") == 0) {
+            frame_size_set = true;
+        } else if (!frame_size_set && strcmp(argv[i], "vga") == 0) {
             config.frame_size = SOLAR_OS_CAMERA_FRAME_SIZE_VGA;
+            frame_size_set = true;
+        } else if (!fps_set && cam_webd_parse_fps(argv[i], &fps)) {
+            fps_set = true;
+        } else if (!auth_set && cam_webd_parse_auth(argv[i], &auth_required)) {
+            auth_set = true;
         } else {
             return ESP_ERR_INVALID_ARG;
         }
-    }
-    uint8_t fps = CAM_WEBD_DEFAULT_FPS;
-    if (argc == 3 && !cam_webd_parse_fps(argv[2], &fps)) {
-        return ESP_ERR_INVALID_ARG;
     }
 
     memset(&cam_webd, 0, sizeof(cam_webd));
     cam_webd.stream_socket = -1;
     cam_webd.fps = fps;
+    cam_webd.auth_required = auth_required;
     cam_webd.camera_config = config;
     cam_webd.last_error = ESP_OK;
 
@@ -414,26 +448,36 @@ static esp_err_t cam_webd_job_start(solar_os_context_t *ctx,
                                       port,
                                       "MJPEG");
 
-    char token[SOLAR_OS_HTTP_BEARER_TOKEN_MAX];
     solar_os_shell_io_t *io = ctx != NULL ? solar_os_context_shell_io(ctx) : NULL;
-    if (io != NULL && solar_os_http_server_get_bearer_token(token, sizeof(token))) {
+    if (io != NULL) {
         solar_os_shell_io_printf(
             io,
             "cam-webd: stream http://<device>:%u/camera.mjpeg\n"
-            "cam-webd: snapshot http://<device>:%u/camera.jpg\n"
-            "cam-webd access code: %s\n",
+            "cam-webd: snapshot http://<device>:%u/camera.jpg\n",
             (unsigned)solar_os_http_server_port(),
-            (unsigned)solar_os_http_server_port(),
-            token);
+            (unsigned)solar_os_http_server_port());
+        if (auth_required) {
+            char token[SOLAR_OS_HTTP_BEARER_TOKEN_MAX];
+            if (solar_os_http_server_get_bearer_token(token, sizeof(token))) {
+                solar_os_shell_io_printf(io,
+                                         "cam-webd access code: %s\n",
+                                         token);
+                memset(token, 0, sizeof(token));
+            }
+        } else {
+            solar_os_shell_io_writeln(
+                io,
+                "cam-webd: WARNING: unauthenticated camera access");
+        }
         solar_os_shell_io_flush(io);
-        memset(token, 0, sizeof(token));
     }
 
     SOLAR_OS_LOGI(TAG,
-                  "started: %s JPEG quality=%u fps=%u",
+                  "started: %s JPEG quality=%u fps=%u auth=%s",
                   solar_os_camera_frame_size_name(config.frame_size),
                   (unsigned)config.jpeg_quality,
-                  (unsigned)fps);
+                  (unsigned)fps,
+                  auth_required ? "required" : "none");
     return ESP_OK;
 }
 
@@ -514,12 +558,13 @@ static void cam_webd_job_detail(solar_os_context_t *ctx)
     cam_webd_snapshot(&state);
     solar_os_shell_io_printf(
         io,
-        "  camera: %s JPEG quality=%u fps=%u client=%s\n"
+        "  camera: %s JPEG quality=%u fps=%u auth=%s client=%s\n"
         "  stream: count=%" PRIu32 " frames=%" PRIu32 " bytes=%" PRIu64
         " capture-errors=%" PRIu32 " send-errors=%" PRIu32 " last=%s\n",
         solar_os_camera_frame_size_name(state.camera_config.frame_size),
         (unsigned)state.camera_config.jpeg_quality,
         (unsigned)state.fps,
+        state.auth_required ? "required" : "none",
         state.stream_active ? "connected" : "none",
         state.stream_count,
         state.frame_count,
@@ -610,7 +655,7 @@ static void cam_webd_stream_worker(void *arg)
 
 const solar_os_job_t solar_os_cam_webd_job = {
     .name = "cam-webd",
-    .summary = "authenticated HTTP camera stream",
+    .summary = "HTTP camera stream",
     .kind = SOLAR_OS_JOB_KIND_BACKGROUND,
     .start = cam_webd_job_start,
     .stop = cam_webd_job_stop,

@@ -477,20 +477,20 @@ and the sampled-event caveat.
 
 ## cam-webd
 
-Authenticated HTTP access to the fitted camera as one-shot JPEG images or a
-single-client MJPEG stream.
+HTTP access to the fitted camera as one-shot JPEG images or a single-client
+MJPEG stream.
 
 ```text
-job start cam-webd [qvga|vga] [fps]
+job start cam-webd [qvga|vga] [fps] [auth=none|required]
 job status cam-webd
 job stop cam-webd
 ```
 
-The defaults are QVGA JPEG at five frames per second. The optional frame rate
-is `1..30`; JPEG quality is fixed at 12. Starting the job prints a random
-six-digit access code and leases the camera as `job:cam-webd` until the job
-stops. The shell `camera` command and other camera users report that owner
-while the lease is active.
+The defaults are QVGA JPEG at five frames per second with no authentication.
+The optional frame rate is `1..30`; JPEG quality is fixed at 12. Options can be
+given in any order. The job leases the camera as `job:cam-webd` until it stops.
+The shell `camera` command and other camera users report that owner while the
+lease is active.
 
 API:
 
@@ -500,7 +500,15 @@ GET /camera.jpg
 GET /camera.mjpeg
 ```
 
-All requests require `Authorization: Bearer <code>`. For example:
+With the default `auth=none`, the endpoints can be opened directly:
+
+```text
+http://device/camera.mjpeg
+```
+
+Use `auth=required` to require `Authorization: Bearer <code>` on all three
+endpoints. Starting in that mode prints a random six-digit access code. For
+example:
 
 ```text
 curl -H 'Authorization: Bearer 123456' http://device/camera.jpg -o frame.jpg
@@ -514,9 +522,10 @@ there is no frame queue or JPEG copy. A slow client therefore reduces the
 capture rate through socket backpressure instead of consuming more memory.
 Snapshot requests are rejected while the stream owns the capture path.
 
-The server is plain HTTP. The access code is convenient protection on a
-trusted Wi-Fi network but does not encrypt images and is not intended for
-exposure to an untrusted network.
+The server is plain HTTP. With the default `auth=none`, anyone who can reach the
+device can view the camera. Use it only on a trusted Wi-Fi network. The optional
+access code limits casual access but does not encrypt images and is not intended
+for exposure to an untrusted network.
 
 ## displayd
 

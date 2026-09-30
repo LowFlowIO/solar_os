@@ -2,6 +2,12 @@
 
 ## 4.x
 
+- **4.15.5** — 2026-09-30 — Added the GOOUUU ESP32-S3CAM board,
+  OV2640 JPEG snapshots, and the `camera` command. Exclusive camera leases
+  coordinate capture and streaming, with direct framebuffer DMA to PSRAM.
+  The `cam-webd` job serves JPEG snapshots and a single-client MJPEG feed
+  through asynchronous HTTP routes. Trusted-LAN viewing is unauthenticated
+  by default; `auth=required` enables an optional bearer access code.
 - **4.15.4** — 2026-09-29 — Updated CL-32 support for its current core
   firmware battery register and serialized ST7305 display transactions. ADC
   battery monitoring now uses a smoothed voltage trend with hysteresis to avoid

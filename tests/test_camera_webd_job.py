@@ -18,7 +18,7 @@ class CameraWebJobTest(unittest.TestCase):
         self.assertIn('depends = ["service_camera", "service_http_server"]', package)
         self.assertIn('capabilities = ["camera", "psram", "wifi"]', package)
         self.assertIn(
-            '{"cam-webd", "authenticated HTTP camera stream", &solar_os_cam_webd_job}',
+            '{"cam-webd", "HTTP camera stream", &solar_os_cam_webd_job}',
             REGISTRY,
         )
 
@@ -40,8 +40,21 @@ class CameraWebJobTest(unittest.TestCase):
         self.assertIn("solar_os_camera_release_owner(&cam_webd.camera_owner)", JOB)
         self.assertIn("!cam_webd.stream_active && cam_webd.worker_task == NULL", JOB)
 
-    def test_routes_are_authenticated_and_limits_are_documented(self):
-        self.assertEqual(JOB.count(".auth = SOLAR_OS_HTTP_AUTH_VIEW"), 3)
+    def test_routes_default_to_public_with_optional_authentication(self):
+        self.assertIn("bool auth_required = false;", JOB)
+        self.assertIn('strcmp(text, "auth=none") == 0', JOB)
+        self.assertIn('strcmp(text, "auth=required") == 0', JOB)
+        self.assertIn(
+            "cam_webd.auth_required ?\n"
+            "        SOLAR_OS_HTTP_AUTH_VIEW : SOLAR_OS_HTTP_AUTH_PUBLIC",
+            JOB,
+        )
+        self.assertEqual(JOB.count(".auth = auth"), 3)
+        self.assertIn("WARNING: unauthenticated camera access", JOB)
+        self.assertIn("with no authentication", MANUAL)
+        self.assertIn("auth=required", MANUAL)
+
+    def test_stream_limits_and_security_are_documented(self):
         self.assertIn("Only one stream client is admitted", MANUAL)
         self.assertIn("there is no frame queue or JPEG copy", MANUAL)
         self.assertIn("does not encrypt images", MANUAL)

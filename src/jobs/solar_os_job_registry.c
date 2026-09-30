@@ -100,7 +100,7 @@ static const solar_os_job_registry_entry_t registered_jobs[] = {
     {"bridge", "bidirectional port and Link bridge", &solar_os_bridge_job},
 #endif
 #if SOLAR_OS_PACKAGE_JOB_CAM_WEBD
-    {"cam-webd", "authenticated HTTP camera stream", &solar_os_cam_webd_job},
+    {"cam-webd", "HTTP camera stream", &solar_os_cam_webd_job},
 #endif
 #if SOLAR_OS_PACKAGE_JOB_CONTROLS
     {"controls", "map scalar streams to parameters and MIDI", &solar_os_controls_job},
