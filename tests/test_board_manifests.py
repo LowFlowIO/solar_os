@@ -89,6 +89,42 @@ class BoardManifestTest(unittest.TestCase):
         self.assertEqual(hardware["build"]["flash_mode"], "dio")
         self.assertEqual(hardware["build"]["psram_type"], "opi")
 
+    def test_qdtech_es3c28p_adds_ft6336_touch(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "qdtech_es3c28p.toml",
+            self.manifest_dir,
+        )
+        self.assertIn("pointer", board["build"]["capabilities"])
+        self.assertIn("pointer_ft6336", board["build"]["drivers"])
+        self.assertEqual(board["target"]["platformio_board"], "qdtech_es3n28p")
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_PIN_TOUCH_INT"],
+            "GPIO_NUM_17",
+        )
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_PIN_TOUCH_RST"],
+            "GPIO_NUM_18",
+        )
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(
+            set(devices),
+            {"display0", "touch0", "battery0", "audio0", "storage0", "pixels0"},
+        )
+        self.assertEqual(devices["touch0"]["driver"], "ft6336")
+        self.assertEqual(
+            devices["touch0"]["bindings"],
+            {
+                "i2c": "i2c0",
+                "addr": 0x38,
+                "reset": 18,
+                "irq": 17,
+                "rotation": 1,
+            },
+        )
+        pins = {pin["gpio"]: pin for pin in board["pins"]}
+        self.assertEqual(pins[17]["role"], "touch interrupt")
+        self.assertEqual(pins[18]["role"], "touch reset")
+
     def test_native_display_geometry_must_match_logical_rotation(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "t_lora_pager.toml",
