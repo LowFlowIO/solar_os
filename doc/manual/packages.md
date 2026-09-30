@@ -42,6 +42,12 @@ must release each borrowed frame before reconfiguration or another capture;
 the initial backend uses one JPEG framebuffer in PSRAM and supports QVGA and
 VGA stills only.
 
+`service.http-server` owns the shared inbound HTTP listener, route registry,
+and access-code authentication. Long-lived handlers use asynchronous routes so
+the server task remains available to other endpoints. An asynchronous consumer
+must complete every accepted request exactly once; its route stays referenced
+until completion so package or job teardown cannot invalidate live state.
+
 `expansion.audio-pwm` depends on the generic audio and expansion services. On a
 board with expansion PWM it can therefore add a runtime playback device even
 when no built-in codec or DAC exists.

@@ -13,6 +13,7 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
 TARGETS += camera_service_test
+TARGETS += http_server_test
 
 all: $(TARGETS)
 
@@ -243,6 +244,11 @@ charger_service_test: charger_service_test.c $(ROOT)/src/services/solar_os_charg
 camera_service_test: camera_service_test.c $(ROOT)/src/services/solar_os_camera.c $(ROOT)/src/services/solar_os_camera.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
 		camera_service_test.c $(ROOT)/src/services/solar_os_camera.c -o $@
+
+http_server_test: http_server_test.c $(ROOT)/src/services/solar_os_http_server.c $(ROOT)/src/services/solar_os_http_server.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -pthread -include compat.h \
+		-Ihttp_server_stubs -I. -I$(ROOT)/src/services \
+		http_server_test.c $(ROOT)/src/services/solar_os_http_server.c -o $@
 
 drv2605_test: drv2605_test.c $(ROOT)/src/drivers/drv2605.c $(ROOT)/src/drivers/drv2605.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
@@ -542,6 +548,7 @@ test: $(TARGETS)
 	./cl32_keyboard_test
 	./battery_service_test
 	./camera_service_test
+	./http_server_test
 	./sensors_service_test
 	./midi_codec_test
 	./midi_service_test

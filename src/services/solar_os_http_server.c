@@ -11,6 +11,7 @@
 #include "solar_os_task.h"
 
 #define HTTP_SERVER_ROUTE_MAX 10
+#define HTTP_SERVER_ASYNC_MAX 2
 #define HTTP_SERVER_STACK_SIZE 6144
 #define HTTP_SERVER_STOP_WAIT_MS 3000U
 
@@ -23,16 +24,25 @@ typedef struct {
     char uri[SOLAR_OS_HTTP_ROUTE_URI_MAX];
     httpd_method_t method;
     bool prefix;
+    bool asynchronous;
     solar_os_http_auth_t auth;
     solar_os_http_route_handler_t handler;
     void *user;
 } http_route_slot_t;
 
+typedef struct {
+    httpd_req_t *request;
+    size_t route_index;
+} http_async_slot_t;
+
 static EXT_RAM_BSS_ATTR http_route_slot_t route_slots[HTTP_SERVER_ROUTE_MAX];
+static http_async_slot_t async_slots[HTTP_SERVER_ASYNC_MAX];
 static httpd_handle_t http_server;
 static uint16_t http_server_listen_port = 80;
 static char bearer_token[SOLAR_OS_HTTP_BEARER_TOKEN_MAX];
 static portMUX_TYPE http_server_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static bool any_active_routes_locked(void);
 
 static size_t request_path_len(const char *uri)
 {
@@ -131,6 +141,78 @@ static bool request_is_authorized(httpd_req_t *req, solar_os_http_auth_t auth)
     return authorized;
 }
 
+static bool any_route_refs_locked(void)
+{
+    for (size_t i = 0; i < HTTP_SERVER_ROUTE_MAX; i++) {
+        if (route_slots[i].refs != 0U) {
+            return true;
+        }
+    }
+    return false;
+}
+
+static httpd_handle_t take_idle_server_locked(void)
+{
+    if (any_active_routes_locked() || any_route_refs_locked()) {
+        return NULL;
+    }
+    httpd_handle_t server = http_server;
+    http_server = NULL;
+    bearer_token[0] = '\0';
+    return server;
+}
+
+static void clear_inactive_routes_locked(void)
+{
+    for (size_t i = 0; i < HTTP_SERVER_ROUTE_MAX; i++) {
+        if (!route_slots[i].active && route_slots[i].refs == 0U) {
+            memset(&route_slots[i], 0, sizeof(route_slots[i]));
+        }
+    }
+}
+
+static void release_route_ref(size_t route_index)
+{
+    portENTER_CRITICAL(&http_server_lock);
+    if (route_index < HTTP_SERVER_ROUTE_MAX &&
+        route_slots[route_index].refs > 0U) {
+        route_slots[route_index].refs--;
+    }
+    portEXIT_CRITICAL(&http_server_lock);
+}
+
+static bool track_async_request(httpd_req_t *request, size_t route_index)
+{
+    bool tracked = false;
+    portENTER_CRITICAL(&http_server_lock);
+    for (size_t i = 0; i < HTTP_SERVER_ASYNC_MAX; i++) {
+        if (async_slots[i].request == NULL) {
+            async_slots[i].request = request;
+            async_slots[i].route_index = route_index;
+            tracked = true;
+            break;
+        }
+    }
+    portEXIT_CRITICAL(&http_server_lock);
+    return tracked;
+}
+
+static bool untrack_async_request(httpd_req_t *request, size_t *route_index)
+{
+    bool found = false;
+    portENTER_CRITICAL(&http_server_lock);
+    for (size_t i = 0; i < HTTP_SERVER_ASYNC_MAX; i++) {
+        if (async_slots[i].request == request) {
+            *route_index = async_slots[i].route_index;
+            memset(&async_slots[i], 0, sizeof(async_slots[i]));
+            found = true;
+            break;
+        }
+    }
+    portEXIT_CRITICAL(&http_server_lock);
+    return found;
+}
+
 static esp_err_t dispatch_request(httpd_req_t *req)
 {
     if (req == NULL || req->uri == NULL) {
@@ -141,6 +223,7 @@ static esp_err_t dispatch_request(httpd_req_t *req)
     solar_os_http_route_handler_t handler = NULL;
     void *user = NULL;
     solar_os_http_auth_t auth = SOLAR_OS_HTTP_AUTH_PUBLIC;
+    bool asynchronous = false;
     int route_index = -1;
 
     portENTER_CRITICAL(&http_server_lock);
@@ -151,6 +234,7 @@ static esp_err_t dispatch_request(httpd_req_t *req)
         handler = slot->handler;
         user = slot->user;
         auth = slot->auth;
+        asynchronous = slot->asynchronous;
     }
     portEXIT_CRITICAL(&http_server_lock);
 
@@ -159,19 +243,40 @@ static esp_err_t dispatch_request(httpd_req_t *req)
     }
 
     esp_err_t ret = ESP_OK;
+    bool release_ref = true;
     if (!request_is_authorized(req, auth)) {
         (void)httpd_resp_set_hdr(req, "WWW-Authenticate", "Bearer");
         (void)httpd_resp_set_hdr(req, "Cache-Control", "no-store");
         ret = httpd_resp_send_err(req, HTTPD_401_UNAUTHORIZED, "authentication required");
-    } else {
+    } else if (!asynchronous) {
         ret = handler(req, user);
+    } else {
+        httpd_req_t *async_req = NULL;
+        ret = httpd_req_async_handler_begin(req, &async_req);
+        if (ret != ESP_OK) {
+            (void)httpd_resp_set_status(req, "503 Service Unavailable");
+            ret = httpd_resp_sendstr(req, "asynchronous request unavailable");
+        } else if (!track_async_request(async_req, (size_t)route_index)) {
+            (void)httpd_resp_set_status(async_req, "503 Service Unavailable");
+            (void)httpd_resp_sendstr(async_req, "asynchronous request capacity exhausted");
+            (void)httpd_req_async_handler_complete(async_req);
+            ret = ESP_OK;
+        } else {
+            const esp_err_t accept_error = handler(async_req, user);
+            if (accept_error == ESP_OK) {
+                release_ref = false;
+            } else {
+                size_t ignored = 0U;
+                (void)untrack_async_request(async_req, &ignored);
+                (void)httpd_req_async_handler_complete(async_req);
+                ret = ESP_OK;
+            }
+        }
     }
 
-    portENTER_CRITICAL(&http_server_lock);
-    if (route_index >= 0 && route_slots[route_index].refs > 0) {
-        route_slots[route_index].refs--;
+    if (release_ref) {
+        release_route_ref((size_t)route_index);
     }
-    portEXIT_CRITICAL(&http_server_lock);
     return ret;
 }
 
@@ -307,6 +412,7 @@ esp_err_t solar_os_http_server_register_route(const solar_os_http_route_t *route
     strlcpy(slot->uri, route->uri, sizeof(slot->uri));
     slot->method = route->method;
     slot->prefix = route->prefix;
+    slot->asynchronous = route->asynchronous;
     slot->auth = route->auth;
     slot->handler = route->handler;
     slot->user = route->user;
@@ -330,7 +436,6 @@ esp_err_t solar_os_http_server_unregister_owner(const char *owner)
     }
 
     bool found = false;
-    httpd_handle_t stop_server = NULL;
     portENTER_CRITICAL(&http_server_lock);
     for (size_t i = 0; i < HTTP_SERVER_ROUTE_MAX; i++) {
         if (route_slots[i].owner[0] != '\0' &&
@@ -341,21 +446,11 @@ esp_err_t solar_os_http_server_unregister_owner(const char *owner)
             found = true;
         }
     }
-    if (found && !any_active_routes_locked()) {
-        stop_server = http_server;
-        http_server = NULL;
-        bearer_token[0] = '\0';
-    }
     portEXIT_CRITICAL(&http_server_lock);
 
     if (!found) {
         return ESP_ERR_NOT_FOUND;
     }
-    if (stop_server != NULL) {
-        (void)httpd_stop(stop_server);
-        SOLAR_OS_LOGI(TAG, "stopped");
-    }
-
     for (uint32_t waited = 0; waited < HTTP_SERVER_STOP_WAIT_MS; waited += 10U) {
         bool busy = false;
         portENTER_CRITICAL(&http_server_lock);
@@ -367,18 +462,53 @@ esp_err_t solar_os_http_server_unregister_owner(const char *owner)
         }
         portEXIT_CRITICAL(&http_server_lock);
         if (!busy) {
+            httpd_handle_t stop_server = NULL;
             portENTER_CRITICAL(&http_server_lock);
             for (size_t i = 0; i < HTTP_SERVER_ROUTE_MAX; i++) {
                 if (!route_slots[i].active && strcmp(route_slots[i].owner, owner) == 0) {
                     memset(&route_slots[i], 0, sizeof(route_slots[i]));
                 }
             }
+            stop_server = take_idle_server_locked();
             portEXIT_CRITICAL(&http_server_lock);
+            if (stop_server != NULL) {
+                (void)httpd_stop(stop_server);
+                SOLAR_OS_LOGI(TAG, "stopped");
+            }
             return ESP_OK;
         }
         vTaskDelay(pdMS_TO_TICKS(10));
     }
     return ESP_ERR_TIMEOUT;
+}
+
+esp_err_t solar_os_http_server_complete_async(httpd_req_t *req)
+{
+    if (req == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+
+    size_t route_index = 0U;
+    if (!untrack_async_request(req, &route_index)) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    const esp_err_t complete_error = httpd_req_async_handler_complete(req);
+    httpd_handle_t stop_server = NULL;
+    portENTER_CRITICAL(&http_server_lock);
+    if (route_index < HTTP_SERVER_ROUTE_MAX &&
+        route_slots[route_index].refs > 0U) {
+        route_slots[route_index].refs--;
+    }
+    clear_inactive_routes_locked();
+    stop_server = take_idle_server_locked();
+    portEXIT_CRITICAL(&http_server_lock);
+
+    if (stop_server != NULL) {
+        (void)httpd_stop(stop_server);
+        SOLAR_OS_LOGI(TAG, "stopped");
+    }
+    return complete_error;
 }
 
 bool solar_os_http_server_get_bearer_token(char *token, size_t token_len)
