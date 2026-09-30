@@ -15,6 +15,9 @@ typedef enum {
     SOLAR_OS_DISPLAY_FORMAT_MONO1 = 0,
     SOLAR_OS_DISPLAY_FORMAT_INDEX8 = 1,
     SOLAR_OS_DISPLAY_FORMAT_INDEX2 = 2,
+    /* Two bytes per pixel, most-significant byte first (LCD wire order).
+     * No palette, inversion or quantization. */
+    SOLAR_OS_DISPLAY_FORMAT_RGB565 = 3,
 } solar_os_display_format_t;
 
 #define SOLAR_OS_DISPLAY_FORMAT_BIT(format) (1UL << (unsigned)(format))
@@ -24,6 +27,8 @@ typedef enum {
     SOLAR_OS_DISPLAY_FORMAT_BIT(SOLAR_OS_DISPLAY_FORMAT_MONO1)
 #define SOLAR_OS_DISPLAY_FORMAT_INDEX2_BIT \
     SOLAR_OS_DISPLAY_FORMAT_BIT(SOLAR_OS_DISPLAY_FORMAT_INDEX2)
+#define SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT \
+    SOLAR_OS_DISPLAY_FORMAT_BIT(SOLAR_OS_DISPLAY_FORMAT_RGB565)
 
 /* Immutable raster submitted at a frame boundary. MONO1 and INDEX2 pixels are
  * packed least-significant pixel first within each byte. Destination scaling
@@ -46,6 +51,7 @@ typedef struct {
     bool palette_inverted;
     bool clear_background;
     uint8_t background_index;
+    uint16_t background_rgb565; /* Used instead of background_index for RGB565. */
 } solar_os_display_raster_t;
 
 typedef struct {

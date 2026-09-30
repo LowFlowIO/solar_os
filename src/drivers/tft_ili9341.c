@@ -12,6 +12,7 @@
 #include "pwm_port.h"
 #include "solar_os_buses.h"
 #include "solar_os_vector.h"
+#include "solar_os_rgb565.h"
 #define ILI9341_RGB565_BLACK 0x0000
 #define ILI9341_RGB565_WHITE 0xffff
 #define ILI9341_DMA_LINES 4U
@@ -820,14 +821,18 @@ static esp_err_t ili9341_prepare_native_frame(
 
   const bool quarter_turn = display->u8g2.cb == U8G2_R1 ||
                             display->u8g2.cb == U8G2_R3;
+  const bool rgb565 = frame->format == SOLAR_OS_DISPLAY_FORMAT_RGB565;
+  if (rgb565 && quarter_turn && frame->source_height > UINT16_MAX / 2U) {
+    return ESP_ERR_INVALID_SIZE;
+  }
   const uint16_t width = quarter_turn ?
       frame->source_height : frame->source_width;
   const uint16_t height = quarter_turn ?
       frame->source_width : frame->source_height;
-  const uint16_t stride = (uint16_t)((width + 3U) / 4U);
+  const uint16_t stride = rgb565 ? (uint16_t)(width * 2U) : (uint16_t)((width + 3U) / 4U);
   const size_t size = (size_t)stride * height;
   if (display->frame_scratch_size < size) {
-    uint8_t *scratch = heap_caps_malloc_prefer(
+    uint8_t *scratch = rgb565 ? heap_caps_malloc(size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) : heap_caps_malloc_prefer(
         size, 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT,
         MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
     if (scratch == NULL) {
@@ -837,24 +842,31 @@ static esp_err_t ili9341_prepare_native_frame(
     display->frame_scratch = scratch;
     display->frame_scratch_size = size;
   }
-  memset(display->frame_scratch, 0, size);
-  for (uint16_t source_y = 0U; source_y < frame->source_height; source_y++) {
-    for (uint16_t source_x = 0U; source_x < frame->source_width; source_x++) {
-      uint16_t target_x = source_x;
-      uint16_t target_y = source_y;
-      if (display->u8g2.cb == U8G2_R1) {
-        target_x = (uint16_t)(frame->source_height - 1U - source_y);
-        target_y = source_x;
-      } else if (display->u8g2.cb == U8G2_R2) {
-        target_x = (uint16_t)(frame->source_width - 1U - source_x);
-        target_y = (uint16_t)(frame->source_height - 1U - source_y);
-      } else if (display->u8g2.cb == U8G2_R3) {
-        target_x = source_y;
-        target_y = (uint16_t)(frame->source_width - 1U - source_x);
+  if (rgb565) {
+    solar_os_rgb565_rotate(frame->data, frame->source_width, frame->source_height,
+        frame->source_stride, display->frame_scratch, stride,
+        display->u8g2.cb == U8G2_R1 ? SOLAR_OS_DISPLAY_ROTATION_90 :
+        display->u8g2.cb == U8G2_R2 ? SOLAR_OS_DISPLAY_ROTATION_180 : SOLAR_OS_DISPLAY_ROTATION_270);
+  } else {
+    memset(display->frame_scratch, 0, size);
+    for (uint16_t source_y = 0U; source_y < frame->source_height; source_y++) {
+      for (uint16_t source_x = 0U; source_x < frame->source_width; source_x++) {
+        uint16_t target_x = source_x;
+        uint16_t target_y = source_y;
+        if (display->u8g2.cb == U8G2_R1) {
+          target_x = (uint16_t)(frame->source_height - 1U - source_y);
+          target_y = source_x;
+        } else if (display->u8g2.cb == U8G2_R2) {
+          target_x = (uint16_t)(frame->source_width - 1U - source_x);
+          target_y = (uint16_t)(frame->source_height - 1U - source_y);
+        } else if (display->u8g2.cb == U8G2_R3) {
+          target_x = source_y;
+          target_y = (uint16_t)(frame->source_width - 1U - source_x);
+        }
+        ili9341_index2_set(
+            display->frame_scratch, stride, target_x, target_y,
+            ili9341_index2_pixel(frame, source_x, source_y));
       }
-      ili9341_index2_set(
-          display->frame_scratch, stride, target_x, target_y,
-          ili9341_index2_pixel(frame, source_x, source_y));
     }
   }
   native_frame->data = display->frame_scratch;
@@ -875,6 +887,10 @@ static void ili9341_frame_line(const solar_os_display_raster_t *frame,
       (uint32_t)output_y * frame->source_height / output_height);
   const uint8_t *source = frame->data +
       (size_t)source_y * frame->source_stride;
+  if (frame->format == SOLAR_OS_DISPLAY_FORMAT_RGB565) {
+    solar_os_rgb565_scale_row(source, frame->source_width, line_buffer, output_width);
+    return;
+  }
   uint16_t source_x = 0U;
   uint32_t scale_accumulator = 0U;
   uint16_t swapped_colors[4];
@@ -914,6 +930,7 @@ static void ili9341_render_frame_line(tft_ili9341_t *display,
   if (lines->frame->clear_background) {
     uint16_t *pixels = (uint16_t *)output;
     const uint16_t background = __builtin_bswap16(
+        lines->frame->format == SOLAR_OS_DISPLAY_FORMAT_RGB565 ? lines->frame->background_rgb565 :
         lines->colors[lines->frame->background_index & 3U]);
     for (uint16_t x = 0U; x < width; x++) {
       pixels[x] = background;
@@ -935,11 +952,17 @@ static void ili9341_render_frame_line(tft_ili9341_t *display,
 esp_err_t tft_ili9341_present_frame(
     tft_ili9341_t *display, const solar_os_display_raster_t *frame) {
   if (display == NULL || display->spi == NULL || frame == NULL ||
-      frame->format != SOLAR_OS_DISPLAY_FORMAT_INDEX2 || frame->data == NULL ||
-      frame->palette_rgb565 == NULL || frame->palette_size < 4U ||
+      (frame->format != SOLAR_OS_DISPLAY_FORMAT_INDEX2 && frame->format != SOLAR_OS_DISPLAY_FORMAT_RGB565) || frame->data == NULL ||
+      (frame->format == SOLAR_OS_DISPLAY_FORMAT_INDEX2 &&
+       (frame->palette_rgb565 == NULL || frame->palette_size < 4U)) ||
       frame->source_width == 0 || frame->source_height == 0 ||
       frame->width == 0 || frame->height == 0 ||
-      frame->source_stride < (frame->source_width + 3U) / 4U) {
+      frame->source_stride < (frame->format == SOLAR_OS_DISPLAY_FORMAT_RGB565 ?
+          (size_t)frame->source_width * 2U : (frame->source_width + 3U) / 4U) ||
+      frame->source_height > SIZE_MAX / frame->source_stride ||
+      frame->data_size < (size_t)frame->source_height * frame->source_stride ||
+      (frame->format == SOLAR_OS_DISPLAY_FORMAT_RGB565 && frame->palette_inverted) ||
+      (frame->clear_background && frame->format == SOLAR_OS_DISPLAY_FORMAT_INDEX2 && frame->background_index >= 4U)) {
     return ESP_ERR_INVALID_ARG;
   }
 
@@ -985,8 +1008,8 @@ esp_err_t tft_ili9341_present_frame(
   ESP_RETURN_ON_ERROR(
       ili9341_prepare_native_frame(display, frame, &native_frame), TAG,
       "frame rotation failed");
-  uint16_t colors[4];
-  for (size_t i = 0U; i < 4U; i++) {
+  uint16_t colors[4] = {0};
+  for (size_t i = 0U; frame->format == SOLAR_OS_DISPLAY_FORMAT_INDEX2 && i < 4U; i++) {
     colors[i] = frame->palette_rgb565[
         frame->palette_inverted ? 3U - i : i];
   }

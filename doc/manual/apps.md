@@ -77,6 +77,10 @@ while retaining aspect-fit video (or the audio-only oscilloscope). `D` toggles
 the separate frame diagnostic overlay: received, displayed, network/app drops,
 and displayed frames per second. The inverse bottom help bar contains controls,
 not frame counters. `Q`, Escape, or the normal application-exit key closes playback.
+Color TFTs with native RGB565 frame support bypass palette quantization: compact
+decoded frames remain in PSRAM and the driver scales them into its bounded DMA
+bands. The header/help bar updates separately; `D` reserves a diagnostic strip
+above the video on this path. Other targets retain the common raster blitter.
 Suspending retains audio playback; video decoding pauses until resume.
 
 `--stats` writes bounded, approximately once-per-second `rtsp.stats` entries

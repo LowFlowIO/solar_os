@@ -1616,6 +1616,17 @@ esp_err_t solar_os_gfx_present_mono_xbm(solar_os_gfx_t *gfx,
     return ret;
 }
 
+bool solar_os_gfx_supports_frame_format(const solar_os_gfx_t *gfx,
+                                      solar_os_display_format_t format)
+{
+    char name[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
+    solar_os_display_target_t target;
+    return gfx_ready(gfx) && (unsigned)format <= SOLAR_OS_DISPLAY_FORMAT_RGB565 &&
+        solar_os_display_target_name_for_u8g2(gfx->u8g2, name, sizeof(name)) &&
+        solar_os_display_find_target(name, &target) && target.present_frame &&
+        (target.frame_formats & SOLAR_OS_DISPLAY_FORMAT_BIT(format)) != 0U;
+}
+
 esp_err_t solar_os_gfx_present_frame(
     solar_os_gfx_t *gfx,
     const solar_os_display_raster_t *frame)

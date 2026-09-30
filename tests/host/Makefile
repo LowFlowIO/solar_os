@@ -18,6 +18,10 @@ TARGETS += rtspd_job_test rtspd_audio_only_test
 TARGETS += rtsp_receiver_test
 TARGETS += rtsp_client_test
 TARGETS += gfx_mono_raster_test
+TARGETS += rgb565_raster_test
+
+rgb565_raster_test: rgb565_raster_test.c $(ROOT)/src/services/solar_os_rgb565.h $(ROOT)/src/services/solar_os_display_surface.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
 
 gfx_mono_raster_test: gfx_mono_raster_test.c $(ROOT)/src/services/solar_os_gfx_mono_raster.h $(ROOT)/src/services/solar_os_display_surface.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
@@ -604,6 +608,7 @@ test: $(TARGETS)
 	./rtsp_receiver_test
 	./rtsp_client_test
 	./gfx_mono_raster_test
+	./rgb565_raster_test
 	./mjpeg_test
 	./http_server_test
 	./sensors_service_test

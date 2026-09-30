@@ -80,7 +80,7 @@ class RtspAppTest(unittest.TestCase):
     def test_common_help_fullscreen_volume_and_frame_overlay(self):
         self.assertIn("Up/Down volume  F fullscreen  D frames  Q exit", APP)
         self.assertIn("h - RTSP_HELP_HEIGHT, w, RTSP_HELP_HEIGHT", APP)
-        self.assertIn("if (!rtsp.fullscreen)", APP)
+        self.assertIn("if (chrome && !rtsp.fullscreen)", APP)
         self.assertIn("rtsp.fullscreen = !rtsp.fullscreen", APP)
         self.assertIn("generation != rtsp.layout_generation", APP)
         self.assertIn("key == SOLAR_OS_KEY_UP || key == SOLAR_OS_KEY_DOWN", APP)
@@ -93,6 +93,19 @@ class RtspAppTest(unittest.TestCase):
         for cause in ("server closed RTSP connection", "no RTP media for 5 seconds",
                       "stream/path not found", "server rejected UDP transport", "errno %d"):
             self.assertIn(cause, CLIENT)
+
+    def test_true_color_frames_bypass_indexed_blitter(self):
+        self.assertIn("solar_os_gfx_supports_frame_format", APP)
+        self.assertIn("solar_os_rgb565_from_rgb888", APP)
+        self.assertIn("prepared = pixels", APP)
+        self.assertIn("status.video && !direct", APP)
+        self.assertIn("if (!direct || rtsp.layout_dirty) solar_os_gfx_clear", APP)
+        self.assertIn("if (chrome) solar_os_gfx_present", APP)
+        self.assertIn("solar_os_gfx_present_frame(gfx, &frame)", APP)
+        tft = (ROOT / "src/drivers/tft_ili9341.c").read_text()
+        self.assertIn("solar_os_rgb565_rotate", tft)
+        self.assertIn("solar_os_rgb565_scale_row", tft)
+        self.assertIn("heap_caps_malloc(size, MALLOC_CAP_SPIRAM", tft)
 
 
 if __name__ == "__main__":
