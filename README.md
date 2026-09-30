@@ -38,6 +38,7 @@ pio run -e freenove_esp32_wrover_v3
 pio run -e esp32_devkitc_v4_wrover
 pio run -e ttgo_vga32_v14
 pio run -e esp32_s3_devkitc1_n16r8
+pio run -e goouuu_esp32_s3cam
 pio run -t upload
 pio device monitor -b 115200
 ```

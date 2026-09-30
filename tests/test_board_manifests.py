@@ -58,6 +58,33 @@ class BoardManifestTest(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertLessEqual(required, set(board["defines"]))
 
+    def test_goouuu_esp32_s3cam_pin_contract(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "goouuu_esp32_s3cam.toml",
+            self.manifest_dir,
+        )
+        self.assertIn("camera", board["build"]["capabilities"])
+        self.assertEqual(board["build"]["psram_bytes"], 8 * 1024 * 1024)
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_PIN_CAMERA_D0"],
+            "GPIO_NUM_11",
+        )
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_PIN_CAMERA_D7"],
+            "GPIO_NUM_16",
+        )
+        pins = {pin["gpio"]: pin for pin in board["pins"]}
+        self.assertEqual(
+            {gpio for gpio, pin in pins.items() if pin["policy"] == "free"},
+            {1, 14, 21, 41, 42, 47},
+        )
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(
+            devices["storage0"]["bindings"],
+            {"clk": 39, "cmd": 38, "d0": 40},
+        )
+        self.assertEqual(devices["pixels0"]["bindings"], {"data": 48, "count": 1})
+
     def test_qdtech_es3n28p_uses_non_touch_fixed_hardware(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "qdtech_es3n28p.toml",

@@ -1,0 +1,595 @@
+schema = 1
+
+[board]
+id = "goouuu_esp32_s3cam"
+name = "GOOUUU ESP32-S3CAM"
+vendor = "GOOUUU"
+module = "ESP32-S3-WROOM-1-N16R8"
+
+[target]
+mcu = "esp32s3"
+platformio_board = "esp32-s3-devkitc1-n16r8"
+
+[build]
+drivers = [
+  "cdc_usb_serial_jtag",
+  "uart_esp_idf",
+  "storage_expansion",
+  "i2c_esp_idf",
+  "spi_esp_idf",
+  "gpio_esp_idf",
+  "adc_esp_idf",
+  "pwm_esp_idf",
+]
+capabilities = [
+  "psram", "simd", "gfx", "camera", "cdc", "uart", "sd", "i2c", "spi",
+  "wifi", "ble", "key", "gpio", "adc", "pwm", "expansion_gpio",
+  "expansion_i2c", "expansion_spi", "expansion_uart", "expansion_adc",
+  "expansion_pwm", "expansion_i2s",
+]
+required_packages = []
+psram_bytes = 8388608
+
+[defines]
+SOLAR_OS_BOARD_UART_PORT = "UART_NUM_0"
+SOLAR_OS_BOARD_PIN_UART_TX = "GPIO_NUM_43"
+SOLAR_OS_BOARD_PIN_UART_RX = "GPIO_NUM_44"
+SOLAR_OS_BOARD_PIN_KEY = "GPIO_NUM_0"
+SOLAR_OS_BOARD_KEY_ACTIVE_LEVEL = "0"
+SOLAR_OS_BOARD_KEY_PULL_UP = "1"
+SOLAR_OS_BOARD_KEY_PULL_DOWN = "0"
+SOLAR_OS_BOARD_PIN_SDMMC_CMD = "GPIO_NUM_38"
+SOLAR_OS_BOARD_PIN_SDMMC_CLK = "GPIO_NUM_39"
+SOLAR_OS_BOARD_PIN_SDMMC_D0 = "GPIO_NUM_40"
+SOLAR_OS_BOARD_PIN_CAMERA_SIOD = "GPIO_NUM_4"
+SOLAR_OS_BOARD_PIN_CAMERA_SIOC = "GPIO_NUM_5"
+SOLAR_OS_BOARD_PIN_CAMERA_VSYNC = "GPIO_NUM_6"
+SOLAR_OS_BOARD_PIN_CAMERA_HREF = "GPIO_NUM_7"
+SOLAR_OS_BOARD_PIN_CAMERA_D0 = "GPIO_NUM_11"
+SOLAR_OS_BOARD_PIN_CAMERA_D1 = "GPIO_NUM_9"
+SOLAR_OS_BOARD_PIN_CAMERA_D2 = "GPIO_NUM_8"
+SOLAR_OS_BOARD_PIN_CAMERA_D3 = "GPIO_NUM_10"
+SOLAR_OS_BOARD_PIN_CAMERA_D4 = "GPIO_NUM_12"
+SOLAR_OS_BOARD_PIN_CAMERA_D5 = "GPIO_NUM_18"
+SOLAR_OS_BOARD_PIN_CAMERA_D6 = "GPIO_NUM_17"
+SOLAR_OS_BOARD_PIN_CAMERA_D7 = "GPIO_NUM_16"
+SOLAR_OS_BOARD_PIN_CAMERA_PCLK = "GPIO_NUM_13"
+SOLAR_OS_BOARD_PIN_CAMERA_XCLK = "GPIO_NUM_15"
+SOLAR_OS_BOARD_PIN_CAMERA_RESET = "GPIO_NUM_NC"
+SOLAR_OS_BOARD_PIN_CAMERA_PWDN = "GPIO_NUM_NC"
+
+[runtime]
+spi_hosts = ["SPI2_HOST", "SPI3_HOST"]
+uart_ports = ["UART_NUM_1", "UART_NUM_2"]
+i2s_ports = ["I2S_NUM_1"]
+
+[[buses]]
+name = "uart0"
+protocol = "uart"
+sharing = "exclusive"
+port = "UART_NUM_0"
+tx = 43
+rx = 44
+baud_rate = "SOLAR_OS_BUS_UART_DEFAULT_BAUD_RATE"
+
+[[devices]]
+driver = "sdmmc"
+name = "storage0"
+bindings = { clk = 39, cmd = 38, d0 = 40 }
+
+[[devices]]
+driver = "neopixel"
+name = "pixels0"
+bindings = { data = 48, count = 1 }
+
+[connector]
+title = "J1 / J2 side headers"
+view = "component side; antenna and camera socket at top, USB connectors at bottom"
+rows = 20
+columns = 2
+
+[[connectors]]
+connector = "J1"
+position = 1
+row = 0
+column = 0
+kind = "power"
+label = "3V3"
+[[connectors]]
+connector = "J2"
+position = 1
+row = 0
+column = 1
+gpio = 43
+kind = "gpio"
+label = "TX / U0TXD"
+[[connectors]]
+connector = "J1"
+position = 2
+row = 1
+column = 0
+kind = "control"
+label = "EN / RESET"
+[[connectors]]
+connector = "J2"
+position = 2
+row = 1
+column = 1
+gpio = 44
+kind = "gpio"
+label = "RX / U0RXD"
+[[connectors]]
+connector = "J1"
+position = 3
+row = 2
+column = 0
+gpio = 4
+kind = "gpio"
+label = "IO4 / CAM SIOD"
+[[connectors]]
+connector = "J2"
+position = 3
+row = 2
+column = 1
+gpio = 1
+kind = "gpio"
+label = "IO1"
+[[connectors]]
+connector = "J1"
+position = 4
+row = 3
+column = 0
+gpio = 5
+kind = "gpio"
+label = "IO5 / CAM SIOC"
+[[connectors]]
+connector = "J2"
+position = 4
+row = 3
+column = 1
+gpio = 2
+kind = "gpio"
+label = "IO2 / status LED"
+[[connectors]]
+connector = "J1"
+position = 5
+row = 4
+column = 0
+gpio = 6
+kind = "gpio"
+label = "IO6 / CAM VSYNC"
+[[connectors]]
+connector = "J2"
+position = 5
+row = 4
+column = 1
+gpio = 42
+kind = "gpio"
+label = "IO42"
+[[connectors]]
+connector = "J1"
+position = 6
+row = 5
+column = 0
+gpio = 7
+kind = "gpio"
+label = "IO7 / CAM HREF"
+[[connectors]]
+connector = "J2"
+position = 6
+row = 5
+column = 1
+gpio = 41
+kind = "gpio"
+label = "IO41"
+[[connectors]]
+connector = "J1"
+position = 7
+row = 6
+column = 0
+gpio = 15
+kind = "gpio"
+label = "IO15 / CAM XCLK"
+[[connectors]]
+connector = "J2"
+position = 7
+row = 6
+column = 1
+gpio = 40
+kind = "gpio"
+label = "IO40 / SD D0"
+[[connectors]]
+connector = "J1"
+position = 8
+row = 7
+column = 0
+gpio = 16
+kind = "gpio"
+label = "IO16 / CAM D7"
+[[connectors]]
+connector = "J2"
+position = 8
+row = 7
+column = 1
+gpio = 39
+kind = "gpio"
+label = "IO39 / SD CLK"
+[[connectors]]
+connector = "J1"
+position = 9
+row = 8
+column = 0
+gpio = 17
+kind = "gpio"
+label = "IO17 / CAM D6"
+[[connectors]]
+connector = "J2"
+position = 9
+row = 8
+column = 1
+gpio = 38
+kind = "gpio"
+label = "IO38 / SD CMD"
+[[connectors]]
+connector = "J1"
+position = 10
+row = 9
+column = 0
+gpio = 18
+kind = "gpio"
+label = "IO18 / CAM D5"
+[[connectors]]
+connector = "J2"
+position = 10
+row = 9
+column = 1
+gpio = 37
+kind = "gpio"
+label = "IO37 / PSRAM"
+[[connectors]]
+connector = "J1"
+position = 11
+row = 10
+column = 0
+gpio = 8
+kind = "gpio"
+label = "IO8 / CAM D2"
+[[connectors]]
+connector = "J2"
+position = 11
+row = 10
+column = 1
+gpio = 36
+kind = "gpio"
+label = "IO36 / PSRAM"
+[[connectors]]
+connector = "J1"
+position = 12
+row = 11
+column = 0
+gpio = 3
+kind = "gpio"
+label = "IO3 / switch / strapping"
+[[connectors]]
+connector = "J2"
+position = 12
+row = 11
+column = 1
+gpio = 35
+kind = "gpio"
+label = "IO35 / PSRAM"
+[[connectors]]
+connector = "J1"
+position = 13
+row = 12
+column = 0
+gpio = 46
+kind = "gpio"
+label = "IO46 / shutter / strapping"
+[[connectors]]
+connector = "J2"
+position = 13
+row = 12
+column = 1
+gpio = 0
+kind = "gpio"
+label = "IO0 / BOOT / KEY"
+[[connectors]]
+connector = "J1"
+position = 14
+row = 13
+column = 0
+gpio = 9
+kind = "gpio"
+label = "IO9 / CAM D1"
+[[connectors]]
+connector = "J2"
+position = 14
+row = 13
+column = 1
+gpio = 45
+kind = "gpio"
+label = "IO45 / strapping"
+[[connectors]]
+connector = "J1"
+position = 15
+row = 14
+column = 0
+gpio = 10
+kind = "gpio"
+label = "IO10 / CAM D3"
+[[connectors]]
+connector = "J2"
+position = 15
+row = 14
+column = 1
+gpio = 48
+kind = "gpio"
+label = "IO48 / WS2812"
+[[connectors]]
+connector = "J1"
+position = 16
+row = 15
+column = 0
+gpio = 11
+kind = "gpio"
+label = "IO11 / CAM D0"
+[[connectors]]
+connector = "J2"
+position = 16
+row = 15
+column = 1
+gpio = 47
+kind = "gpio"
+label = "IO47"
+[[connectors]]
+connector = "J1"
+position = 17
+row = 16
+column = 0
+gpio = 12
+kind = "gpio"
+label = "IO12 / CAM D4"
+[[connectors]]
+connector = "J2"
+position = 17
+row = 16
+column = 1
+gpio = 21
+kind = "gpio"
+label = "IO21"
+[[connectors]]
+connector = "J1"
+position = 18
+row = 17
+column = 0
+gpio = 13
+kind = "gpio"
+label = "IO13 / CAM PCLK"
+[[connectors]]
+connector = "J2"
+position = 18
+row = 17
+column = 1
+gpio = 20
+kind = "gpio"
+label = "IO20 / USB D+"
+[[connectors]]
+connector = "J1"
+position = 19
+row = 18
+column = 0
+gpio = 14
+kind = "gpio"
+label = "IO14"
+[[connectors]]
+connector = "J2"
+position = 19
+row = 18
+column = 1
+gpio = 19
+kind = "gpio"
+label = "IO19 / USB D-"
+[[connectors]]
+connector = "J1"
+position = 20
+row = 19
+column = 0
+kind = "power"
+label = "5V"
+[[connectors]]
+connector = "J2"
+position = 20
+row = 19
+column = 1
+kind = "ground"
+label = "GND"
+
+[[pins]]
+gpio = 0
+policy = "fixed"
+role = "BOOT/download / KEY"
+expansion = true
+[[pins]]
+gpio = 1
+policy = "free"
+role = "expansion"
+expansion = true
+adc = true
+pwm = true
+[[pins]]
+gpio = 2
+policy = "fixed"
+role = "status LED; polarity unverified"
+expansion = true
+[[pins]]
+gpio = 3
+policy = "fixed"
+role = "strapping / onboard switch"
+expansion = true
+[[pins]]
+gpio = 4
+policy = "fixed"
+role = "camera SIOD"
+expansion = true
+[[pins]]
+gpio = 5
+policy = "fixed"
+role = "camera SIOC"
+expansion = true
+[[pins]]
+gpio = 6
+policy = "fixed"
+role = "camera VSYNC"
+expansion = true
+[[pins]]
+gpio = 7
+policy = "fixed"
+role = "camera HREF"
+expansion = true
+[[pins]]
+gpio = 8
+policy = "fixed"
+role = "camera D2"
+expansion = true
+[[pins]]
+gpio = 9
+policy = "fixed"
+role = "camera D1"
+expansion = true
+[[pins]]
+gpio = 10
+policy = "fixed"
+role = "camera D3"
+expansion = true
+[[pins]]
+gpio = 11
+policy = "fixed"
+role = "camera D0"
+expansion = true
+[[pins]]
+gpio = 12
+policy = "fixed"
+role = "camera D4"
+expansion = true
+[[pins]]
+gpio = 13
+policy = "fixed"
+role = "camera PCLK"
+expansion = true
+[[pins]]
+gpio = 14
+policy = "free"
+role = "expansion"
+expansion = true
+adc = true
+pwm = true
+[[pins]]
+gpio = 15
+policy = "fixed"
+role = "camera XCLK"
+expansion = true
+[[pins]]
+gpio = 16
+policy = "fixed"
+role = "camera D7"
+expansion = true
+[[pins]]
+gpio = 17
+policy = "fixed"
+role = "camera D6"
+expansion = true
+[[pins]]
+gpio = 18
+policy = "fixed"
+role = "camera D5"
+expansion = true
+[[pins]]
+gpio = 19
+policy = "fixed"
+role = "USB D- / CDC"
+expansion = true
+[[pins]]
+gpio = 20
+policy = "fixed"
+role = "USB D+ / CDC"
+expansion = true
+[[pins]]
+gpio = 21
+policy = "free"
+role = "expansion"
+expansion = true
+pwm = true
+[[pins]]
+gpio = 35
+policy = "fixed"
+role = "Octal PSRAM"
+expansion = true
+[[pins]]
+gpio = 36
+policy = "fixed"
+role = "Octal PSRAM"
+expansion = true
+[[pins]]
+gpio = 37
+policy = "fixed"
+role = "Octal PSRAM"
+expansion = true
+[[pins]]
+gpio = 38
+policy = "fixed"
+role = "SDMMC CMD"
+expansion = true
+[[pins]]
+gpio = 39
+policy = "fixed"
+role = "SDMMC CLK"
+expansion = true
+[[pins]]
+gpio = 40
+policy = "fixed"
+role = "SDMMC D0"
+expansion = true
+[[pins]]
+gpio = 41
+policy = "free"
+role = "expansion / JTAG MTDI"
+expansion = true
+pwm = true
+[[pins]]
+gpio = 42
+policy = "free"
+role = "expansion / JTAG MTMS"
+expansion = true
+pwm = true
+[[pins]]
+gpio = 43
+policy = "fixed"
+role = "console UART TX / CH340"
+expansion = true
+[[pins]]
+gpio = 44
+policy = "fixed"
+role = "console UART RX / CH340"
+expansion = true
+[[pins]]
+gpio = 45
+policy = "fixed"
+role = "strapping"
+expansion = true
+[[pins]]
+gpio = 46
+policy = "fixed"
+role = "strapping / input-only / shutter"
+expansion = true
+[[pins]]
+gpio = 47
+policy = "free"
+role = "expansion"
+expansion = true
+pwm = true
+[[pins]]
+gpio = 48
+policy = "fixed"
+role = "onboard WS2812"
+expansion = true
