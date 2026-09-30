@@ -475,6 +475,49 @@ SoftAP, or WireGuard path. Bindings are volatile and can be restored from
 `/.shell/startup`. See `man osc` for address mapping, binding syntax, limits,
 and the sampled-event caveat.
 
+## cam-webd
+
+Authenticated HTTP access to the fitted camera as one-shot JPEG images or a
+single-client MJPEG stream.
+
+```text
+job start cam-webd [qvga|vga] [fps]
+job status cam-webd
+job stop cam-webd
+```
+
+The defaults are QVGA JPEG at five frames per second. The optional frame rate
+is `1..30`; JPEG quality is fixed at 12. Starting the job prints a random
+six-digit access code and leases the camera as `job:cam-webd` until the job
+stops. The shell `camera` command and other camera users report that owner
+while the lease is active.
+
+API:
+
+```text
+GET /api/camera
+GET /camera.jpg
+GET /camera.mjpeg
+```
+
+All requests require `Authorization: Bearer <code>`. For example:
+
+```text
+curl -H 'Authorization: Bearer 123456' http://device/camera.jpg -o frame.jpg
+curl -H 'Authorization: Bearer 123456' http://device/camera.mjpeg -o stream.mjpeg
+```
+
+The MJPEG endpoint uses the shared HTTP server's asynchronous request path.
+Only one stream client is admitted. The worker captures and transmits one
+camera framebuffer at a time and releases it on every success or error path;
+there is no frame queue or JPEG copy. A slow client therefore reduces the
+capture rate through socket backpressure instead of consuming more memory.
+Snapshot requests are rejected while the stream owns the capture path.
+
+The server is plain HTTP. The access code is convenient protection on a
+trusted Wi-Fi network but does not encrypt images and is not intended for
+exposure to an untrusted network.
+
 ## displayd
 
 Authenticated HTTP display and remote control. It has two modes:

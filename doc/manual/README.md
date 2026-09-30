@@ -21,6 +21,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [audio command](commands.md) — Show audio state, global speaker level, tone queue, and active synth telemetry.
 - [battery command](commands.md) — Show voltage, state of charge, power source, config, and monitor trend.
 - [camera command](commands.md) — Probe the fitted sensor and capture bounded QVGA or VGA JPEG stills.
+- [cam-webd job](jobs.reference.md#cam-webd) — Lease the camera for authenticated JPEG snapshots and a single-client MJPEG stream.
 - [ble command](commands.md) — Show BLE keyboard state and the current/next boot setting.
 - [board command](commands.md) — Print board ID, name, and capabilities.
 - [cat command](commands.md) — Print a small text file.

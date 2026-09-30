@@ -44,7 +44,7 @@ members = ["service_audio"]
 [groups.camera]
 label = "Camera"
 category = "Hardware interfaces"
-members = ["driver_camera_esp32"]
+members = ["driver_camera_esp32", "job_cam_webd"]
 
 [groups.control_bindings]
 label = "Control bindings"
@@ -2329,6 +2329,12 @@ label = "job.httpd"
 depends = ["service_http_server"]
 sources = ["jobs/solar_os_httpd_job.c"]
 capabilities = ["wifi"]
+
+[packages.job_cam_webd]
+label = "job.cam-webd"
+depends = ["service_camera", "service_http_server"]
+sources = ["jobs/solar_os_cam_webd_job.c"]
+capabilities = ["camera", "psram", "wifi"]
 
 [packages.job_displayd]
 label = "job.displayd"
