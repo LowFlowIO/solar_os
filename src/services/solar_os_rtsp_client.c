@@ -3,6 +3,7 @@
 #include <errno.h>
 #include <fcntl.h>
 #include <stdio.h>
+#include <stdarg.h>
 #include <string.h>
 
 #include "esp_timer.h"
@@ -70,27 +71,49 @@ static uint64_t now_us(void) { return (uint64_t)esp_timer_get_time(); }
 static void lock(solar_os_rtsp_client_t *c) { xSemaphoreTake(c->mutex, portMAX_DELAY); }
 static void unlock(solar_os_rtsp_client_t *c) { xSemaphoreGive(c->mutex); }
 
-static esp_err_t wait_socket(solar_os_rtsp_client_t *c, int fd, bool write, uint64_t deadline)
+static esp_err_t fail(solar_os_rtsp_client_t *c, esp_err_t error, const char *format, ...)
+{
+    if (!c || c->cancel) return error;
+    lock(c);
+    if (c->status.error == ESP_OK) {
+        c->status.error = error;
+        va_list args; va_start(args, format);
+        vsnprintf(c->status.error_detail, sizeof(c->status.error_detail), format, args);
+        va_end(args);
+    }
+    unlock(c);
+    return error;
+}
+
+static esp_err_t socket_fail(solar_os_rtsp_client_t *c, const char *operation, int error)
+{
+    return fail(c, ESP_FAIL, "%s: %s (errno %d)", operation, strerror(error), error);
+}
+
+static esp_err_t wait_socket(solar_os_rtsp_client_t *c, int fd, bool write, uint64_t deadline,
+                            const char *operation)
 {
     while (!c->cancel && now_us() < deadline) {
         fd_set set; FD_ZERO(&set); FD_SET(fd, &set);
         struct timeval timeout = {.tv_usec = 20000};
         int n = select(fd + 1, write ? NULL : &set, write ? &set : NULL, NULL, &timeout);
         if (n > 0) return ESP_OK;
-        if (n < 0 && errno != EINTR) return ESP_FAIL;
+        if (n < 0 && errno != EINTR) return socket_fail(c, operation, errno);
     }
-    return ESP_ERR_TIMEOUT;
+    return fail(c, ESP_ERR_TIMEOUT, "%s: timed out waiting for %s", operation,
+        write ? "connection/send readiness" : "server response");
 }
 
-static esp_err_t send_bytes(solar_os_rtsp_client_t *c, const char *text, size_t len)
+static esp_err_t send_bytes(solar_os_rtsp_client_t *c, const char *text, size_t len, const char *method)
 {
     uint64_t deadline = now_us() + CLIENT_TIMEOUT_US;
     for (size_t sent = 0; sent < len;) {
-        esp_err_t err = wait_socket(c, c->control, true, deadline);
+        esp_err_t err = wait_socket(c, c->control, true, deadline, method);
         if (err != ESP_OK) return err;
         int n = send(c->control, text + sent, len - sent, 0);
         if (n > 0) sent += n;
-        else if (n == 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR)) return ESP_FAIL;
+        else if (n == 0) return fail(c, ESP_FAIL, "%s: server closed connection during send", method);
+        else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) return socket_fail(c, method, errno);
     }
     return ESP_OK;
 }
@@ -102,28 +125,38 @@ static esp_err_t request(solar_os_rtsp_client_t *c, const char *method, const ch
         method, uri, (unsigned long)++c->cseq,
         c->session[0] ? "Session: " : "", c->session,
         c->session[0] ? "\r\n" : "", headers ? headers : "");
-    if (n < 0 || (size_t)n >= SOLAR_OS_RTSP_RESPONSE_MAX) return ESP_ERR_INVALID_SIZE;
-    esp_err_t err = send_bytes(c, (const char *)c->response_bytes, n);
+    if (n < 0 || (size_t)n >= SOLAR_OS_RTSP_RESPONSE_MAX)
+        return fail(c, ESP_ERR_INVALID_SIZE, "%s: request exceeds control buffer", method);
+    esp_err_t err = send_bytes(c, (const char *)c->response_bytes, n, method);
     if (err != ESP_OK) return err;
     size_t used = 0; uint64_t deadline = now_us() + CLIENT_TIMEOUT_US;
     for (;;) {
-        err = wait_socket(c, c->control, false, deadline);
+        err = wait_socket(c, c->control, false, deadline, method);
         if (err != ESP_OK) return err;
         n = recv(c->control, c->response_bytes + used, SOLAR_OS_RTSP_RESPONSE_MAX - used, 0);
         if (n <= 0) {
             if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) continue;
-            return ESP_FAIL;
+            return n == 0 ? fail(c, ESP_FAIL, "%s: server closed connection before response", method) :
+                socket_fail(c, method, errno);
         }
         used += n;
         err = solar_os_rtsp_response_parse(c->response_bytes, used, &c->response);
         if (err != ESP_ERR_TIMEOUT) break;
-        if (used == SOLAR_OS_RTSP_RESPONSE_MAX) return ESP_ERR_INVALID_SIZE;
+        if (used == SOLAR_OS_RTSP_RESPONSE_MAX)
+            return fail(c, ESP_ERR_INVALID_SIZE, "%s: response exceeds control buffer", method);
     }
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) return fail(c, err, "%s: malformed RTSP response (%s)", method, esp_err_to_name(err));
     if (c->response.cseq != c->cseq || used != c->response.header_length + c->response.body_length)
-        return ESP_ERR_INVALID_RESPONSE;
-    if (c->response.status != 200) return c->response.status == 401 || c->response.status == 461 ?
-        ESP_ERR_NOT_SUPPORTED : ESP_ERR_INVALID_RESPONSE;
+        return fail(c, ESP_ERR_INVALID_RESPONSE, "%s: response CSeq or body length mismatch", method);
+    if (c->response.status != 200) {
+        const unsigned status = c->response.status;
+        const char *reason = status == 401 ? "authentication required; client authentication is not supported" :
+            status == 403 ? "access denied" : status == 404 ? "stream/path not found" :
+            status == 453 ? "server receiver capacity exhausted" : status == 454 ? "session not found" :
+            status == 461 ? "server rejected UDP transport" : "server rejected request";
+        return fail(c, status == 401 || status == 461 ? ESP_ERR_NOT_SUPPORTED : ESP_ERR_INVALID_RESPONSE,
+            "%s: RTSP %u - %s", method, status, reason);
+    }
     return ESP_OK;
 }
 
@@ -134,13 +167,16 @@ static void close_track(client_track_t *t)
     t->rtp = t->rtcp = -1;
 }
 
-static esp_err_t open_udp(client_track_t *t)
+static esp_err_t open_udp(solar_os_rtsp_client_t *c, client_track_t *t)
 {
+    int last_error = EADDRINUSE;
     for (unsigned attempt = 0; attempt < 32; attempt++) {
         uint16_t port = 10000 + (esp_random() % 24000) * 2;
         t->rtp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
         t->rtcp = socket(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
-        if (t->rtp < 0 || t->rtcp < 0) { close_track(t); return ESP_ERR_NO_MEM; }
+        if (t->rtp < 0 || t->rtcp < 0) {
+            int error = errno; close_track(t); return socket_fail(c, "create RTP/RTCP sockets", error);
+        }
         struct sockaddr_in addr = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_ANY), .sin_port = htons(port)};
         int bound = bind(t->rtp, (struct sockaddr *)&addr, sizeof(addr));
         addr.sin_port = htons(port + 1);
@@ -149,23 +185,26 @@ static esp_err_t open_udp(client_track_t *t)
             fcntl(t->rtp, F_SETFL, O_NONBLOCK); fcntl(t->rtcp, F_SETFL, O_NONBLOCK);
             return ESP_OK;
         }
+        last_error = errno;
         close_track(t);
+        if (last_error != EADDRINUSE) break;
     }
-    return ESP_ERR_NO_MEM;
+    return socket_fail(c, "bind RTP/RTCP port pair", last_error);
 }
 
 static esp_err_t setup(solar_os_rtsp_client_t *c, client_track_t *t, const char *uri)
 {
-    esp_err_t err = open_udp(t);
+    esp_err_t err = open_udp(c, t);
     if (err != ESP_OK) return err;
     char headers[128];
     snprintf(headers, sizeof(headers), "Transport: RTP/AVP/UDP;unicast;client_port=%u-%u\r\n", t->local_port, t->local_port + 1);
     err = request(c, "SETUP", uri, headers);
     if (err != ESP_OK) return err;
     if (!c->response.session[0] || (c->session[0] && strcmp(c->session, c->response.session)))
-        return ESP_ERR_INVALID_RESPONSE;
+        return fail(c, ESP_ERR_INVALID_RESPONSE, "SETUP: missing or inconsistent session identifier");
     memcpy(c->session, c->response.session, sizeof(c->session));
-    return solar_os_rtsp_transport_parse(c->response.transport, t->local_port, &t->server_rtp, &t->server_rtcp);
+    err = solar_os_rtsp_transport_parse(c->response.transport, t->local_port, &t->server_rtp, &t->server_rtcp);
+    return err == ESP_OK ? err : fail(c, err, "SETUP: invalid/unsupported UDP Transport response");
 }
 
 static void audio_samples(const int16_t *samples, size_t count, uint8_t channels, void *user)
@@ -194,11 +233,13 @@ static void audio_worker(void *arg)
         .should_cancel = audio_cancel, .cancel_user = c,
     };
     esp_err_t err = s ? solar_os_audio_player_create(&options, &player, &output, NULL) : ESP_ERR_NO_MEM;
+    if (err != ESP_OK) fail(c, err, s ? "default audio output unavailable (%s)" : "audio scratch allocation failed (%s)", esp_err_to_name(err));
     size_t quantum = 0;
     if (err == ESP_OK) {
         size_t frames = output.frames_per_block ? output.frames_per_block : output.sample_rate / 100U;
         quantum = frames * output.channels;
-        if (!quantum || quantum > 2048) err = ESP_ERR_NOT_SUPPORTED;
+        if (!quantum || quantum > 2048)
+            err = fail(c, ESP_ERR_NOT_SUPPORTED, "audio output block size %u exceeds PCM buffer", (unsigned)quantum);
         if (err == ESP_OK && c->options.diagnostics) {
             lock(c);
             c->status.audio_output_rate = output.sample_rate;
@@ -225,6 +266,7 @@ static void audio_worker(void *arg)
             size_t count = 0;
             err = solar_os_audio_s16_convert(&s->converter, s->input, samples / f->channels, &input, &output,
                                              s->output, 2048, &count, &done);
+            if (err != ESP_OK) fail(c, err, "L16 audio conversion failed (%s)", esp_err_to_name(err));
             if (err != ESP_OK || !count) continue;
             /* RTP packet boundaries are unrelated to the output's native
              * quantum. Coalesce converted PCM into complete sink blocks. */
@@ -236,6 +278,7 @@ static void audio_worker(void *arg)
                 if (s->filled != quantum) continue;
                 uint64_t before = c->options.diagnostics ? now_us() : 0;
                 err = solar_os_audio_player_write(player, s->pcm, quantum * sizeof(int16_t), &c->cancel);
+                if (err != ESP_OK) fail(c, err, "audio output write failed (%s)", esp_err_to_name(err));
                 s->filled = 0;
                 lock(c);
                 c->audio_timestamp = s->packet.timestamp;
@@ -268,37 +311,40 @@ static esp_err_t negotiate(solar_os_rtsp_client_t *c)
 {
     char ip[SOLAR_OS_NET_ADDR_MAX];
     esp_err_t err = solar_os_net_resolve_host(c->parsed.host, ip, sizeof(ip));
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) return fail(c, err, "cannot resolve RTSP host %.64s (%s)", c->parsed.host, esp_err_to_name(err));
     c->peer.sin_family = AF_INET; c->peer.sin_port = htons(c->parsed.port);
-    if (!inet_aton(ip, &c->peer.sin_addr)) return ESP_ERR_NOT_SUPPORTED;
+    if (!inet_aton(ip, &c->peer.sin_addr)) return fail(c, ESP_ERR_NOT_SUPPORTED, "RTSP client requires an IPv4 address");
     c->control = socket(AF_INET, SOCK_STREAM, IPPROTO_TCP);
-    if (c->control < 0) return ESP_ERR_NO_MEM;
+    if (c->control < 0) return socket_fail(c, "create RTSP connection", errno);
     fcntl(c->control, F_SETFL, O_NONBLOCK);
     if (connect(c->control, (struct sockaddr *)&c->peer, sizeof(c->peer)) < 0) {
-        if (errno != EINPROGRESS) return ESP_FAIL;
-        err = wait_socket(c, c->control, true, now_us() + CLIENT_TIMEOUT_US);
+        if (errno != EINPROGRESS) return socket_fail(c, "connect RTSP server", errno);
+        err = wait_socket(c, c->control, true, now_us() + CLIENT_TIMEOUT_US, "connect RTSP server");
         if (err != ESP_OK) return err;
         int error = 0; socklen_t len = sizeof(error);
-        if (getsockopt(c->control, SOL_SOCKET, SO_ERROR, &error, &len) < 0 || error) return ESP_FAIL;
+        if (getsockopt(c->control, SOL_SOCKET, SO_ERROR, &error, &len) < 0)
+            return socket_fail(c, "connect RTSP server", errno);
+        if (error) return socket_fail(c, "connect RTSP server", error);
     }
     err = request(c, "DESCRIBE", c->url, "Accept: application/sdp\r\n");
     if (err != ESP_OK) return err;
     err = solar_os_rtsp_description_parse(c->response_bytes + c->response.header_length, c->response.body_length,
         c->response.content_base[0] ? c->response.content_base : c->url, &c->description);
-    if (err != ESP_OK) return err;
+    if (err != ESP_OK) return fail(c, err, "DESCRIBE: invalid SDP (%s)", esp_err_to_name(err));
     c->description.video.present &= c->options.video;
     c->description.audio.present &= c->options.audio;
-    if (!c->description.video.present && !c->description.audio.present) return ESP_ERR_NOT_SUPPORTED;
+    if (!c->description.video.present && !c->description.audio.present)
+        return fail(c, ESP_ERR_NOT_SUPPORTED, "SDP has no supported selected tracks (JPEG video / L16 PCM audio)");
     if (c->description.video.present) {
         c->jpeg = solar_os_memory_alloc(SOLAR_OS_MEDIA_VIDEO_FRAME_MAX, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "rtsp.jpeg");
-        if (!c->jpeg) return ESP_ERR_NO_MEM;
+        if (!c->jpeg) return fail(c, ESP_ERR_NO_MEM, "JPEG frame buffer allocation failed (512 KiB PSRAM required)");
         err = solar_os_rtp_jpeg_receiver_init(&c->receiver, c->description.video.media.payload_type, c->jpeg, SOLAR_OS_MEDIA_VIDEO_FRAME_MAX);
         if (err == ESP_OK) err = setup(c, &c->video, c->description.video.uri);
         if (err != ESP_OK) return err;
     }
     if (c->description.audio.present) {
         c->jitter = solar_os_memory_alloc(sizeof(*c->jitter), SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "rtsp.jitter");
-        if (!c->jitter) return ESP_ERR_NO_MEM;
+        if (!c->jitter) return fail(c, ESP_ERR_NO_MEM, "audio jitter buffer allocation failed");
         solar_os_rtsp_audio_jitter_init(c->jitter, &c->description.audio.media);
         err = setup(c, &c->audio, c->description.audio.uri);
         if (err != ESP_OK) return err;
@@ -315,7 +361,7 @@ static esp_err_t negotiate(solar_os_rtsp_client_t *c)
         c->audio_done = false;
         if (solar_os_task_create_pinned_internal(audio_worker, "rtsp-sink", CLIENT_AUDIO_STACK, c, tskIDLE_PRIORITY + 3,
             &c->audio_task, tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_FOREGROUND) != pdPASS) {
-            c->audio_done = true; return ESP_ERR_NO_MEM;
+            c->audio_done = true; return fail(c, ESP_ERR_NO_MEM, "audio output worker could not start (internal stack/admission)");
         }
     }
     return ESP_OK;
@@ -403,10 +449,16 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
         for (size_t i = 0; i < 4; i++) if (sockets[i] >= 0) { FD_SET(sockets[i], &set); if (sockets[i] > maxfd) maxfd = sockets[i]; }
         struct timeval timeout = {.tv_usec = 10000};
         int n = select(maxfd + 1, &set, NULL, NULL, &timeout);
-        if (n < 0 && errno != EINTR) { err = ESP_FAIL; break; }
+        if (n < 0 && errno != EINTR) { err = socket_fail(c, "receive RTSP/RTP", errno); break; }
         if (n > 0) {
             /* EOF or unsolicited RTSP traffic: do not spin indefinitely. */
-            if (FD_ISSET(c->control, &set)) { err = ESP_FAIL; break; }
+            if (FD_ISSET(c->control, &set)) {
+                int bytes = recv(c->control, c->rx, CLIENT_RX_MAX, 0);
+                if (bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) continue;
+                err = bytes < 0 ? socket_fail(c, "receive RTSP control", errno) :
+                    fail(c, ESP_FAIL, bytes ? "server sent unexpected RTSP control data" : "server closed RTSP connection");
+                break;
+            }
             for (size_t i = 0; i < 4; i++) if (sockets[i] >= 0 && FD_ISSET(sockets[i], &set)) {
                 /* Bounded drain for throughput without starving cancellation. */
                 for (size_t budget = 0; budget < 32 && !c->cancel; budget++)
@@ -414,7 +466,9 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
                     else if (!(i % 2)) last_media = now_us();
             }
         }
-        if (now_us() - last_media > CLIENT_TIMEOUT_US) { err = ESP_ERR_TIMEOUT; break; }
+        if (now_us() - last_media > CLIENT_TIMEOUT_US) {
+            err = fail(c, ESP_ERR_TIMEOUT, "no RTP media for 5 seconds (publisher stopped or UDP path blocked)"); break;
+        }
         if (now_us() - keepalive > 20000000ULL) {
             err = request(c, "OPTIONS", c->description.aggregate, NULL); keepalive = now_us();
         }

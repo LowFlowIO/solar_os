@@ -73,6 +73,26 @@ class RtspAppTest(unittest.TestCase):
         self.assertIn("solar_os_stb_decode_jpeg_rgb_scaled", APP)
         self.assertIn("SOLAR_OS_GFX_RASTER_GRAY8 : SOLAR_OS_GFX_RASTER_RGB888", APP)
         self.assertIn("sy == previous_sy", APP)
+        start = APP.split("static esp_err_t start(", 1)[1].split("static void stop(", 1)[0]
+        self.assertLess(start.index("solar_os_context_set_graphics_active(ctx, true)"),
+                        start.index("rtsp.monochrome = solar_os_gfx_format"))
+
+    def test_common_help_fullscreen_volume_and_frame_overlay(self):
+        self.assertIn("Up/Down volume  F fullscreen  D frames  Q exit", APP)
+        self.assertIn("h - RTSP_HELP_HEIGHT, w, RTSP_HELP_HEIGHT", APP)
+        self.assertIn("if (!rtsp.fullscreen)", APP)
+        self.assertIn("rtsp.fullscreen = !rtsp.fullscreen", APP)
+        self.assertIn("generation != rtsp.layout_generation", APP)
+        self.assertIn("key == SOLAR_OS_KEY_UP || key == SOLAR_OS_KEY_DOWN", APP)
+        self.assertIn("rtsp.frame_diagnostics = !rtsp.frame_diagnostics", APP)
+        self.assertNotIn("volume %u%%  frames", APP)
+
+    def test_causal_errors_are_preserved_and_shown(self):
+        self.assertIn("status.error_detail", APP)
+        self.assertIn("if (c->status.error == ESP_OK)", CLIENT)
+        for cause in ("server closed RTSP connection", "no RTP media for 5 seconds",
+                      "stream/path not found", "server rejected UDP transport", "errno %d"):
+            self.assertIn(cause, CLIENT)
 
 
 if __name__ == "__main__":

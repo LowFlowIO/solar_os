@@ -17,6 +17,19 @@ static uint32_t sink_rate = 48000, sink_block = 480;
 static uint8_t sink_channels = 2;
 static atomic_uint random_value = 1234;
 
+const char *esp_err_to_name(esp_err_t error)
+{
+    switch (error) {
+    case ESP_OK: return "ESP_OK";
+    case ESP_FAIL: return "ESP_FAIL";
+    case ESP_ERR_NO_MEM: return "ESP_ERR_NO_MEM";
+    case ESP_ERR_NOT_FOUND: return "ESP_ERR_NOT_FOUND";
+    case ESP_ERR_NOT_SUPPORTED: return "ESP_ERR_NOT_SUPPORTED";
+    case ESP_ERR_INVALID_RESPONSE: return "ESP_ERR_INVALID_RESPONSE";
+    default: return "ESP_ERROR";
+    }
+}
+
 void *solar_os_memory_alloc(size_t n, solar_os_memory_class_t kind, const char *tag)
 {
     (void)kind; assert(!strncmp(tag, "rtsp.", 5));
@@ -92,7 +105,8 @@ void solar_os_audio_player_destroy(solar_os_audio_player_t *p)
 typedef struct {
     int listen, control;
     uint16_t port, video_port, audio_port;
-    bool offer_video, offer_audio, reject, stall, relay;
+    bool offer_video, offer_audio, reject, stall, relay, close_on_play;
+    unsigned reject_status;
     atomic_bool stop, playing, teardown;
     unsigned setup_video, setup_audio;
     pthread_t thread;
@@ -103,8 +117,9 @@ typedef struct {
 static void send_response(test_server_t *s, uint32_t seq, const char *headers, const char *body)
 {
     char text[2048];
-    int len = snprintf(text, sizeof(text), "RTSP/1.0 %s\r\nCSeq: %lu\r\n%sContent-Length: %zu\r\n\r\n%s",
-        s->reject ? "401 Unauthorized" : "200 OK", (unsigned long)seq, headers ? headers : "", body ? strlen(body) : 0, body ? body : "");
+    int len = snprintf(text, sizeof(text), "RTSP/1.0 %u Test\r\nCSeq: %lu\r\n%sContent-Length: %zu\r\n\r\n%s",
+        s->reject_status ? s->reject_status : s->reject ? 401U : 200U,
+        (unsigned long)seq, headers ? headers : "", body ? strlen(body) : 0, body ? body : "");
     assert(len > 0 && (size_t)len < sizeof(text));
     /* Deliberately fragmented headers and SDP exercise streaming framing. */
     for (int pos = 0; pos < len;) {
@@ -166,7 +181,7 @@ static void *server_worker(void *arg)
                     atomic_store(&s->playing, true);
                 }
                 send_response(s, r.cseq, headers, body);
-                if (s->reject) break;
+                if (s->reject || s->reject_status || (s->close_on_play && r.method == SOLAR_OS_RTSP_METHOD_PLAY)) break;
             }
         }
         if (!atomic_load(&s->playing)) continue;
@@ -212,7 +227,7 @@ static void *server_worker(void *arg)
 static void server_start(test_server_t *s)
 {
     s->video.rtp = s->video.rtcp = s->audio.rtp = s->audio.rtcp = -1;
-    assert(open_udp(&s->video) == ESP_OK && open_udp(&s->audio) == ESP_OK);
+    assert(open_udp(NULL, &s->video) == ESP_OK && open_udp(NULL, &s->audio) == ESP_OK);
     s->listen = socket(AF_INET, SOCK_STREAM, 0); assert(s->listen >= 0);
     struct sockaddr_in addr = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
     assert(!bind(s->listen, (struct sockaddr *)&addr, sizeof(addr)) && !listen(s->listen, 1));
@@ -284,10 +299,46 @@ static void test_failure(bool rejected, bool stalled, bool output_failed, unsign
     pthread_join(thread, NULL);
     solar_os_rtsp_client_status_t status; solar_os_rtsp_client_status(c, &status);
     assert(status.error != ESP_OK);
+    if (rejected) assert(strstr(status.error_detail, "DESCRIBE: RTSP 401") && strstr(status.error_detail, "authentication"));
+    if (output_failed) assert(strstr(status.error_detail, "default audio output unavailable"));
+    if (allocation_failure) assert(strstr(status.error_detail, "allocation failed"));
     solar_os_rtsp_client_destroy(c); server_stop(&s);
     atomic_store(&fail_audio, false);
     atomic_store(&fail_allocation, 0);
     assert(!atomic_load(&allocations) && !atomic_load(&live_tasks));
+}
+
+static void test_error_causes(void)
+{
+    const unsigned codes[] = {403, 404, 453, 454, 461};
+    const char *reasons[] = {"access denied", "stream/path not found", "capacity exhausted", "session not found", "rejected UDP transport"};
+    for (unsigned i = 0; i <= sizeof(codes) / sizeof(codes[0]); i++) {
+        bool eof = i == sizeof(codes) / sizeof(codes[0]);
+        test_server_t server = {.offer_video = true, .reject_status = eof ? 0 : codes[i], .close_on_play = eof};
+        server_start(&server);
+        char url[192]; snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", server.port);
+        solar_os_rtsp_client_t *c;
+        solar_os_rtsp_client_options_t options = {.video = true};
+        assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
+        assert(solar_os_rtsp_client_run(c) != ESP_OK);
+        solar_os_rtsp_client_status_t status; solar_os_rtsp_client_status(c, &status);
+        assert(strstr(status.error_detail, eof ? "server closed RTSP connection" : reasons[i]));
+        assert(solar_os_rtsp_client_destroy(c) == ESP_OK); server_stop(&server);
+        assert(!atomic_load(&allocations) && !atomic_load(&live_tasks));
+    }
+    /* A bound but non-listening port deterministically refuses connections. */
+    int fd = socket(AF_INET, SOCK_STREAM, 0); assert(fd >= 0);
+    struct sockaddr_in address = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
+    assert(!bind(fd, (struct sockaddr *)&address, sizeof(address)));
+    socklen_t size = sizeof(address); assert(!getsockname(fd, (struct sockaddr *)&address, &size));
+    char url[192]; snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", ntohs(address.sin_port));
+    solar_os_rtsp_client_t *c; solar_os_rtsp_client_options_t options = {.video = true};
+    assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
+    assert(solar_os_rtsp_client_run(c) == ESP_FAIL);
+    solar_os_rtsp_client_status_t status; solar_os_rtsp_client_status(c, &status);
+    assert(strstr(status.error_detail, "connect RTSP server") && strstr(status.error_detail, "errno"));
+    assert(strstr(status.error_detail, strerror(ECONNREFUSED)));
+    assert(solar_os_rtsp_client_destroy(c) == ESP_OK); close(fd);
 }
 
 static void test_relay_playback(uint32_t output_rate, uint8_t output_channels, uint32_t block)
@@ -413,5 +464,6 @@ int main(int argc, char **argv)
     test_relay_playback(16000, 1, 512);
     test_failure(true, false, false, 0); test_failure(false, true, false, 0); test_failure(false, false, true, 0);
     for (unsigned i = 1; i <= 3; i++) test_failure(false, false, false, i);
+    test_error_causes();
     puts("rtsp_client_test: OK"); return 0;
 }

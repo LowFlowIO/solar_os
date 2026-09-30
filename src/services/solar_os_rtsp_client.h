@@ -4,6 +4,7 @@
 #include "solar_os_rtp_jpeg.h"
 
 typedef struct solar_os_rtsp_client solar_os_rtsp_client_t;
+#define SOLAR_OS_RTSP_CLIENT_ERROR_MAX 112U
 
 typedef struct {
     bool video;
@@ -28,6 +29,9 @@ typedef struct {
     uint16_t audio_block_frames;
     uint8_t audio_output_channels;
     esp_err_t error;
+    /* First causal failure, including operation, socket errno or RTSP status.
+     * Bounded snapshot; never contains URL credentials or received payloads. */
+    char error_detail[SOLAR_OS_RTSP_CLIENT_ERROR_MAX];
 } solar_os_rtsp_client_status_t;
 
 esp_err_t solar_os_rtsp_client_create(const char *url,

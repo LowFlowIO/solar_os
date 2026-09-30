@@ -71,8 +71,12 @@ Graphical sessions show aspect-fit JPEG video when a video track is selected.
 Audio-only sessions use the common audio GUI oscilloscope, fed by playback PCM.
 Port shells select audio only and print playback status. `--audio-only` skips
 video negotiation and video buffers even when the publisher offers both tracks.
-Audio uses the selected default output and global volume; `+` and `-` adjust
-volume. `Q`, Escape, or the normal application-exit key closes playback.
+Audio uses the selected default output and global volume; Up/Down adjust volume
+(`+`/`-` remain aliases). `F` toggles fullscreen, hiding the header and help bar
+while retaining aspect-fit video (or the audio-only oscilloscope). `D` toggles
+the separate frame diagnostic overlay: received, displayed, network/app drops,
+and displayed frames per second. The inverse bottom help bar contains controls,
+not frame counters. `Q`, Escape, or the normal application-exit key closes playback.
 Suspending retains audio playback; video decoding pauses until resume.
 
 `--stats` writes bounded, approximately once-per-second `rtsp.stats` entries
@@ -83,7 +87,11 @@ plus audio conversion format, native block size, queue depth, concealment,
 write time, submission gaps, and concealed source sample frames (silence).
 Maxima are for the current playback session;
 submission gaps and jitter-wait polls are not hardware underrun counters.
-Diagnostic timing is disabled without this flag.
+Diagnostic timing/logging is disabled without this flag; the lightweight `D`
+overlay works independently. `--stats` initially enables that overlay too.
+Failures report the operation and cause, such as connection refused, RTSP 404
+(missing stream/path), authentication required, rejected UDP transport, server
+connection closure, or a media timeout. They do not collapse these into `ESP_FAIL`.
 
 The reusable RTSP client service owns negotiation, sockets, frame leases, audio
 conversion, and bounded jitter buffering. Its compressed JPEG assembler is a
