@@ -54,7 +54,7 @@ typedef struct {
     uint32_t rate, origin, next_timestamp, ssrc;
     uint8_t channels, payload_type;
     uint64_t origin_us;
-    uint32_t dropped, concealed, concealed_frames;
+    uint32_t dropped, concealed, concealed_frames, rebuffers;
 } solar_os_rtsp_audio_jitter_t;
 
 esp_err_t solar_os_rtsp_url_parse(const char *url, solar_os_rtsp_url_t *parsed);

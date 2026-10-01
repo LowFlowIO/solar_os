@@ -113,12 +113,20 @@ static void test_jitter(void)
     feed_audio(&j, 5, 0x2c0, 400000); /* Sender resumes with a stalled RTP clock. */
     assert(!solar_os_rtsp_audio_jitter_pop(&j, 400000 + start - 1, &out));
     assert(solar_os_rtsp_audio_jitter_pop(&j, 400000 + start, &out) && out.sequence == 5);
+    feed_audio(&j, 6, 0x2c0 + 16000 * 8, 410000); /* Resumed sender bursts time forward. */
+    assert(j.rebuffers == 2);
+    assert(!solar_os_rtsp_audio_jitter_pop(&j, 410000 + start - 1, &out));
+    assert(solar_os_rtsp_audio_jitter_pop(&j, 410000 + start, &out) && out.sequence == 6);
     solar_os_rtsp_audio_jitter_init(&j, &track);
     for (unsigned i = 0; i < SOLAR_OS_RTSP_AUDIO_SLOTS; i++) feed_audio(&j, i, 160 * i, 0);
     uint8_t packet[332] = {0};
     solar_os_rtp_header_t h = {.payload_type = 97, .sequence = 99, .timestamp = 9999, .ssrc = 123};
     assert(solar_os_rtp_header_encode(&h, packet, sizeof(packet)) == ESP_OK);
     assert(solar_os_rtsp_audio_jitter_feed(&j, packet, sizeof(packet), 0) == ESP_ERR_NO_MEM);
+    /* Recover even when the old bounded queue is completely full. */
+    feed_audio(&j, 100, 160000, 1000);
+    assert(j.rebuffers == 1 && j.dropped == SOLAR_OS_RTSP_AUDIO_SLOTS + 1);
+    assert(solar_os_rtsp_audio_jitter_pop(&j, 1000 + start, &out) && out.sequence == 100);
 }
 
 static void test_relay_audio(void)

@@ -288,14 +288,17 @@ esp_err_t solar_os_rtsp_audio_jitter_feed(solar_os_rtsp_audio_jitter_t *j,
     }
     int64_t due = (int64_t)j->origin_us +
         (int64_t)(int32_t)(h.timestamp - j->origin) * 1000000 / j->rate;
-    if ((int64_t)now - due > 100000) {
-        /* Rebuffer after a source/network stall instead of retaining a stale
-         * clock that would reject every subsequent packet as late. */
+    if ((int64_t)now - due > 100000 || due - (int64_t)now > 1000000) {
+        /* Rebuffer both a stalled clock and a forward timestamp jump. A
+         * resumed publisher may burst its accumulated media time; retaining
+         * that offset would fill the queue while waiting seconds for audio.
+         * Ordinary bounded reordering/bursts stay on the existing clock. */
         for (size_t i = 0; i < SOLAR_OS_RTSP_AUDIO_SLOTS; i++) {
             if (j->slots[i].used) { j->slots[i].used = false; j->dropped++; }
         }
         j->origin = j->next_timestamp = h.timestamp;
         j->origin_us = now + SOLAR_OS_RTSP_JITTER_US;
+        j->rebuffers++;
     }
     solar_os_rtsp_audio_packet_t *free_slot = NULL;
     for (size_t i = 0; i < SOLAR_OS_RTSP_AUDIO_SLOTS; i++) {

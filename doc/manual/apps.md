@@ -124,15 +124,44 @@ arrival-based delay. The receiver accepts L16 payloads up to 1460 bytes,
 including standard-MTU packets from external RTSP relays.
 Converted PCM is coalesced into complete native output blocks rather than
 writing uneven RTP fragments directly to the audio device. A stalled audio
-source is rebuffered when it resumes.
+source is rebuffered when it resumes. A timestamp more than one second ahead
+also rebases the jitter clock, discarding queued PCM and the converter's partial
+block instead of allowing a full, silent queue. Diagnostics report rebuffering.
 Runtime allocations are released on exit; the app reserves no idle bulk SRAM.
+
+Active worker/DMA budget (not the cumulative `mem policy` request counters):
+
+| Resource | Reserved bytes | Placement |
+| --- | ---: | --- |
+| RTSP network worker | 8192 | PSRAM when supported |
+| JPEG decoder, video only | 24576 | PSRAM when supported |
+| RTSP audio-output worker, when audio is selected | 8192 | Internal SRAM |
+| `rtspd` control worker | 8192 | Internal SRAM |
+| Each enabled `rtspd` source reader | 4096 | Internal SRAM |
+| Freenove ST7796 line buffers, already present at idle | 5120 | Internal DMA |
+| Freenove ES8311 duplex PCM DMA payload, while initialized | 4096 | Internal DMA |
+
+The Freenove display uses two 320-pixel, four-line RGB565 buffers. Its audio
+driver uses four 128-frame stereo S16 buffers per direction, including input
+when opening the duplex output. DMA descriptors, codec/I2S state, socket state
+and task control blocks are additional, so heap deltas are not just stack plus
+payload sizes. Internal and DMA heap views overlap; do not add them together.
+Budget the 32 KiB internal reserve, startup transients and largest contiguous
+block as well as steady-state free bytes. External-preferred buffers can consume
+internal memory on non-PSRAM targets. A measured stack margin is not permission
+to shrink a stack without exercising reconnect, errors, decode and cleanup.
+The current audio operation lock prevents opening capture after playback is
+already active, including on the Freenove duplex codec. Do not assume
+simultaneous input/output admission from the hardware's duplex capability;
+measure supported workloads separately.
 
 V1 supports unauthenticated IPv4 RTSP 1.0, one JPEG and one L16 track, and unicast
 UDP. JPEG uses the publisher's explicit 8-bit quantization tables (Q=255), types
 0/1 with optional restart markers. TCP interleaving, multicast, authentication,
-encrypted RTSP, compressed audio, redirects, and automatic reconnection are not
-supported. Connection failures or five seconds without media return a diagnostic
-to the shell. The publisher must have a free receiver slot; `rtspd` is single-client.
+encrypted RTSP, compressed audio, and redirects are not supported. Five seconds
+without media triggers the bounded reconnect policy; permanent failures or
+retry exhaustion return a diagnostic to the shell. The publisher must have a
+free receiver slot; `rtspd` is single-client.
 
 ## agent
 

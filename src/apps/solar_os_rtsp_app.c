@@ -388,11 +388,12 @@ static void diagnostics_tick(const solar_os_rtsp_client_status_t *status)
         (unsigned long)rtsp.blit_max_us,
         (unsigned long)(draws ? (rtsp.present_us - rtsp.previous_present_us) / draws : 0),
         (unsigned long)rtsp.present_max_us);
-    SOLAR_OS_LOGI("rtsp.stats", "audio %luHz/%u -> %luHz/%u quantum=%u blocks/s=%lu q=%lu drop=%lu conceal=%lu",
+    SOLAR_OS_LOGI("rtsp.stats", "audio %luHz/%u -> %luHz/%u quantum=%u blocks/s=%lu q=%lu drop=%lu conceal=%lu rebuffer=%lu",
         (unsigned long)status->sample_rate, status->channels, (unsigned long)status->audio_output_rate,
         status->audio_output_channels, status->audio_block_frames,
         (unsigned long)(status->audio_blocks - rtsp.previous_audio_blocks),
-        (unsigned long)status->audio_queued, (unsigned long)status->audio_dropped, (unsigned long)status->audio_concealed);
+        (unsigned long)status->audio_queued, (unsigned long)status->audio_dropped, (unsigned long)status->audio_concealed,
+        (unsigned long)status->audio_rebuffers);
     SOLAR_OS_LOGI("rtsp.stats", "audio us write_max=%lu submit_gap_max=%lu jitter_wait_polls=%lu output_frames=%lu silence_frames=%lu",
         (unsigned long)status->audio_write_max_us, (unsigned long)status->audio_gap_max_us,
         (unsigned long)status->audio_wait_polls, (unsigned long)status->audio_output_frames,

@@ -38,6 +38,7 @@ typedef struct {
     int16_t output[2048];
     int16_t pcm[2048];
     size_t filled;
+    uint32_t rebuffers;
     solar_os_audio_s16_converter_t converter;
 } client_audio_scratch_t;
 
@@ -61,6 +62,7 @@ struct solar_os_rtsp_client {
     uint32_t skipped_frames;
     uint32_t previous_video_drops, previous_audio_drops;
     uint32_t previous_concealed, previous_concealed_frames;
+    uint32_t previous_rebuffers;
     uint64_t frame_arrived_us, audio_played_us;
     uint64_t play_started_us;
     bool received_media;
@@ -264,13 +266,19 @@ static void audio_worker(void *arg)
     while (err == ESP_OK && !audio_cancel(c)) {
         lock(c);
         bool have = solar_os_rtsp_audio_jitter_pop(c->jitter, now_us(), &s->packet);
+        uint32_t rebuffers = c->jitter->rebuffers;
         c->status.audio_dropped = c->previous_audio_drops + c->jitter->dropped;
         if (c->options.diagnostics) {
             c->status.audio_concealed = c->previous_concealed + c->jitter->concealed;
             c->status.audio_concealed_frames = c->previous_concealed_frames + c->jitter->concealed_frames;
+            c->status.audio_rebuffers = c->previous_rebuffers + rebuffers;
             if (!have) c->status.audio_wait_polls++;
         }
         unlock(c);
+        if (s->rebuffers != rebuffers) {
+            s->rebuffers = rebuffers; s->filled = 0;
+            solar_os_audio_s16_converter_reset(&s->converter);
+        }
         if (!have) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
         size_t samples = s->packet.length / 2;
         for (size_t i = 0; i < samples; i++) s->input[i] = (int16_t)((uint16_t)s->packet.payload[i * 2] << 8 | s->packet.payload[i * 2 + 1]);
@@ -549,6 +557,7 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
             c->previous_audio_drops += c->jitter->dropped;
             c->previous_concealed += c->jitter->concealed;
             c->previous_concealed_frames += c->jitter->concealed_frames;
+            c->previous_rebuffers += c->jitter->rebuffers;
         }
         solar_os_memory_free(c->jpeg); c->jpeg = NULL;
         solar_os_memory_free(c->jitter); c->jitter = NULL;
