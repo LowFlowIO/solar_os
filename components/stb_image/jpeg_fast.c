@@ -133,6 +133,9 @@ esp_err_t solar_os_jpeg_fast_decode(const uint8_t *data, size_t length,
         return ESP_ERR_INVALID_ARG;
     *pixels = NULL; *width = *height = 0;
     if (!baseline_ycbcr(data, length)) return ESP_ERR_NOT_SUPPORTED;
+    esp_err_t accelerated = solar_os_jpeg_simd_decode(data, length, max_pixels,
+        max_width, max_height, format, pixels, width, height);
+    if (accelerated != ESP_ERR_NOT_SUPPORTED) return accelerated;
     /* Small per-call workspace; coefficients never require a full-size raster. */
     const size_t work_size = 4096;
     void *work = heap_caps_malloc(work_size, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);

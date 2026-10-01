@@ -121,7 +121,14 @@ single 512 KiB PSRAM allocation, created only when video is selected. The decode
 leases it briefly; video packets are dropped while it is leased. Two decoded,
 display-sized frames are buffered in PSRAM, with frame-driven video presentation.
 Monochrome displays decode and buffer grayscale rather than RGB; color displays
-retain RGB video.
+retain RGB565 on direct-color displays or RGB888 otherwise.
+On ESP32-S3, supported baseline JPEG images use the shared SIMD decoder on both
+mono and color displays. Unsupported layouts fall back to the ROM or software
+decoder. Private SIMD workspace is allocated during each decode and prefers
+internal SRAM; decoded strips and image buffers prefer PSRAM. Decoding uses the
+ROM fallback when internal free memory cannot cover the 32 KiB OS reserve plus
+a 16 KiB workspace allowance. SIMD routines also occupy resident instruction
+RAM, separate from the temporary workspace.
 Incomplete, superseded, or more than 150 ms late frames are discarded. L16 audio supports
 8–48 kHz mono/stereo with a 32-packet, 80 ms reorder buffer, bounded gap silence,
 and stale-packet dropping. RTCP sender reports align video to the audio playback

@@ -15,3 +15,8 @@ typedef enum {
 esp_err_t solar_os_jpeg_fast_decode(const uint8_t *data, size_t length,
     uint32_t max_pixels, uint32_t max_width, uint32_t max_height,
     solar_os_jpeg_format_t format, uint8_t **pixels, uint32_t *width, uint32_t *height);
+
+/* Internal S3 backend; caller has already checked baseline JPEG compatibility. */
+esp_err_t solar_os_jpeg_simd_decode(const uint8_t *data, size_t length,
+    uint32_t max_pixels, uint32_t max_width, uint32_t max_height,
+    solar_os_jpeg_format_t format, uint8_t **pixels, uint32_t *width, uint32_t *height);

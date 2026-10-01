@@ -12,6 +12,23 @@ TJPGD = ROOT / "managed_components/espressif__esp_jpeg/tjpgd"
 @unittest.skipUnless(shutil.which("cc") and shutil.which("convert") and TJPGD.exists(),
                      "requires C compiler, ImageMagick and resolved esp_jpeg component")
 class JpegFastTest(unittest.TestCase):
+    def test_simd_adapter_strips_alignment_scaling_and_cleanup(self):
+        vendor = ROOT / "managed_components/espressif__esp_new_jpeg/include"
+        if not vendor.exists():
+            self.skipTest("requires resolved esp_new_jpeg headers")
+        with tempfile.TemporaryDirectory(prefix="solaros-jpeg-simd-test-") as directory:
+            binary = Path(directory) / "jpeg_simd_test"
+            host = ROOT / "tests/host"
+            subprocess.run([
+                "cc", "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
+                "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                "-DSOLAR_OS_JPEG_SIMD_HOST", f"-I{host / 'jpeg_simd_stubs'}",
+                f"-I{host}", f"-I{ROOT / 'components/stb_image'}", f"-I{vendor}",
+                f"-I{ROOT / 'src'}",
+                str(host / "jpeg_simd_test.c"),
+                str(ROOT / "components/stb_image/jpeg_simd.c"), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_decode_formats_scaling_fallback_and_malformed_input(self):
         with tempfile.TemporaryDirectory(prefix="solaros-jpeg-test-") as directory:
             tmp = Path(directory)
@@ -35,7 +52,8 @@ class JpegFastTest(unittest.TestCase):
                 f"-I{ROOT / 'components/stb_image'}", f"-I{TJPGD}",
                 str(host / "jpeg_fast_test.c"),
                 str(ROOT / "components/stb_image/stb_image_port.c"),
-                str(ROOT / "components/stb_image/jpeg_fast.c"), str(TJPGD / "tjpgd.c"),
+                str(ROOT / "components/stb_image/jpeg_fast.c"),
+                str(ROOT / "components/stb_image/jpeg_simd.c"), str(TJPGD / "tjpgd.c"),
                 "-o", str(binary)], check=True)
             subprocess.run([str(binary), *map(str, images)], check=True)
 
