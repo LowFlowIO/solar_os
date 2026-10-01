@@ -537,21 +537,23 @@ session start clock.
 ```text
 job start rtspd [video=<stream>|none] [audio=<stream>|none] [size=qvga|vga] [fps=0..30] [port=<port>]
 job start rtspd video=camera0 audio=none size=qvga fps=10
-job start rtspd video=none audio=mic0
-job start rtspd video=camera0 audio=mic0
+job start rtspd video=none audio=audio0.capture
+job start rtspd video=camera0 audio=audio0.capture
 job status rtspd
 job stop rtspd
 ```
 
 Defaults are `video=camera0 audio=none size=qvga fps=5 port=554`. `video=camera`
 is a compatibility alias for `camera0`. Video selects a typed JPEG frame source
-from `streams`; opening it holds the same exclusive hardware lease as the camera
+from `stream list`; opening it holds the same exclusive hardware lease as the camera
 service. At least one source must be enabled. `fps=` is a maximum video
 publication rate, not a
 capture timer; `fps=0` removes the cap. `size=` and `fps=` are invalid with
 `video=none`. JPEG quality is fixed at 12.
 
-Use `streams` to find available video and audio source IDs. Audio must be a source or
+Use `stream list` to find available video and audio source IDs. `audio0.capture`
+is the board codec's PCM microphone endpoint when available; `mic0` is a scalar
+level sensor, not a PCM source. Audio must be a source or
 duplex S16LE PCM endpoint with 16-bit samples, 1..8 channels, and a native rate
 of 8000..192000 Hz. The job advertises the source's native rate and channels;
 it does not resample. Only selected hardware is leased as `job:rtspd`.
@@ -559,6 +561,14 @@ Tab completion after `job start rtspd` offers unused option keys. After `audio=`
 or `video=`, double Tab lists compatible registered source IDs and `none`;
 partial IDs complete normally. Selection does not open or lease the source.
 Audio-only publishing requires neither a camera nor the camera package.
+For playback on another SolarOS device, use JPEG video and L16 audio at
+8000..48000 Hz with one or two channels. A 16000 Hz mono source is the
+recommended low-bandwidth audio format; native 16000 Hz stereo capture also
+works. The publisher's wider native-format support does not imply that every
+receiver supports those formats, and selecting a source never resamples it.
+External publishers should use baseline JPEG with both quantization tables;
+160x120 at 10 fps is a useful initial ESP32 receiver workload. RTP packets must
+fit the path MTU; SolarOS publishes packets of at most 1200 bytes.
 Selecting an absent, busy, sink-only, or incompatible source fails startup;
 there is no silent fallback to another source.
 
