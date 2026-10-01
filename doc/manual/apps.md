@@ -83,12 +83,24 @@ bands. The header/help bar updates separately; `D` reserves a diagnostic strip
 above the video on this path. Other targets retain the common raster blitter.
 Suspending retains audio playback; video decoding pauses until resume.
 
+Transient network failures, a stopped publisher, and temporarily missing paths
+retry up to six times with cancellable 0.5, 1, 2, 4, 4, 4 second backoffs.
+A session lasting at least ten seconds resets that consecutive-failure budget.
+Unsupported codecs, authentication, malformed responses, and local allocation
+or audio-output failures stop immediately. Retry renegotiates tracks, flushes
+old audio/timestamps and discards decoded frames from the previous connection.
+Exit remains available while reconnecting. Python/Lua sessions retain their
+single-session behavior and report failures to the script.
+
 `--stats` writes bounded, approximately once-per-second `rtsp.stats` entries
 to the OS log (`log show`). These report received/decoded/presented frame counts,
 queue depth, drops, decode/scale/draw times (including separate blit and present
 timings), frame age and presentation gaps,
 plus audio conversion format, native block size, queue depth, concealment,
 write time, submission gaps, and concealed source sample frames (silence).
+They also report declared worker stacks versus minimum free bytes, connection
+epoch and retries. Network/decode stacks use PSRAM on supported builds; the
+8192-byte audio-output stack stays internal. DMA buffers stay internal too.
 Maxima are for the current playback session;
 submission gaps and jitter-wait polls are not hardware underrun counters.
 Diagnostic timing/logging is disabled without this flag; the lightweight `D`

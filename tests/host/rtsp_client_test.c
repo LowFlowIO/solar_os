@@ -51,6 +51,7 @@ void vTaskDelay(TickType_t ticks)
     struct timespec t = {.tv_sec = ticks / 1000, .tv_nsec = ticks % 1000 * 1000000L}; nanosleep(&t, NULL);
 }
 void vTaskSuspend(TaskHandle_t task) { assert(!task); pthread_exit(NULL); }
+UBaseType_t uxTaskGetStackHighWaterMark(TaskHandle_t task) { (void)task; return 4096; }
 struct test_task { pthread_t thread; TaskFunction_t fn; void *arg; };
 static void *task_entry(void *arg) { struct test_task *t = arg; t->fn(t->arg); return NULL; }
 BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t fn, const char *name, uint32_t stack,
@@ -112,6 +113,9 @@ typedef struct {
     pthread_t thread;
     client_track_t video, audio;
     struct sockaddr_in video_peer, audio_peer;
+    unsigned sessions;
+    atomic_uint accepted;
+    atomic_bool disconnect;
 } test_server_t;
 
 static void send_response(test_server_t *s, uint32_t seq, const char *headers, const char *body)
@@ -137,10 +141,12 @@ static esp_err_t send_jpeg_packet(const uint8_t *data, size_t len, void *user)
     return ESP_OK;
 }
 
-static void *server_worker(void *arg)
+static void server_session(test_server_t *s)
 {
-    test_server_t *s = arg;
     s->control = accept(s->listen, NULL, NULL); assert(s->control >= 0);
+    atomic_fetch_add(&s->accepted, 1);
+    atomic_store(&s->playing, false);
+    s->setup_video = s->setup_audio = 0;
     uint8_t input[2048]; size_t used = 0;
     uint64_t origin = now_us(), last_video = 0, last_rtcp = 0;
     uint16_t audio_seq = 65535;
@@ -150,6 +156,7 @@ static void *server_worker(void *arg)
     solar_os_rtp_jpeg_view_t view = {.scan = scan, .scan_len = sizeof(scan), .width = 320, .height = 240, .type = 1};
     memset(view.quant_tables, 1, sizeof(view.quant_tables));
     while (!atomic_load(&s->stop)) {
+        if (atomic_exchange(&s->disconnect, false)) break;
         fd_set set; FD_ZERO(&set); FD_SET(s->control, &set);
         struct timeval timeout = {.tv_usec = 1000};
         if (select(s->control + 1, &set, NULL, NULL, &timeout) > 0) {
@@ -221,7 +228,22 @@ static void *server_worker(void *arg)
             last_rtcp = elapsed;
         }
     }
-    close(s->control); return NULL;
+    close(s->control);
+}
+
+static void *server_worker(void *arg)
+{
+    test_server_t *s = arg;
+    for (unsigned session = 0; session < (s->sessions ? s->sessions : 1); session++) {
+        while (!atomic_load(&s->stop)) {
+            fd_set set; FD_ZERO(&set); FD_SET(s->listen, &set);
+            struct timeval timeout = {.tv_usec = 10000};
+            if (select(s->listen + 1, &set, NULL, NULL, &timeout) > 0) break;
+        }
+        if (atomic_load(&s->stop)) break;
+        server_session(s);
+    }
+    return NULL;
 }
 
 static void server_start(test_server_t *s)
@@ -393,6 +415,79 @@ static void test_relay_playback(uint32_t output_rate, uint8_t output_channels, u
     sink_rate = 48000; sink_channels = 2; sink_block = 480;
 }
 
+static void test_reconnect(void)
+{
+    test_server_t server = {.offer_video = true, .offer_audio = true, .sessions = 4};
+    server_start(&server);
+    char url[192]; snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", server.port);
+    solar_os_rtsp_client_options_t options = {.video = true, .audio = true,
+        .diagnostics = true, .reconnect_attempts = 3};
+    solar_os_rtsp_client_t *c; assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
+    pthread_t thread; assert(!pthread_create(&thread, NULL, run_client, c));
+    for (unsigned epoch = 1; epoch <= 3; epoch++) {
+        solar_os_rtp_jpeg_frame_t frame;
+        solar_os_rtsp_client_status_t status;
+        uint64_t deadline = now_us() + 5000000;
+        bool got = false;
+        while (now_us() < deadline) {
+            solar_os_rtsp_client_status(c, &status);
+            if (status.epoch == epoch && status.playing && status.audio_playing &&
+                solar_os_rtsp_client_take_video(c, &frame, NULL)) { got = true; break; }
+            vTaskDelay(1);
+        }
+        assert(got && frame.length > 80 && status.audio_stack_min_free == 4096);
+        assert(status.error == ESP_OK && status.reconnects == epoch - 1);
+        if (epoch == 3) { solar_os_rtsp_client_release_video(c); break; }
+        atomic_store(&server.disconnect, true);
+        deadline = now_us() + 1000000;
+        do { vTaskDelay(1); solar_os_rtsp_client_status(c, &status); }
+        while (!status.reconnecting && now_us() < deadline);
+        if (!status.reconnecting || status.playing)
+            fprintf(stderr, "reconnect epoch=%u error=%d %s cancel=%d retry=%d done=%d\n",
+                epoch, status.error, status.error_detail, c->cancel, c->retryable, c->audio_done);
+        assert(status.reconnecting && !status.playing);
+        /* An outstanding decoder lease must survive an entire retry backoff. */
+        uint8_t byte = frame.data[0];
+        vTaskDelay(1100);
+        solar_os_rtsp_client_status(c, &status);
+        assert(status.epoch == epoch && frame.data[0] == byte);
+        solar_os_rtsp_client_release_video(c);
+    }
+    solar_os_rtsp_client_cancel(c); pthread_join(thread, NULL);
+    assert(solar_os_rtsp_client_destroy(c) == ESP_OK); server_stop(&server);
+    assert(!atomic_load(&allocations) && !atomic_load(&live_tasks));
+
+    const unsigned codes[] = {403, 404};
+    for (unsigned i = 0; i < 2; i++) {
+        server = (test_server_t){.offer_video = true, .reject_status = codes[i], .sessions = 3};
+        server_start(&server);
+        snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", server.port);
+        options.reconnect_attempts = 2;
+        assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
+        assert(solar_os_rtsp_client_run(c) == ESP_ERR_INVALID_RESPONSE);
+        solar_os_rtsp_client_status_t status; solar_os_rtsp_client_status(c, &status);
+        assert(status.reconnects == (i ? 2U : 0U) && !status.reconnecting);
+        assert(atomic_load(&server.accepted) == (i ? 3U : 1U));
+        assert(strstr(status.error_detail, i ? "404" : "403"));
+        assert(solar_os_rtsp_client_destroy(c) == ESP_OK); server_stop(&server);
+    }
+    server = (test_server_t){.offer_video = true, .reject_status = 404, .sessions = 3};
+    server_start(&server);
+    snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", server.port);
+    assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
+    assert(!pthread_create(&thread, NULL, run_client, c));
+    uint64_t deadline = now_us() + 1000000;
+    solar_os_rtsp_client_status_t status;
+    do { vTaskDelay(1); solar_os_rtsp_client_status(c, &status); }
+    while (!status.reconnecting && now_us() < deadline);
+    assert(status.reconnecting);
+    uint64_t before = now_us();
+    solar_os_rtsp_client_cancel(c); pthread_join(thread, NULL);
+    assert(now_us() - before < 200000);
+    assert(solar_os_rtsp_client_destroy(c) == ESP_OK); server_stop(&server);
+    assert(!atomic_load(&allocations) && !atomic_load(&live_tasks));
+}
+
 static void test_presentation_clock(void)
 {
     solar_os_rtsp_client_options_t options = {.video = true, .audio = true};
@@ -465,5 +560,6 @@ int main(int argc, char **argv)
     test_failure(true, false, false, 0); test_failure(false, true, false, 0); test_failure(false, false, true, 0);
     for (unsigned i = 1; i <= 3; i++) test_failure(false, false, false, i);
     test_error_causes();
+    test_reconnect();
     puts("rtsp_client_test: OK"); return 0;
 }

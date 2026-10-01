@@ -59,11 +59,16 @@ struct solar_os_rtsp_client {
     bool pending, leased;
     bool started, running;
     uint32_t skipped_frames;
+    uint32_t previous_video_drops, previous_audio_drops;
+    uint32_t previous_concealed, previous_concealed_frames;
     uint64_t frame_arrived_us, audio_played_us;
+    uint64_t play_started_us;
+    bool received_media;
     uint32_t audio_timestamp;
     uint32_t audio_frames;
     TaskHandle_t audio_task;
-    volatile bool audio_done, cancel;
+    volatile bool audio_done, cancel, audio_stop;
+    bool retryable;
     solar_os_rtsp_client_status_t status;
 };
 
@@ -87,6 +92,7 @@ static esp_err_t fail(solar_os_rtsp_client_t *c, esp_err_t error, const char *fo
 
 static esp_err_t socket_fail(solar_os_rtsp_client_t *c, const char *operation, int error)
 {
+    if (c) c->retryable = error != ENOMEM && error != ENOBUFS;
     return fail(c, ESP_FAIL, "%s: %s (errno %d)", operation, strerror(error), error);
 }
 
@@ -100,6 +106,7 @@ static esp_err_t wait_socket(solar_os_rtsp_client_t *c, int fd, bool write, uint
         if (n > 0) return ESP_OK;
         if (n < 0 && errno != EINTR) return socket_fail(c, operation, errno);
     }
+    c->retryable = true;
     return fail(c, ESP_ERR_TIMEOUT, "%s: timed out waiting for %s", operation,
         write ? "connection/send readiness" : "server response");
 }
@@ -112,7 +119,7 @@ static esp_err_t send_bytes(solar_os_rtsp_client_t *c, const char *text, size_t 
         if (err != ESP_OK) return err;
         int n = send(c->control, text + sent, len - sent, 0);
         if (n > 0) sent += n;
-        else if (n == 0) return fail(c, ESP_FAIL, "%s: server closed connection during send", method);
+        else if (n == 0) { c->retryable = true; return fail(c, ESP_FAIL, "%s: server closed connection during send", method); }
         else if (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR) return socket_fail(c, method, errno);
     }
     return ESP_OK;
@@ -136,6 +143,7 @@ static esp_err_t request(solar_os_rtsp_client_t *c, const char *method, const ch
         n = recv(c->control, c->response_bytes + used, SOLAR_OS_RTSP_RESPONSE_MAX - used, 0);
         if (n <= 0) {
             if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) continue;
+            if (!n) c->retryable = true;
             return n == 0 ? fail(c, ESP_FAIL, "%s: server closed connection before response", method) :
                 socket_fail(c, method, errno);
         }
@@ -150,6 +158,7 @@ static esp_err_t request(solar_os_rtsp_client_t *c, const char *method, const ch
         return fail(c, ESP_ERR_INVALID_RESPONSE, "%s: response CSeq or body length mismatch", method);
     if (c->response.status != 200) {
         const unsigned status = c->response.status;
+        c->retryable = status == 404 || status == 453 || status == 454 || status >= 500;
         const char *reason = status == 401 ? "authentication required; client authentication is not supported" :
             status == 403 ? "access denied" : status == 404 ? "stream/path not found" :
             status == 453 ? "server receiver capacity exhausted" : status == 454 ? "session not found" :
@@ -213,7 +222,11 @@ static void audio_samples(const int16_t *samples, size_t count, uint8_t channels
     if (c->options.samples) c->options.samples(samples, count, channels, c->options.user);
 }
 
-static bool audio_cancel(void *user) { return ((solar_os_rtsp_client_t *)user)->cancel; }
+static bool audio_cancel(void *user)
+{
+    solar_os_rtsp_client_t *c = user;
+    return c->cancel || c->audio_stop;
+}
 
 static void audio_worker(void *arg)
 {
@@ -248,13 +261,13 @@ static void audio_worker(void *arg)
             unlock(c);
         }
     }
-    while (err == ESP_OK && !c->cancel) {
+    while (err == ESP_OK && !audio_cancel(c)) {
         lock(c);
         bool have = solar_os_rtsp_audio_jitter_pop(c->jitter, now_us(), &s->packet);
-        c->status.audio_dropped = c->jitter->dropped;
+        c->status.audio_dropped = c->previous_audio_drops + c->jitter->dropped;
         if (c->options.diagnostics) {
-            c->status.audio_concealed = c->jitter->concealed;
-            c->status.audio_concealed_frames = c->jitter->concealed_frames;
+            c->status.audio_concealed = c->previous_concealed + c->jitter->concealed;
+            c->status.audio_concealed_frames = c->previous_concealed_frames + c->jitter->concealed_frames;
             if (!have) c->status.audio_wait_polls++;
         }
         unlock(c);
@@ -262,7 +275,7 @@ static void audio_worker(void *arg)
         size_t samples = s->packet.length / 2;
         for (size_t i = 0; i < samples; i++) s->input[i] = (int16_t)((uint16_t)s->packet.payload[i * 2] << 8 | s->packet.payload[i * 2 + 1]);
         bool done = false; uint32_t frames = 0;
-        while (!done && err == ESP_OK && !c->cancel) {
+        while (!done && err == ESP_OK && !audio_cancel(c)) {
             size_t count = 0;
             err = solar_os_audio_s16_convert(&s->converter, s->input, samples / f->channels, &input, &output,
                                              s->output, 2048, &count, &done);
@@ -270,14 +283,14 @@ static void audio_worker(void *arg)
             if (err != ESP_OK || !count) continue;
             /* RTP packet boundaries are unrelated to the output's native
              * quantum. Coalesce converted PCM into complete sink blocks. */
-            for (size_t consumed = 0; consumed < count && err == ESP_OK && !c->cancel;) {
+            for (size_t consumed = 0; consumed < count && err == ESP_OK && !audio_cancel(c);) {
                 size_t n = quantum - s->filled;
                 if (n > count - consumed) n = count - consumed;
                 memcpy(s->pcm + s->filled, s->output + consumed, n * sizeof(int16_t));
                 consumed += n; s->filled += n; frames += n / output.channels;
                 if (s->filled != quantum) continue;
                 uint64_t before = c->options.diagnostics ? now_us() : 0;
-                err = solar_os_audio_player_write(player, s->pcm, quantum * sizeof(int16_t), &c->cancel);
+                err = solar_os_audio_player_write(player, s->pcm, quantum * sizeof(int16_t), &c->audio_stop);
                 if (err != ESP_OK) fail(c, err, "audio output write failed (%s)", esp_err_to_name(err));
                 s->filled = 0;
                 lock(c);
@@ -285,6 +298,7 @@ static void audio_worker(void *arg)
                 c->audio_frames = (uint32_t)((uint64_t)frames * f->sample_rate / output.sample_rate);
                 uint64_t submitted = now_us();
                 if (c->options.diagnostics && err == ESP_OK) {
+                    c->status.audio_stack_min_free = uxTaskGetStackHighWaterMark(NULL);
                     uint32_t duration = submitted - before;
                     uint32_t gap = c->audio_played_us ? submitted - c->audio_played_us : 0;
                     if (duration > c->status.audio_write_max_us) c->status.audio_write_max_us = duration;
@@ -300,7 +314,7 @@ static void audio_worker(void *arg)
     solar_os_audio_player_destroy(player);
     solar_os_memory_free(s);
     lock(c);
-    if (err != ESP_OK && !c->cancel) { c->status.error = err; c->cancel = true; }
+    if (err != ESP_OK && !audio_cancel(c)) { c->status.error = err; c->cancel = true; }
     c->status.audio_playing = false;
     unlock(c);
     c->audio_done = true;
@@ -353,6 +367,8 @@ static esp_err_t negotiate(solar_os_rtsp_client_t *c)
     if (err != ESP_OK) return err;
     lock(c);
     c->status.negotiated = c->status.playing = true;
+    c->status.reconnecting = false;
+    c->play_started_us = now_us();
     c->status.video = c->description.video.present; c->status.audio = c->description.audio.present;
     c->status.sample_rate = c->description.audio.media.clock_rate;
     c->status.channels = c->description.audio.media.format.audio.channels;
@@ -388,6 +404,7 @@ static bool receive(solar_os_rtsp_client_t *c, client_track_t *t, bool rtcp)
             unlock(c); return false;
         }
         t->ssrc = h.ssrc; t->ssrc_known = true;
+        c->received_media = true;
         if (t == &c->audio) {
             (void)solar_os_rtsp_audio_jitter_feed(c->jitter, c->rx, n, now_us());
         } else {
@@ -398,7 +415,7 @@ static bool receive(solar_os_rtsp_client_t *c, client_track_t *t, bool rtcp)
             /* Keep a completed JPEG stable until the decoder leases it. */
             if (c->leased || c->pending) {
                 if (h.marker) c->skipped_frames++;
-                c->status.video_dropped = c->receiver.dropped_frames + c->skipped_frames;
+                c->status.video_dropped = c->previous_video_drops + c->receiver.dropped_frames + c->skipped_frames;
                 unlock(c); return true;
             }
             solar_os_rtp_jpeg_frame_t frame;
@@ -406,7 +423,7 @@ static bool receive(solar_os_rtsp_client_t *c, client_track_t *t, bool rtcp)
             if (err == ESP_OK && frame.data) {
                 c->frame = frame; c->pending = true; c->frame_arrived_us = now_us(); c->status.video_frames++;
             }
-            c->status.video_dropped = c->receiver.dropped_frames + c->skipped_frames;
+            c->status.video_dropped = c->previous_video_drops + c->receiver.dropped_frames + c->skipped_frames;
         }
     }
     unlock(c);
@@ -433,13 +450,8 @@ esp_err_t solar_os_rtsp_client_create(const char *url, const solar_os_rtsp_clien
     *out = c; return ESP_OK;
 }
 
-esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
+static esp_err_t run_session(solar_os_rtsp_client_t *c)
 {
-    if (!c) return ESP_ERR_INVALID_ARG;
-    lock(c);
-    if (c->started) { unlock(c); return ESP_ERR_INVALID_STATE; }
-    c->started = c->running = true;
-    unlock(c);
     esp_err_t err = c->cancel ? ESP_ERR_TIMEOUT : negotiate(c);
     uint64_t keepalive = now_us(), last_media = now_us();
     while (err == ESP_OK && !c->cancel) {
@@ -455,6 +467,7 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
             if (FD_ISSET(c->control, &set)) {
                 int bytes = recv(c->control, c->rx, CLIENT_RX_MAX, 0);
                 if (bytes < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) continue;
+                if (!bytes) c->retryable = true;
                 err = bytes < 0 ? socket_fail(c, "receive RTSP control", errno) :
                     fail(c, ESP_FAIL, bytes ? "server sent unexpected RTSP control data" : "server closed RTSP connection");
                 break;
@@ -467,6 +480,7 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
             }
         }
         if (now_us() - last_media > CLIENT_TIMEOUT_US) {
+            c->retryable = true;
             err = fail(c, ESP_ERR_TIMEOUT, "no RTP media for 5 seconds (publisher stopped or UDP path blocked)"); break;
         }
         if (now_us() - keepalive > 20000000ULL) {
@@ -480,7 +494,7 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
             c->description.aggregate, (unsigned long)++c->cseq, c->session);
         if (len > 0) (void)send(c->control, c->response_bytes, len, 0);
     }
-    c->cancel = true;
+    c->audio_stop = true;
     if (c->audio_task) {
         /* Never free a live owner or force-delete it during a stream write. */
         while (!c->audio_done) vTaskDelay(pdMS_TO_TICKS(10));
@@ -488,13 +502,80 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
     }
     close_track(&c->video); close_track(&c->audio);
     if (c->control >= 0) { close(c->control); c->control = -1; }
-    lock(c); c->status.playing = false; c->running = false;
+    lock(c); c->status.playing = false;
     if (c->status.error == ESP_OK) c->status.error = err;
     err = c->status.error; unlock(c);
     return err;
 }
 
-void solar_os_rtsp_client_cancel(solar_os_rtsp_client_t *c) { if (c) c->cancel = true; }
+esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
+{
+    if (!c) return ESP_ERR_INVALID_ARG;
+    lock(c);
+    if (c->started) { unlock(c); return ESP_ERR_INVALID_STATE; }
+    c->started = c->running = true;
+    c->status.epoch = 1;
+    unlock(c);
+    unsigned failures = 0;
+    esp_err_t err;
+    for (;;) {
+        c->retryable = false;
+        err = run_session(c);
+        if (c->cancel || !c->retryable || !c->options.reconnect_attempts) break;
+        /* A stable session resets the consecutive-failure budget, but a
+         * server repeatedly accepting PLAY then closing cannot loop forever. */
+        if (c->received_media && now_us() - c->play_started_us >= 10000000ULL) failures = 0;
+        if (failures >= c->options.reconnect_attempts) break;
+        unsigned delay_ms = 500U << (failures < 3 ? failures : 3);
+        failures++;
+        lock(c);
+        c->status.reconnecting = true;
+        c->status.negotiated = false;
+        c->pending = false;
+        unlock(c);
+        uint64_t until = now_us() + delay_ms * 1000ULL;
+        while (!c->cancel && now_us() < until) vTaskDelay(pdMS_TO_TICKS(10));
+        /* The compressed buffer remains valid for the decoder throughout an
+         * outage. Never reset/free it until its last lease is released. */
+        for (;;) {
+            lock(c); bool leased = c->leased; unlock(c);
+            if (!leased || c->cancel) break;
+            vTaskDelay(pdMS_TO_TICKS(10));
+        }
+        if (c->cancel) break;
+        lock(c);
+        c->previous_video_drops += c->receiver.dropped_frames;
+        if (c->jitter) {
+            c->previous_audio_drops += c->jitter->dropped;
+            c->previous_concealed += c->jitter->concealed;
+            c->previous_concealed_frames += c->jitter->concealed_frames;
+        }
+        solar_os_memory_free(c->jpeg); c->jpeg = NULL;
+        solar_os_memory_free(c->jitter); c->jitter = NULL;
+        c->receiver = (solar_os_rtp_jpeg_receiver_t){0};
+        c->frame = (solar_os_rtp_jpeg_frame_t){0};
+        c->video.clock = c->audio.clock = (solar_os_rtsp_sender_clock_t){0};
+        c->video.ssrc_known = c->audio.ssrc_known = false;
+        c->description = (solar_os_rtsp_description_t){0};
+        c->session[0] = 0; c->cseq = 0;
+        c->audio_played_us = c->frame_arrived_us = 0;
+        c->play_started_us = 0; c->received_media = false;
+        c->audio_timestamp = c->audio_frames = 0;
+        c->status.error = ESP_OK; c->status.error_detail[0] = 0;
+        c->status.video = c->status.audio = false;
+        c->status.sample_rate = c->status.channels = 0;
+        c->status.reconnects++; c->status.epoch++;
+        c->audio_stop = false;
+        unlock(c);
+    }
+    lock(c); c->running = false; c->status.reconnecting = false; unlock(c);
+    return err;
+}
+
+void solar_os_rtsp_client_cancel(solar_os_rtsp_client_t *c)
+{
+    if (c) { c->cancel = true; c->audio_stop = true; }
+}
 void solar_os_rtsp_client_status(solar_os_rtsp_client_t *c, solar_os_rtsp_client_status_t *s)
 {
     if (!s) return;

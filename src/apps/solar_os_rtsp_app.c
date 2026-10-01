@@ -19,6 +19,7 @@
 #include "solar_os_memory.h"
 #include "solar_os_log.h"
 #include "esp_timer.h"
+#include "esp_heap_caps.h"
 
 #define RTSP_NETWORK_STACK 8192U
 #define RTSP_DECODE_STACK 24576U
@@ -32,7 +33,7 @@ SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(RTSP_DECODE_STACK);
 
 typedef struct {
     uint8_t *pixels;
-    uint32_t width, height, timestamp;
+    uint32_t width, height, timestamp, epoch;
     uint64_t arrived_us;
 } rtsp_image_t;
 
@@ -136,6 +137,8 @@ static void decode_worker(void *arg)
          * the oldest on each fast source tick would starve playback forever. */
         if (full) { vTaskDelay(pdMS_TO_TICKS(5)); continue; }
         solar_os_rtp_jpeg_frame_t frame;
+        solar_os_rtsp_client_status_t status;
+        solar_os_rtsp_client_status(rtsp.client, &status);
         uint64_t arrived;
         if (!solar_os_rtsp_client_take_video(rtsp.client, &frame, &arrived)) {
             vTaskDelay(pdMS_TO_TICKS(5)); continue;
@@ -186,7 +189,8 @@ static void decode_worker(void *arg)
         }
         /* Only this worker adds entries; the UI can only remove them. */
         rtsp.queue[rtsp.queued++] = (rtsp_image_t){.pixels = prepared,
-            .width = draw_w, .height = draw_h, .timestamp = frame.timestamp, .arrived_us = arrived};
+            .width = draw_w, .height = draw_h, .timestamp = frame.timestamp,
+            .epoch = status.epoch, .arrived_us = arrived};
         xSemaphoreGive(rtsp.image_mutex);
     }
     rtsp.decode_done = true;
@@ -212,6 +216,10 @@ static void render(solar_os_context_t *ctx, bool force)
     xSemaphoreTake(rtsp.image_mutex, portMAX_DELAY);
     while (rtsp.queued) {
         rtsp_image_t image = rtsp.queue[0];
+        if (image.epoch != status.epoch || !status.playing) {
+            memmove(rtsp.queue, rtsp.queue + 1, (--rtsp.queued) * sizeof(rtsp.queue[0]));
+            solar_os_memory_free(image.pixels); rtsp.video_skipped++; continue;
+        }
         int64_t late = solar_os_rtsp_client_video_lateness(rtsp.client, image.timestamp, image.arrived_us);
         if (late < 0) break;
         memmove(rtsp.queue, rtsp.queue + 1, (--rtsp.queued) * sizeof(rtsp.queue[0]));
@@ -389,6 +397,16 @@ static void diagnostics_tick(const solar_os_rtsp_client_status_t *status)
         (unsigned long)status->audio_write_max_us, (unsigned long)status->audio_gap_max_us,
         (unsigned long)status->audio_wait_polls, (unsigned long)status->audio_output_frames,
         (unsigned long)status->audio_concealed_frames);
+    SOLAR_OS_LOGI("rtsp.stats", "stack free bytes net=%lu/%u jpeg=%lu/%u sink=%lu/8192 epoch=%lu retries=%lu",
+        (unsigned long)(rtsp.network_task ? uxTaskGetStackHighWaterMark(rtsp.network_task) : 0), RTSP_NETWORK_STACK,
+        (unsigned long)(rtsp.decode_task ? uxTaskGetStackHighWaterMark(rtsp.decode_task) : 0), RTSP_DECODE_STACK,
+        (unsigned long)status->audio_stack_min_free, (unsigned long)status->epoch, (unsigned long)status->reconnects);
+    SOLAR_OS_LOGI("rtsp.stats", "heap bytes internal=%u largest=%u dma=%u low=%u largest=%u",
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_DMA | MALLOC_CAP_8BIT),
+        (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_8BIT));
     rtsp.previous_received = status->video_frames; rtsp.previous_displayed = rtsp.displayed;
     rtsp.previous_draws = rtsp.draws; rtsp.previous_draw_us = rtsp.draw_us;
     rtsp.previous_blit_us = rtsp.blit_us; rtsp.previous_present_us = rtsp.present_us;
@@ -437,6 +455,7 @@ static esp_err_t start(solar_os_context_t *ctx)
     const solar_os_rtsp_client_options_t options = {
         .video = rtsp.graphical && !audio_only, .audio = true, .samples = rtsp_samples,
         .diagnostics = rtsp.diagnostics,
+        .reconnect_attempts = 6,
     };
     esp_err_t err = solar_os_rtsp_client_create(url, &options, &rtsp.client);
     if (err != ESP_OK) {

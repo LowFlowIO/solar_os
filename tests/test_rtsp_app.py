@@ -94,6 +94,16 @@ class RtspAppTest(unittest.TestCase):
                       "stream/path not found", "server rejected UDP transport", "errno %d"):
             self.assertIn(cause, CLIENT)
 
+    def test_bounded_reconnect_and_epoch_isolation(self):
+        self.assertIn(".reconnect_attempts = 6", APP)
+        self.assertIn("image.epoch != status.epoch || !status.playing", APP)
+        self.assertIn("failures >= c->options.reconnect_attempts", CLIENT)
+        self.assertIn("if (!leased || c->cancel) break", CLIENT)
+        self.assertIn("c->audio_stop = true", CLIENT)
+        self.assertIn("c->status.epoch++", CLIENT)
+        self.assertIn("stack free bytes", APP)
+        self.assertIn("heap bytes internal=", APP)
+
     def test_true_color_frames_bypass_indexed_blitter(self):
         self.assertIn("solar_os_gfx_supports_frame_format", APP)
         self.assertIn("solar_os_rgb565_from_rgb888", APP)
