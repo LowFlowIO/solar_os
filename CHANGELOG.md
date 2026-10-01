@@ -2,6 +2,11 @@
 
 ## 4.x
 
+- **4.15.15** — 2026-10-01 — Updated to ESP-IDF 5.5.5 and pinned the
+  pioarduino platform to release `55.03.312-1` for reproducible builds.
+  PlatformIO Core 6.2.0 or newer is required. The NimBLE overlay retains
+  transactional dynamic GATT registration and guards an absent connection
+  awareness table when GATT caching is enabled.
 - **4.15.14** — 2026-10-01 — `player` and `vplay` gain
   backward/forward seeking in ten-second steps with `<`/`>` and shared
   rewind/forward buttons. Seeking retains the selected track and pause

@@ -63,7 +63,9 @@ every allocation point with both transient and persistent failure, then retry,
 delete and re-register. Cases cover enabled/disabled registration callbacks,
 invalid definitions, startup isolation, handle exhaustion and allocation failure
 during connection initialization. Both static and dynamically allocated SDK
-context configurations are compiled and tested. Python checks
+context configurations are compiled and tested with GATT caching enabled and
+disabled. Cache tests cover committed registration, rejected registration and
+an absent dynamically allocated awareness table. Python checks
 cover SDK drift rejection, output isolation and idempotent generation.
 
 Target validation remains necessary: keyboard typing, disconnect/reconnect and

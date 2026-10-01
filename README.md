@@ -20,8 +20,16 @@ do not maintain a separate device or website copy.
 
 ## Build
 
-SolarOS uses PlatformIO with ESP-IDF through the pioarduino Espressif32
-platform:
+SolarOS requires PlatformIO Core 6.2.0 or newer and uses ESP-IDF 5.5.5 through
+the pinned pioarduino Espressif32 platform release `55.03.312-1`.
+Upgrade Core in the Python environment that provides your `pio` command:
+
+```sh
+python -m pip install --upgrade 'platformio>=6.2.0'
+pio --version
+```
+
+Build a target:
 
 ```sh
 pio run -e solar_term
