@@ -24,8 +24,8 @@
 #define RTSP_DECODE_STACK 24576U
 #define RTSP_IMAGE_PIXELS (640U * 480U)
 #define RTSP_VIDEO_SLOTS 2U
-#define RTSP_HEADER_HEIGHT 22U
-#define RTSP_HELP_HEIGHT 16U
+#define RTSP_HEADER_HEIGHT 28
+#define RTSP_CONTROLS_HEIGHT 88
 #if !CONFIG_FREERTOS_TASK_CREATE_ALLOW_EXT_MEM
 SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(RTSP_DECODE_STACK);
 #endif
@@ -59,6 +59,9 @@ typedef struct {
     uint64_t last_frame_stats_us;
     uint32_t last_frame_stats_count, fps_tenths;
     bool graphical, suspended, high_refresh, ui_started;
+    bool audio_only, stopped, restart;
+    int16_t pointer_x, pointer_y;
+    solar_os_rtsp_client_status_t last_status;
     char display_target[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
     char url[SOLAR_OS_RTSP_URI_MAX];
     TaskHandle_t network_task, decode_task;
@@ -207,11 +210,84 @@ static void refresh_override(solar_os_context_t *ctx, bool enabled)
         rtsp.high_refresh = enabled;
 }
 
+static void playback_status(solar_os_rtsp_client_status_t *status)
+{
+    if (rtsp.client) solar_os_rtsp_client_status(rtsp.client, &rtsp.last_status);
+    *status = rtsp.last_status;
+    if (rtsp.stopped) status->playing = status->audio_playing = false;
+}
+
+static const char *playback_label(const solar_os_rtsp_client_status_t *status)
+{
+    if (rtsp.stopped) return rtsp.network_done && rtsp.decode_done ? "STOPPED" : "STOPPING";
+    if (status->reconnecting) return "RECONNECTING";
+    if (!status->playing) return "CONNECTING";
+    if (status->audio && !status->audio_playing) return "BUFFERING";
+    return "PLAYING";
+}
+
+static void centered_text(solar_os_gfx_t *gfx, int width, int baseline, char *text)
+{
+    while (text[0] && solar_os_gfx_text_width(gfx, text) > (size_t)(width - 14))
+        text[strlen(text) - 1] = 0;
+    solar_os_gfx_text(gfx, (width - (int)solar_os_gfx_text_width(gfx, text)) / 2, baseline, text);
+}
+
+static void draw_controls(solar_os_gfx_t *gfx, int w, int h,
+                          const solar_os_rtsp_client_status_t *status)
+{
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    solar_os_gfx_fill_rect(gfx, 0, 0, w, RTSP_HEADER_HEIGHT);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
+    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
+    solar_os_gfx_text(gfx, 7, 19, "RTSP");
+    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_MONO_12);
+    const char *label = playback_label(status);
+    solar_os_gfx_text(gfx, w - (int)solar_os_gfx_text_width(gfx, label) - 7, 18, label);
+    solar_os_gfx_fill_rect(gfx, 0, h - RTSP_CONTROLS_HEIGHT, w, RTSP_CONTROLS_HEIGHT);
+    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    solar_os_gfx_line(gfx, 0, h - RTSP_CONTROLS_HEIGHT, w - 1, h - RTSP_CONTROLS_HEIGHT);
+    char title[SOLAR_OS_RTSP_URI_MAX];
+    snprintf(title, sizeof(title), "%s", rtsp.url + strlen("rtsp://"));
+    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
+    centered_text(gfx, w, h - 68, title);
+    char detail[96];
+    if (status->video && status->audio)
+        snprintf(detail, sizeof(detail), "JPEG %lu.%lu fps  L16 %lu Hz %u ch",
+            (unsigned long)(rtsp.fps_tenths / 10), (unsigned long)(rtsp.fps_tenths % 10),
+            (unsigned long)status->sample_rate, status->channels);
+    else if (status->video)
+        snprintf(detail, sizeof(detail), "JPEG %lu.%lu fps",
+            (unsigned long)(rtsp.fps_tenths / 10), (unsigned long)(rtsp.fps_tenths % 10));
+    else if (status->audio)
+        snprintf(detail, sizeof(detail), "L16 %lu Hz  %u ch",
+            (unsigned long)status->sample_rate, status->channels);
+    else snprintf(detail, sizeof(detail), "%s", label);
+    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
+    centered_text(gfx, w, h - 52, detail);
+    solar_os_audio_status_t audio;
+    solar_os_audio_get_status(&audio);
+    const int volume_width = w / 2, volume_x = (w - volume_width) / 2, volume_y = h - 44;
+    solar_os_gfx_text(gfx, volume_x - 29, volume_y + 9, "VOL");
+    solar_os_gfx_rect(gfx, volume_x, volume_y, volume_width, 10);
+    if (audio.volume)
+        solar_os_gfx_fill_rect(gfx, volume_x + 2, volume_y + 2,
+            (volume_width - 4) * audio.volume / 100, 6);
+    char percent[8];
+    snprintf(percent, sizeof(percent), "%u%%", audio.volume);
+    solar_os_gfx_text(gfx, volume_x + volume_width + 5, volume_y + 9, percent);
+    /* A URL is a single live source, not a playlist. Keep the common center
+     * button without offering non-functional previous/next controls. */
+    const int button_width = (w - 20) / 3;
+    solar_os_media_transport_button_draw(gfx, (w - button_width) / 2, h - 25, button_width, 21,
+        rtsp.stopped ? SOLAR_OS_MEDIA_TRANSPORT_PLAY : SOLAR_OS_MEDIA_TRANSPORT_STOP, false);
+}
+
 static void render(solar_os_context_t *ctx, bool force)
 {
     if (!rtsp.graphical || rtsp.suspended) return;
     solar_os_rtsp_client_status_t status;
-    solar_os_rtsp_client_status(rtsp.client, &status);
+    playback_status(&status);
     bool changed = false;
     uint64_t arrived = 0;
     xSemaphoreTake(rtsp.image_mutex, portMAX_DELAY);
@@ -233,33 +309,26 @@ static void render(solar_os_context_t *ctx, bool force)
     bool dirty = rtsp.dirty;
     rtsp.dirty = false;
     xSemaphoreGive(rtsp.image_mutex);
-    if (status.video && !changed && !dirty && !force) return;
+    if ((status.video || rtsp.stopped) && !changed && !dirty && !force) return;
     uint64_t draw_start = rtsp.diagnostics ? esp_timer_get_time() : 0;
     solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
     int w = solar_os_gfx_width(gfx), h = solar_os_gfx_height(gfx);
-    const bool direct = rtsp.direct_rgb565 && status.video;
+    const bool direct = rtsp.direct_rgb565 && status.video && !rtsp.stopped;
     if (direct && !rtsp.direct_started) { rtsp.layout_dirty = true; rtsp.direct_started = true; }
     const bool chrome = !direct || dirty || force || rtsp.layout_dirty;
     if (!direct || rtsp.layout_dirty) solar_os_gfx_clear(gfx, SOLAR_OS_GFX_COLOR_WHITE);
     rtsp.layout_dirty = false;
     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
     solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
-    solar_os_audio_status_t audio;
-    solar_os_audio_get_status(&audio);
-    if (chrome && !rtsp.fullscreen) {
-        solar_os_gfx_fill_rect(gfx, 0, 0, w, RTSP_HEADER_HEIGHT);
-        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
-        solar_os_gfx_text(gfx, 5, 15, "RTSP");
-        char volume[24];
-        snprintf(volume, sizeof(volume), "VOL %u%%", audio.volume);
-        solar_os_gfx_text(gfx, w - solar_os_gfx_text_width(gfx, volume) - 5, 15, volume);
-    }
+    if (chrome && !rtsp.fullscreen) draw_controls(gfx, w, h, &status);
     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
     int content_top = rtsp.fullscreen ? 0 : RTSP_HEADER_HEIGHT;
-    int content_height = rtsp.fullscreen ? h : h - RTSP_HEADER_HEIGHT - RTSP_HELP_HEIGHT;
+    int content_height = rtsp.fullscreen ? h : h - RTSP_HEADER_HEIGHT - RTSP_CONTROLS_HEIGHT;
     const int diagnostics_top = content_top;
     if (direct && rtsp.frame_diagnostics) { content_top += 16; content_height -= 16; }
-    if (status.video && !direct) {
+    if (rtsp.stopped) {
+        solar_os_gfx_text(gfx, 7, content_top + 20, rtsp.restart ? "Reconnecting..." : "Enter / tap Play to reconnect");
+    } else if (status.video && !direct) {
         xSemaphoreTake(rtsp.image_mutex, portMAX_DELAY);
         if (rtsp.pixels) {
             const unsigned channels = rtsp.monochrome ? 1U : 3U;
@@ -281,18 +350,11 @@ static void render(solar_os_context_t *ctx, bool force)
         } else solar_os_gfx_text(gfx, 5, 40, "Waiting for JPEG video...");
         xSemaphoreGive(rtsp.image_mutex);
     } else if (!status.video && status.audio) {
-        int bottom = content_top + content_height * 2 / 3;
-        solar_os_oscilloscope_widget_draw(rtsp.scope, gfx, 5, content_top + 3, w - 10,
-            bottom - content_top - 8);
-        solar_os_gfx_line(gfx, 0, bottom, w - 1, bottom);
-        char text[64];
-        snprintf(text, sizeof(text), "%s  %lu Hz  %u ch", status.audio_playing ? "Playing" : "Buffering",
-                 (unsigned long)status.sample_rate, status.channels);
-        solar_os_gfx_text(gfx, 5, bottom + 16, text);
-        solar_os_media_transport_button_draw(gfx, 5, bottom + 22, 26, 22,
-            status.audio_playing ? SOLAR_OS_MEDIA_TRANSPORT_PLAY : SOLAR_OS_MEDIA_TRANSPORT_STOP, true);
+        const int margin = rtsp.fullscreen ? 0 : 3;
+        solar_os_oscilloscope_widget_draw(rtsp.scope, gfx, margin, content_top + margin,
+            w - 2 * margin, content_height - 2 * margin);
     } else if (!status.video && chrome) solar_os_gfx_text(gfx, 5, 40, "Connecting...");
-    if (chrome && rtsp.frame_diagnostics && status.video) {
+    if (chrome && rtsp.frame_diagnostics && status.video && !rtsp.stopped) {
         char frames[96];
         snprintf(frames, sizeof(frames), "RX %lu  SHOWN %lu  DROP %lu/%lu  %lu.%lu fps",
             (unsigned long)status.video_frames, (unsigned long)rtsp.displayed,
@@ -302,14 +364,6 @@ static void render(solar_os_context_t *ctx, bool force)
         solar_os_gfx_fill_rect(gfx, 0, diagnostics_top, w, 16);
         solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
         solar_os_gfx_text(gfx, 5, diagnostics_top + 12, frames);
-    }
-    if (chrome && !rtsp.fullscreen) {
-        /* Same inverse bottom row as the common TUI help bar. Controls only;
-         * playback state belongs in the header/optional diagnostic overlay. */
-        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-        solar_os_gfx_fill_rect(gfx, 0, h - RTSP_HELP_HEIGHT, w, RTSP_HELP_HEIGHT);
-        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
-        solar_os_gfx_text(gfx, 5, h - 4, "Up/Down volume  F fullscreen  D frames  Q exit");
     }
     uint64_t present_start = rtsp.diagnostics ? esp_timer_get_time() : 0;
     if (chrome) solar_os_gfx_present(gfx);
@@ -415,14 +469,90 @@ static void diagnostics_tick(const solar_os_rtsp_client_status_t *status)
     rtsp.previous_audio_blocks = status->audio_blocks;
 }
 
+static esp_err_t start_playback(solar_os_context_t *ctx)
+{
+    const solar_os_rtsp_client_options_t options = {
+        .video = rtsp.graphical && !rtsp.audio_only, .audio = true, .samples = rtsp_samples,
+        .diagnostics = rtsp.diagnostics,
+        .reconnect_attempts = 6,
+    };
+    rtsp.stop = false;
+    rtsp.network_done = rtsp.decode_done = true;
+    rtsp.last_status = (solar_os_rtsp_client_status_t){0};
+    esp_err_t err = solar_os_rtsp_client_create(rtsp.url, &options, &rtsp.client);
+    if (err != ESP_OK) {
+        solar_os_context_finish(ctx, 1, err == ESP_ERR_NO_MEM ?
+            "RTSP: client allocation failed" :
+            "RTSP: malformed/unsupported URL; use rtsp://host[:port]/path (no credentials or IPv6)");
+        return err;
+    }
+    rtsp.network_done = false;
+    if (solar_os_task_create_pinned_external(network_worker, "rtsp-net", RTSP_NETWORK_STACK, NULL,
+        tskIDLE_PRIORITY + 2, &rtsp.network_task, tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_FOREGROUND) != pdPASS) {
+        rtsp.network_done = true;
+        solar_os_context_finish(ctx, 1, "RTSP: network worker could not start (stack/admission)");
+        return ESP_ERR_NO_MEM;
+    }
+    rtsp.stopped = false;
+    rtsp.dirty = rtsp.layout_dirty = true;
+    rtsp.previous_received = rtsp.previous_audio_blocks = 0;
+    rtsp.last_stats_us = esp_timer_get_time();
+    rtsp.last_frame_stats_us = 0;
+    rtsp.fps_tenths = 0;
+    if (rtsp.graphical && !rtsp.suspended) refresh_override(ctx, true);
+    return ESP_OK;
+}
+
+/* The network worker owns the audio sink and client. Never destroy them or
+ * reuse the stop flag until BOTH workers have finished their current run. */
+static void reap_playback(void)
+{
+    if (!rtsp.network_done || !rtsp.decode_done) return;
+    if (rtsp.network_task) {
+        solar_os_task_delete_external(rtsp.network_task);
+        rtsp.network_task = NULL;
+    }
+    if (rtsp.decode_task) {
+        solar_os_task_delete_external(rtsp.decode_task);
+        rtsp.decode_task = NULL;
+    }
+    if (rtsp.client && solar_os_rtsp_client_destroy(rtsp.client) == ESP_OK) {
+        rtsp.client = NULL;
+        rtsp.dirty = true;
+    }
+}
+
+static void stop_playback(solar_os_context_t *ctx)
+{
+    rtsp.stopped = true;
+    rtsp.restart = false;
+    rtsp.stop = true;
+    solar_os_rtsp_client_cancel(rtsp.client);
+    refresh_override(ctx, false);
+    if (rtsp.image_mutex) xSemaphoreTake(rtsp.image_mutex, portMAX_DELAY);
+    rtsp.layout_generation++;
+    solar_os_memory_free(rtsp.pixels); rtsp.pixels = NULL;
+    for (unsigned i = 0; i < rtsp.queued; i++) solar_os_memory_free(rtsp.queue[i].pixels);
+    rtsp.queued = 0;
+    rtsp.dirty = rtsp.layout_dirty = true;
+    rtsp.direct_started = false;
+    if (rtsp.image_mutex) xSemaphoreGive(rtsp.image_mutex);
+}
+
+static void toggle_playback(solar_os_context_t *ctx)
+{
+    if (rtsp.stopped) rtsp.restart = true;
+    else stop_playback(ctx);
+    rtsp.dirty = true;
+}
+
 static esp_err_t start(solar_os_context_t *ctx)
 {
     rtsp.network_done = rtsp.decode_done = true;
-    bool audio_only = false;
     const char *url = NULL;
     for (int i = 1; i < solar_os_context_argc(ctx); i++) {
         const char *arg = solar_os_context_argv(ctx, i);
-        if (!strcmp(arg, "--audio-only")) audio_only = true;
+        if (!strcmp(arg, "--audio-only")) rtsp.audio_only = true;
         else if (!strcmp(arg, "--stats")) rtsp.diagnostics = true;
         else if (!url) url = arg;
         else return ESP_ERR_INVALID_ARG;
@@ -434,7 +564,6 @@ static esp_err_t start(solar_os_context_t *ctx)
             "RTSP: malformed/unsupported address; use [rtsp://]host[:port][/path] (no credentials or IPv6)");
         return err;
     }
-    url = rtsp.url;
     rtsp.frame_diagnostics = rtsp.diagnostics;
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
     rtsp.graphical = solar_os_context_gfx(ctx) &&
@@ -454,36 +583,17 @@ static esp_err_t start(solar_os_context_t *ctx)
         rtsp.direct_rgb565 = !rtsp.monochrome && solar_os_gfx_supports_frame_format(
             solar_os_context_gfx(ctx), SOLAR_OS_DISPLAY_FORMAT_RGB565);
         rtsp.layout_dirty = true;
-        int body_height = solar_os_gfx_height(solar_os_context_gfx(ctx)) - RTSP_HEADER_HEIGHT - RTSP_HELP_HEIGHT;
+        int body_height = solar_os_gfx_height(solar_os_context_gfx(ctx)) - RTSP_HEADER_HEIGHT - RTSP_CONTROLS_HEIGHT;
         if (body_height <= 0) return ESP_ERR_NOT_SUPPORTED;
         rtsp.output_height = body_height - (rtsp.direct_rgb565 && rtsp.frame_diagnostics ? 16 : 0);
         SOLAR_OS_LOGI("rtsp", "video output %s viewport=%lux%lu",
             rtsp.monochrome ? "GRAY8" : rtsp.direct_rgb565 ? "RGB565 direct" : "RGB888",
             (unsigned long)rtsp.output_width, (unsigned long)rtsp.output_height);
     }
-    const solar_os_rtsp_client_options_t options = {
-        .video = rtsp.graphical && !audio_only, .audio = true, .samples = rtsp_samples,
-        .diagnostics = rtsp.diagnostics,
-        .reconnect_attempts = 6,
-    };
-    err = solar_os_rtsp_client_create(url, &options, &rtsp.client);
-    if (err != ESP_OK) {
-        solar_os_context_finish(ctx, 1, err == ESP_ERR_NO_MEM ?
-            "RTSP: client allocation failed" :
-            "RTSP: malformed/unsupported URL; use rtsp://host[:port]/path (no credentials or IPv6)");
-        return err;
-    }
-    rtsp.network_done = false;
-    if (solar_os_task_create_pinned_external(network_worker, "rtsp-net", RTSP_NETWORK_STACK, NULL,
-        tskIDLE_PRIORITY + 2, &rtsp.network_task, tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_FOREGROUND) != pdPASS) {
-        rtsp.network_done = true;
-        solar_os_context_finish(ctx, 1, "RTSP: network worker could not start (stack/admission)");
-        return ESP_ERR_NO_MEM;
-    }
+    err = start_playback(ctx);
+    if (err != ESP_OK) return err;
     rtsp.ui_started = true;
-    rtsp.last_stats_us = esp_timer_get_time();
-    if (rtsp.graphical) { refresh_override(ctx, true); }
-    else solar_os_shell_io_printf(io, "RTSP %s (audio only on port shell)\r\n", url);
+    if (!rtsp.graphical) solar_os_shell_io_printf(io, "RTSP %s (audio only on port shell)\r\n", rtsp.url);
     render(ctx, true);
     return ESP_OK;
 }
@@ -504,9 +614,7 @@ static bool release_ready(void) { return rtsp.network_done && rtsp.decode_done; 
 
 static void cleanup(void)
 {
-    if (rtsp.network_task) solar_os_task_delete_external(rtsp.network_task);
-    if (rtsp.decode_task) solar_os_task_delete_external(rtsp.decode_task);
-    solar_os_rtsp_client_destroy(rtsp.client);
+    reap_playback();
     solar_os_oscilloscope_widget_destroy(rtsp.scope);
     solar_os_memory_free(rtsp.pixels);
     for (unsigned i = 0; i < rtsp.queued; i++) solar_os_memory_free(rtsp.queue[i].pixels);
@@ -521,17 +629,43 @@ static void suspend(solar_os_context_t *ctx)
 static void resume(solar_os_context_t *ctx)
 {
     rtsp.layout_dirty = true;
-    rtsp.suspended = false; refresh_override(ctx, true);
+    rtsp.suspended = false; refresh_override(ctx, !rtsp.stopped);
     solar_os_context_set_graphics_active(ctx, rtsp.graphical); render(ctx, true);
+}
+
+static bool pointer(solar_os_context_t *ctx, const solar_os_input_pointer_event_t *event)
+{
+    solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
+    if (!rtsp.graphical || !gfx) return false;
+    int w = solar_os_gfx_width(gfx), h = solar_os_gfx_height(gfx);
+    if (event->mode == SOLAR_OS_INPUT_POINTER_ABSOLUTE) {
+        rtsp.pointer_x = event->x;
+        rtsp.pointer_y = event->y;
+    } else {
+        int x = rtsp.pointer_x + event->delta_x, y = rtsp.pointer_y + event->delta_y;
+        rtsp.pointer_x = x < 0 ? 0 : x >= w ? w - 1 : x;
+        rtsp.pointer_y = y < 0 ? 0 : y >= h ? h - 1 : y;
+    }
+    int width = (w - 20) / 3, left = (w - width) / 2;
+    if (rtsp.fullscreen || event->action != SOLAR_OS_INPUT_POINTER_PRESS ||
+        !(event->buttons & SOLAR_OS_INPUT_POINTER_BUTTON_PRIMARY) ||
+        rtsp.pointer_y < h - 25 || rtsp.pointer_y >= h - 4 ||
+        rtsp.pointer_x < left || rtsp.pointer_x >= left + width)
+        return false;
+    toggle_playback(ctx);
+    return true;
 }
 
 static bool event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event->type == SOLAR_OS_EVENT_RESUME) { resume(ctx); return true; }
+    if (event->type == SOLAR_OS_EVENT_POINTER) return pointer(ctx, &event->data.pointer);
     if (event->type == SOLAR_OS_EVENT_CHAR) {
         uint8_t key = event->data.ch;
         if (key == SOLAR_OS_KEY_APP_EXIT || key == SOLAR_OS_KEY_ESCAPE || key == 'q' || key == 'Q')
             solar_os_context_finish(ctx, 0, NULL);
+        else if (key == '\r' || key == '\n' || key == SOLAR_OS_KEY_ENTER || key == ' ')
+            toggle_playback(ctx);
         else if (key == SOLAR_OS_KEY_UP || key == SOLAR_OS_KEY_DOWN || key == '+' || key == '-') {
             solar_os_audio_status_t status; solar_os_audio_get_status(&status);
             int volume = status.volume + (key == SOLAR_OS_KEY_UP || key == '+' ? 5 : -5);
@@ -541,7 +675,7 @@ static bool event(solar_os_context_t *ctx, const solar_os_event_t *event)
             xSemaphoreTake(rtsp.image_mutex, portMAX_DELAY);
             rtsp.fullscreen = !rtsp.fullscreen;
             rtsp.output_height = solar_os_gfx_height(solar_os_context_gfx(ctx)) -
-                (rtsp.fullscreen ? 0 : RTSP_HEADER_HEIGHT + RTSP_HELP_HEIGHT) -
+                (rtsp.fullscreen ? 0 : RTSP_HEADER_HEIGHT + RTSP_CONTROLS_HEIGHT) -
                 (rtsp.direct_rgb565 && rtsp.frame_diagnostics ? 16 : 0);
             rtsp.layout_generation++;
             solar_os_memory_free(rtsp.pixels); rtsp.pixels = NULL;
@@ -556,7 +690,7 @@ static bool event(solar_os_context_t *ctx, const solar_os_event_t *event)
             if (rtsp.direct_rgb565) {
                 xSemaphoreTake(rtsp.image_mutex, portMAX_DELAY);
                 rtsp.output_height = solar_os_gfx_height(solar_os_context_gfx(ctx)) -
-                    (rtsp.fullscreen ? 0 : RTSP_HEADER_HEIGHT + RTSP_HELP_HEIGHT) -
+                    (rtsp.fullscreen ? 0 : RTSP_HEADER_HEIGHT + RTSP_CONTROLS_HEIGHT) -
                     (rtsp.frame_diagnostics ? 16 : 0);
                 rtsp.layout_generation++;
                 solar_os_memory_free(rtsp.pixels); rtsp.pixels = NULL;
@@ -569,8 +703,18 @@ static bool event(solar_os_context_t *ctx, const solar_os_event_t *event)
         return true;
     }
     if (event->type != SOLAR_OS_EVENT_TICK) return false;
+    if (rtsp.stopped) {
+        reap_playback();
+        if (rtsp.restart && !rtsp.client) {
+            rtsp.restart = false;
+            if (start_playback(ctx) != ESP_OK) return true;
+        } else {
+            render(ctx, false);
+            return true;
+        }
+    }
     solar_os_rtsp_client_status_t status;
-    solar_os_rtsp_client_status(rtsp.client, &status);
+    playback_status(&status);
     if (rtsp.network_done) {
         char message[128];
         snprintf(message, sizeof(message), "RTSP: %s", status.error_detail[0] ?
@@ -606,7 +750,7 @@ static bool event(solar_os_context_t *ctx, const solar_os_event_t *event)
 
 const solar_os_app_t solar_os_rtsp_app = {
     .name = "rtsp", .summary = "RTSP JPEG/L16 viewer", .app_class = SOLAR_OS_APP_CLASS_GUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_POINTER_EVENTS,
     .start = start, .stop = stop, .suspend = suspend, .resume = resume, .event = event,
     .state_slot = &rtsp_state, .state_size = sizeof(rtsp_app_state_t),
     .state_storage = SOLAR_OS_APP_STATE_EXTERNAL_PREFERRED,

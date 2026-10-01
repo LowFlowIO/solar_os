@@ -1,4 +1,8 @@
 from pathlib import Path
+import re
+import shutil
+import subprocess
+import tempfile
 import tomllib
 import unittest
 
@@ -9,11 +13,36 @@ PACKAGES = tomllib.loads((ROOT / "packages/solar_os_packages.toml").read_text())
 
 
 class RtspAppTest(unittest.TestCase):
+    @unittest.skipUnless(shutil.which("cc"), "requires C compiler")
+    def test_production_layout_and_transport_helpers(self):
+        # Compile the real state and selected production helpers, avoiding
+        # copies of their logic and dependence on an ESP-IDF host environment.
+        state = APP[APP.index("typedef struct {"):APP.index("static void rtsp_samples")]
+        constants = "\n".join(re.findall(r"^#define RTSP_.*$", APP, re.MULTILINE))
+        helpers = (
+            APP[APP.index("static void playback_status"):APP.index("static void diagnostics_tick")]
+            + APP[APP.index("static esp_err_t start_playback"):APP.index("static esp_err_t start(")]
+            + APP[APP.index("static bool pointer("):APP.index("const solar_os_app_t solar_os_rtsp_app")]
+        )
+        with tempfile.TemporaryDirectory(prefix="solaros-rtsp-ui-") as directory:
+            tmp = Path(directory)
+            (tmp / "rtsp_app_test_state.h").write_text(constants + "\n" + state)
+            (tmp / "rtsp_app_test_code.h").write_text(helpers)
+            binary = tmp / "rtsp_app_ui_test"
+            subprocess.run([
+                "cc", "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
+                "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
+                f"-I{tmp}", f"-I{ROOT / 'tests/host'}", f"-I{ROOT / 'src'}",
+                f"-I{ROOT / 'src/services'}", str(ROOT / "tests/host/rtsp_app_ui_test.c"),
+                "-o", str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True, timeout=10)
+
     def test_address_shorthand_is_normalized_before_client_creation(self):
         start = APP.split("static esp_err_t start(", 1)[1].split("static void stop(", 1)[0]
-        self.assertIn("url = rtsp.url", start)
         self.assertLess(start.index("solar_os_rtsp_url_normalize"),
-                        start.index("solar_os_rtsp_client_create"))
+                        start.index("start_playback(ctx)"))
+        self.assertIn("solar_os_rtsp_client_create(rtsp.url", APP)
         self.assertNotIn("strcpy(rtsp.url, url)", start)
         registry = (ROOT / "src/apps/solar_os_app_registry.c").read_text()
         self.assertIn("<[rtsp://]host[:port][/path]>", registry)
@@ -39,7 +68,7 @@ class RtspAppTest(unittest.TestCase):
         self.assertIn("solar_os_oscilloscope_widget_submit_s16", APP)
         self.assertIn("solar_os_gfx_blit_raster", APP)
         self.assertIn("solar_os_media_transport_button_draw", APP)
-        self.assertIn(".video = rtsp.graphical && !audio_only", APP)
+        self.assertIn(".video = rtsp.graphical && !rtsp.audio_only", APP)
         self.assertIn(".samples = audio_samples", CLIENT)
 
     def test_cold_state_and_worker_ownership(self):
@@ -89,15 +118,43 @@ class RtspAppTest(unittest.TestCase):
         self.assertLess(start.index("solar_os_context_set_graphics_active(ctx, true)"),
                         start.index("rtsp.monochrome = solar_os_gfx_format"))
 
-    def test_common_help_fullscreen_volume_and_frame_overlay(self):
-        self.assertIn("Up/Down volume  F fullscreen  D frames  Q exit", APP)
-        self.assertIn("h - RTSP_HELP_HEIGHT, w, RTSP_HELP_HEIGHT", APP)
-        self.assertIn("if (chrome && !rtsp.fullscreen)", APP)
+    def test_common_player_fullscreen_volume_and_frame_overlay(self):
+        self.assertIn("if (chrome && !rtsp.fullscreen) draw_controls", APP)
+        self.assertIn("SOLAR_OS_GFX_FONT_BOLD_16", APP)
+        self.assertIn('"VOL"', APP)
+        self.assertIn("h - RTSP_CONTROLS_HEIGHT", APP)
+        self.assertIn("rtsp.stopped ? SOLAR_OS_MEDIA_TRANSPORT_PLAY : SOLAR_OS_MEDIA_TRANSPORT_STOP", APP)
+        self.assertNotIn("RTSP_HELP_HEIGHT", APP)
         self.assertIn("rtsp.fullscreen = !rtsp.fullscreen", APP)
         self.assertIn("generation != rtsp.layout_generation", APP)
         self.assertIn("key == SOLAR_OS_KEY_UP || key == SOLAR_OS_KEY_DOWN", APP)
         self.assertIn("rtsp.frame_diagnostics = !rtsp.frame_diagnostics", APP)
         self.assertNotIn("volume %u%%  frames", APP)
+
+    def test_scope_uses_the_entire_viewport_including_fullscreen(self):
+        self.assertIn("int content_height = rtsp.fullscreen ? h :", APP)
+        self.assertIn("const int margin = rtsp.fullscreen ? 0 : 3", APP)
+        self.assertIn("w - 2 * margin, content_height - 2 * margin", APP)
+        self.assertNotIn("content_height * 2 / 3", APP)
+
+    def test_stop_reconnect_waits_for_both_workers_and_releases_owners(self):
+        reap = APP.split("static void reap_playback(void)", 1)[1].split("static void stop_playback", 1)[0]
+        self.assertIn("if (!rtsp.network_done || !rtsp.decode_done) return", reap)
+        self.assertIn("solar_os_task_delete_external(rtsp.network_task)", reap)
+        self.assertIn("solar_os_task_delete_external(rtsp.decode_task)", reap)
+        self.assertIn("solar_os_rtsp_client_destroy(rtsp.client)", reap)
+        stop = APP.split("static void stop_playback", 1)[1].split("static void toggle_playback", 1)[0]
+        self.assertIn("solar_os_rtsp_client_cancel", stop)
+        self.assertIn("rtsp.layout_generation++", stop)
+        self.assertIn("rtsp.queued = 0", stop)
+        self.assertNotIn("solar_os_task_wait_done", stop)
+        event = APP.split("static bool event(", 1)[1]
+        self.assertLess(event.index("if (rtsp.stopped)"), event.index("if (rtsp.network_done)"))
+        self.assertIn("rtsp.restart && !rtsp.client", event)
+        self.assertIn("key == SOLAR_OS_KEY_ENTER || key == ' '", event)
+        self.assertIn("SOLAR_OS_EVENT_POINTER", event)
+        self.assertIn("SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_POINTER_EVENTS", APP)
+        self.assertIn("rtsp.fullscreen || event->action != SOLAR_OS_INPUT_POINTER_PRESS", APP)
 
     def test_causal_errors_are_preserved_and_shown(self):
         self.assertIn("status.error_detail", APP)

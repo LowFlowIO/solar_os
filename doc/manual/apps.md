@@ -74,18 +74,24 @@ unless a port is supplied; RTP media uses negotiated UDP ports. Addresses withou
 a path are accepted; include the publisher's path when required.
 
 Graphical sessions show aspect-fit JPEG video when a video track is selected.
-Audio-only sessions use the common audio GUI oscilloscope, fed by playback PCM.
+Audio-only sessions use the common audio GUI oscilloscope, fed by playback PCM,
+filling the available area between the header and player controls.
 Port shells select audio only and print playback status. `--audio-only` skips
 video negotiation and video buffers even when the publisher offers both tracks.
 Audio uses the selected default output and global volume; Up/Down adjust volume
-(`+`/`-` remain aliases). `F` toggles fullscreen, hiding the header and help bar
-while retaining aspect-fit video (or the audio-only oscilloscope). `D` toggles
+(`+`/`-` remain aliases). The graphical player uses the common header, volume
+bar, and Stop/Play button. Enter, Space, or a tap on the button stops playback
+without closing the app; Play reconnects to the same URL. Stopping releases the
+network, decoder, audio output, and media buffers once their workers finish.
+RTSP URLs are single sources, so there are no Previous/Next buttons.
+`F` toggles fullscreen, hiding the header and controls while retaining aspect-fit
+video or expanding the audio-only oscilloscope to the whole screen. `D` toggles
 the separate frame diagnostic overlay: received, displayed, network/app drops,
-and displayed frames per second. The inverse bottom help bar contains controls,
-not frame counters. `Q`, Escape, or the normal application-exit key closes playback.
+and displayed frames per second. `Q`, Escape, or the normal application-exit key
+closes playback.
 Color TFTs with native RGB565 frame support bypass palette quantization: compact
 decoded frames remain in PSRAM and the driver scales them into its bounded DMA
-bands. The header/help bar updates separately; `D` reserves a diagnostic strip
+bands. The header/controls update separately; `D` reserves a diagnostic strip
 above the video on this path. Other targets retain the common raster blitter.
 Suspending retains audio playback; video decoding pauses until resume.
 

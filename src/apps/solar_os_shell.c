@@ -1657,6 +1657,9 @@ static const char * const playground_storage_values[] = {"flash", "sd"};
 #if SOLAR_OS_PACKAGE_MEDIA
 static const char * const view_options[] = {"-fit", "-actual"};
 #endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+static const char * const vplay_options[] = {"-fit", "-actual"};
+#endif
 #if SOLAR_OS_PACKAGE_APP_PLOT
 static const char * const plot_options[] = {"-f", "--file", "--rate"};
 static const char * const plot_live_options[] = {"--rate"};
@@ -1767,6 +1770,10 @@ static const char * const path_unzip_after_option[] = {"unzip", SHELL_COMPLETION
 #if SOLAR_OS_PACKAGE_MEDIA
 static const char * const path_view[] = {"view"};
 static const char * const path_view_after_option[] = {"view", SHELL_COMPLETION_ANY};
+#endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+static const char * const path_vplay[] = {"vplay"};
+static const char * const path_vplay_after_option[] = {"vplay", SHELL_COMPLETION_ANY};
 #endif
 #if SOLAR_OS_PACKAGE_APP_GAMEBOY
 static const char * const path_gameboy[] = {"gameboy"};
@@ -3053,6 +3060,10 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #if SOLAR_OS_PACKAGE_MEDIA
     SHELL_COMPLETION_OPTIONS(path_view, view_options),
     SHELL_COMPLETION_PATH(path_view_after_option, false),
+#endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+    SHELL_COMPLETION_OPTIONS(path_vplay, vplay_options),
+    SHELL_COMPLETION_PATH(path_vplay_after_option, false),
 #endif
 #if SOLAR_OS_PACKAGE_APP_GAMEBOY
     SHELL_COMPLETION_PATH(path_gameboy, false),
@@ -5262,6 +5273,9 @@ static bool shell_is_path_command(const char *command)
 #endif
 #if SOLAR_OS_PACKAGE_APP_VIEW
            strcmp(command, "view") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+           strcmp(command, "vplay") == 0 ||
 #endif
 #if SOLAR_OS_PACKAGE_APP_SCP
            strcmp(command, "scp") == 0 ||

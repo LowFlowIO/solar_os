@@ -2,6 +2,12 @@
 
 ## 4.x
 
+- **4.15.12** — 2026-10-01 — RTSP now uses the common player
+  header, volume bar, and clickable Stop/Play control. Enter or Space stops
+  playback without closing the app; Play reconnects to the same source after
+  its workers release their resources. The audio-only oscilloscope fills the
+  available viewport and expands edge-to-edge in full screen, where controls
+  are hidden. `vplay` adds tab completion for size options and file paths.
 - **4.15.11** — 2026-10-01 — Added `vplay` for MPEG-1 program
   stream files with optional MP2 audio. Playback uses bounded PSRAM buffers,
   audio-clock synchronization, native RGB565 or monochrome output, and
