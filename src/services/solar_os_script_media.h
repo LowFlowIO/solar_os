@@ -45,8 +45,11 @@ esp_err_t solar_os_script_media_acquire(solar_os_script_media_t *session,
 esp_err_t solar_os_script_media_frame(solar_os_script_media_t *session,
     uint32_t frame, solar_os_script_media_frame_t *info);
 esp_err_t solar_os_script_media_release(solar_os_script_media_t *session, uint32_t frame);
+/* Optional file_errno is reset on entry and receives the first filesystem
+ * failure, including buffered-write failures during close. It survives any
+ * later frame/source cleanup; non-filesystem errors leave it zero. */
 esp_err_t solar_os_script_media_save(solar_os_script_media_t *session,
-    uint32_t frame, const char *path);
+    uint32_t frame, const char *path, int *file_errno);
 /* Snapshot owns a temporary source; release(frame) also closes that source. */
 esp_err_t solar_os_script_media_snapshot(solar_os_script_media_t *session,
     const char *source, uint16_t width, uint16_t height, uint8_t quality, uint32_t *frame);

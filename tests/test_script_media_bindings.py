@@ -80,6 +80,16 @@ class ScriptMediaBindingsTest(unittest.TestCase):
                 for script in re.findall(r"```python\n(.*?)```", page, re.S):
                     ast.parse(script)
 
+    def test_save_errors_preserve_filesystem_cause_after_capture_cleanup(self):
+        self.assertIn("mp_obj_new_exception_args(&mp_type_OSError, 2, args)", PYTHON)
+        self.assertIn("strerror(file_errno)", PYTHON)
+        self.assertIn("strerror(file_errno)", LUA)
+        for source, prefix in ((PYTHON, "python"), (LUA, "solua")):
+            capture = source.split(f"static {'mp_obj_t solaros' if prefix == 'python' else 'int solua'}_camera_capture", 1)[1]
+            self.assertLess(capture.index("solar_os_script_media_release"), capture.index(f"{prefix}_media_check_save"))
+            self.assertIn("&file_errno", capture)
+        self.assertIn("if (file_errno) *file_errno = 0;", SERVICE)
+
 
 if __name__ == "__main__":
     unittest.main()

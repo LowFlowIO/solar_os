@@ -1,5 +1,6 @@
 #include "solar_os_script_media.h"
 
+#include <errno.h>
 #include <stdio.h>
 #include <string.h>
 #include "solar_os_memory.h"
@@ -288,18 +289,27 @@ esp_err_t solar_os_script_media_frame(solar_os_script_media_t *s,
 }
 
 esp_err_t solar_os_script_media_save(solar_os_script_media_t *s,
-    uint32_t id, const char *path)
+    uint32_t id, const char *path, int *file_errno)
 {
+    if (file_errno) *file_errno = 0;
     if (!path || !*path) return ESP_ERR_INVALID_ARG;
     solar_os_script_media_frame_t frame;
     esp_err_t err = solar_os_script_media_frame(s, id, &frame);
     if (err != ESP_OK) return err;
     if (cancelled(s)) return ESP_ERR_TIMEOUT;
+    errno = 0;
     FILE *f = fopen(path, "wb");
-    if (!f) return ESP_FAIL;
-    bool ok = fwrite(frame.jpeg.data, 1, frame.jpeg.length, f) == frame.jpeg.length;
-    if (fclose(f) != 0) ok = false;
-    return ok ? ESP_OK : ESP_FAIL;
+    if (!f) {
+        if (file_errno) *file_errno = errno ? errno : EIO;
+        return ESP_FAIL;
+    }
+    errno = 0;
+    const size_t written = fwrite(frame.jpeg.data, 1, frame.jpeg.length, f);
+    int failure = written == frame.jpeg.length ? 0 : (errno ? errno : EIO);
+    errno = 0;
+    if (fclose(f) != 0 && !failure) failure = errno ? errno : EIO;
+    if (file_errno) *file_errno = failure;
+    return failure ? ESP_FAIL : ESP_OK;
 }
 
 esp_err_t solar_os_script_media_snapshot(solar_os_script_media_t *s,

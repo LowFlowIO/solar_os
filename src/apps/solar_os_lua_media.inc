@@ -233,12 +233,21 @@ static int solua_streams_frame_data(lua_State *L)
     return 1;
 }
 
+static int solua_media_check_save(lua_State *L, esp_err_t error, int file_errno, const char *path)
+{
+    if (error != ESP_OK && file_errno)
+        return luaL_error(L, "save '%s': %s (errno %d)", path, strerror(file_errno), file_errno);
+    return solua_check_esp(L, error);
+}
+
 static int solua_streams_frame_save(lua_State *L)
 {
     uint32_t frame = solua_media_uint(L, 1, UINT32_MAX);
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     solua_resolve_path(L, 2, path, sizeof(path));
-    return solua_check_esp(L, solar_os_script_media_save(solua_media_session, frame, path));
+    int file_errno;
+    esp_err_t error = solar_os_script_media_save(solua_media_session, frame, path, &file_errno);
+    return solua_media_check_save(L, error, file_errno, path);
 }
 
 static int solua_streams_release_frame(lua_State *L)
@@ -290,9 +299,11 @@ static int solua_camera_capture(lua_State *L)
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     solua_resolve_path(L, 1, path, sizeof(path));
     uint32_t frame = solua_camera_snapshot_handle(L, 2);
-    esp_err_t err = solar_os_script_media_save(solua_media_session, frame, path);
+    int file_errno;
+    esp_err_t err = solar_os_script_media_save(solua_media_session, frame, path, &file_errno);
     esp_err_t release = solar_os_script_media_release(solua_media_session, frame);
-    return solua_check_esp(L, err != ESP_OK ? err : release);
+    (void)solua_media_check_save(L, err, file_errno, path);
+    return solua_check_esp(L, release);
 }
 #endif
 

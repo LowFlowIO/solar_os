@@ -81,6 +81,11 @@ camera source until `streams.release_frame(frame)`. For repeated captures,
 open the stream once and acquire/release frames in a loop instead of restarting
 the camera each time. Files are overwritten by capture/frame_save.
 
+File-save failures include the resolved path and filesystem cause in an
+`OSError`, with the numeric errno in `error.args[0]` (for example, 2 for a
+missing parent directory). Capture releases its temporary camera source before
+raising; a failed `frame_save` leaves the caller's frame leased for retry/release.
+
 ## Images without temporary files
 
 When `media.image` is compiled:

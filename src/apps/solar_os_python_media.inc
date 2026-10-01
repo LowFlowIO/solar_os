@@ -224,11 +224,25 @@ static mp_obj_t solaros_streams_frame_data(mp_obj_t handle)
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_streams_frame_data_obj, solaros_streams_frame_data);
 
+static void python_media_check_save(esp_err_t error, int file_errno, const char *path)
+{
+    if (error != ESP_OK && file_errno) {
+        vstr_t message;
+        vstr_init(&message, 32);
+        vstr_printf(&message, "save '%s': %s", path, strerror(file_errno));
+        const mp_obj_t args[] = {mp_obj_new_int(file_errno), mp_obj_new_str_from_vstr(&message)};
+        nlr_raise(mp_obj_new_exception_args(&mp_type_OSError, 2, args));
+    }
+    python_check_esp(error);
+}
+
 static mp_obj_t solaros_streams_frame_save(mp_obj_t handle, mp_obj_t path_obj)
 {
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     python_resolve_path_obj(path_obj, path, sizeof(path));
-    python_check_esp(solar_os_script_media_save(python_media_session, python_u32_from_obj(handle), path));
+    int file_errno;
+    esp_err_t error = solar_os_script_media_save(python_media_session, python_u32_from_obj(handle), path, &file_errno);
+    python_media_check_save(error, file_errno, path);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(solaros_streams_frame_save_obj, solaros_streams_frame_save);
@@ -286,9 +300,11 @@ static mp_obj_t solaros_camera_capture(size_t n, const mp_obj_t *args)
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     python_resolve_path_obj(args[0], path, sizeof(path));
     uint32_t frame = python_camera_snapshot(n - 1, args + 1);
-    esp_err_t err = solar_os_script_media_save(python_media_session, frame, path);
+    int file_errno;
+    esp_err_t err = solar_os_script_media_save(python_media_session, frame, path, &file_errno);
     esp_err_t release = solar_os_script_media_release(python_media_session, frame);
-    python_check_esp(err != ESP_OK ? err : release);
+    python_media_check_save(err, file_errno, path);
+    python_check_esp(release);
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_camera_capture_obj, 1, 4, solaros_camera_capture);

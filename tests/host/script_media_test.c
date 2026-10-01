@@ -1,4 +1,5 @@
 #include <assert.h>
+#include <errno.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -151,7 +152,23 @@ int main(void)
     assert(solar_os_script_media_frame(other, frame, &info) == ESP_ERR_INVALID_ARG);
     uint32_t ignored;
     assert(solar_os_script_media_snapshot(other, "camera0", 320, 240, 12, &ignored) == ESP_ERR_INVALID_STATE);
-    assert(solar_os_script_media_save(s, frame, "/nonexistent-parent/script-media.jpg") == ESP_FAIL);
+    int file_errno = EACCES;
+    assert(solar_os_script_media_save(s, frame, "/nonexistent-parent/script-media.jpg", &file_errno) == ESP_FAIL);
+    assert(file_errno == ENOENT);
+    assert(solar_os_script_media_frame(s, frame, &info) == ESP_OK); /* save does not consume a frame */
+    assert(solar_os_script_media_save(s, frame, "/tmp", &file_errno) == ESP_FAIL && file_errno == EISDIR);
+    /* Buffered fwrite can succeed; fclose must still report a full device. */
+    assert(solar_os_script_media_save(s, frame, "/dev/full", &file_errno) == ESP_FAIL && file_errno == ENOSPC);
+    assert(solar_os_script_media_save(s, 0, "/tmp", &file_errno) == ESP_ERR_INVALID_ARG && !file_errno);
+    assert(solar_os_script_media_save(s, frame, "", &file_errno) == ESP_ERR_INVALID_ARG && !file_errno);
+    char saved_path[] = "/tmp/solar-script-media-save-XXXXXX";
+    int saved_fd = mkstemp(saved_path); assert(saved_fd >= 0); close(saved_fd);
+    assert(solar_os_script_media_save(s, frame, saved_path, &file_errno) == ESP_OK && !file_errno);
+    FILE *saved = fopen(saved_path, "rb"); assert(saved);
+    uint8_t saved_bytes[sizeof(jpeg)];
+    assert(fread(saved_bytes, 1, sizeof(saved_bytes), saved) == sizeof(saved_bytes));
+    assert(!memcmp(saved_bytes, jpeg, sizeof(jpeg)) && fgetc(saved) == EOF);
+    assert(!fclose(saved) && !unlink(saved_path));
     fail_stop = true;
     assert(solar_os_script_media_release(s, frame) == ESP_FAIL);
     assert(solar_os_script_media_frame(s, frame, &info) == ESP_ERR_INVALID_STATE);
