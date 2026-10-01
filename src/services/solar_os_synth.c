@@ -9,6 +9,7 @@
 #include "freertos/task.h"
 #include "solar_os_audio.h"
 #include "solar_os_log.h"
+#include "solar_os_memory.h"
 #include "solar_os_stream.h"
 #include "solar_os_task.h"
 
@@ -38,7 +39,7 @@ typedef struct {
     uint32_t render_deadline_misses;
     uint32_t write_errors;
     uint32_t max_render_us;
-    int16_t samples[SOLAR_OS_SYNTH_BLOCK_FRAMES_MAX * 2U];
+    int16_t *samples;
 } synth_state_t;
 
 static const char *TAG = "solar_os_synth";
@@ -74,6 +75,9 @@ static void synth_unlock(void)
 static void synth_finish(esp_err_t result)
 {
     synth_lock();
+    /* No render/write can use the PCM block after the worker reaches here. */
+    solar_os_memory_free(synth.samples);
+    synth.samples = NULL;
     synth.running = false;
     synth.starting = false;
     synth.last_error = result;
@@ -242,6 +246,14 @@ esp_err_t solar_os_synth_start(const solar_os_synth_config_t *config)
         synth_unlock();
         return ESP_ERR_INVALID_STATE;
     }
+    synth.samples = solar_os_memory_alloc(
+        config->block_frames * 2U * sizeof(*synth.samples),
+        SOLAR_OS_MEMORY_INTERNAL_CRITICAL, "synth.pcm");
+    if (synth.samples == NULL) {
+        synth.last_error = ESP_ERR_NO_MEM;
+        synth_unlock();
+        return ESP_ERR_NO_MEM;
+    }
     while (xSemaphoreTake(synth.started, 0) == pdTRUE) {
     }
     synth.render = config->render;
@@ -269,6 +281,8 @@ esp_err_t solar_os_synth_start(const solar_os_synth_config_t *config)
         synth_worker, "synth", SYNTH_TASK_STACK, NULL, SYNTH_TASK_PRIORITY,
         &synth.task, tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_SYSTEM);
     if (created != pdPASS) {
+        solar_os_memory_free(synth.samples);
+        synth.samples = NULL;
         synth.task = NULL;
         synth.starting = false;
         synth.last_error = ESP_ERR_NO_MEM;

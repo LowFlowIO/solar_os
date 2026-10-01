@@ -2,6 +2,13 @@
 
 ## 4.x
 
+- **4.15.10** — 2026-10-01 — Shared JPEG decoding now uses a
+  fast ROM path and bounded ESP32-S3 SIMD acceleration, with fallbacks for
+  unsupported images or limited working memory. Color and monochrome consumers
+  share the improved decoder, and fit-mode output avoids full-size intermediate
+  rasters. Reduced idle SRAM usage by moving suitable registry state to PSRAM
+  and allocating display-layout, Telnet, Chat, DAQ, and Synth working buffers
+  only when needed.
 - **4.15.9** — 2026-10-01 — Python and Lua gain owned camera
   snapshots, local stream frames, native frame-to-image presentation, and
   asynchronous RTSP receiver handles. JPEG save failures report the path and

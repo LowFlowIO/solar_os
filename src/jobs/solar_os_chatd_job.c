@@ -98,10 +98,8 @@ typedef struct {
     bool ok;
 } chatd_json_builder_t;
 
-static chatd_job_state_t chatd_job = {
-    .listen_fd = -1,
-    .last_error = ESP_OK,
-};
+static chatd_job_state_t *chatd_state;
+#define chatd_job (*chatd_state)
 
 static uint64_t chatd_now_ms(void)
 {
@@ -1440,7 +1438,7 @@ static esp_err_t chatd_job_start(solar_os_context_t *ctx, int argc, char **argv)
 {
     (void)ctx;
 
-    if (chatd_job.running || chatd_job.task != NULL) {
+    if (chatd_state != NULL && (chatd_job.running || chatd_job.task != NULL)) {
         return ESP_ERR_INVALID_STATE;
     }
 
@@ -1452,6 +1450,14 @@ static esp_err_t chatd_job_start(solar_os_context_t *ctx, int argc, char **argv)
         return err;
     }
 
+    /* A timed-out stop retains state until the worker has finished. */
+    solar_os_memory_free(chatd_state);
+    chatd_state = solar_os_memory_calloc(
+        1U, sizeof(*chatd_state), SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
+        "chatd.state");
+    if (chatd_state == NULL) {
+        return ESP_ERR_NO_MEM;
+    }
     chatd_job.running = false;
     chatd_job.stop_requested = false;
     chatd_job.listen_fd = -1;
@@ -1482,6 +1488,8 @@ static esp_err_t chatd_job_start(solar_os_context_t *ctx, int argc, char **argv)
     err = chatd_alloc_buffers(&chatd_job);
     if (err != ESP_OK) {
         chatd_job.last_error = err;
+        solar_os_memory_free(chatd_state);
+        chatd_state = NULL;
         return err;
     }
     chatd_open_history_dump(&chatd_job, history_path);
@@ -1490,6 +1498,8 @@ static esp_err_t chatd_job_start(solar_os_context_t *ctx, int argc, char **argv)
     if (err != ESP_OK) {
         chatd_free_buffers(&chatd_job);
         chatd_job.last_error = err;
+        solar_os_memory_free(chatd_state);
+        chatd_state = NULL;
         return err;
     }
 
@@ -1506,6 +1516,8 @@ static esp_err_t chatd_job_start(solar_os_context_t *ctx, int argc, char **argv)
         chatd_free_buffers(&chatd_job);
         chatd_job.running = false;
         chatd_job.last_error = ESP_ERR_NO_MEM;
+        solar_os_memory_free(chatd_state);
+        chatd_state = NULL;
         return ESP_ERR_NO_MEM;
     }
 
@@ -1529,7 +1541,13 @@ static void chatd_job_stop(solar_os_context_t *ctx)
 {
     (void)ctx;
 
+    if (chatd_state == NULL) {
+        return;
+    }
+
     if (!chatd_job.running && chatd_job.task == NULL) {
+        solar_os_memory_free(chatd_state);
+        chatd_state = NULL;
         return;
     }
 
@@ -1546,6 +1564,11 @@ static void chatd_job_stop(solar_os_context_t *ctx)
     const uint32_t waits = CHATD_STOP_WAIT_MS / 25U;
     for (uint32_t i = 0; i < waits && chatd_job.task != NULL; i++) {
         vTaskDelay(pdMS_TO_TICKS(25));
+    }
+    /* The worker never accesses state after clearing task. */
+    if (chatd_job.task == NULL) {
+        solar_os_memory_free(chatd_state);
+        chatd_state = NULL;
     }
 }
 
