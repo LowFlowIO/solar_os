@@ -12,6 +12,13 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
+TARGETS += epd_ssd1677_test
+
+epd_ssd1677_test: epd_ssd1677_test.c $(ROOT)/src/drivers/epd_ssd1677.c $(ROOT)/src/drivers/epd_ssd1677.h \
+	$(wildcard epd_stubs/*.h epd_stubs/driver/*.h epd_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections \
+		-Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib \
+		epd_ssd1677_test.c -Wl,--gc-sections -o $@
 
 all: $(TARGETS)
 
@@ -581,6 +588,7 @@ test: $(TARGETS)
 	./drv2605_test
 	./bq25896_test
 	./axp2101_test
+	./epd_ssd1677_test
 	./max17048_test
 	./mgc3130_test
 	./sim7670_test

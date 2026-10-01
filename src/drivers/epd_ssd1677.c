@@ -193,7 +193,8 @@ static void ssd1677_hardware_reset(const epd_ssd1677_t *display)
     gpio_set_level((gpio_num_t)display->reset_pin, 1);
     vTaskDelay(pdMS_TO_TICKS(50));
     gpio_set_level((gpio_num_t)display->reset_pin, 0);
-    vTaskDelay(pdMS_TO_TICKS(2));
+    /* Match the working board sequence, including with a 100 Hz RTOS tick. */
+    vTaskDelay(pdMS_TO_TICKS(10));
     gpio_set_level((gpio_num_t)display->reset_pin, 1);
     vTaskDelay(pdMS_TO_TICKS(50));
 }
@@ -204,7 +205,7 @@ static esp_err_t ssd1677_set_full_address(epd_ssd1677_t *display)
     static const uint8_t x_bounds[] = {0x00, 0x00, 0x1f, 0x03};
     static const uint8_t y_bounds[] = {0xdf, 0x01, 0x00, 0x00};
     static const uint8_t x_cursor[] = {0x00, 0x00};
-    static const uint8_t y_cursor[] = {0x00, 0x00};
+    static const uint8_t y_cursor[] = {0xdf, 0x01};
     ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x11, data_entry, sizeof(data_entry)),
                         TAG, "data entry mode failed");
     ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x44, x_bounds, sizeof(x_bounds)),
@@ -227,7 +228,7 @@ static esp_err_t ssd1677_controller_init(epd_ssd1677_t *display)
     static const uint8_t temperature_sensor[] = {0x80};
     static const uint8_t booster[] = {0xae, 0xc7, 0xc3, 0xc0, 0x80};
     static const uint8_t driver_output[] = {0xdf, 0x01, 0x02};
-    static const uint8_t border[] = {0x01};
+    static const uint8_t border[] = {0x80};
     ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x18,
                                          temperature_sensor,
                                          sizeof(temperature_sensor)),
@@ -242,6 +243,13 @@ static esp_err_t ssd1677_controller_init(epd_ssd1677_t *display)
                         TAG, "border waveform failed");
     ESP_RETURN_ON_ERROR(ssd1677_set_full_address(display), TAG, "address setup failed");
     ESP_RETURN_ON_ERROR(ssd1677_wait_ready(display), TAG, "address setup wait failed");
+    static const uint8_t auto_write[] = {0xf7};
+    ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x46, auto_write, sizeof(auto_write)),
+                        TAG, "BW RAM initialization failed");
+    ESP_RETURN_ON_ERROR(ssd1677_wait_ready(display), TAG, "BW RAM initialization wait failed");
+    ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x47, auto_write, sizeof(auto_write)),
+                        TAG, "previous RAM initialization failed");
+    ESP_RETURN_ON_ERROR(ssd1677_wait_ready(display), TAG, "previous RAM initialization wait failed");
     display->controller_ready = true;
     display->partial_refresh_active = false;
     return ESP_OK;
@@ -262,6 +270,7 @@ static void ssd1677_convert_row(epd_ssd1677_t *display,
                 panel_pixels |= (uint8_t)(0x80U >> bit);
             }
         }
+        /* SolarOS display targets use set bits for white by default. */
         display->line_buffer[byte] = panel_pixels;
     }
 }
@@ -300,18 +309,21 @@ static esp_err_t ssd1677_set_partial_window(epd_ssd1677_t *display,
                                             const ssd1677_window_t *window)
 {
     const uint16_t x_start = window->x_start_byte * 8U;
-    const uint16_t x_end = window->x_end_byte * 8U;
+    const uint16_t x_end = (window->x_end_byte + 1U) * 8U - 1U;
+    /* Logical rows run top to bottom; the controller decrements gate Y. */
+    const uint16_t y_start = SSD1677_HEIGHT - 1U - window->y_start;
+    const uint16_t y_end = SSD1677_HEIGHT - 1U - window->y_end;
     const uint8_t x_bounds[] = {
         (uint8_t)x_start, (uint8_t)(x_start >> 8),
         (uint8_t)x_end, (uint8_t)(x_end >> 8),
     };
     const uint8_t y_bounds[] = {
-        (uint8_t)window->y_end, (uint8_t)(window->y_end >> 8),
-        (uint8_t)window->y_start, (uint8_t)(window->y_start >> 8),
+        (uint8_t)y_start, (uint8_t)(y_start >> 8),
+        (uint8_t)y_end, (uint8_t)(y_end >> 8),
     };
     const uint8_t x_cursor[] = {(uint8_t)x_start, (uint8_t)(x_start >> 8)};
     const uint8_t y_cursor[] = {
-        (uint8_t)window->y_start, (uint8_t)(window->y_start >> 8),
+        (uint8_t)y_start, (uint8_t)(y_start >> 8),
     };
     ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x44, x_bounds, sizeof(x_bounds)),
                         TAG, "partial X bounds failed");
@@ -322,53 +334,47 @@ static esp_err_t ssd1677_set_partial_window(epd_ssd1677_t *display,
     return ssd1677_cmd_data(display, 0x4f, y_cursor, sizeof(y_cursor));
 }
 
-static esp_err_t ssd1677_write_full_plane(epd_ssd1677_t *display, uint8_t command)
+static esp_err_t ssd1677_write_plane(epd_ssd1677_t *display,
+                                    uint8_t command,
+                                    const uint8_t *source,
+                                    const ssd1677_window_t *window,
+                                    bool invert)
 {
-    ESP_RETURN_ON_ERROR(ssd1677_set_full_address(display), TAG, "full address failed");
-    ESP_RETURN_ON_ERROR(ssd1677_cmd(display, command), TAG, "full RAM write failed");
+    ESP_RETURN_ON_ERROR(ssd1677_set_partial_window(display, window), TAG, "RAM address failed");
+    ESP_RETURN_ON_ERROR(ssd1677_cmd(display, command), TAG, "RAM write failed");
     ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)display->dc_pin, 1),
-                        TAG, "D/C full data failed");
-    for (uint16_t y = 0; y < SSD1677_HEIGHT; y++) {
-        ssd1677_convert_row(display, display->buffer, y);
+                        TAG, "D/C frame data failed");
+    const size_t row_bytes = window->x_end_byte - window->x_start_byte + 1U;
+    for (uint16_t y = window->y_start; y <= window->y_end; y++) {
+        ssd1677_convert_row(display, source, y);
+        if (invert) {
+            for (size_t byte = window->x_start_byte; byte <= window->x_end_byte; byte++) {
+                display->line_buffer[byte] = (uint8_t)~display->line_buffer[byte];
+            }
+        }
         ESP_RETURN_ON_ERROR(ssd1677_tx_bytes(display,
-                                             display->line_buffer,
-                                             SSD1677_PANEL_ROW_BYTES),
-                            TAG, "full frame transmit failed");
+                                             display->line_buffer + window->x_start_byte,
+                                             row_bytes),
+                            TAG, "frame transmit failed");
     }
     return ESP_OK;
 }
 
-static esp_err_t ssd1677_write_partial(epd_ssd1677_t *display,
-                                       const ssd1677_window_t *window)
+static esp_err_t ssd1677_activate(epd_ssd1677_t *display)
 {
-    ssd1677_hardware_reset(display);
-    static const uint8_t temperature_sensor[] = {0x80};
-    static const uint8_t border[] = {0x80};
-    ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x18,
-                                         temperature_sensor,
-                                         sizeof(temperature_sensor)),
-                        TAG, "partial temperature setup failed");
+    /* SSD1677 differential update: 0x24 is new, 0x26 is the baseline. */
+    static const uint8_t control[] = {0x00};
+    static const uint8_t border[] = {0xc0};
+    static const uint8_t update_mode[] = {0xfc};
+    ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x21, control, sizeof(control)),
+                        TAG, "update control failed");
     ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x3c, border, sizeof(border)),
-                        TAG, "partial border setup failed");
-    ESP_RETURN_ON_ERROR(ssd1677_set_partial_window(display, window),
-                        TAG, "partial address failed");
-    ESP_RETURN_ON_ERROR(ssd1677_cmd(display, 0x24), TAG, "partial RAM write failed");
-    ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)display->dc_pin, 1),
-                        TAG, "D/C partial data failed");
-    const size_t row_bytes = window->x_end_byte - window->x_start_byte + 1U;
-    for (uint16_t y = window->y_start; y <= window->y_end; y++) {
-        ssd1677_convert_row(display, display->buffer, y);
-        ESP_RETURN_ON_ERROR(ssd1677_tx_bytes(display,
-                                             display->line_buffer + window->x_start_byte,
-                                             row_bytes),
-                            TAG, "partial frame transmit failed");
-    }
-    static const uint8_t update_mode[] = {0xff};
+                        TAG, "update border setup failed");
     ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x22,
                                          update_mode,
                                          sizeof(update_mode)),
-                        TAG, "partial update mode failed");
-    ESP_RETURN_ON_ERROR(ssd1677_cmd(display, 0x20), TAG, "partial update failed");
+                        TAG, "update mode failed");
+    ESP_RETURN_ON_ERROR(ssd1677_cmd(display, 0x20), TAG, "update activation failed");
     return ssd1677_wait_ready(display);
 }
 
@@ -381,7 +387,7 @@ static esp_err_t ssd1677_refresh(epd_ssd1677_t *display)
         memcmp(display->buffer, display->shadow, display->buffer_size) == 0) {
         return ESP_OK;
     }
-    const bool full = !display->shadow_valid ||
+    const bool full = !display->shadow_valid || display->shadow == NULL ||
         display->refresh_mode == EPD_SSD1677_REFRESH_FULL ||
         (display->refresh_mode == EPD_SSD1677_REFRESH_AUTO &&
          display->partial_refresh_count >= SSD1677_AUTO_FULL_INTERVAL - 1U);
@@ -410,25 +416,31 @@ static esp_err_t ssd1677_refresh(epd_ssd1677_t *display)
         }
     }
 
-    if (partial) {
-        ESP_RETURN_ON_ERROR(ssd1677_write_partial(display, &window),
-                            TAG, "partial refresh failed");
-    } else {
-        if (display->partial_refresh_active) {
-            ESP_RETURN_ON_ERROR(ssd1677_controller_init(display),
-                                TAG, "full refresh reinitialization failed");
-        }
-        ESP_RETURN_ON_ERROR(ssd1677_write_full_plane(display, 0x24),
-                            TAG, "current frame write failed");
-        ESP_RETURN_ON_ERROR(ssd1677_write_full_plane(display, 0x26),
-                            TAG, "previous frame write failed");
-        static const uint8_t update_mode[] = {0xf7};
-        ESP_RETURN_ON_ERROR(ssd1677_cmd_data(display, 0x22,
-                                             update_mode,
-                                             sizeof(update_mode)),
-                            TAG, "full update mode failed");
-        ESP_RETURN_ON_ERROR(ssd1677_cmd(display, 0x20), TAG, "full update failed");
-        ESP_RETURN_ON_ERROR(ssd1677_wait_ready(display), TAG, "full update wait failed");
+    if (!partial) {
+        window = (ssd1677_window_t) {
+            .x_start_byte = 0, .x_end_byte = SSD1677_PANEL_ROW_BYTES - 1U,
+            .y_start = 0, .y_end = SSD1677_HEIGHT - 1U,
+        };
+    }
+    ESP_RETURN_ON_ERROR(ssd1677_write_plane(display, 0x24, display->buffer, &window, false),
+                        TAG, "current frame write failed");
+    /* A complemented baseline forces every pixel to transition on full updates. */
+    ESP_RETURN_ON_ERROR(ssd1677_write_plane(display, 0x26,
+                                           partial ? display->shadow : display->buffer,
+                                           &window, !partial),
+                        TAG, "previous frame write failed");
+    esp_err_t ret = ssd1677_activate(display);
+    if (ret == ESP_OK) {
+        /* Keep both controller planes aligned with the displayed frame. */
+        ret = ssd1677_write_plane(display, 0x24, display->buffer, &window, false);
+    }
+    if (ret == ESP_OK) {
+        ret = ssd1677_write_plane(display, 0x26, display->buffer, &window, false);
+    }
+    if (ret != ESP_OK) {
+        display->shadow_valid = false;
+        display->controller_ready = false;
+        return ret;
     }
 
     if (log_refresh) {

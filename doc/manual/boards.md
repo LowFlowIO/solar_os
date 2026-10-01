@@ -925,9 +925,11 @@ the primary CDC console; GPIO43/GPIO44 remain available as `uart0` on the
 breakout pads.
 
 The SSD1677 runs at the vendor reference clock of 20 MHz. Automatic refresh
-starts with a full cleanup waveform, skips unchanged frames, uses byte-aligned
+starts with a full cleanup, skips unchanged frames, uses byte-aligned
 dirty partial windows, and performs another full cleanup after 19 partial
-updates. The display attachment sets the AXP2101 ALDO3 rail to 3.3 V, enables
+updates. Refreshes use the differential waveform with separate current and
+previous frame data; full cleanups force every pixel to transition.
+The display attachment sets the AXP2101 ALDO3 rail to 3.3 V, enables
 it before controller initialization, and disables it when the panel sleeps.
 This profile follows Waveshare's current AXP2101 reference source and schematic;
 a board revision fitted with a different power-management IC needs a separate
