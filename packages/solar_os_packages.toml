@@ -924,6 +924,12 @@ depends = ["service_net"]
 sources = ["services/solar_os_net_session.c"]
 requires = ["esp-tls", "esp_timer", "lwip", "mbedtls", "tcp_transport"]
 
+[packages.service_script_media]
+label = "service.script-media"
+depends = ["service_streams"]
+sources = ["services/solar_os_script_media.c"]
+requires = ["esp_timer"]
+
 [packages.service_ftp]
 label = "network.ftp"
 depends = ["service_net"]
@@ -2227,14 +2233,14 @@ capabilities = ["gfx", "psram", "sd", "streaming_display"]
 
 [packages.app_python]
 label = "app.python"
-depends = ["service_script_net", "service_script_runner"]
+depends = ["service_script_net", "service_script_runner", "service_script_media"]
 sources = ["apps/solar_os_python.c"]
 requires = ["micropython_embed"]
 capabilities = ["psram"]
 
 [packages.app_lua]
 label = "app.lua"
-depends = ["service_script_net", "service_script_runner"]
+depends = ["service_script_net", "service_script_runner", "service_script_media"]
 sources = ["apps/solar_os_lua.c"]
 requires = ["lua"]
 capabilities = ["psram"]

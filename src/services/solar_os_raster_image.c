@@ -9,6 +9,7 @@
 
 #include "solar_os_gfx.h"
 #include "solar_os_memory.h"
+#include "solar_os_rgb565.h"
 #include "solar_os_stb_image.h"
 #include "solar_os_webp_decoder.h"
 
@@ -25,6 +26,7 @@ struct solar_os_raster_image {
     uint32_t width;
     uint32_t height;
     uint8_t *pixels;
+    uint8_t *rgb565;
     raster_image_pixels_owner_t pixels_owner;
 };
 
@@ -93,13 +95,25 @@ esp_err_t solar_os_raster_image_open(const char *path,
         return err;
     }
 
+    err = solar_os_raster_image_decode(data, data_len, out_image);
+    solar_os_memory_free(data);
+    return err;
+}
+
+esp_err_t solar_os_raster_image_decode(const uint8_t *data, size_t data_len,
+                                       solar_os_raster_image_t **out_image)
+{
+    if (out_image == NULL) return ESP_ERR_INVALID_ARG;
+    *out_image = NULL;
+    if (data == NULL || data_len == 0U || data_len > RASTER_IMAGE_MAX_FILE_BYTES)
+        return ESP_ERR_INVALID_SIZE;
+    esp_err_t err;
     solar_os_raster_image_t *image = solar_os_memory_calloc(
         1U,
         sizeof(*image),
         SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
         "raster.image");
     if (image == NULL) {
-        solar_os_memory_free(data);
         return ESP_ERR_NO_MEM;
     }
 
@@ -120,7 +134,6 @@ esp_err_t solar_os_raster_image_open(const char *path,
                                       &image->height);
         image->pixels_owner = RASTER_IMAGE_PIXELS_STB;
     }
-    solar_os_memory_free(data);
     if (err != ESP_OK) {
         solar_os_memory_free(image);
         return err;
@@ -151,6 +164,7 @@ void solar_os_raster_image_release(solar_os_raster_image_t *image)
         solar_os_stb_image_free(image->pixels);
     }
     image->pixels = NULL;
+    solar_os_memory_free(image->rgb565);
     solar_os_memory_free(image);
 }
 
@@ -200,4 +214,41 @@ esp_err_t solar_os_raster_image_draw(const solar_os_raster_image_t *image,
                                     (int)width,
                                     (int)height,
                                     NULL);
+}
+
+esp_err_t solar_os_raster_image_present(solar_os_raster_image_t *image,
+    solar_os_gfx_t *gfx, int x, int y, uint32_t width, uint32_t height)
+{
+    if (!image || !gfx || !image->pixels || x < 0 || y < 0) return ESP_ERR_INVALID_ARG;
+    if (!width) width = image->width;
+    if (!height) height = image->height;
+    if (!width || !height || (uint64_t)x + width > (uint32_t)solar_os_gfx_width(gfx) ||
+        (uint64_t)y + height > (uint32_t)solar_os_gfx_height(gfx)) return ESP_ERR_INVALID_SIZE;
+    if (!solar_os_gfx_supports_frame_format(gfx, SOLAR_OS_DISPLAY_FORMAT_RGB565)) {
+        esp_err_t err = solar_os_raster_image_draw(image, gfx, x, y, width, height);
+        if (err == ESP_OK) solar_os_gfx_present(gfx);
+        return err;
+    }
+    if (image->width > UINT16_MAX / 2U || image->height > UINT16_MAX ||
+        width > UINT16_MAX || height > UINT16_MAX) return ESP_ERR_INVALID_SIZE;
+    const size_t count = (size_t)image->width * image->height;
+    if (!image->rgb565) {
+        image->rgb565 = solar_os_memory_alloc(count * 2U,
+            SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "raster.rgb565");
+        if (!image->rgb565) return ESP_ERR_NO_MEM;
+        for (size_t i = 0; i < count; ++i) {
+            const uint8_t *rgb = image->pixels + i * 3U;
+            const uint16_t color = ((uint16_t)(rgb[0] & 0xf8U) << 8U) |
+                ((uint16_t)(rgb[1] & 0xfcU) << 3U) | (rgb[2] >> 3U);
+            image->rgb565[i * 2U] = color >> 8U;
+            image->rgb565[i * 2U + 1U] = color;
+        }
+    }
+    const solar_os_display_raster_t raster = {
+        .data = image->rgb565, .data_size = count * 2U,
+        .source_width = image->width, .source_height = image->height,
+        .source_stride = image->width * 2U, .x = x, .y = y,
+        .width = width, .height = height, .format = SOLAR_OS_DISPLAY_FORMAT_RGB565,
+    };
+    return solar_os_gfx_present_frame(gfx, &raster);
 }

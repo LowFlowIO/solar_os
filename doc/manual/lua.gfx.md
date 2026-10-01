@@ -74,6 +74,9 @@ gfx.icon(20, 20, "tablet", 32)
 
 ## Raster images
 
+For JPEG data, camera/RTSP frame decoding, and direct RGB565 presentation, see
+[Camera, streams, and RTSP](lua.media.md).
+
 When the firmware includes `media.image`, `solaros.image` decodes static PNG,
 JPEG, GIF, and WebP files into native PSRAM-backed handles. This keeps offline
 map tiles and other large images outside the Lua heap. Up to 16 handles can be

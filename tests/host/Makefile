@@ -20,6 +20,22 @@ TARGETS += rtsp_client_test
 TARGETS += gfx_mono_raster_test
 TARGETS += rgb565_raster_test
 TARGETS += rtspd_completion_test
+TARGETS += script_media_test script_media_rtsp_test
+TARGETS += raster_image_test
+TARGETS += media_lua_bindings_test
+
+raster_image_test: raster_image_test.c $(ROOT)/src/services/solar_os_raster_image.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(ROOT)/components/stb_image/include -I$(ROOT)/components/webp_decoder/include $^ -o $@
+
+SCRIPT_MEDIA_TEST_SOURCES := script_media_test.c $(ROOT)/src/services/solar_os_script_media.c \
+	$(ROOT)/src/services/solar_os_stream.c $(ROOT)/src/services/solar_os_camera.c \
+	$(ROOT)/src/services/solar_os_camera_stream.c
+script_media_test script_media_rtsp_test: $(SCRIPT_MEDIA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -pthread \
+		$(if $(filter script_media_rtsp_test,$@),-DSOLAR_OS_PACKAGE_SERVICE_RTSP_CLIENT=1,) \
+		-Iscript_media_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		$(SCRIPT_MEDIA_TEST_SOURCES) -o $@
 
 rtspd_completion_test: rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.h $(ROOT)/src/services/solar_os_stream.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services -I$(ROOT)/src/shell rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c -o $@
@@ -68,6 +84,14 @@ LUA_DIR := $(ROOT)/components/lua/lua/src
 LUA_TEST_SOURCES := $(filter-out $(LUA_DIR)/lua.c $(LUA_DIR)/luac.c \
 	$(LUA_DIR)/linit.c $(LUA_DIR)/liolib.c $(LUA_DIR)/loadlib.c $(LUA_DIR)/loslib.c, \
 	$(wildcard $(LUA_DIR)/*.c))
+
+media_lua_bindings_test: media_lua_bindings_test.c $(SCRIPT_MEDIA_TEST_SOURCES) \
+		$(WRITER_DIR)/solar_os_lua_media.inc $(LUA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -pthread \
+		-DSOLAR_OS_PACKAGE_SERVICE_RTSP_CLIENT=1 -DSOLAR_OS_PACKAGE_SERVICE_CAMERA=1 \
+		-Iscript_media_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(WRITER_DIR) -I$(LUA_DIR) media_lua_bindings_test.c $(filter-out script_media_test.c,$(SCRIPT_MEDIA_TEST_SOURCES)) \
+		$(LUA_TEST_SOURCES) -lm -o $@
 
 ble_lua_bindings_test: ble_lua_bindings_test.c ble_service_test.c ble_test_support.c \
 		$(WRITER_DIR)/solar_os_lua_ble.inc $(ROOT)/src/services/solar_os_ble.c \
@@ -605,6 +629,10 @@ test: $(TARGETS)
 	./cl32_keyboard_test
 	./battery_service_test
 	./camera_service_test
+	./script_media_test
+	./script_media_rtsp_test
+	./raster_image_test
+	./media_lua_bindings_test
 	./camera_expansion_test
 	./media_test
 	./rtspd_job_test
