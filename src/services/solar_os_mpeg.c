@@ -1,6 +1,7 @@
 #include "solar_os_mpeg.h"
 #include "solar_os_memory.h"
 #include <errno.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -41,6 +42,14 @@ struct solar_os_mpeg {
     uint8_t sequence[4], sequence_bytes;
     uint32_t sequence_width, sequence_height, sequence_rate;
     esp_err_t error;
+    bool video_pending, audio_pending;
+    bool seek_audio_sync;
+    double seek_audio_base;
+    bool seek_video_sync;
+    unsigned seek_video_reference;
+    double seek_video_time;
+    solar_os_mpeg_frame_t seek_video;
+    solar_os_mpeg_audio_t seek_audio;
     char detail[96];
 };
 
@@ -68,6 +77,18 @@ static bool check(solar_os_mpeg_t *d)
             fail(d, ESP_ERR_INVALID_ARG, "invalid MPEG-1 video data");
     }
     return d->error == ESP_OK;
+}
+static void load_file(plm_buffer_t *buffer, void *user)
+{
+    solar_os_mpeg_t *d = user;
+    /* Demux seeking scans compressed bytes without load_track(). Keep those
+     * scans cancellable too; the app's cancel callback also yields. */
+    if (d->cancel && d->cancel(d->user)) {
+        fail(d, ESP_ERR_TIMEOUT, "playback cancelled");
+        plm_buffer_signal_end(buffer);
+        return;
+    }
+    plm_buffer_load_file_callback(buffer, NULL);
 }
 static void load_track(plm_buffer_t *buffer, void *user)
 {
@@ -124,6 +145,11 @@ static void load_track(plm_buffer_t *buffer, void *user)
             }
         } else if (packet->type == PLM_DEMUX_PACKET_AUDIO_1 && d->audio_buffer) {
             target = d->audio_buffer;
+            if (d->seek_audio_sync && packet->pts != PLM_PACKET_INVALID_TS) {
+                d->seek_audio_base = packet->pts - d->audio_pts;
+                d->seek_audio_sync = false;
+                if (d->audio) plm_audio_set_time(d->audio, d->seek_audio_base);
+            }
             if (!d->audio_pts_set && packet->pts != PLM_PACKET_INVALID_TS) {
                 d->audio_pts = packet->pts;
                 d->audio_pts_set = true;
@@ -176,6 +202,7 @@ esp_err_t solar_os_mpeg_open(const char *path, solar_os_mpeg_cancel_t cancel, vo
     d->input = plm_buffer_create_with_file(d->file, FALSE);
     if (!d->input)
         goto memory;
+    plm_buffer_set_load_callback(d->input, load_file, d);
     if (!check(d))
         goto error;
     d->demux = plm_demux_create(d->input, FALSE);
@@ -266,6 +293,11 @@ esp_err_t solar_os_mpeg_video(solar_os_mpeg_t *d, solar_os_mpeg_frame_t *frame, 
     *ended = false;
     if (!check(d))
         return d->error;
+    if (d->video_pending) {
+        *frame = d->seek_video;
+        d->video_pending = false;
+        return ESP_OK;
+    }
     plm_frame_t *f = plm_video_decode(d->video);
     if (!check(d))
         return d->error;
@@ -274,6 +306,17 @@ esp_err_t solar_os_mpeg_video(solar_os_mpeg_t *d, solar_os_mpeg_frame_t *frame, 
         if (!*ended)
             fail(d, ESP_ERR_INVALID_ARG, "MPEG video picture is truncated or malformed");
         return d->error;
+    }
+    if (d->seek_video_sync) {
+        /* An open GOP may output its leading B pictures before the intra
+         * picture whose PTS anchored the jump. Rebase once using their
+         * temporal reference; these warm-up pictures are discarded. */
+        double first = d->seek_video_time;
+        if (d->video->picture_type == PLM_VIDEO_PICTURE_TYPE_B)
+            first += ((int)d->video->temporal_reference - (int)d->seek_video_reference) / d->info.fps;
+        f->time = first;
+        plm_video_set_time(d->video, first + 1.0 / d->info.fps);
+        d->seek_video_sync = false;
     }
     *frame = (solar_os_mpeg_frame_t){.y = f->y.data,
                                      .cb = f->cb.data,
@@ -294,6 +337,11 @@ esp_err_t solar_os_mpeg_audio(solar_os_mpeg_t *d, solar_os_mpeg_audio_t *audio, 
         return ESP_OK;
     if (!check(d))
         return d->error;
+    if (d->audio_pending) {
+        *audio = d->seek_audio;
+        d->audio_pending = false;
+        return ESP_OK;
+    }
     plm_samples_t *s = plm_audio_decode(d->audio);
     if (!check(d))
         return d->error;
@@ -307,5 +355,104 @@ esp_err_t solar_os_mpeg_audio(solar_os_mpeg_t *d, solar_os_mpeg_audio_t *audio, 
                                      .frames = s->count,
                                      .sample_rate = d->info.sample_rate,
                                      .time = s->time};
+    return ESP_OK;
+}
+
+esp_err_t solar_os_mpeg_seek(solar_os_mpeg_t *d, double seconds, double *position)
+{
+    if (!d || !isfinite(seconds) || !position)
+        return ESP_ERR_INVALID_ARG;
+    if (!check(d)) return d->error;
+    if (seconds < 0) seconds = 0;
+    d->video_pending = d->audio_pending = false;
+    plm_demux_rewind(d->demux);
+    plm_video_rewind(d->video);
+    d->eof = false;
+    d->start_code = 0;
+    d->sequence_bytes = 0;
+    d->seek_audio_sync = false;
+    d->seek_audio_base = 0;
+    d->seek_video_sync = false;
+    /* Search timestamped packets without reconstructing pixels. Restart from
+     * an earlier intra picture, leaving warm-up for MP2 synthesis and video
+     * reference pictures. Files without usable PTS use the sequential path. */
+    if (seconds > 1.0 && d->video_pts_set && plm_buffer_get_size(d->input) >= 256) {
+        double duration = plm_demux_get_duration(d->demux, PLM_DEMUX_PACKET_VIDEO_1);
+        if (!check(d)) return d->error;
+        if (isfinite(duration) && duration > 0) {
+            /* Rewind/duration probing moves the input but leaves the demux's
+             * last PTS stale. Its byte-position estimate must start at zero. */
+            d->demux->last_decoded_pts = d->video_pts;
+            plm_packet_t *packet = plm_demux_seek(d->demux,
+                fmin(seconds - d->time_offset - 0.5, duration), PLM_DEMUX_PACKET_VIDEO_1, TRUE);
+            if (!check(d)) return d->error;
+            if (packet && packet->pts != PLM_PACKET_INVALID_TS) {
+                plm_video_set_time(d->video, packet->pts - d->video_pts);
+                d->seek_video_time = packet->pts - d->video_pts;
+                for (size_t i = 0; i + 6 <= packet->length; i++) {
+                    if (packet->data[i] == 0 && packet->data[i + 1] == 0 &&
+                        packet->data[i + 2] == 1 && packet->data[i + 3] == 0) {
+                        d->seek_video_reference = (packet->data[i + 4] << 2) | (packet->data[i + 5] >> 6);
+                        d->seek_video_sync = true;
+                        break;
+                    }
+                }
+                plm_buffer_write(d->video_buffer, packet->data, packet->length);
+                d->seek_audio_sync = d->audio != NULL;
+            } else {
+                plm_demux_rewind(d->demux);
+            }
+        }
+    }
+    if (d->audio) {
+        /* Rewind alone retains the MP2 synthesis-filter history. Recreate
+         * the small decoder so a backward seek cannot leak old samples. */
+        plm_audio_destroy(d->audio);
+        d->audio = NULL;
+        plm_buffer_rewind(d->audio_buffer);
+        d->audio = plm_audio_create_with_buffer(d->audio_buffer, FALSE);
+        if (!d->audio) {
+            fail(d, ESP_ERR_NO_MEM, "MP2 decoder allocation failed while seeking");
+            return d->error;
+        }
+        if (!check(d)) return d->error;
+        plm_audio_set_time(d->audio, d->seek_audio_base);
+    }
+    bool vend = false, aend = !d->audio, found = false;
+    double audio_until = -1;
+    solar_os_mpeg_frame_t frame = {0};
+    solar_os_mpeg_audio_t audio = {0};
+    /* Interleave both tracks while discarding, so neither compressed queue
+     * grows with the seek distance. Never decode video without references. */
+    while (!vend) {
+        esp_err_t err = solar_os_mpeg_video(d, &frame, &vend);
+        if (err != ESP_OK) return err;
+        if (vend) break;
+        found = true;
+        while (!aend && audio_until < frame.time) {
+            err = solar_os_mpeg_audio(d, &audio, &aend);
+            if (err != ESP_OK) return err;
+            if (!aend) audio_until = audio.time + (double)audio.frames / audio.sample_rate;
+        }
+        if (frame.time >= seconds) break;
+    }
+    if (!found) {
+        fail(d, ESP_ERR_INVALID_ARG, "MPEG file contains no complete video pictures");
+        return d->error;
+    }
+    *position = frame.time;
+    d->seek_video = frame;
+    d->video_pending = true;
+    if (audio_until > frame.time && !aend) {
+        uint32_t skip = frame.time > audio.time ?
+            (uint32_t)((frame.time - audio.time) * audio.sample_rate) : 0;
+        if (skip < audio.frames) {
+            audio.samples += skip * 2U;
+            audio.frames -= skip;
+            audio.time += (double)skip / audio.sample_rate;
+            d->seek_audio = audio;
+            d->audio_pending = true;
+        }
+    }
     return ESP_OK;
 }

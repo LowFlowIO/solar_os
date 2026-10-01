@@ -423,20 +423,34 @@ interface on a port shell. `--tui` forces the text interface even when the
 launching shell has graphics.
 
 On a graphical session, `Tab` switches between Play and Playlist. The Play tab
-uses the top two-thirds for a cassette visualizer by default; `V` cycles through
-Cassette, Oscilloscope, and Spectrum. The cassette reels turn only while audio
-plays and show track progress when duration is known. `Left`/`Right` plays the
+uses the space above the shared bottom controls for a cassette visualizer by
+default; `V` cycles through Cassette, Oscilloscope, and Spectrum. The cassette
+reels turn only while audio plays and show track progress when duration is
+known. `Left`/`Right` plays the
 previous or next track in the playlist ring, `Enter` plays or stops, Space
-pauses or resumes, and `Up`/`Down` adjusts volume. On the Playlist tab,
+pauses or resumes, and `Up`/`Down` adjusts volume. `<`/`>` seeks backward/forward
+by ten seconds without changing tracks; rewind/forward buttons provide the
+same actions. Seeking preserves pause state and discards queued audio.
+The controls show the track name, playback status and time above the volume bar.
+The middle button stops or starts playback and indicates pause while paused.
+On the Playlist tab,
 `Up`/`Down` selects, `Enter` starts the track and returns to Play, `A` opens the
 WAV/MP3 file browser, and `Delete` removes the selected playlist entry.
 
 The text interface is one playlist screen: `Up`/`Down` selects, `Enter` plays
-or stops, Space pauses or resumes, `A` opens the filtered file browser,
+or stops, Space pauses or resumes, `<`/`>` seeks backward/forward ten seconds,
+`A` opens the filtered file browser,
 `Delete` removes an entry, and `Esc` exits. Its bottom status line shows the
 playing, paused, or stopped state with elapsed and total time. Playback follows
 the resumable app while another foreground session is selected and stops when
 Player closes. End of file advances to the next playlist entry.
+
+WAV seeking is sample-aligned. MP3 seeking scans frame headers to locate the
+target, including in variable-bitrate files, then decodes a short warm-up for
+the bit reservoir and synthesis filter. A bounded transient index uses PSRAM
+when available. Player shows `SEEKING` until audio resumes. File scanning can
+still take time on slow storage; stopping playback cancels the seek. If the
+index cannot be allocated, playback uses slower sequential seeking instead.
 
 WAV playback converts the file's mono/stereo channel count and sample rate to
 the selected output stream. A mono recording therefore plays through a fixed
@@ -685,15 +699,19 @@ pages. The initial implementation does not support playlists, HLS, or AAC.
 Controls:
 
 - `Tab` switches between the Player and Channels tabs in the GUI.
-- The Player tab gives the top two-thirds of the screen to a live PCM
+- The Player tab gives the space above the shared bottom controls to a live PCM
   oscilloscope or spectrum analyzer. `V` switches visualizers. The spectrum
   analyzer uses the shared DSP service, including PIE SIMD window and FFT paths
   on eligible ESP32-S3 boards.
 - On the Player tab, `Left` and `Right` play the previous or next catalog
-  channel. The catalog wraps as a ring. Space or `Enter` stops or resumes
-  playback, and `Up`/`Down` changes global volume in five-percent steps.
-- The bottom third of the Player tab shows the channel, playback state, volume
-  bar, and previous, stop/play, and next controls.
+  channel. The catalog wraps as a ring. `Enter` stops playback or reconnects
+  the channel; Space pauses/resumes, and `Up`/`Down` changes global volume in
+  five-percent steps.
+- The bottom controls show the channel name, playback state and elapsed output
+  time above the volume bar, followed by Previous, Stop/Play, and Next buttons.
+  The buttons support clicking or tapping; the middle icon indicates pause
+  while paused. Live-channel pause uses bounded audio buffers; a server may
+  disconnect during a long pause, requiring reconnection.
 - On the Channels tab, `Up`/`Down` selects a channel, `A` adds one, `E` edits
   one, and `Delete` removes one. `Enter` starts the selected channel and returns
   to the Player tab. Add and edit dialogs accept a name followed by a literal
@@ -1809,6 +1827,9 @@ Controls:
 ## vplay
 
 Graphical MPEG-1 media player with optional MP2 audio.
+The bottom controls show playback status and elapsed time above the volume bar;
+full screen hides the controls and time. The middle Stop/Play icon indicates
+pause while paused.
 
 Usage:
 
@@ -1830,10 +1851,11 @@ Controls:
 - `Space` pauses/resumes.
 - `Up`/`Down` changes global volume.
 - `Enter` stops playback or restarts the selected file.
+- `<`/`>` seeks backward/forward ten seconds, preserving pause state.
 - `Left`/`Right` selects the previous/next MPEG file in the same folder, in
   filename order. At either end, the selection stays unchanged.
-- The shared Previous, Stop/Play, and Next buttons provide the same actions
-  when clicked or tapped.
+- The shared Previous, Rewind, Stop/Play, Forward, and Next buttons provide
+  the same actions when clicked or tapped.
 - `f` toggles full screen, hiding the header, volume strip, and transport buttons.
 - `0` selects actual size and `1` selects fit.
   Actual-size video larger than the viewport is cropped centrally.
@@ -1845,6 +1867,13 @@ end of the file. Audio uses the selected SolarOS output and acts as the playback
 clock when present; a file with audio requires an available playback output.
 Video dimensions and frame rate must remain constant, and the initial audio/video
 timestamp difference must be no more than ten seconds.
+
+Seeking discards queued audio and jumps to an earlier timestamped intra frame,
+then decodes the reference pictures and MP2 warm-up needed at the target.
+Files without usable seek timestamps fall back to sequential decoding, which
+can take longer. Buffers remain bounded, and `SEEKING` indicates preparation;
+stopping or closing playback cancels the work. Positions beyond the end are
+clamped to the last video frame.
 
 ## sketch
 

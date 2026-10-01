@@ -22,8 +22,8 @@
 typedef struct mpeg_player mpeg_player_t;
 static void mpeg_player_destroy(mpeg_player_t *p);
 
-#define HEADER_HEIGHT 28U
-#define CONTROLS_HEIGHT 88U
+#define HEADER_HEIGHT SOLAR_OS_MEDIA_PLAYER_HEADER_HEIGHT
+#define CONTROLS_HEIGHT SOLAR_OS_MEDIA_PLAYER_CONTROLS_HEIGHT
 #define AUDIO_LEAD 0.50
 #define LATE_US 120000
 SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(VPLAY_STACK);
@@ -32,6 +32,8 @@ struct mpeg_player {
     TaskHandle_t task;
     SemaphoreHandle_t mutex;
     volatile bool stop, done, suspended, paused;
+    volatile bool seeking;
+    int64_t seek_yield_at;
     bool fit, fullscreen, stopped, color, pending, dirty, layout_dirty, audio_running, audio_eof, diagnostics,
         high_refresh, simd;
     char display_target[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
@@ -42,6 +44,7 @@ struct mpeg_player {
     int64_t next_time, wall_start, pause_start, sink_at, sink_time, sink_quantum;
     uint64_t sink_frames;
     uint32_t sample_rate;
+    double start_time;
     solar_os_mpeg_t *decoder;
     solar_os_audio_player_t *audio;
     solar_os_mpeg_info_t info;
@@ -53,9 +56,19 @@ struct mpeg_player {
     uint32_t decoded, displayed, dropped;
     uint64_t decode_us, convert_us, present_us;
     int64_t last_stats;
+    int64_t displayed_second;
 };
 
-static bool cancelled(void *user) { return ((mpeg_player_t *)user)->stop; }
+static bool cancelled(void *user)
+{
+    mpeg_player_t *p = user;
+    if (p->seeking && esp_timer_get_time() - p->seek_yield_at >= 10000) {
+        /* Seeking has no display/audio waits to let the idle task run. */
+        vTaskDelay(1);
+        p->seek_yield_at = esp_timer_get_time();
+    }
+    return p->stop;
+}
 static void refresh(mpeg_player_t *p, bool enabled)
 {
     if (p->display_target[0] && p->high_refresh != enabled &&
@@ -79,7 +92,7 @@ static int64_t clock_locked(mpeg_player_t *p)
         return p->sink_time + delta;
     }
     if (!p->wall_start)
-        return 0;
+        return (int64_t)(p->start_time * 1000000);
     return (p->pause_start ? p->pause_start : now) - p->wall_start;
 }
 static void audio_state(bool playing, void *user)
@@ -190,7 +203,18 @@ static void worker(void *user)
     }
     solar_os_mpeg_info_t info;
     solar_os_mpeg_info(p->decoder, &info);
+    double position = p->start_time;
+    if (p->start_time > 0) {
+        p->seeking = true;
+        err = solar_os_mpeg_seek(p->decoder, p->start_time, &position);
+        p->seeking = false;
+        if (err != ESP_OK) {
+            failure(p, err, solar_os_mpeg_error(p->decoder));
+            goto end;
+        }
+    }
     xSemaphoreTake(p->mutex, portMAX_DELAY);
+    p->start_time = position;
     p->info = info;
     p->layout_dirty = true;
     xSemaphoreGive(p->mutex);
@@ -222,7 +246,17 @@ static void worker(void *user)
             failure(p, err, "audio output unavailable, busy, or insufficient task SRAM");
             goto end;
         }
+        xSemaphoreTake(p->mutex, portMAX_DELAY);
         p->sample_rate = p->output.sample_rate;
+        p->sink_frames = (uint64_t)(p->start_time * p->sample_rate);
+        p->sink_time = (int64_t)(p->start_time * 1000000);
+        xSemaphoreGive(p->mutex);
+    }
+    if (p->start_time > 0 && !info.audio) {
+        xSemaphoreTake(p->mutex, portMAX_DELAY);
+        p->wall_start = esp_timer_get_time() - (int64_t)(p->start_time * 1000000);
+        if (paused(p)) p->pause_start = esp_timer_get_time();
+        xSemaphoreGive(p->mutex);
     }
     bool video_end = false, audio_end = !info.audio;
     double audio_until = 0, video_until = 0;
@@ -372,14 +406,15 @@ end:
 }
 static void viewport(mpeg_player_t *p)
 {
-    p->viewport_x = p->fullscreen ? 0U : 5U;
-    p->viewport_y = p->fullscreen ? 0U : HEADER_HEIGHT + 4U;
-    p->viewport_width = p->screen_width - 2U * p->viewport_x;
-    p->viewport_height = p->fullscreen ? p->screen_height
-        : p->screen_height - HEADER_HEIGHT - CONTROLS_HEIGHT - 8U;
+    solar_os_media_player_layout_t layout;
+    solar_os_media_player_layout(p->screen_width, p->screen_height, true, &layout);
+    p->viewport_x = p->fullscreen ? 0U : layout.view_x;
+    p->viewport_y = p->fullscreen ? 0U : layout.view_y;
+    p->viewport_width = p->fullscreen ? p->screen_width : layout.view_width;
+    p->viewport_height = p->fullscreen ? p->screen_height : layout.view_height;
 }
 static esp_err_t mpeg_player_start(solar_os_context_t *ctx, const char *path, bool fit,
-                                   bool fullscreen,
+                                   bool fullscreen, double start_time, bool paused,
                                    mpeg_player_t **out)
 {
     *out = NULL;
@@ -398,6 +433,9 @@ static esp_err_t mpeg_player_start(solar_os_context_t *ctx, const char *path, bo
     }
     p->fit = fit;
     p->fullscreen = fullscreen;
+    p->start_time = start_time;
+    p->seeking = start_time > 0;
+    p->paused = paused;
     p->color = solar_os_gfx_format(gfx) == SOLAR_OS_DISPLAY_FORMAT_INDEX8;
     p->screen_width = solar_os_gfx_width(gfx);
     p->screen_height = solar_os_gfx_height(gfx);
@@ -480,51 +518,51 @@ static const char *vplay_basename(const char *path)
     const char *slash = strrchr(path, '/');
     return slash ? slash + 1 : path;
 }
-static void draw_chrome(mpeg_player_t *p, solar_os_gfx_t *gfx)
+static void playback_status_text(mpeg_player_t *p, int64_t second, char *status, size_t capacity)
+{
+    const char *state = p->stopped ? "STOPPED" : p->seeking ? "SEEKING" :
+                        paused(p) ? "PAUSED" : "PLAYING";
+    snprintf(status, capacity, "%s %02llu:%02llu", state,
+             (unsigned long long)(second / 60), (unsigned long long)(second % 60));
+}
+static bool draw_play_time(mpeg_player_t *p, solar_os_gfx_t *gfx, int64_t clock, bool force)
+{
+    if (p->fullscreen)
+        return false;
+    int64_t second = p->stopped ? p->displayed_second : clock > 0 ? clock / 1000000 : 0;
+    if (!force && second == p->displayed_second)
+        return false;
+    p->displayed_second = second;
+    /* Redraw only the status row: never clear or re-rasterize the video. */
+    char status[48];
+    playback_status_text(p, second, status, sizeof(status));
+    solar_os_media_player_status_draw(gfx, p->screen_width, p->screen_height, status);
+    return true;
+}
+static void draw_chrome(mpeg_player_t *p, solar_os_gfx_t *gfx, int64_t clock)
 {
     solar_os_gfx_clear(gfx, SOLAR_OS_GFX_COLOR_WHITE);
     if (!p->fullscreen) {
         const int w = p->screen_width, h = p->screen_height;
-        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-        solar_os_gfx_fill_rect(gfx, 0, 0, w, HEADER_HEIGHT);
-        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
-        solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
-        solar_os_gfx_text(gfx, 7, 19, "VPlay");
-        solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_MONO_12);
-        const char *state = p->stopped ? "STOPPED" : paused(p) ? "PAUSED" : "PLAYING";
-        solar_os_gfx_text(gfx, w - (int)solar_os_gfx_text_width(gfx, state) - 7, 18, state);
-        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-        solar_os_gfx_line(gfx, 0, h - CONTROLS_HEIGHT, w - 1, h - CONTROLS_HEIGHT);
-        char title[SOLAR_OS_STORAGE_PATH_MAX];
-        snprintf(title, sizeof(title), "%s", vplay_basename(p->path));
-        solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
-        while (title[0] && solar_os_gfx_text_width(gfx, title) > (size_t)(w - 14))
-            title[strlen(title) - 1] = 0;
-        solar_os_gfx_text(gfx, (w - (int)solar_os_gfx_text_width(gfx, title)) / 2, h - 68, title);
-        char status[72];
-        snprintf(status, sizeof(status), "%lux%lu  %.1f fps  %s",
+        char metadata[72];
+        snprintf(metadata, sizeof(metadata), "%lux%lu %.1ffps %s",
                  (unsigned long)p->info.width, (unsigned long)p->info.height,
                  p->info.fps, p->fit ? "FIT" : "ACTUAL");
-        solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
-        solar_os_gfx_text(gfx, (w - (int)solar_os_gfx_text_width(gfx, status)) / 2, h - 52, status);
+        solar_os_media_player_header_draw(gfx, w, "VPlay", metadata);
+        p->displayed_second = p->stopped ? p->displayed_second : clock > 0 ? clock / 1000000 : 0;
+        char status[48];
+        playback_status_text(p, p->displayed_second, status, sizeof(status));
         solar_os_audio_status_t audio;
         solar_os_audio_get_status(&audio);
-        const int volume_width = w / 2, volume_x = (w - volume_width) / 2, volume_y = h - 44;
-        solar_os_gfx_text(gfx, volume_x - 29, volume_y + 9, "VOL");
-        solar_os_gfx_rect(gfx, volume_x, volume_y, volume_width, 10);
-        if (audio.volume)
-            solar_os_gfx_fill_rect(gfx, volume_x + 2, volume_y + 2,
-                                   (volume_width - 4) * audio.volume / 100, 6);
-        char percent[8];
-        snprintf(percent, sizeof(percent), "%u%%", audio.volume);
-        solar_os_gfx_text(gfx, volume_x + volume_width + 5, volume_y + 9, percent);
-        const int gap = 5, button_width = (w - 4 * gap) / 3;
-        solar_os_media_transport_button_draw(gfx, gap, h - 25, button_width, 21,
-                                             SOLAR_OS_MEDIA_TRANSPORT_PREVIOUS, false);
-        solar_os_media_transport_button_draw(gfx, gap * 2 + button_width, h - 25, button_width, 21,
-            p->stopped ? SOLAR_OS_MEDIA_TRANSPORT_PLAY : SOLAR_OS_MEDIA_TRANSPORT_STOP, false);
-        solar_os_media_transport_button_draw(gfx, gap * 3 + button_width * 2, h - 25, button_width, 21,
-                                             SOLAR_OS_MEDIA_TRANSPORT_NEXT, false);
+        solar_os_media_player_controls_draw(gfx, w, h, vplay_basename(p->path), status,
+            audio.volume, true, p->stopped ? SOLAR_OS_MEDIA_TRANSPORT_PLAY :
+            paused(p) ? SOLAR_OS_MEDIA_TRANSPORT_PAUSE : SOLAR_OS_MEDIA_TRANSPORT_STOP);
+    } else if (p->seeking) {
+        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+        solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
+        solar_os_gfx_text(gfx,
+            ((int)p->screen_width - (int)solar_os_gfx_text_width(gfx, "SEEKING")) / 2,
+            p->screen_height / 2, "SEEKING");
     }
     solar_os_gfx_present(gfx);
 }
@@ -540,6 +578,7 @@ static void mpeg_player_event(solar_os_context_t *ctx, mpeg_player_t *p,
             solar_os_audio_set_volume(v < 0 ? 0 : v > 100 ? 100 : v);
             p->layout_dirty = true;
         } else if (key == ' ') {
+            if (p->stopped || p->done) return;
             xSemaphoreTake(p->mutex, portMAX_DELAY);
             if (!paused(p))
                 p->pause_start = esp_timer_get_time();
@@ -588,12 +627,15 @@ static void mpeg_player_event(solar_os_context_t *ctx, mpeg_player_t *p,
         p->dirty = true;
     }
     bool dirty = p->dirty, chrome = p->layout_dirty;
+    int64_t display_time = p->seeking ? (int64_t)(p->start_time * 1000000) : clock;
     p->dirty = false;
     p->layout_dirty = false;
     xSemaphoreGive(p->mutex);
     solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
     if (chrome)
-        draw_chrome(p, gfx);
+        draw_chrome(p, gfx, display_time);
+    else if (draw_play_time(p, gfx, display_time, false))
+        solar_os_gfx_present(gfx);
     if ((dirty || chrome) && p->current && p->current_w <= p->viewport_width &&
         p->current_h <= p->viewport_height) {
         int64_t started = esp_timer_get_time();
@@ -645,6 +687,8 @@ static void mpeg_player_event(solar_os_context_t *ctx, mpeg_player_t *p,
 typedef struct {
     mpeg_player_t *player;
     bool fit, fullscreen, restart;
+    bool restart_paused;
+    double restart_time;
     char next_path[SOLAR_OS_STORAGE_PATH_MAX];
     int16_t pointer_x, pointer_y;
 } vplay_state_t;
@@ -678,7 +722,8 @@ static esp_err_t vplay_start(solar_os_context_t *ctx)
         return ESP_OK;
     }
     solar_os_context_set_graphics_active(ctx, true);
-    err = mpeg_player_start(ctx, path, vplay_state.fit, vplay_state.fullscreen, &vplay_state.player);
+    err = mpeg_player_start(ctx, path, vplay_state.fit, vplay_state.fullscreen, 0, false,
+                            &vplay_state.player);
     if (err != ESP_OK) {
         solar_os_context_set_graphics_active(ctx, false);
         solar_os_context_finish(
@@ -724,8 +769,12 @@ static void vplay_reap_stopped(mpeg_player_t *p)
 }
 static void vplay_stop_playback(mpeg_player_t *p)
 {
+    xSemaphoreTake(p->mutex, portMAX_DELAY);
+    int64_t clock = clock_locked(p);
+    p->displayed_second = clock > 0 ? clock / 1000000 : 0;
     p->stopped = true;
     p->layout_dirty = true;
+    xSemaphoreGive(p->mutex);
     mpeg_player_stop(p);
     vplay_reap_stopped(p);
 }
@@ -733,7 +782,21 @@ static void vplay_restart(const char *path)
 {
     snprintf(vplay_state.next_path, sizeof(vplay_state.next_path), "%s", path);
     vplay_state.restart = true;
+    vplay_state.restart_time = 0;
+    vplay_state.restart_paused = false;
     vplay_stop_playback(vplay_state.player);
+}
+static void vplay_seek(int direction)
+{
+    mpeg_player_t *p = vplay_state.player;
+    if (p->stopped || p->done) return;
+    xSemaphoreTake(p->mutex, portMAX_DELAY);
+    double target = clock_locked(p) / 1000000.0 + direction * 10.0;
+    bool paused = p->paused;
+    xSemaphoreGive(p->mutex);
+    vplay_restart(p->path);
+    vplay_state.restart_time = target < 0 ? 0 : target;
+    vplay_state.restart_paused = paused;
 }
 static int compare_names(const char *a, const char *b)
 {
@@ -788,7 +851,9 @@ static bool vplay_transport(uint8_t key)
     mpeg_player_t *p = vplay_state.player;
     if (vplay_state.restart)
         return true;
-    if (key == SOLAR_OS_KEY_LEFT)
+    if (key == '<' || key == '>')
+        vplay_seek(key == '<' ? -1 : 1);
+    else if (key == SOLAR_OS_KEY_LEFT)
         vplay_neighbor(-1);
     else if (key == SOLAR_OS_KEY_RIGHT)
         vplay_neighbor(1);
@@ -797,9 +862,7 @@ static bool vplay_transport(uint8_t key)
             vplay_restart(p->path);
         else
             vplay_stop_playback(p);
-    } else if (key == ' ' && p->stopped)
-        vplay_restart(p->path);
-    else
+    } else
         return false;
     return true;
 }
@@ -817,16 +880,10 @@ static bool vplay_pointer(const solar_os_input_pointer_event_t *event)
     if (p->fullscreen || event->action != SOLAR_OS_INPUT_POINTER_PRESS ||
         !(event->buttons & SOLAR_OS_INPUT_POINTER_BUTTON_PRIMARY))
         return false;
-    int x = vplay_state.pointer_x, y = vplay_state.pointer_y;
-    if (y < (int)p->screen_height - 25 || y >= (int)p->screen_height - 4)
-        return false;
-    int width = ((int)p->screen_width - 20) / 3;
-    for (int i = 0; i < 3; i++) {
-        int left = 5 * (i + 1) + width * i;
-        if (x >= left && x < left + width)
-            return vplay_transport(i == 0 ? SOLAR_OS_KEY_LEFT : i == 1 ? '\r' : SOLAR_OS_KEY_RIGHT);
-    }
-    return false;
+    int button = solar_os_media_player_button_at(p->screen_width, p->screen_height, true,
+                                                  vplay_state.pointer_x, vplay_state.pointer_y);
+    static const uint8_t keys[] = {SOLAR_OS_KEY_LEFT, '<', '\r', '>', SOLAR_OS_KEY_RIGHT};
+    return button >= 0 ? vplay_transport(keys[button]) : false;
 }
 static bool vplay_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
@@ -861,7 +918,8 @@ static bool vplay_event(solar_os_context_t *ctx, const solar_os_event_t *event)
             vplay_state.player = NULL;
             vplay_state.restart = false;
             esp_err_t err = mpeg_player_start(ctx, vplay_state.next_path, vplay_state.fit,
-                                             vplay_state.fullscreen, &vplay_state.player);
+                                             vplay_state.fullscreen, vplay_state.restart_time,
+                                             vplay_state.restart_paused, &vplay_state.player);
             if (err != ESP_OK) {
                 char detail[96];
                 snprintf(detail, sizeof(detail), "vplay: cannot restart decoder (%s)", esp_err_to_name(err));
@@ -886,7 +944,7 @@ const solar_os_app_t solar_os_vplay_app = {
     .name = "vplay",
     .summary = "MPEG-1 media player",
     .app_class = SOLAR_OS_APP_CLASS_GUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_POINTER_EVENTS,
     .start = vplay_start,
     .stop = vplay_stop,
     .suspend = vplay_suspend,

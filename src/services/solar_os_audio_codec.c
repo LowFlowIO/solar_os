@@ -93,7 +93,12 @@ void solar_os_audio_mp3_decoder_destroy(
     audio_codec_free(decoder);
 }
 
-esp_err_t solar_os_audio_mp3_decode(
+void solar_os_audio_mp3_decoder_reset(solar_os_audio_mp3_decoder_t *decoder)
+{
+    if (decoder != NULL) mp3dec_init(&decoder->decoder);
+}
+
+static esp_err_t audio_mp3_process(
     solar_os_audio_mp3_decoder_t *decoder,
     const uint8_t *input,
     size_t input_len,
@@ -102,8 +107,8 @@ esp_err_t solar_os_audio_mp3_decode(
     size_t pcm_capacity_samples,
     solar_os_audio_decoded_frame_t *frame)
 {
-    if (decoder == NULL || input == NULL || consumed == NULL || pcm == NULL ||
-        frame == NULL || pcm_capacity_samples < SOLAR_OS_AUDIO_MP3_MAX_PCM_SAMPLES ||
+    if (decoder == NULL || input == NULL || consumed == NULL ||
+        frame == NULL || (pcm != NULL && pcm_capacity_samples < SOLAR_OS_AUDIO_MP3_MAX_PCM_SAMPLES) ||
         input_len > INT_MAX) {
         return ESP_ERR_INVALID_ARG;
     }
@@ -122,7 +127,7 @@ esp_err_t solar_os_audio_mp3_decode(
             *consumed = input_len;
         }
     }
-    if (frames <= 0) {
+    if (decoded.hz == 0) {
         return ESP_OK;
     }
     if (decoded.hz < (int)AUDIO_MP3_MIN_SAMPLE_RATE || decoded.channels <= 0 ||
@@ -139,7 +144,32 @@ esp_err_t solar_os_audio_mp3_decode(
     };
     frame->frames = (size_t)frames;
     frame->samples = frame->frames * frame->format.channels;
+    frame->source_frames = decoded.layer == 1 ? 384U : decoded.layer == 2 ? 1152U :
+        (input[decoded.frame_offset + 1] & 8U) ? 1152U : 576U;
+    const uint8_t *header = input + decoded.frame_offset;
+    size_t overhead = 4U + ((header[1] & 1U) ? 0U : 2U);
+    if (decoded.layer == 3) overhead += (header[1] & 8U) ?
+        (decoded.channels == 1 ? 17U : 32U) : (decoded.channels == 1 ? 9U : 17U);
+    size_t encoded_bytes = decoded.frame_bytes - decoded.frame_offset;
+    frame->main_data_bytes = encoded_bytes > overhead ? encoded_bytes - overhead : 0;
     return ESP_OK;
+}
+
+esp_err_t solar_os_audio_mp3_decode(
+    solar_os_audio_mp3_decoder_t *decoder, const uint8_t *input, size_t input_len,
+    size_t *consumed, int16_t *pcm, size_t pcm_capacity_samples,
+    solar_os_audio_decoded_frame_t *frame)
+{
+    if (pcm == NULL) return ESP_ERR_INVALID_ARG;
+    return audio_mp3_process(decoder, input, input_len, consumed, pcm,
+                             pcm_capacity_samples, frame);
+}
+
+esp_err_t solar_os_audio_mp3_scan(
+    solar_os_audio_mp3_decoder_t *decoder, const uint8_t *input, size_t input_len,
+    size_t *consumed, solar_os_audio_decoded_frame_t *frame)
+{
+    return audio_mp3_process(decoder, input, input_len, consumed, NULL, 0, frame);
 }
 
 esp_err_t solar_os_audio_mp3_probe(const uint8_t *input,

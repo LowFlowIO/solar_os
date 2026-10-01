@@ -20,6 +20,9 @@ typedef struct {
     solar_os_stream_audio_format_t format;
     size_t frames;
     size_t samples;
+    /* Encoded duration, including frames skipped for missing reservoir data. */
+    size_t source_frames;
+    size_t main_data_bytes;
 } solar_os_audio_decoded_frame_t;
 
 /*
@@ -31,6 +34,12 @@ esp_err_t solar_os_audio_mp3_decoder_create(
     solar_os_audio_mp3_decoder_t **decoder);
 void solar_os_audio_mp3_decoder_destroy(
     solar_os_audio_mp3_decoder_t *decoder);
+void solar_os_audio_mp3_decoder_reset(solar_os_audio_mp3_decoder_t *decoder);
+/* Header-only frame scan: no PCM synthesis or reservoir updates. Reset and
+ * decode a warm-up prefix before using this decoder for audible samples. */
+esp_err_t solar_os_audio_mp3_scan(
+    solar_os_audio_mp3_decoder_t *decoder, const uint8_t *input, size_t input_len,
+    size_t *consumed, solar_os_audio_decoded_frame_t *frame);
 esp_err_t solar_os_audio_mp3_decode(
     solar_os_audio_mp3_decoder_t *decoder,
     const uint8_t *input,

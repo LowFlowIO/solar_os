@@ -2,6 +2,21 @@
 
 ## 4.x
 
+- **4.15.14** — 2026-10-01 — `player` and `vplay` gain
+  backward/forward seeking in ten-second steps with `<`/`>` and shared
+  rewind/forward buttons. Seeking retains the selected track and pause
+  state, releases queued audio, and rebases playback timing. Player supports
+  seeking in both graphical and text interfaces. WAV seeks to sample
+  boundaries; MP3 scans frame headers and decodes a bounded reservoir/filter
+  warm-up near the target. MPEG uses timestamped intra-frame seeking with
+  video-reference and MP2 warm-up, falling back to sequential decoding when
+  timestamps are unavailable. Seek processing remains bounded, cancellable,
+  and watchdog-safe, preserves audio/video timing, and displays SEEKING while
+  preparing playback. Player, WebRadio, and VPlay share a compact bottom
+  controls panel with status/time above volume and a larger media viewport.
+  WebRadio adds elapsed output time, clickable transport controls, and Space
+  pause/resume. The middle Stop/Play control indicates pause while paused;
+  seek icons match the other controls' height.
 - **4.15.13** — 2026-10-01 — Files opens MPEG-1 `.mpg` and
   `.mpeg` files in `vplay` when the app is installed, including uppercase
   extensions. Closing playback returns to the file browser. The Files help

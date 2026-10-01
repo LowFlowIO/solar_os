@@ -30,6 +30,11 @@ esp_err_t solar_os_mpeg_open(const char *path, solar_os_mpeg_cancel_t cancel, vo
                              solar_os_mpeg_t **decoder, char *detail, size_t detail_size);
 void solar_os_mpeg_close(solar_os_mpeg_t *decoder);
 void solar_os_mpeg_info(const solar_os_mpeg_t *decoder, solar_os_mpeg_info_t *info);
+/* Seek via timestamped intra frames, with bounded reference/audio warm-up.
+ * Files without usable seek timestamps use sequential decode/discard instead.
+ * Maintains audio alignment; both packet scanning and decoding are cancellable.
+ * The next video/audio reads return the first retained frames at that position. */
+esp_err_t solar_os_mpeg_seek(solar_os_mpeg_t *decoder, double seconds, double *position);
 esp_err_t solar_os_mpeg_video(solar_os_mpeg_t *decoder, solar_os_mpeg_frame_t *frame, bool *ended);
 esp_err_t solar_os_mpeg_audio(solar_os_mpeg_t *decoder, solar_os_mpeg_audio_t *audio, bool *ended);
 const char *solar_os_mpeg_error(const solar_os_mpeg_t *decoder);

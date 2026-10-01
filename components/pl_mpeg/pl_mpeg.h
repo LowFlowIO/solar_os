@@ -2120,6 +2120,7 @@ plm_packet_t *plm_demux_seek(plm_demux_t *self, double seek_time, int type, int 
 			// iteration can be a bit more precise.
 			if (packet->pts > seek_time || packet->pts < seek_time - scan_span) {
 				found_packet_with_pts = TRUE;
+				if (packet->pts == cur_time) return NULL;
 				byterate = (seek_pos - cur_pos) / (packet->pts - cur_time);
 				cur_time = packet->pts;
 				break;
@@ -2140,7 +2141,7 @@ plm_packet_t *plm_demux_seek(plm_demux_t *self, double seek_time, int type, int 
 			// later, when we know it's the last intra frame before desired
 			// seek time.
 			if (force_intra) {
-				for (size_t i = 0; i < packet->length - 6; i++) {
+				for (size_t i = 0; i + 6 <= packet->length; i++) {
 					// Find the START_PICTURE code
 					if (
 						packet->data[i] == 0x00 &&
@@ -2182,6 +2183,7 @@ plm_packet_t *plm_demux_seek(plm_demux_t *self, double seek_time, int type, int 
 		// If we didn't find any packet with a PTS, it probably means we reached
 		// the end of the file. Estimate byterate and cur_time accordingly.
 		else if (!found_packet_with_pts) {
+			if (duration == cur_time) return NULL;
 			byterate = (seek_pos - cur_pos) / (duration - cur_time);
 			cur_time = duration;
 		}
@@ -2735,6 +2737,7 @@ struct plm_video_t {
 
 	int start_code;
 	int picture_type;
+	int temporal_reference;
 
 	plm_video_motion_t motion_forward;
 	plm_video_motion_t motion_backward;
@@ -2856,7 +2859,8 @@ double plm_video_get_time(plm_video_t *self) {
 }
 
 void plm_video_set_time(plm_video_t *self, double time) {
-	self->frames_decoded = self->framerate * time;
+	/* PTS subtraction can land just below an integral frame number. */
+	self->frames_decoded = (int)(self->framerate * time + 0.5);
 	self->time = time;
 }
 
@@ -3061,7 +3065,7 @@ void plm_video_init_frame(plm_video_t *self, plm_frame_t *frame, uint8_t *base) 
 }
 
 void plm_video_decode_picture(plm_video_t *self) {
-	plm_buffer_skip(self->buffer, 10); // skip temporalReference
+	self->temporal_reference = plm_buffer_read(self->buffer, 10);
 	self->picture_type = plm_buffer_read(self->buffer, 3);
 	plm_buffer_skip(self->buffer, 16); // skip vbv_delay
 
@@ -3981,9 +3985,10 @@ double plm_audio_get_time(plm_audio_t *self) {
 }
 
 void plm_audio_set_time(plm_audio_t *self, double time) {
-	self->samples_decoded = time *
-		(double)PLM_AUDIO_SAMPLE_RATE[self->samplerate_index];
-	self->time = time;
+	/* PES timestamps have 90 kHz resolution; snap to the nearest PCM sample. */
+	int rate = PLM_AUDIO_SAMPLE_RATE[self->samplerate_index];
+	self->samples_decoded = (int)(time * (double)rate + 0.5);
+	self->time = (double)self->samples_decoded / rate;
 }
 
 void plm_audio_rewind(plm_audio_t *self) {
