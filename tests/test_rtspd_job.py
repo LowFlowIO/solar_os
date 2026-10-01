@@ -10,6 +10,14 @@ JOBS_MANUAL = (ROOT / "doc/manual/jobs.reference.md").read_text(encoding="utf-8"
 
 
 class RtspdJobPolicyTest(unittest.TestCase):
+    def test_live_stream_completion_is_package_gated_and_keeps_equals_open(self):
+        shell = (ROOT / "src/apps/solar_os_shell.c").read_text()
+        self.assertIn("#if SOLAR_OS_PACKAGE_JOB_RTSPD\n    if (solar_os_shell_rtspd_completion_emit", shell)
+        self.assertIn("solar_os_stream_count(), shell_completion_get_rtspd_stream", shell)
+        complete = shell.split("static bool shell_complete_argument(", 1)[1].split("static ", 1)[0]
+        self.assertIn("solar_os_shell_completion_needs_trailing_space(state.match)", complete)
+        self.assertIn('"shell/solar_os_shell_rtspd_completion.c"', PACKAGES)
+
     def test_package_and_registry_wiring(self):
         package = PACKAGES.split("[packages.job_rtspd]", 1)[1].split(
             "[packages.", 1

@@ -3,6 +3,7 @@
 #include "solar_os_shell_commands.h"
 #include "solar_os_shell_completion.h"
 #include "solar_os_shell_gesture_completion.h"
+#include "solar_os_shell_rtspd_completion.h"
 #include "solar_os_shell_common.h"
 #include "solar_os_shell_io.h"
 #include "solar_os_shell_launch.h"
@@ -7995,6 +7996,20 @@ static bool shell_complete_gesture_argument(
     return true;
 }
 
+#if SOLAR_OS_PACKAGE_JOB_RTSPD
+static bool shell_completion_get_rtspd_stream(size_t index,
+    solar_os_stream_info_t *info, void *context)
+{
+    (void)context;
+    return solar_os_stream_get(index, info);
+}
+
+static void shell_completion_emit_rtspd_candidate(const char *candidate, void *context)
+{
+    shell_completion_emit((shell_completion_match_t *)context, candidate);
+}
+#endif
+
 static bool shell_completion_collect_matches(solar_os_context_t *ctx,
                                              const char * const *tokens,
                                              size_t token_count,
@@ -8014,6 +8029,12 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
     state->io = shell_io(ctx);
     state->prefix = prefix;
     state->print = print;
+
+#if SOLAR_OS_PACKAGE_JOB_RTSPD
+    if (solar_os_shell_rtspd_completion_emit(tokens, token_count, prefix,
+            solar_os_stream_count(), shell_completion_get_rtspd_stream, NULL,
+            shell_completion_emit_rtspd_candidate, state)) return true;
+#endif
 
     for (uint16_t rule_index = shell_completion_rule_first(tokens[0]);
          rule_index != SHELL_COMPLETION_RULE_NONE;
@@ -8409,10 +8430,11 @@ static bool shell_complete_argument(solar_os_context_t *ctx,
         char completed[SHELL_INPUT_MAX];
         snprintf(completed,
                  sizeof(completed),
-                 "%.*s%s ",
+                 "%.*s%s%s",
                  (int)token_start,
                  shell_session(ctx)->input,
-                 state.match);
+                 state.match,
+                 solar_os_shell_completion_needs_trailing_space(state.match) ? " " : "");
         shell_replace_input(ctx, completed);
         return true;
     }

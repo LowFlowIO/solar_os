@@ -19,6 +19,10 @@ TARGETS += rtsp_receiver_test
 TARGETS += rtsp_client_test
 TARGETS += gfx_mono_raster_test
 TARGETS += rgb565_raster_test
+TARGETS += rtspd_completion_test
+
+rtspd_completion_test: rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.h $(ROOT)/src/services/solar_os_stream.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services -I$(ROOT)/src/shell rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c -o $@
 
 rgb565_raster_test: rgb565_raster_test.c $(ROOT)/src/services/solar_os_rgb565.h $(ROOT)/src/services/solar_os_display_surface.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
@@ -609,6 +613,7 @@ test: $(TARGETS)
 	./rtsp_client_test
 	./gfx_mono_raster_test
 	./rgb565_raster_test
+	./rtspd_completion_test
 	./mjpeg_test
 	./http_server_test
 	./sensors_service_test

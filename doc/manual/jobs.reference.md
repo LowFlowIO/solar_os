@@ -555,6 +555,9 @@ Use `streams` to find available video and audio source IDs. Audio must be a sour
 duplex S16LE PCM endpoint with 16-bit samples, 1..8 channels, and a native rate
 of 8000..192000 Hz. The job advertises the source's native rate and channels;
 it does not resample. Only selected hardware is leased as `job:rtspd`.
+Tab completion after `job start rtspd` offers unused option keys. After `audio=`
+or `video=`, double Tab lists compatible registered source IDs and `none`;
+partial IDs complete normally. Selection does not open or lease the source.
 Audio-only publishing requires neither a camera nor the camera package.
 Selecting an absent, busy, sink-only, or incompatible source fails startup;
 there is no silent fallback to another source.

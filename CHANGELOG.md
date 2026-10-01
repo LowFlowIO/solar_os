@@ -2,6 +2,13 @@
 
 ## 4.x
 
+- **4.15.8** — 2026-10-01 — DVP cameras are reusable expansion
+  devices and exclusive typed video sources in `streams`. The native `rtsp`
+  app plays JPEG/L16 streams with bounded video/audio buffering, global
+  volume, an audio-only oscilloscope, full-screen viewing, and frame
+  diagnostics. Color TFTs with native RGB565 support bypass palette conversion;
+  monochrome displays retain grayscale rendering. `rtspd` selects compatible
+  audio/video stream IDs explicitly and offers source-aware tab completion.
 - **4.15.7** — 2026-09-30 — Added the `rtspd` job for single-client
   RTSP publishing with RTP/JPEG video, RTP/L16 PCM audio, and RTCP timing.
   Explicit `video=` and `audio=` sources support camera-only, audio-only,
