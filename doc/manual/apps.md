@@ -129,7 +129,7 @@ also rebases the jitter clock, discarding queued PCM and the converter's partial
 block instead of allowing a full, silent queue. Diagnostics report rebuffering.
 Runtime allocations are released on exit; the app reserves no idle bulk SRAM.
 
-Active worker/DMA budget (not the cumulative `mem policy` request counters):
+Worker stacks and DMA buffers:
 
 | Resource | Reserved bytes | Placement |
 | --- | ---: | --- |
@@ -146,14 +146,12 @@ driver uses four 128-frame stereo S16 buffers per direction, including input
 when opening the duplex output. DMA descriptors, codec/I2S state, socket state
 and task control blocks are additional, so heap deltas are not just stack plus
 payload sizes. Internal and DMA heap views overlap; do not add them together.
-Budget the 32 KiB internal reserve, startup transients and largest contiguous
-block as well as steady-state free bytes. External-preferred buffers can consume
-internal memory on non-PSRAM targets. A measured stack margin is not permission
-to shrink a stack without exercising reconnect, errors, decode and cleanup.
-The current audio operation lock prevents opening capture after playback is
-already active, including on the Freenove duplex codec. Do not assume
-simultaneous input/output admission from the hardware's duplex capability;
-measure supported workloads separately.
+Task admission preserves a 32 KiB internal reserve. `mem` reports free memory
+and the largest contiguous blocks; `top` reports minimum free task-stack space.
+`mem policy` request totals are cumulative, not active allocation sizes.
+External-preferred buffers can consume internal memory on non-PSRAM targets.
+Opening microphone capture while playback is active is not supported, including
+on the Freenove duplex codec.
 
 V1 supports unauthenticated IPv4 RTSP 1.0, one JPEG and one L16 track, and unicast
 UDP. JPEG uses the publisher's explicit 8-bit quantization tables (Q=255), types

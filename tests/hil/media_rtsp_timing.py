@@ -212,12 +212,14 @@ def main():
     parser.add_argument("url")
     parser.add_argument("--seconds", type=float, default=6)
     parser.add_argument("--idle-seconds", type=float, default=2)
+    parser.add_argument("--cycles", type=int, default=2)
     args = parser.parse_args()
-    if args.seconds < 3 or not 0 <= args.idle_seconds <= 30:
-        parser.error("Use at least 3 seconds per session and an idle wait of 0..30s")
-    check_session(args.url, args.seconds)
-    time.sleep(args.idle_seconds)
-    check_session(args.url, args.seconds)
+    if args.seconds < 3 or not 0 <= args.idle_seconds <= 30 or args.cycles < 1:
+        parser.error("Use at least 3 seconds per session, a positive cycle count and an idle wait of 0..30s")
+    for cycle in range(args.cycles):
+        if cycle:
+            time.sleep(args.idle_seconds)
+        check_session(args.url, args.seconds)
 
 
 if __name__ == "__main__":
