@@ -880,7 +880,8 @@ files --launcher /apps
 
 File associations come from the installed app registry. Only apps compiled in
 the active firmware can be selected. Associations include images to `view`,
-WAV/MP3 to `player`, CSV to `sheet`, Python and Lua scripts to their runtimes,
+WAV/MP3 to `player`, MPEG-1 `.mpg`/`.mpeg` files to `vplay`, CSV to `sheet`,
+Python and Lua scripts to their runtimes,
 documents to `reader` (or `writer` when Reader is unavailable), and `.gb` ROMs
 to `gameboy`. Unknown files fall back to `less` or `edit`. A `.sh` file runs
 through the built-in SolarOS shell. In launcher mode, documents associated with

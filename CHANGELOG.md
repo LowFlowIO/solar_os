@@ -2,6 +2,10 @@
 
 ## 4.x
 
+- **4.15.13** — 2026-10-01 — Files opens MPEG-1 `.mpg` and
+  `.mpeg` files in `vplay` when the app is installed, including uppercase
+  extensions. Closing playback returns to the file browser. The Files help
+  lists the MPEG association alongside its other supported file types.
 - **4.15.12** — 2026-10-01 — RTSP now uses the common player
   header, volume bar, and clickable Stop/Play control. Enter or Space stops
   playback without closing the app; Play reconnects to the same source after
