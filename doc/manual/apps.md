@@ -62,10 +62,16 @@ Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.
 
 ```text
 rtsp rtsp://192.168.1.238/media
+rtsp 192.168.1.238/media
+rtsp 192.168.1.192:8554/youtube
 rtsp --audio-only rtsp://192.168.1.113/media
 rtsp --stats rtsp://192.168.1.192:8554/youtube
 rtsp --audio-only --stats rtsp://192.168.1.192:8554/youtube
 ```
+
+The `rtsp://` prefix is optional. The RTSP control connection uses TCP port 554
+unless a port is supplied; RTP media uses negotiated UDP ports. Addresses without
+a path are accepted; include the publisher's path when required.
 
 Graphical sessions show aspect-fit JPEG video when a video track is selected.
 Audio-only sessions use the common audio GUI oscilloscope, fed by playback PCM.

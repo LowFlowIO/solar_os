@@ -266,11 +266,13 @@ static void samples_callback(const int16_t *samples, size_t count, uint8_t chann
 { (void)samples; (void)user; assert(count && channels == sink_channels); atomic_fetch_add(&callbacks, 1); }
 static void *run_client(void *arg) { solar_os_rtsp_client_run(arg); return NULL; }
 
-static void test_play(bool video, bool audio, bool audio_only)
+static void test_play(bool video, bool audio, bool audio_only, bool shorthand)
 {
     unsigned opens_before = atomic_load(&audio_opens);
     test_server_t server = {.offer_video = video, .offer_audio = audio}; server_start(&server);
-    char url[192]; snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", server.port);
+    char address[192], url[192];
+    snprintf(address, sizeof(address), "%s127.0.0.1:%u/media", shorthand ? "" : "rtsp://", server.port);
+    assert(solar_os_rtsp_url_normalize(address, url, sizeof(url)) == ESP_OK);
     solar_os_rtsp_client_options_t options = {.video = !audio_only, .audio = true, .samples = samples_callback};
     solar_os_rtsp_client_t *c; assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
     pthread_t thread; assert(!pthread_create(&thread, NULL, run_client, c));
@@ -553,8 +555,9 @@ int main(int argc, char **argv)
     }
     atomic_store(&fail_allocation, 0);
     test_presentation_clock();
-    test_play(true, false, false); test_play(false, true, false);
-    test_play(true, true, false); test_play(true, true, true);
+    test_play(true, false, false, false); test_play(false, true, false, false);
+    test_play(true, true, false, false); test_play(true, true, true, false);
+    test_play(true, true, false, true); test_play(true, true, true, true);
     test_relay_playback(48000, 2, 480);
     test_relay_playback(16000, 1, 512);
     test_failure(true, false, false, 0); test_failure(false, true, false, 0); test_failure(false, false, true, 0);

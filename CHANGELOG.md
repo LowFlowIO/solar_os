@@ -2,6 +2,13 @@
 
 ## 4.x
 
+- **4.15.9** — 2026-10-01 — Python and Lua gain owned camera
+  snapshots, local stream frames, native frame-to-image presentation, and
+  asynchronous RTSP receiver handles. JPEG save failures report the path and
+  filesystem cause. Native RTSP playback retries transient failures with
+  bounded backoff, discards frames from previous connections, and recovers
+  audio after forward clock jumps. The viewer accepts addresses without
+  `rtsp://`; omitted control ports default to TCP 554.
 - **4.15.8** — 2026-10-01 — DVP cameras are reusable expansion
   devices and exclusive typed video sources in `streams`. The native `rtsp`
   app plays JPEG/L16 streams with bounded video/audio buffering, global

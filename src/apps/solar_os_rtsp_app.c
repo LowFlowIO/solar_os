@@ -427,6 +427,13 @@ static esp_err_t start(solar_os_context_t *ctx)
         else return ESP_ERR_INVALID_ARG;
     }
     if (!url) return ESP_ERR_INVALID_ARG;
+    esp_err_t err = solar_os_rtsp_url_normalize(url, rtsp.url, sizeof(rtsp.url));
+    if (err != ESP_OK) {
+        solar_os_context_finish(ctx, 1,
+            "RTSP: malformed/unsupported address; use [rtsp://]host[:port][/path] (no credentials or IPv6)");
+        return err;
+    }
+    url = rtsp.url;
     rtsp.frame_diagnostics = rtsp.diagnostics;
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
     rtsp.graphical = solar_os_context_gfx(ctx) &&
@@ -458,14 +465,13 @@ static esp_err_t start(solar_os_context_t *ctx)
         .diagnostics = rtsp.diagnostics,
         .reconnect_attempts = 6,
     };
-    esp_err_t err = solar_os_rtsp_client_create(url, &options, &rtsp.client);
+    err = solar_os_rtsp_client_create(url, &options, &rtsp.client);
     if (err != ESP_OK) {
         solar_os_context_finish(ctx, 1, err == ESP_ERR_NO_MEM ?
             "RTSP: client allocation failed" :
             "RTSP: malformed/unsupported URL; use rtsp://host[:port]/path (no credentials or IPv6)");
         return err;
     }
-    strcpy(rtsp.url, url);
     rtsp.network_done = false;
     if (solar_os_task_create_pinned_external(network_worker, "rtsp-net", RTSP_NETWORK_STACK, NULL,
         tskIDLE_PRIORITY + 2, &rtsp.network_task, tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_FOREGROUND) != pdPASS) {

@@ -58,6 +58,9 @@ typedef struct {
 } solar_os_rtsp_audio_jitter_t;
 
 esp_err_t solar_os_rtsp_url_parse(const char *url, solar_os_rtsp_url_t *parsed);
+/* App address shorthand: add rtsp:// when omitted, preserving port and path.
+ * Validate the resulting URL; an omitted control port defaults to 554. */
+esp_err_t solar_os_rtsp_url_normalize(const char *address, char *url, size_t capacity);
 esp_err_t solar_os_rtsp_uri_resolve(const char *base, const char *control,
                                    char *uri, size_t capacity);
 /* TIMEOUT means a partial header/body; callers retain and append bytes. */

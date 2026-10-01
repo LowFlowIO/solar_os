@@ -51,6 +51,16 @@ esp_err_t solar_os_rtsp_url_parse(const char *url, solar_os_rtsp_url_t *parsed)
     return strlen(url) < SOLAR_OS_RTSP_URI_MAX ? ESP_OK : ESP_ERR_INVALID_SIZE;
 }
 
+esp_err_t solar_os_rtsp_url_normalize(const char *address, char *url, size_t capacity)
+{
+    if (!address || !*address || !url || !capacity) return ESP_ERR_INVALID_ARG;
+    const char *prefix = strstr(address, "://") ? "" : "rtsp://";
+    int n = snprintf(url, capacity, "%s%s", prefix, address);
+    if (n < 0 || (size_t)n >= capacity) return ESP_ERR_INVALID_SIZE;
+    solar_os_rtsp_url_t parsed;
+    return solar_os_rtsp_url_parse(url, &parsed);
+}
+
 esp_err_t solar_os_rtsp_uri_resolve(const char *base, const char *control,
                                    char *uri, size_t capacity)
 {

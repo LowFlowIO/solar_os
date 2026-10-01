@@ -9,6 +9,18 @@ PACKAGES = tomllib.loads((ROOT / "packages/solar_os_packages.toml").read_text())
 
 
 class RtspAppTest(unittest.TestCase):
+    def test_address_shorthand_is_normalized_before_client_creation(self):
+        start = APP.split("static esp_err_t start(", 1)[1].split("static void stop(", 1)[0]
+        self.assertIn("url = rtsp.url", start)
+        self.assertLess(start.index("solar_os_rtsp_url_normalize"),
+                        start.index("solar_os_rtsp_client_create"))
+        self.assertNotIn("strcpy(rtsp.url, url)", start)
+        registry = (ROOT / "src/apps/solar_os_app_registry.c").read_text()
+        self.assertIn("<[rtsp://]host[:port][/path]>", registry)
+        manual = (ROOT / "doc/manual/apps.md").read_text()
+        self.assertIn("rtsp 192.168.1.238/media", manual)
+        self.assertIn("TCP port 554", manual)
+
     def test_registry_packages_and_user_manual(self):
         self.assertIn("app_rtsp", PACKAGES["groups"]["rtsp"]["members"])
         self.assertIn("service_rtsp_client", PACKAGES["packages"]["app_rtsp"]["depends"])
