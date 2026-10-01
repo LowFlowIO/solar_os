@@ -607,6 +607,15 @@ esp_err_t solar_os_audio_player_write(solar_os_audio_player_t *player,
     return ESP_OK;
 }
 
+esp_err_t solar_os_audio_player_end_input(solar_os_audio_player_t *player)
+{
+    if (player == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    player->producer_done = true;
+    return player->error;
+}
+
 esp_err_t solar_os_audio_player_finish(solar_os_audio_player_t *player,
                                        const volatile bool *cancelled)
 {

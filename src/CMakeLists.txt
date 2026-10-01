@@ -113,6 +113,7 @@ set(SOLAR_OS_BOARD_CAPABILITY_NAMES
     SIMD
     POINTER
     STREAMING_DISPLAY
+    CAMERA
 )
 set(SOLAR_OS_BOARD_CAPABILITY_DEFINES)
 set(SOLAR_OS_BOARD_AVAILABLE_CAPABILITIES)
@@ -457,16 +458,27 @@ set_property(SOURCE ${SOLAR_OS_SRCS} APPEND PROPERTY OBJECT_DEPENDS
     "${SOLAR_OS_VERSION_FILE}"
 )
 
+set(SOLAR_OS_LINKER_FRAGMENTS)
+if(SOLAR_OS_PACKAGE_DRIVER_CAMERA_ESP32)
+    list(APPEND SOLAR_OS_LINKER_FRAGMENTS "camera_memory.lf")
+endif()
+
 idf_component_register(
     SRCS ${SOLAR_OS_SRCS}
     INCLUDE_DIRS "." "apps" "board" "drivers" "jobs" "services" "shell"
                  "../include" "${SOLAR_OS_GENERATED_DIR}"
                  ${SOLAR_OS_EXTRA_INCLUDE_DIRS}
     REQUIRES ${SOLAR_OS_REQUIRES}
+    LDFRAGMENTS ${SOLAR_OS_LINKER_FRAGMENTS}
 )
 
 if(SOLAR_OS_PACKAGE_BHI260AP)
     target_add_binary_data(${COMPONENT_LIB} "vendor/bhy2/BHI260AP.fw" BINARY)
+endif()
+
+if(SOLAR_OS_PACKAGE_SERVICE_MPEG)
+    set_source_files_properties(services/solar_os_mpeg.c
+        services/solar_os_mpeg_raster.c PROPERTIES COMPILE_OPTIONS "-O2")
 endif()
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE

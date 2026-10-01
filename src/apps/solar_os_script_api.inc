@@ -868,12 +868,52 @@ SOLAR_OS_SCRIPT_API_FUNCTION(tui, input, input);
 SOLAR_OS_SCRIPT_API_FUNCTION(tui, getch, getch);
 SOLAR_OS_SCRIPT_API_MODULE_END(tui);
 
+#if SOLAR_OS_PACKAGE_SERVICE_SCRIPT_MEDIA
+SOLAR_OS_SCRIPT_API_MODULE_BEGIN(streams);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, list, list);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, info, info);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, status, status);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, open, open);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, close, close);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, close_all, close_all);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, read, read);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, write, write);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, read_scalar, read_scalar);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, acquire_frame, acquire_frame);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, frame_info, frame_info);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, frame_data, frame_data);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, frame_save, frame_save);
+SOLAR_OS_SCRIPT_API_FUNCTION(streams, release_frame, release_frame);
+SOLAR_OS_SCRIPT_API_MODULE_END(streams);
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+SOLAR_OS_SCRIPT_API_MODULE_BEGIN(camera);
+SOLAR_OS_SCRIPT_API_FUNCTION(camera, status, status);
+SOLAR_OS_SCRIPT_API_FUNCTION(camera, snapshot, snapshot);
+SOLAR_OS_SCRIPT_API_FUNCTION(camera, capture, capture);
+SOLAR_OS_SCRIPT_API_MODULE_END(camera);
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_RTSP_CLIENT
+SOLAR_OS_SCRIPT_API_MODULE_BEGIN(rtsp);
+SOLAR_OS_SCRIPT_API_FUNCTION(rtsp, open, open);
+SOLAR_OS_SCRIPT_API_FUNCTION(rtsp, status, status);
+SOLAR_OS_SCRIPT_API_FUNCTION(rtsp, read_frame, read_frame);
+SOLAR_OS_SCRIPT_API_FUNCTION(rtsp, lateness, lateness);
+SOLAR_OS_SCRIPT_API_FUNCTION(rtsp, close, close);
+SOLAR_OS_SCRIPT_API_MODULE_END(rtsp);
+#endif
+
 #if SOLAR_OS_PACKAGE_SERVICE_IMAGE
 SOLAR_OS_SCRIPT_API_MODULE_BEGIN(image);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, open, open);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, load, open);
+SOLAR_OS_SCRIPT_API_FUNCTION(image, decode, decode);
+SOLAR_OS_SCRIPT_API_FUNCTION(image, from_frame, from_frame);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, size, size);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, draw, draw);
+SOLAR_OS_SCRIPT_API_FUNCTION(image, present, present);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, close, close);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, close_all, close_all);
 SOLAR_OS_SCRIPT_API_MODULE_END(image);

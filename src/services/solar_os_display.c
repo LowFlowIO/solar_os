@@ -1524,13 +1524,17 @@ esp_err_t solar_os_display_present_frame(
             return ESP_ERR_INVALID_ARG;
         }
         break;
+    case SOLAR_OS_DISPLAY_FORMAT_RGB565:
+        minimum_stride = (size_t)frame->source_width * 2U;
+        if (frame->palette_inverted) return ESP_ERR_INVALID_ARG;
+        break;
     default:
         return ESP_ERR_INVALID_ARG;
     }
     if (frame->source_stride < minimum_stride ||
         frame->source_height > SIZE_MAX / frame->source_stride ||
         frame->data_size < (size_t)frame->source_height * frame->source_stride ||
-        (frame->clear_background &&
+        (frame->clear_background && frame->format != SOLAR_OS_DISPLAY_FORMAT_RGB565 &&
          (size_t)frame->background_index >= palette_entries)) {
         return ESP_ERR_INVALID_SIZE;
     }

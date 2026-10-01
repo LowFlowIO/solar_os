@@ -9,10 +9,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
+#include "solar_os_memory.h"
 #include "solar_os_storage.h"
 #include "solar_os_stream.h"
 #include "solar_os_task.h"
@@ -66,7 +69,30 @@ typedef struct {
     volatile bool worker_done;
 } daq_job_state_t;
 
-static daq_job_state_t daq = {.last_error = ESP_OK};
+static daq_job_state_t *daq_state;
+#define daq (*daq_state)
+static EXT_RAM_BSS_ATTR solar_os_daq_status_t daq_last_status;
+static SemaphoreHandle_t daq_mutex;
+static StaticSemaphore_t daq_mutex_storage;
+static portMUX_TYPE daq_init_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static bool daq_lock(void)
+{
+    portENTER_CRITICAL(&daq_init_lock);
+    if (daq_mutex == NULL) {
+        daq_mutex = xSemaphoreCreateMutexStatic(&daq_mutex_storage);
+    }
+    portEXIT_CRITICAL(&daq_init_lock);
+    return daq_mutex != NULL &&
+        xSemaphoreTake(daq_mutex, portMAX_DELAY) == pdTRUE;
+}
+
+static void daq_unlock(void)
+{
+    xSemaphoreGive(daq_mutex);
+}
+
+static void daq_copy_status(solar_os_daq_status_t *status);
 
 static void daq_worker_task(void *arg);
 
@@ -256,7 +282,8 @@ static esp_err_t daq_parse_args(int argc, char **argv, daq_start_config_t *confi
         if (err != ESP_OK) {
             return err;
         }
-        if (config->infos[config->stream_count].direction ==
+        if (config->infos[config->stream_count].type == SOLAR_OS_STREAM_TYPE_VIDEO ||
+            config->infos[config->stream_count].direction ==
             SOLAR_OS_STREAM_DIRECTION_SINK) {
             return ESP_ERR_NOT_SUPPORTED;
         }
@@ -410,7 +437,7 @@ static esp_err_t daq_write_header_if_needed(FILE *file,
     return daq_flush_to_disk(file);
 }
 
-static esp_err_t daq_start(solar_os_context_t *ctx, int argc, char **argv)
+static esp_err_t daq_start_locked(solar_os_context_t *ctx, int argc, char **argv)
 {
     (void)ctx;
 
@@ -523,7 +550,7 @@ static esp_err_t daq_start(solar_os_context_t *ctx, int argc, char **argv)
     return ESP_OK;
 }
 
-static void daq_stop(solar_os_context_t *ctx)
+static void daq_stop_locked(solar_os_context_t *ctx)
 {
     (void)ctx;
 
@@ -756,7 +783,7 @@ static void daq_worker_task(void *arg)
     solar_os_task_delete_internal(NULL);
 }
 
-static bool daq_event(solar_os_context_t *ctx, const solar_os_event_t *event)
+static bool daq_event_locked(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     (void)ctx;
 
@@ -773,7 +800,7 @@ static bool daq_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     return xTaskNotify(daq.worker_task, DAQ_NOTIFY_SAMPLE, eSetBits) == pdPASS;
 }
 
-void solar_os_daq_job_get_status(solar_os_daq_status_t *status)
+static void daq_copy_status(solar_os_daq_status_t *status)
 {
     if (status == NULL) {
         return;
@@ -797,6 +824,82 @@ void solar_os_daq_job_get_status(solar_os_daq_status_t *status)
     status->append = daq.append;
     status->raw = daq.raw;
     status->last_error = daq.last_error;
+}
+
+static void daq_release_state(void)
+{
+    /* The lifecycle mutex excludes status/event readers; caller has already
+     * waited for the worker and closed every file/stream. */
+    daq_copy_status(&daq_last_status);
+    solar_os_memory_free(daq_state);
+    daq_state = NULL;
+}
+
+static esp_err_t daq_start(solar_os_context_t *ctx, int argc, char **argv)
+{
+    if (!daq_lock()) {
+        return ESP_ERR_NO_MEM;
+    }
+    if (daq_state == NULL) {
+        daq_state = solar_os_memory_calloc(
+            1U, sizeof(*daq_state), SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
+            "daq.state");
+        if (daq_state == NULL) {
+            daq_last_status.last_error = ESP_ERR_NO_MEM;
+            daq_unlock();
+            return ESP_ERR_NO_MEM;
+        }
+        daq_init_stream_handles();
+    }
+    const esp_err_t err = daq_start_locked(ctx, argc, argv);
+    if (err != ESP_OK && daq.worker_task == NULL) {
+        daq_cleanup();
+        daq_release_state();
+    }
+    daq_unlock();
+    return err;
+}
+
+static void daq_stop(solar_os_context_t *ctx)
+{
+    if (!daq_lock()) {
+        return;
+    }
+    if (daq_state != NULL) {
+        daq_stop_locked(ctx);
+        if (daq.worker_task == NULL) {
+            daq_release_state();
+        }
+    }
+    daq_unlock();
+}
+
+static bool daq_event(solar_os_context_t *ctx, const solar_os_event_t *event)
+{
+    if (!daq_lock()) {
+        return false;
+    }
+    const bool handled = daq_state != NULL && daq_event_locked(ctx, event);
+    daq_unlock();
+    return handled;
+}
+
+void solar_os_daq_job_get_status(solar_os_daq_status_t *status)
+{
+    if (status == NULL) {
+        return;
+    }
+    if (!daq_lock()) {
+        memset(status, 0, sizeof(*status));
+        status->last_error = ESP_ERR_NO_MEM;
+        return;
+    }
+    if (daq_state != NULL) {
+        daq_copy_status(status);
+    } else {
+        *status = daq_last_status;
+    }
+    daq_unlock();
 }
 
 const solar_os_job_t solar_os_daq_job = {

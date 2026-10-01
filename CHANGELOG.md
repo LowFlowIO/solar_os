@@ -2,6 +2,75 @@
 
 ## 4.x
 
+- **4.15.14** — 2026-10-01 — `player` and `vplay` gain
+  backward/forward seeking in ten-second steps with `<`/`>` and shared
+  rewind/forward buttons. Seeking retains the selected track and pause
+  state, releases queued audio, and rebases playback timing. Player supports
+  seeking in both graphical and text interfaces. WAV seeks to sample
+  boundaries; MP3 scans frame headers and decodes a bounded reservoir/filter
+  warm-up near the target. MPEG uses timestamped intra-frame seeking with
+  video-reference and MP2 warm-up, falling back to sequential decoding when
+  timestamps are unavailable. Seek processing remains bounded, cancellable,
+  and watchdog-safe, preserves audio/video timing, and displays SEEKING while
+  preparing playback. Player, WebRadio, and VPlay share a compact bottom
+  controls panel with status/time above volume and a larger media viewport.
+  WebRadio adds elapsed output time, clickable transport controls, and Space
+  pause/resume. The middle Stop/Play control indicates pause while paused;
+  seek icons match the other controls' height.
+- **4.15.13** — 2026-10-01 — Files opens MPEG-1 `.mpg` and
+  `.mpeg` files in `vplay` when the app is installed, including uppercase
+  extensions. Closing playback returns to the file browser. The Files help
+  lists the MPEG association alongside its other supported file types.
+- **4.15.12** — 2026-10-01 — RTSP now uses the common player
+  header, volume bar, and clickable Stop/Play control. Enter or Space stops
+  playback without closing the app; Play reconnects to the same source after
+  its workers release their resources. The audio-only oscilloscope fills the
+  available viewport and expands edge-to-edge in full screen, where controls
+  are hidden. `vplay` adds tab completion for size options and file paths.
+- **4.15.11** — 2026-10-01 — Added `vplay` for MPEG-1 program
+  stream files with optional MP2 audio. Playback uses bounded PSRAM buffers,
+  audio-clock synchronization, native RGB565 or monochrome output, and
+  ESP32-S3 SIMD color conversion. The shared player controls provide pause,
+  Stop/Play, volume, and previous/next MPEG files in the current folder.
+  Fit, actual-size, and full-screen modes are available; the source limit
+  is 640x480. MPEG-2, H.264, AVI, and transport streams are not supported.
+- **4.15.10** — 2026-10-01 — Shared JPEG decoding now uses a
+  fast ROM path and bounded ESP32-S3 SIMD acceleration, with fallbacks for
+  unsupported images or limited working memory. Color and monochrome consumers
+  share the improved decoder, and fit-mode output avoids full-size intermediate
+  rasters. Reduced idle SRAM usage by moving suitable registry state to PSRAM
+  and allocating display-layout, Telnet, Chat, DAQ, and Synth working buffers
+  only when needed.
+- **4.15.9** — 2026-10-01 — Python and Lua gain owned camera
+  snapshots, local stream frames, native frame-to-image presentation, and
+  asynchronous RTSP receiver handles. JPEG save failures report the path and
+  filesystem cause. Native RTSP playback retries transient failures with
+  bounded backoff, discards frames from previous connections, and recovers
+  audio after forward clock jumps. The viewer accepts addresses without
+  `rtsp://`; omitted control ports default to TCP 554.
+- **4.15.8** — 2026-10-01 — DVP cameras are reusable expansion
+  devices and exclusive typed video sources in `streams`. The native `rtsp`
+  app plays JPEG/L16 streams with bounded video/audio buffering, global
+  volume, an audio-only oscilloscope, full-screen viewing, and frame
+  diagnostics. Color TFTs with native RGB565 support bypass palette conversion;
+  monochrome displays retain grayscale rendering. `rtspd` selects compatible
+  audio/video stream IDs explicitly and offers source-aware tab completion.
+- **4.15.7** — 2026-09-30 — Added the `rtspd` job for single-client
+  RTSP publishing with RTP/JPEG video, RTP/L16 PCM audio, and RTCP timing.
+  Explicit `video=` and `audio=` sources support camera-only, audio-only,
+  or combined streams using standard UDP transport. Publishing follows source
+  availability; `fps=0` removes the video rate cap. Runtime buffers are
+  allocated only while the job runs, and stale data is discarded on reconnect.
+- **4.15.6** — 2026-09-30 — Web now plays HTTP MJPEG camera feeds
+  alongside its existing static image formats. Multipart stream detection
+  accepts split headers and common server variations, while bounded frame
+  buffering and cancellation keep live viewing responsive.
+- **4.15.5** — 2026-09-30 — Added the GOOUUU ESP32-S3CAM board,
+  OV2640 JPEG snapshots, and the `camera` command. Exclusive camera leases
+  coordinate capture and streaming, with direct framebuffer DMA to PSRAM.
+  The `cam-webd` job serves JPEG snapshots and a single-client MJPEG feed
+  through asynchronous HTTP routes. Trusted-LAN viewing is unauthenticated
+  by default; `auth=required` enables an optional bearer access code.
 - **4.15.4** — 2026-09-29 — Updated CL-32 support for its current core
   firmware battery register and serialized ST7305 display transactions. ADC
   battery monitoring now uses a smoothed voltage trend with hysteresis to avoid

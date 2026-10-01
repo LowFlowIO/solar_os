@@ -17,6 +17,7 @@
 #include "lwip/sockets.h"
 #include "solar_os_jobs.h"
 #include "solar_os_log.h"
+#include "solar_os_memory.h"
 #include "solar_os_port.h"
 #include "solar_os_port_shell.h"
 #include "solar_os_task.h"
@@ -83,6 +84,15 @@ typedef struct {
 } telnetd_parser_t;
 
 typedef struct {
+    solar_os_context_t shell_context;
+    char password[TELNETD_PASSWORD_MAX];
+    char peer[TELNETD_PEER_MAX];
+    char terminal_type[TELNETD_TTYPE_MAX];
+    telnetd_parser_t parser;
+    uint8_t pending[TELNETD_PENDING_MAX];
+} telnetd_payload_t;
+
+typedef struct {
     bool running;
     bool stop_requested;
     bool port_registered;
@@ -94,14 +104,9 @@ typedef struct {
     uint16_t port;
     uint8_t session_id;
     uint32_t job_generation;
-    solar_os_context_t shell_context;
-    char password[TELNETD_PASSWORD_MAX];
-    char peer[TELNETD_PEER_MAX];
-    char terminal_type[TELNETD_TTYPE_MAX];
+    telnetd_payload_t *payload;
     uint16_t cols;
     uint16_t rows;
-    telnetd_parser_t parser;
-    uint8_t pending[TELNETD_PENDING_MAX];
     size_t pending_len;
     uint32_t connection_count;
     uint32_t rejected_count;
@@ -231,7 +236,7 @@ static void telnetd_update_dimensions(uint16_t cols, uint16_t rows)
 
 static void telnetd_handle_subnegotiation(void)
 {
-    telnetd_parser_t *parser = &telnetd_job.parser;
+    telnetd_parser_t *parser = &telnetd_job.payload->parser;
 
     if (parser->sb_option == TELNET_OPT_NAWS && parser->sb_len >= 4U) {
         const uint16_t cols =
@@ -244,15 +249,15 @@ static void telnetd_handle_subnegotiation(void)
                parser->sb_data[0] == TELNET_TTYPE_IS) {
         const size_t available = parser->sb_len - 1U;
         const size_t copy_len =
-            available < sizeof(telnetd_job.terminal_type) - 1U ?
+            available < sizeof(telnetd_job.payload->terminal_type) - 1U ?
                 available :
-                sizeof(telnetd_job.terminal_type) - 1U;
+                sizeof(telnetd_job.payload->terminal_type) - 1U;
         for (size_t i = 0; i < copy_len; i++) {
             const unsigned char ch = parser->sb_data[i + 1U];
-            telnetd_job.terminal_type[i] =
+            telnetd_job.payload->terminal_type[i] =
                 isprint(ch) ? (char)tolower(ch) : '?';
         }
-        telnetd_job.terminal_type[copy_len] = '\0';
+        telnetd_job.payload->terminal_type[copy_len] = '\0';
     }
     parser->sb_len = 0;
 }
@@ -284,7 +289,7 @@ static void telnetd_emit_nvt_byte(uint8_t byte,
                                   size_t out_cap,
                                   size_t *out_len)
 {
-    telnetd_parser_t *parser = &telnetd_job.parser;
+    telnetd_parser_t *parser = &telnetd_job.payload->parser;
 
     if (parser->suppress_nvt_follow) {
         parser->suppress_nvt_follow = false;
@@ -307,7 +312,7 @@ static void telnetd_feed_wire_byte(uint8_t byte,
                                    size_t out_cap,
                                    size_t *out_len)
 {
-    telnetd_parser_t *parser = &telnetd_job.parser;
+    telnetd_parser_t *parser = &telnetd_job.payload->parser;
 
     switch (parser->state) {
     case TELNETD_PARSE_DATA:
@@ -455,9 +460,9 @@ static size_t telnetd_pending_take(uint8_t *data, size_t len)
     const size_t count = telnetd_job.pending_len < len ?
         telnetd_job.pending_len :
         len;
-    memcpy(data, telnetd_job.pending, count);
-    memmove(telnetd_job.pending,
-            telnetd_job.pending + count,
+    memcpy(data, telnetd_job.payload->pending, count);
+    memmove(telnetd_job.payload->pending,
+            telnetd_job.payload->pending + count,
             telnetd_job.pending_len - count);
     telnetd_job.pending_len -= count;
     return count;
@@ -466,12 +471,12 @@ static size_t telnetd_pending_take(uint8_t *data, size_t len)
 static void telnetd_pending_append(const uint8_t *data, size_t len)
 {
     if (data == NULL || len == 0 ||
-        telnetd_job.pending_len >= sizeof(telnetd_job.pending)) {
+        telnetd_job.pending_len >= sizeof(telnetd_job.payload->pending)) {
         return;
     }
-    const size_t available = sizeof(telnetd_job.pending) - telnetd_job.pending_len;
+    const size_t available = sizeof(telnetd_job.payload->pending) - telnetd_job.pending_len;
     const size_t count = len < available ? len : available;
-    memcpy(telnetd_job.pending + telnetd_job.pending_len, data, count);
+    memcpy(telnetd_job.payload->pending + telnetd_job.pending_len, data, count);
     telnetd_job.pending_len += count;
 }
 
@@ -581,10 +586,10 @@ static bool telnetd_register_port(void)
 
 static solar_os_shell_terminal_profile_t telnetd_terminal_profile(void)
 {
-    if (strcmp(telnetd_job.terminal_type, "dumb") == 0) {
+    if (strcmp(telnetd_job.payload->terminal_type, "dumb") == 0) {
         return SOLAR_OS_SHELL_TERMINAL_PROFILE_DUMB;
     }
-    if (strcmp(telnetd_job.terminal_type, "ansi") == 0) {
+    if (strcmp(telnetd_job.payload->terminal_type, "ansi") == 0) {
         return SOLAR_OS_SHELL_TERMINAL_PROFILE_ANSI;
     }
     return SOLAR_OS_SHELL_TERMINAL_PROFILE_VT100;
@@ -611,7 +616,7 @@ static bool telnetd_prime_negotiation(void)
 
 static bool telnetd_authenticate(void)
 {
-    if (telnetd_job.password[0] == '\0') {
+    if (telnetd_job.payload->password[0] == '\0') {
         return true;
     }
 
@@ -643,7 +648,7 @@ static bool telnetd_authenticate(void)
             const uint8_t ch = data[i];
             if (ch == '\r' || ch == '\n') {
                 entered[entered_len] = '\0';
-                const bool accepted = strcmp(entered, telnetd_job.password) == 0;
+                const bool accepted = strcmp(entered, telnetd_job.payload->password) == 0;
                 memset(entered, 0, sizeof(entered));
                 if (i + 1U < read_len) {
                     telnetd_pending_append(data + i + 1U, read_len - i - 1U);
@@ -684,7 +689,7 @@ static bool telnetd_start_shell(void)
     };
     uint8_t session_id = 0;
     const esp_err_t err =
-        solar_os_port_shell_start_with_options(&telnetd_job.shell_context,
+        solar_os_port_shell_start_with_options(&telnetd_job.payload->shell_context,
                                                TELNETD_PORT_NAME,
                                                &options,
                                                false,
@@ -704,10 +709,10 @@ static bool telnetd_start_shell(void)
     portEXIT_CRITICAL(&telnetd_lock);
     SOLAR_OS_LOGI(TAG,
                   "client %s attached as session %u (%s %ux%u)",
-                  telnetd_job.peer,
+                  telnetd_job.payload->peer,
                   (unsigned)session_id,
-                  telnetd_job.terminal_type[0] != '\0' ?
-                      telnetd_job.terminal_type :
+                  telnetd_job.payload->terminal_type[0] != '\0' ?
+                      telnetd_job.payload->terminal_type :
                       "vt100",
                   (unsigned)telnetd_job.cols,
                   (unsigned)telnetd_job.rows);
@@ -761,11 +766,11 @@ static bool telnetd_cleanup_client(void)
     telnetd_job.port_registered = false;
     telnetd_job.latency_lease = false;
     telnetd_job.session_id = 0;
-    telnetd_job.peer[0] = '\0';
+    telnetd_job.payload->peer[0] = '\0';
     portEXIT_CRITICAL(&telnetd_lock);
-    memset(&telnetd_job.parser, 0, sizeof(telnetd_job.parser));
+    memset(&telnetd_job.payload->parser, 0, sizeof(telnetd_job.payload->parser));
     telnetd_job.pending_len = 0;
-    telnetd_job.terminal_type[0] = '\0';
+    telnetd_job.payload->terminal_type[0] = '\0';
     if (latency_lease) {
         const esp_err_t err =
             solar_os_wifi_latency_release(TELNETD_LATENCY_OWNER);
@@ -834,8 +839,8 @@ static bool telnetd_accept_one(bool busy)
     telnetd_job.client_fd = fd;
     telnetd_job.client_disconnected = false;
     telnetd_job.session_id = 0;
-    snprintf(telnetd_job.peer,
-             sizeof(telnetd_job.peer),
+    snprintf(telnetd_job.payload->peer,
+             sizeof(telnetd_job.payload->peer),
              "%s:%u",
              inet_ntoa(addr.sin_addr),
              (unsigned)ntohs(addr.sin_port));
@@ -857,10 +862,10 @@ static bool telnetd_accept_one(bool busy)
     telnetd_job.cols = TELNETD_DEFAULT_COLS;
     telnetd_job.rows = TELNETD_DEFAULT_ROWS;
     telnetd_job.pending_len = 0;
-    telnetd_job.terminal_type[0] = '\0';
-    memset(&telnetd_job.parser, 0, sizeof(telnetd_job.parser));
+    telnetd_job.payload->terminal_type[0] = '\0';
+    memset(&telnetd_job.payload->parser, 0, sizeof(telnetd_job.payload->parser));
 
-    const char *banner = telnetd_job.password[0] != '\0' ?
+    const char *banner = telnetd_job.payload->password[0] != '\0' ?
         "SolarOS Telnet (unencrypted)\r\n" :
         "SolarOS Telnet (unencrypted, no authentication)\r\n";
     telnetd_negotiate();
@@ -882,7 +887,7 @@ static void telnetd_job_task(void *arg)
     SOLAR_OS_LOGI(TAG,
                   "started on port %u password=%s",
                   (unsigned)state->port,
-                  state->password[0] != '\0' ? "yes" : "no");
+                  state->payload->password[0] != '\0' ? "yes" : "no");
 
     while (!telnetd_should_stop()) {
         uint8_t session_id = 0;
@@ -931,11 +936,14 @@ static void telnetd_job_task(void *arg)
 
     const uint32_t generation = state->job_generation;
     const esp_err_t last_error = state->last_error;
+    /* Port unregister and shell shutdown above exclude payload readers. */
+    memset(state->payload->password, 0, sizeof(state->payload->password));
+    solar_os_memory_free(state->payload);
+    state->payload = NULL;
     portENTER_CRITICAL(&telnetd_lock);
     state->running = false;
     state->stop_requested = false;
     state->task = NULL;
-    memset(state->password, 0, sizeof(state->password));
     portEXIT_CRITICAL(&telnetd_lock);
     (void)solar_os_jobs_mark_stopped(solar_os_telnetd_job.name,
                                      generation,
@@ -1078,10 +1086,17 @@ static esp_err_t telnetd_job_start(solar_os_context_t *ctx, int argc, char **arg
         return err;
     }
 
-    solar_os_context_init(&telnetd_job.shell_context,
+    telnetd_job.payload = solar_os_memory_calloc(
+        1U, sizeof(*telnetd_job.payload), SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
+        "telnetd.payload");
+    if (telnetd_job.payload == NULL) {
+        close(listen_fd);
+        return ESP_ERR_NO_MEM;
+    }
+    solar_os_context_init(&telnetd_job.payload->shell_context,
                           solar_os_context_terminal(ctx),
                           solar_os_context_gfx(ctx));
-    solar_os_context_copy_session_handlers(&telnetd_job.shell_context, ctx);
+    solar_os_context_copy_session_handlers(&telnetd_job.payload->shell_context, ctx);
 
     portENTER_CRITICAL(&telnetd_lock);
     telnetd_job.running = true;
@@ -1094,9 +1109,9 @@ static esp_err_t telnetd_job_start(solar_os_context_t *ctx, int argc, char **arg
     telnetd_job.port = port;
     telnetd_job.session_id = 0;
     telnetd_job.job_generation = generation;
-    telnetd_job.password[0] = '\0';
+    telnetd_job.payload->password[0] = '\0';
     if (password != NULL) {
-        strlcpy(telnetd_job.password, password, sizeof(telnetd_job.password));
+        strlcpy(telnetd_job.payload->password, password, sizeof(telnetd_job.payload->password));
     }
     telnetd_job.connection_count = 0;
     telnetd_job.rejected_count = 0;
@@ -1120,8 +1135,10 @@ static esp_err_t telnetd_job_start(solar_os_context_t *ctx, int argc, char **arg
         portENTER_CRITICAL(&telnetd_lock);
         telnetd_job.running = false;
         telnetd_job.listen_fd = -1;
-        memset(telnetd_job.password, 0, sizeof(telnetd_job.password));
+        memset(telnetd_job.payload->password, 0, sizeof(telnetd_job.payload->password));
         portEXIT_CRITICAL(&telnetd_lock);
+        solar_os_memory_free(telnetd_job.payload);
+        telnetd_job.payload = NULL;
         return ESP_ERR_NO_MEM;
     }
     portENTER_CRITICAL(&telnetd_lock);

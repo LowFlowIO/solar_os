@@ -51,6 +51,10 @@ esp_err_t solar_os_stb_decode_jpeg_rgb_scaled(const uint8_t *data,
                                               uint8_t **out_rgb,
                                               uint32_t *out_width,
                                               uint32_t *out_height);
+/* Wire-order RGB565; aspect fit, no upscaling, owned by image_free. */
+esp_err_t solar_os_stb_decode_jpeg_rgb565_scaled(const uint8_t *data, size_t len,
+    uint32_t max_pixels, uint32_t max_width, uint32_t max_height,
+    uint8_t **pixels, uint32_t *width, uint32_t *height);
 esp_err_t solar_os_stb_decode_gif_gray(const uint8_t *data,
                                        size_t len,
                                        uint32_t max_frame_pixels,

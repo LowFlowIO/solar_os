@@ -89,6 +89,8 @@ Built-in targets include:
 - `ttgo_vga32_v14`: classic ESP32 desktop terminal with VGA, mono DAC audio,
   PS/2 keyboard, and microSD.
 - `esp32_s3_devkitc1_n16r8`: minimal headless ESP32-S3 target.
+- `goouuu_esp32_s3cam`: headless ESP32-S3 camera target with one-bit SDMMC,
+  native USB, UART, and reserved DVP/SCCB camera wiring.
 - `esp32_devkitc_v4_wrover`: minimal headless classic ESP32 target with PSRAM.
 
 See `man boards` for the complete board table, capability flags, pins, build

@@ -64,6 +64,10 @@ int main(void)
     assert(!solar_os_shell_completion_needs_trailing_space(NULL));
     assert(!solar_os_shell_completion_needs_trailing_space(""));
     assert(!solar_os_shell_completion_needs_trailing_space("gesture="));
+    assert(!solar_os_shell_completion_needs_trailing_space("audio="));
+    assert(!solar_os_shell_completion_needs_trailing_space("video="));
+    assert(solar_os_shell_completion_needs_trailing_space("audio=mic0"));
+    assert(solar_os_shell_completion_needs_trailing_space("video=camera0"));
     assert(solar_os_shell_completion_needs_trailing_space("gesture=flick"));
 
     assert_completion_parse("cat My\\ F", 2U, false, "My F", 4U);

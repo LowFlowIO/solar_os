@@ -1167,6 +1167,94 @@ kind = "gpio"
 hint = "gpio"
 required = false
 
+[drivers.esp32-camera]
+summary = "DVP JPEG camera"
+package = "driver_camera_esp32"
+targets = ["esp32s3"]
+capabilities = ["psram", "expansion_gpio"]
+board_capabilities = ["camera"]
+default_name = "camera0"
+[[drivers.esp32-camera.bindings]]
+key = "d0"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "d1"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "d2"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "d3"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "d4"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "d5"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "d6"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "d7"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "siod"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "sioc"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "vsync"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "href"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "pclk"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "xclk"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.esp32-camera.bindings]]
+key = "pwdn"
+kind = "gpio"
+hint = "gpio"
+required = false
+[[drivers.esp32-camera.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+required = false
+
 [drivers.esp32-dac]
 summary = "ESP32 internal DAC audio"
 package = "driver_audio_esp32_dac"

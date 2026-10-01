@@ -11,6 +11,9 @@ void solar_os_shell_cmd_adc(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_dpad(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_audio(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_battery(solar_os_context_t *ctx, int argc, char **argv);
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+void solar_os_shell_cmd_camera(solar_os_context_t *ctx, int argc, char **argv);
+#endif
 void solar_os_shell_cmd_ble(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_board(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_clear(solar_os_context_t *ctx, int argc, char **argv);

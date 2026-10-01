@@ -36,6 +36,11 @@ typedef struct {
     bool claimed;
 } display_layout_backing_t;
 
+typedef struct {
+    display_layout_backing_t backing[SOLAR_OS_DISPLAY_LAYOUT_MEMBER_MAX];
+    display_layout_logical_t logical[SOLAR_OS_DISPLAY_LAYOUT_MEMBER_MAX];
+} display_layout_members_t;
+
 struct solar_os_display_layout_runtime {
     bool active;
     bool reserved;
@@ -49,9 +54,8 @@ struct solar_os_display_layout_runtime {
     size_t canvas_size;
     uint8_t *queued;
     uint8_t *presenting;
-    display_layout_backing_t backing[SOLAR_OS_DISPLAY_LAYOUT_MEMBER_MAX];
+    display_layout_members_t *members;
     size_t backing_count;
-    display_layout_logical_t logical[SOLAR_OS_DISPLAY_LAYOUT_MEMBER_MAX];
     size_t logical_count;
     SemaphoreHandle_t mutex;
     StaticSemaphore_t mutex_storage;
@@ -104,11 +108,25 @@ static esp_err_t layout_reserve_create(const char *name, int *slot)
     for (size_t i = 0U; i < SOLAR_OS_DISPLAY_LAYOUT_MAX; i++) {
         if (!layouts[i].active && !layouts[i].reserved &&
             layouts[i].task == NULL &&
-            layouts[i].queued == NULL && layouts[i].presenting == NULL) {
+            layouts[i].queued == NULL && layouts[i].presenting == NULL &&
+            layouts[i].members == NULL) {
             layouts[i].reserved = true;
             strlcpy(layouts[i].name, name, sizeof(layouts[i].name));
             *slot = (int)i;
             portEXIT_CRITICAL(&layouts_lock);
+            /* Reserve the internal control slot first; allocate outside the
+             * spinlock. Synchronization provider storage never moves. */
+            layouts[i].members = solar_os_memory_calloc(
+                1U, sizeof(*layouts[i].members),
+                SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "display.layout.members");
+            if (layouts[i].members == NULL) {
+                portENTER_CRITICAL(&layouts_lock);
+                layouts[i].reserved = false;
+                layouts[i].name[0] = '\0';
+                portEXIT_CRITICAL(&layouts_lock);
+                *slot = -1;
+                return ESP_ERR_NO_MEM;
+            }
             return ESP_OK;
         }
     }
@@ -257,10 +275,10 @@ static void layout_worker(void *arg)
 
         for (size_t i = 0U; i < layout->backing_count; i++) {
             const esp_err_t err = layout_present_backing(layout,
-                                                         &layout->backing[i]);
+                                                         &layout->members->backing[i]);
             if (err != ESP_OK) {
                 SOLAR_OS_LOGW(TAG, "present %s failed: %s",
-                              layout->backing[i].name, esp_err_to_name(err));
+                              layout->members->backing[i].name, esp_err_to_name(err));
             }
         }
     }
@@ -304,19 +322,25 @@ static esp_err_t layout_stop_worker(solar_os_display_layout_runtime_t *layout)
 static void layout_release_backing(solar_os_display_layout_runtime_t *layout)
 {
     for (size_t i = 0U; i < layout->backing_count; i++) {
-        if (layout->backing[i].claimed) {
-            (void)solar_os_display_release(layout->backing[i].name,
+        if (layout->members->backing[i].claimed) {
+            (void)solar_os_display_release(layout->members->backing[i].name,
                                            layout->owner);
-            layout->backing[i].claimed = false;
+            layout->members->backing[i].claimed = false;
         }
     }
 }
 
 static void layout_free(solar_os_display_layout_runtime_t *layout)
 {
+    /* Stop new snapshots before releasing member metadata. The reserved
+     * slot cannot be reused until teardown has completed. */
+    portENTER_CRITICAL(&layouts_lock);
+    layout->active = false;
+    layout->reserved = true;
+    portEXIT_CRITICAL(&layouts_lock);
     for (size_t i = 0U; i < layout->logical_count; i++) {
-        solar_os_memory_free(layout->logical[i].buffer);
-        layout->logical[i].buffer = NULL;
+        solar_os_memory_free(layout->members->logical[i].buffer);
+        layout->members->logical[i].buffer = NULL;
     }
     solar_os_memory_free(layout->queued);
     solar_os_memory_free(layout->presenting);
@@ -328,26 +352,41 @@ static void layout_free(solar_os_display_layout_runtime_t *layout)
     if (layout->mutex != NULL) {
         vSemaphoreDelete(layout->mutex);
     }
+    solar_os_memory_free(layout->members);
     portENTER_CRITICAL(&layouts_lock);
     memset(layout, 0, sizeof(*layout));
     portEXIT_CRITICAL(&layouts_lock);
 }
 
-static void layout_rollback(solar_os_display_layout_runtime_t *layout)
+static esp_err_t layout_rollback(solar_os_display_layout_runtime_t *layout)
 {
     const char *registered[SOLAR_OS_DISPLAY_LAYOUT_MEMBER_MAX];
     size_t registered_count = 0U;
     for (size_t i = 0U; i < layout->logical_count; i++) {
-        if (layout->logical[i].registered) {
-            registered[registered_count++] = layout->logical[i].name;
+        if (layout->members->logical[i].registered) {
+            registered[registered_count++] = layout->members->logical[i].name;
         }
     }
     if (registered_count > 0U) {
-        (void)solar_os_display_unregister_targets(registered, registered_count);
+        const esp_err_t err = solar_os_display_unregister_targets(
+            registered, registered_count);
+        if (err != ESP_OK) {
+            /* Publish the retained slot so unjoin/unsplit can retry cleanup. */
+            layout_activate(layout);
+            return err;
+        }
+        for (size_t i = 0U; i < layout->logical_count; i++) {
+            layout->members->logical[i].registered = false;
+        }
     }
-    (void)layout_stop_worker(layout);
+    const esp_err_t stop_err = layout_stop_worker(layout);
+    if (stop_err != ESP_OK) {
+        layout_activate(layout);
+        return stop_err;
+    }
     layout_release_backing(layout);
     layout_free(layout);
+    return ESP_OK;
 }
 
 static esp_err_t layout_prepare_logical(
@@ -366,7 +405,7 @@ static esp_err_t layout_prepare_logical(
         return ESP_ERR_NOT_SUPPORTED;
     }
 
-    display_layout_logical_t *logical = &layout->logical[index];
+    display_layout_logical_t *logical = &layout->members->logical[index];
     logical->layout = layout;
     logical->region = region;
     strlcpy(logical->name, name, sizeof(logical->name));
@@ -420,7 +459,7 @@ static esp_err_t layout_claim_backing(
 {
     const char *ordered[SOLAR_OS_DISPLAY_LAYOUT_MEMBER_MAX];
     for (size_t i = 0U; i < layout->backing_count; i++) {
-        ordered[i] = layout->backing[i].name;
+        ordered[i] = layout->members->backing[i].name;
     }
     qsort(ordered, layout->backing_count, sizeof(ordered[0]), compare_names);
     for (size_t ordered_index = 0U; ordered_index < layout->backing_count;
@@ -431,8 +470,8 @@ static esp_err_t layout_claim_backing(
             return err;
         }
         for (size_t i = 0U; i < layout->backing_count; i++) {
-            if (strcmp(layout->backing[i].name, ordered[ordered_index]) == 0) {
-                layout->backing[i].claimed = true;
+            if (strcmp(layout->members->backing[i].name, ordered[ordered_index]) == 0) {
+                layout->members->backing[i].claimed = true;
                 break;
             }
         }
@@ -515,8 +554,8 @@ esp_err_t solar_os_display_layout_join(
                 return ESP_ERR_INVALID_ARG;
             }
         }
-        strlcpy(layout->backing[i].name, targets[i],
-                sizeof(layout->backing[i].name));
+        strlcpy(layout->members->backing[i].name, targets[i],
+                sizeof(layout->members->backing[i].name));
         widths[i] = target.width;
         heights[i] = target.height;
     }
@@ -527,7 +566,7 @@ esp_err_t solar_os_display_layout_join(
         return ESP_ERR_NOT_SUPPORTED;
     }
     for (size_t i = 0U; i < target_count; i++) {
-        layout->backing[i].region = regions[i];
+        layout->members->backing[i].region = regions[i];
     }
 
     esp_err_t err = layout_initialize(layout);
@@ -545,8 +584,8 @@ esp_err_t solar_os_display_layout_join(
             "joined");
     }
     if (err != ESP_OK) {
-        layout_rollback(layout);
-        return err;
+        const esp_err_t cleanup_err = layout_rollback(layout);
+        return cleanup_err != ESP_OK ? cleanup_err : err;
     }
     layout_activate(layout);
     return ESP_OK;
@@ -589,9 +628,9 @@ esp_err_t solar_os_display_layout_split(
     layout->logical_count = 2U;
     snprintf(layout->owner, sizeof(layout->owner), "%s%s",
              DISPLAY_LAYOUT_OWNER_PREFIX, target_name);
-    strlcpy(layout->backing[0].name, target_name,
-            sizeof(layout->backing[0].name));
-    layout->backing[0].region = (solar_os_display_layout_rect_t){
+    strlcpy(layout->members->backing[0].name, target_name,
+            sizeof(layout->members->backing[0].name));
+    layout->members->backing[0].region = (solar_os_display_layout_rect_t){
         0U, 0U, target.width, target.height};
 
     solar_os_display_layout_rect_t regions[2];
@@ -614,8 +653,8 @@ esp_err_t solar_os_display_layout_split(
         err = layout_prepare_logical(layout, 1U, second, regions[1], "viewport");
     }
     if (err != ESP_OK) {
-        layout_rollback(layout);
-        return err;
+        const esp_err_t cleanup_err = layout_rollback(layout);
+        return cleanup_err != ESP_OK ? cleanup_err : err;
     }
     layout_activate(layout);
     return ESP_OK;
@@ -626,8 +665,8 @@ static esp_err_t layout_destroy(solar_os_display_layout_runtime_t *layout)
     const char *names[SOLAR_OS_DISPLAY_LAYOUT_MEMBER_MAX];
     size_t name_count = 0U;
     for (size_t i = 0U; i < layout->logical_count; i++) {
-        if (layout->logical[i].registered) {
-            names[name_count++] = layout->logical[i].name;
+        if (layout->members->logical[i].registered) {
+            names[name_count++] = layout->members->logical[i].name;
         }
     }
     if (name_count > 0U) {
@@ -637,7 +676,7 @@ static esp_err_t layout_destroy(solar_os_display_layout_runtime_t *layout)
             return unregister_err;
         }
         for (size_t i = 0U; i < layout->logical_count; i++) {
-            layout->logical[i].registered = false;
+            layout->members->logical[i].registered = false;
         }
     }
     const esp_err_t stop_err = layout_stop_worker(layout);
@@ -721,11 +760,11 @@ bool solar_os_display_layout_get(size_t index,
         info->backing_count = layout->backing_count;
         info->logical_count = layout->logical_count;
         for (size_t member = 0U; member < layout->backing_count; member++) {
-            strlcpy(info->backing[member], layout->backing[member].name,
+            strlcpy(info->backing[member], layout->members->backing[member].name,
                     sizeof(info->backing[member]));
         }
         for (size_t member = 0U; member < layout->logical_count; member++) {
-            strlcpy(info->logical[member], layout->logical[member].name,
+            strlcpy(info->logical[member], layout->members->logical[member].name,
                     sizeof(info->logical[member]));
         }
         portEXIT_CRITICAL(&layouts_lock);

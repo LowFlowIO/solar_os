@@ -475,6 +475,149 @@ SoftAP, or WireGuard path. Bindings are volatile and can be restored from
 `/.shell/startup`. See `man osc` for address mapping, binding syntax, limits,
 and the sampled-event caveat.
 
+## cam-webd
+
+HTTP access to the fitted camera as one-shot JPEG images or a single-client
+MJPEG stream.
+
+```text
+job start cam-webd [qvga|vga] [fps] [auth=none|required]
+job status cam-webd
+job stop cam-webd
+```
+
+The defaults are QVGA JPEG at five frames per second with no authentication.
+The optional frame rate is `1..30`; JPEG quality is fixed at 12. Options can be
+given in any order. The job leases the camera as `job:cam-webd` until it stops.
+The shell `camera` command and other camera users report that owner while the
+lease is active.
+
+API:
+
+```text
+GET /api/camera
+GET /camera.jpg
+GET /camera.mjpeg
+```
+
+With the default `auth=none`, the endpoints can be opened directly:
+
+```text
+http://device/camera.mjpeg
+```
+
+Use `auth=required` to require `Authorization: Bearer <code>` on all three
+endpoints. Starting in that mode prints a random six-digit access code. For
+example:
+
+```text
+curl -H 'Authorization: Bearer 123456' http://device/camera.jpg -o frame.jpg
+curl -H 'Authorization: Bearer 123456' http://device/camera.mjpeg -o stream.mjpeg
+```
+
+The MJPEG endpoint uses the shared HTTP server's asynchronous request path.
+Only one stream client is admitted. The worker captures and transmits one
+camera framebuffer at a time and releases it on every success or error path;
+there is no frame queue or JPEG copy. A slow client therefore reduces the
+capture rate through socket backpressure instead of consuming more memory.
+Snapshot requests are rejected while the stream owns the capture path.
+
+The server is plain HTTP. With the default `auth=none`, anyone who can reach the
+device can view the camera. Use it only on a trusted Wi-Fi network. The optional
+access code limits casual access but does not encrypt images and is not intended
+for exposure to an untrusted network.
+
+## rtspd
+
+Publish explicitly selected sources as a standard single-client RTSP session.
+Video uses RTP/JPEG; audio uses RTP/L16 PCM. Each enabled track has its own
+RTP/RTCP UDP port pair, SSRC, and sender reports, with a shared RTCP CNAME and
+session start clock.
+
+```text
+job start rtspd [video=<stream>|none] [audio=<stream>|none] [size=qvga|vga] [fps=0..30] [port=<port>]
+job start rtspd video=camera0 audio=none size=qvga fps=10
+job start rtspd video=none audio=audio0.capture
+job start rtspd video=camera0 audio=audio0.capture
+job status rtspd
+job stop rtspd
+```
+
+Defaults are `video=camera0 audio=none size=qvga fps=5 port=554`. `video=camera`
+is a compatibility alias for `camera0`. Video selects a typed JPEG frame source
+from `stream list`; opening it holds the same exclusive hardware lease as the camera
+service. At least one source must be enabled. `fps=` is a maximum video
+publication rate, not a
+capture timer; `fps=0` removes the cap. `size=` and `fps=` are invalid with
+`video=none`. JPEG quality is fixed at 12.
+
+Use `stream list` to find available video and audio source IDs. `audio0.capture`
+is the board codec's PCM microphone endpoint when available; `mic0` is a scalar
+level sensor, not a PCM source. Audio must be a source or
+duplex S16LE PCM endpoint with 16-bit samples, 1..8 channels, and a native rate
+of 8000..192000 Hz. The job advertises the source's native rate and channels;
+it does not resample. Only selected hardware is leased as `job:rtspd`.
+Tab completion after `job start rtspd` offers unused option keys. After `audio=`
+or `video=`, double Tab lists compatible registered source IDs and `none`;
+partial IDs complete normally. Selection does not open or lease the source.
+Audio-only publishing requires neither a camera nor the camera package.
+For playback on another SolarOS device, use JPEG video and L16 audio at
+8000..48000 Hz with one or two channels. A 16000 Hz mono source is the
+recommended low-bandwidth audio format; native 16000 Hz stereo capture also
+works. The publisher's wider native-format support does not imply that every
+receiver supports those formats, and selecting a source never resamples it.
+External publishers should use baseline JPEG with both quantization tables;
+160x120 at 10 fps is a useful initial ESP32 receiver workload. RTP packets must
+fit the path MTU; SolarOS publishes packets of at most 1200 bytes.
+Selecting an absent, busy, sink-only, or incompatible source fails startup;
+there is no silent fallback to another source.
+
+Reader workers block on camera/audio availability and immediately publish or
+discard the completed frame/block. They continuously drain idle sources, so
+connecting does not expose a stale camera image or audio backlog. The video
+cap drops newly captured images rather than holding them until a timer expires.
+There is one leased PSRAM camera framebuffer, no JPEG copy or video queue,
+and at most one MTU-sized PCM block. Disabled sources allocate no reader stack.
+Temporary UDP transmit pressure drops the current frame/block and newly
+captured data during a short backoff instead of disconnecting or building a
+queue. Audio sample timestamps advance across dropped blocks. Status reports
+congestion drops and the last transmit errno separately from fatal send errors.
+Each enabled source uses an additional 4096-byte internal worker stack, shown
+by `job status rtspd`, and is closed by its owning reader during cancellation.
+Source stack minimum-free values are reported in bytes, including microphone
+startup and publishing. Packet scratch and RTSP session storage are allocated
+only when the job starts, using the PSRAM-preferred memory policy; disabled
+sources allocate no scratch. Audio scratch is one 1188-byte PCM block plus
+one 1200-byte RTP packet, off the reader's stack. I2S DMA buffers and task
+stacks remain internal. Runtime buffers are freed after workers and leases
+have closed, including failed startup; a pending stop retains them safely.
+An unused/stopped job reserves no session or media buffers, only its small
+internal control state and lock. `job status rtspd` reports runtime buffer sizes.
+
+Open the single RTSP client session:
+
+```text
+vlc rtsp://device/media
+rtsp rtsp://device/media
+ffplay -rtsp_transport udp -fflags nobuffer -probesize 32 -analyzeduration 1 -max_delay 100000 rtsp://device/media
+```
+
+FFplay's default probing/playback buffers can add seconds of latency; the
+example reduces client-side probing and UDP reordering delay. It does not
+guarantee a particular glass-to-glass latency. Capture timestamps determine
+video RTP timing; audio timestamps advance by sample frames. Images and audio
+blocks predating each `PLAY` are discarded.
+
+The camera lease excludes `cam-webd`, shell camera capture, and other camera
+owners only when a camera source is selected. Each packet is at most 1200 bytes.
+Unsupported JPEG modes are counted and dropped, not sent using private payloads.
+Transport is UDP; RTSP-over-TCP interleaving is unsupported. VLC requires a
+build with Live555: if its log reports `satip` or `access_realrtsp` failures,
+check for `--disable-live555` and use FFplay or a compatible VLC build.
+
+The stream is unauthenticated and unencrypted; use it only on a trusted LAN
+or protected network path.
+
 ## displayd
 
 Authenticated HTTP display and remote control. It has two modes:

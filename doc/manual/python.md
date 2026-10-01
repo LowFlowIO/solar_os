@@ -46,6 +46,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Contacts and messages](python.messaging.md) | `solaros.contacts`, `solaros.messages` |
 | [Text user interfaces](python.tui.md) | `solaros.tui` |
 | [Graphics and raster images](python.gfx.md) | `solaros.gfx`, `solaros.image` |
+| [Camera, streams, and RTSP](python.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
 
 ## Conventions
 
@@ -105,6 +106,9 @@ Optional API groups follow these package gates:
 - `service.dsp`: `solaros.dsp` fixed-point block operations and caller-owned
   FIR, decimator, and FFT processors
 - `media.image`: `solaros.image` decoded raster handles and queued drawing
+- `service.script-media`: `solaros.streams` local handles and leased JPEG frames
+- `service.camera`: `solaros.camera` snapshots and ownership status
+- `service.rtsp-client`: `solaros.rtsp` asynchronous receivers and native audio
 
 ## Top-Level Helpers
 

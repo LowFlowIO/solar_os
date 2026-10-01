@@ -23,6 +23,7 @@ typedef enum {
     SOLAR_OS_STREAM_TYPE_EVENT,
     SOLAR_OS_STREAM_TYPE_BYTES,
     SOLAR_OS_STREAM_TYPE_AUDIO,
+    SOLAR_OS_STREAM_TYPE_VIDEO,
 } solar_os_stream_type_t;
 
 typedef enum {
@@ -50,6 +51,25 @@ typedef struct {
     uint16_t frames_per_block;
 } solar_os_stream_audio_format_t;
 
+typedef enum {
+    SOLAR_OS_STREAM_VIDEO_JPEG,
+} solar_os_stream_video_codec_t;
+
+typedef struct {
+    solar_os_stream_video_codec_t codec;
+    uint16_t width;
+    uint16_t height;
+    uint8_t jpeg_quality; /* 0 in open options selects the provider default. */
+} solar_os_stream_video_format_t;
+
+typedef struct {
+    const uint8_t *data;
+    size_t length;
+    uint16_t width;
+    uint16_t height;
+    uint64_t timestamp_us;
+} solar_os_stream_video_frame_t;
+
 typedef struct {
     char id[SOLAR_OS_STREAM_ID_MAX];
     char provider[SOLAR_OS_STREAM_PROVIDER_MAX];
@@ -60,7 +80,10 @@ typedef struct {
     char unit[SOLAR_OS_STREAM_UNIT_MAX];
     char format[SOLAR_OS_STREAM_FORMAT_MAX];
     char summary[SOLAR_OS_STREAM_SUMMARY_MAX];
-    solar_os_stream_audio_format_t audio;
+    union {
+        solar_os_stream_audio_format_t audio;
+        solar_os_stream_video_format_t video;
+    };
     uint32_t active_handles;
     char owner[SOLAR_OS_STREAM_OWNER_MAX];
     uint64_t read_units;
@@ -91,7 +114,11 @@ typedef struct solar_os_stream_handle {
     uint32_t generation;
     void *context;
     uintptr_t private_data[2];
-    solar_os_stream_audio_format_t audio;
+    union {
+        solar_os_stream_audio_format_t audio;
+        solar_os_stream_video_format_t video;
+    };
+    solar_os_stream_video_frame_t *leased_frame;
 } solar_os_stream_handle_t;
 
 #define SOLAR_OS_STREAM_HANDLE_INIT { \
@@ -108,7 +135,10 @@ typedef struct solar_os_stream_handle {
 typedef struct {
     solar_os_stream_direction_t direction;
     uint32_t timeout_ms;
-    solar_os_stream_audio_format_t requested_audio;
+    union {
+        solar_os_stream_audio_format_t requested_audio;
+        solar_os_stream_video_format_t requested_video;
+    };
 } solar_os_stream_open_options_t;
 
 typedef esp_err_t (*solar_os_stream_open_fn)(
@@ -153,6 +183,12 @@ typedef struct {
     /* Optional compatibility adapters. New consumers use typed reads. */
     solar_os_stream_csv_header_fn csv_header;
     solar_os_stream_read_csv_fn read_csv;
+    esp_err_t (*acquire_frame)(void *user, solar_os_stream_handle_t *handle,
+                               solar_os_stream_video_frame_t *frame);
+    esp_err_t (*release_frame)(void *user, solar_os_stream_handle_t *handle,
+                               solar_os_stream_video_frame_t *frame);
+    /* Optional error-reporting close. Failure keeps the handle open. */
+    esp_err_t (*close_checked)(void *user, solar_os_stream_handle_t *handle);
     void *user;
 } solar_os_stream_driver_t;
 
@@ -168,6 +204,8 @@ const char *solar_os_stream_sharing_name(solar_os_stream_sharing_t sharing);
 const char *solar_os_stream_audio_sample_format_name(
     solar_os_stream_audio_sample_format_t format);
 
+/* Initialize handles with SOLAR_OS_STREAM_HANDLE_INIT. An open handle must
+ * not be copied or reopened; release its frame and close it first. */
 esp_err_t solar_os_stream_open_ex(const char *id,
                                   const char *owner,
                                   const solar_os_stream_open_options_t *options,
@@ -176,6 +214,14 @@ esp_err_t solar_os_stream_open(const char *id,
                                const char *owner,
                                solar_os_stream_handle_t *handle);
 void solar_os_stream_close(solar_os_stream_handle_t *handle);
+esp_err_t solar_os_stream_close_ex(solar_os_stream_handle_t *handle);
+/* One frame per handle; release the same frame object before closing or
+ * acquiring again. Frame bytes stay provider-owned and must not be copied
+ * into an unbounded queue. A handle is used by one reader task. */
+esp_err_t solar_os_stream_acquire_frame(solar_os_stream_handle_t *handle,
+                                       solar_os_stream_video_frame_t *frame);
+esp_err_t solar_os_stream_release_frame(solar_os_stream_handle_t *handle,
+                                       solar_os_stream_video_frame_t *frame);
 bool solar_os_stream_handle_valid(const solar_os_stream_handle_t *handle);
 esp_err_t solar_os_stream_read(solar_os_stream_handle_t *handle,
                                void *data,

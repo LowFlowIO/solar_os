@@ -3,6 +3,7 @@
 #include "solar_os_shell_commands.h"
 #include "solar_os_shell_completion.h"
 #include "solar_os_shell_gesture_completion.h"
+#include "solar_os_shell_rtspd_completion.h"
 #include "solar_os_shell_common.h"
 #include "solar_os_shell_io.h"
 #include "solar_os_shell_launch.h"
@@ -593,6 +594,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_BATTERY
     {"battery", "battery status and config", solar_os_shell_cmd_battery},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+    {"camera", "camera status and JPEG capture", solar_os_shell_cmd_camera},
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_ADC
     {"adc", "read expansion analog inputs", solar_os_shell_cmd_adc},
 #endif
@@ -1114,6 +1118,10 @@ static const char * const haptic_subcommands[] = {"list", "play", "stop"};
 static const char * const charger_subcommands[] = {
     "list", "status", "enable", "input-limit", "current", "voltage",
 };
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+static const char * const camera_subcommands[] = {"status", "capture", "off"};
+static const char * const camera_frame_sizes[] = {"qvga", "vga"};
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_IMU
 static const char * const imu_subcommands[] = {"list", "sample"};
@@ -1649,6 +1657,9 @@ static const char * const playground_storage_values[] = {"flash", "sd"};
 #if SOLAR_OS_PACKAGE_MEDIA
 static const char * const view_options[] = {"-fit", "-actual"};
 #endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+static const char * const vplay_options[] = {"-fit", "-actual"};
+#endif
 #if SOLAR_OS_PACKAGE_APP_PLOT
 static const char * const plot_options[] = {"-f", "--file", "--rate"};
 static const char * const plot_live_options[] = {"--rate"};
@@ -1759,6 +1770,10 @@ static const char * const path_unzip_after_option[] = {"unzip", SHELL_COMPLETION
 #if SOLAR_OS_PACKAGE_MEDIA
 static const char * const path_view[] = {"view"};
 static const char * const path_view_after_option[] = {"view", SHELL_COMPLETION_ANY};
+#endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+static const char * const path_vplay[] = {"vplay"};
+static const char * const path_vplay_after_option[] = {"vplay", SHELL_COMPLETION_ANY};
 #endif
 #if SOLAR_OS_PACKAGE_APP_GAMEBOY
 static const char * const path_gameboy[] = {"gameboy"};
@@ -2474,6 +2489,13 @@ static const char * const path_haptic[] = {"haptic"};
 static const char * const path_charger[] = {"charger"};
 static const char * const path_charger_enable[] = {"charger", "enable"};
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+static const char * const path_camera[] = {"camera"};
+static const char * const path_camera_capture[] = {"camera", "capture"};
+static const char * const path_camera_capture_file[] = {
+    "camera", "capture", SHELL_COMPLETION_ANY,
+};
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_IMU
 static const char * const path_imu[] = {"imu"};
 #endif
@@ -3039,6 +3061,10 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_OPTIONS(path_view, view_options),
     SHELL_COMPLETION_PATH(path_view_after_option, false),
 #endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+    SHELL_COMPLETION_OPTIONS(path_vplay, vplay_options),
+    SHELL_COMPLETION_PATH(path_vplay_after_option, false),
+#endif
 #if SOLAR_OS_PACKAGE_APP_GAMEBOY
     SHELL_COMPLETION_PATH(path_gameboy, false),
 #endif
@@ -3482,6 +3508,11 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_CHARGER
     SHELL_COMPLETION_STATIC(path_charger, charger_subcommands),
     SHELL_COMPLETION_STATIC(path_charger_enable, on_off_values),
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+    SHELL_COMPLETION_STATIC(path_camera, camera_subcommands),
+    SHELL_COMPLETION_PATH(path_camera_capture, false),
+    SHELL_COMPLETION_STATIC(path_camera_capture_file, camera_frame_sizes),
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_IMU
     SHELL_COMPLETION_STATIC(path_imu, imu_subcommands),
@@ -5242,6 +5273,9 @@ static bool shell_is_path_command(const char *command)
 #endif
 #if SOLAR_OS_PACKAGE_APP_VIEW
            strcmp(command, "view") == 0 ||
+#endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+           strcmp(command, "vplay") == 0 ||
 #endif
 #if SOLAR_OS_PACKAGE_APP_SCP
            strcmp(command, "scp") == 0 ||
@@ -7347,9 +7381,9 @@ static bool shell_daq_stream_type_allowed(solar_os_stream_type_t type,
             type == SOLAR_OS_STREAM_TYPE_AUDIO;
     case SHELL_DAQ_COMPLETION_STREAMS_CSV:
         return type != SOLAR_OS_STREAM_TYPE_BYTES &&
-            type != SOLAR_OS_STREAM_TYPE_AUDIO;
+            type != SOLAR_OS_STREAM_TYPE_AUDIO && type != SOLAR_OS_STREAM_TYPE_VIDEO;
     case SHELL_DAQ_COMPLETION_STREAMS_ALL:
-        return true;
+        return type != SOLAR_OS_STREAM_TYPE_VIDEO;
     default:
         return false;
     }
@@ -7976,6 +8010,20 @@ static bool shell_complete_gesture_argument(
     return true;
 }
 
+#if SOLAR_OS_PACKAGE_JOB_RTSPD
+static bool shell_completion_get_rtspd_stream(size_t index,
+    solar_os_stream_info_t *info, void *context)
+{
+    (void)context;
+    return solar_os_stream_get(index, info);
+}
+
+static void shell_completion_emit_rtspd_candidate(const char *candidate, void *context)
+{
+    shell_completion_emit((shell_completion_match_t *)context, candidate);
+}
+#endif
+
 static bool shell_completion_collect_matches(solar_os_context_t *ctx,
                                              const char * const *tokens,
                                              size_t token_count,
@@ -7995,6 +8043,12 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
     state->io = shell_io(ctx);
     state->prefix = prefix;
     state->print = print;
+
+#if SOLAR_OS_PACKAGE_JOB_RTSPD
+    if (solar_os_shell_rtspd_completion_emit(tokens, token_count, prefix,
+            solar_os_stream_count(), shell_completion_get_rtspd_stream, NULL,
+            shell_completion_emit_rtspd_candidate, state)) return true;
+#endif
 
     for (uint16_t rule_index = shell_completion_rule_first(tokens[0]);
          rule_index != SHELL_COMPLETION_RULE_NONE;
@@ -8390,10 +8444,11 @@ static bool shell_complete_argument(solar_os_context_t *ctx,
         char completed[SHELL_INPUT_MAX];
         snprintf(completed,
                  sizeof(completed),
-                 "%.*s%s ",
+                 "%.*s%s%s",
                  (int)token_start,
                  shell_session(ctx)->input,
-                 state.match);
+                 state.match,
+                 solar_os_shell_completion_needs_trailing_space(state.match) ? " " : "");
         shell_replace_input(ctx, completed);
         return true;
     }

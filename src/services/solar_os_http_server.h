@@ -24,6 +24,7 @@ typedef struct {
     const char *uri;
     httpd_method_t method;
     bool prefix;
+    bool asynchronous;
     solar_os_http_auth_t auth;
     solar_os_http_route_handler_t handler;
     void *user;
@@ -31,5 +32,11 @@ typedef struct {
 
 esp_err_t solar_os_http_server_register_route(const solar_os_http_route_t *route);
 esp_err_t solar_os_http_server_unregister_owner(const char *owner);
+/*
+ * Complete a request accepted by an asynchronous route. The route handler owns
+ * its copied request only after returning ESP_OK. It must eventually call this
+ * function exactly once, including after send or disconnect failures.
+ */
+esp_err_t solar_os_http_server_complete_async(httpd_req_t *req);
 bool solar_os_http_server_get_bearer_token(char *token, size_t token_len);
 uint16_t solar_os_http_server_port(void);

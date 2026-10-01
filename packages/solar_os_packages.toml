@@ -41,6 +41,16 @@ label = "Audio support"
 category = "System"
 members = ["service_audio"]
 
+[groups.camera]
+label = "Camera"
+category = "Hardware interfaces"
+members = ["driver_camera_esp32", "job_cam_webd"]
+
+[groups.rtsp]
+label = "RTSP streaming"
+category = "Networking"
+members = ["job_rtspd", "app_rtsp"]
+
 [groups.control_bindings]
 label = "Control bindings"
 category = "System"
@@ -421,6 +431,11 @@ members = ["app_notes"]
 label = "Image viewer"
 category = "Media"
 members = ["app_view"]
+
+[groups.vplay]
+label = "MPEG-1 media player"
+category = "Media"
+members = ["app_vplay"]
 
 [groups.sketch]
 label = "Sketch"
@@ -811,6 +826,7 @@ sources = [
   "shell/solar_os_shell_input.c",
   "shell/solar_os_shell_completion.c",
   "shell/solar_os_shell_gesture_completion.c",
+  "shell/solar_os_shell_rtspd_completion.c",
   "shell/solar_os_shell_io.c",
   "shell/solar_os_shell_manual.c",
   "shell/solar_os_shell_line.c",
@@ -912,6 +928,12 @@ label = "service.script-network"
 depends = ["service_net"]
 sources = ["services/solar_os_net_session.c"]
 requires = ["esp-tls", "esp_timer", "lwip", "mbedtls", "tcp_transport"]
+
+[packages.service_script_media]
+label = "service.script-media"
+depends = ["service_streams"]
+sources = ["services/solar_os_script_media.c"]
+requires = ["esp_timer"]
 
 [packages.service_ftp]
 label = "network.ftp"
@@ -1038,8 +1060,20 @@ sources = [
 
 [packages.service_image]
 label = "media.image"
-sources = ["services/solar_os_raster_image.c"]
+sources = [
+  "services/solar_os_mjpeg.c",
+  "services/solar_os_raster_image.c",
+]
 requires = ["stb_image", "webp_decoder"]
+
+[packages.service_media]
+label = "service.media"
+sources = [
+  "services/solar_os_media.c",
+  "services/solar_os_rtp.c",
+  "services/solar_os_rtp_jpeg.c",
+  "services/solar_os_rtsp.c",
+]
 
 [packages.service_document]
 label = "media.document"
@@ -1080,6 +1114,26 @@ capabilities = ["cdc"]
 [packages.service_sd]
 label = "service.sd"
 capabilities = ["sd"]
+
+[packages.service_camera]
+label = "service.camera"
+depends = ["service_streams"]
+sources = [
+  "services/solar_os_camera.c",
+  "services/solar_os_camera_stream.c",
+  "shell/solar_os_shell_camera.c",
+]
+capabilities = ["psram"]
+targets = ["esp32s3"]
+
+[packages.driver_camera_esp32]
+label = "driver.camera-esp32"
+depends = ["service_camera", "service_expansion", "service_resources"]
+sources = ["drivers/solar_os_camera_esp32.c"]
+expansion_drivers = ["solar_os_camera_esp32_expansion_driver"]
+requires = ["espressif__esp32-camera"]
+targets = ["esp32s3"]
+capabilities = ["psram", "expansion_gpio"]
 
 [packages.service_audio]
 label = "service.audio"
@@ -2081,6 +2135,19 @@ depends = [
 sources = ["apps/solar_os_webradio.c"]
 capabilities = ["wifi"]
 
+[packages.service_rtsp_client]
+label = "service.rtsp-client"
+depends = ["service_media", "service_audio", "service_net"]
+sources = ["services/solar_os_rtsp_receiver.c", "services/solar_os_rtsp_client.c"]
+capabilities = ["wifi"]
+
+[packages.app_rtsp]
+label = "app.rtsp"
+depends = ["service_rtsp_client", "service_signal_widgets", "service_media_widgets"]
+sources = ["apps/solar_os_rtsp_app.c"]
+requires = ["stb_image"]
+capabilities = ["wifi"]
+
 [packages.app_telnet]
 label = "app.telnet"
 depends = ["service_net"]
@@ -2143,6 +2210,18 @@ depends = ["service_image", "service_vector"]
 sources = ["apps/solar_os_view.c"]
 capabilities = ["psram", "gfx"]
 
+[packages.app_vplay]
+label = "app.vplay"
+depends = ["service_mpeg", "service_audio", "service_media_widgets"]
+sources = ["apps/solar_os_vplay.c"]
+capabilities = ["psram", "gfx"]
+
+[packages.service_mpeg]
+label = "service.mpeg"
+sources = ["services/solar_os_mpeg.c", "services/solar_os_mpeg_raster.c", "services/solar_os_mpeg_simd.S"]
+requires = ["pl_mpeg"]
+capabilities = ["psram"]
+
 [packages.app_sketch]
 label = "app.sketch"
 depends = ["service_image", "service_storage_browser"]
@@ -2171,14 +2250,14 @@ capabilities = ["gfx", "psram", "sd", "streaming_display"]
 
 [packages.app_python]
 label = "app.python"
-depends = ["service_script_net", "service_script_runner"]
+depends = ["service_script_net", "service_script_runner", "service_script_media"]
 sources = ["apps/solar_os_python.c"]
 requires = ["micropython_embed"]
 capabilities = ["psram"]
 
 [packages.app_lua]
 label = "app.lua"
-depends = ["service_script_net", "service_script_runner"]
+depends = ["service_script_net", "service_script_runner", "service_script_media"]
 sources = ["apps/solar_os_lua.c"]
 requires = ["lua"]
 capabilities = ["psram"]
@@ -2307,6 +2386,20 @@ sources = ["apps/solar_os_sheet.c"]
 label = "job.httpd"
 depends = ["service_http_server"]
 sources = ["jobs/solar_os_httpd_job.c"]
+capabilities = ["wifi"]
+
+[packages.job_cam_webd]
+label = "job.cam-webd"
+depends = ["service_camera", "service_http_server"]
+sources = ["jobs/solar_os_cam_webd_job.c"]
+capabilities = ["psram", "wifi"]
+targets = ["esp32s3"]
+
+[packages.job_rtspd]
+label = "job.rtspd"
+depends = ["service_media", "service_streams", "service_wifi"]
+sources = ["jobs/solar_os_rtspd_job.c", "jobs/solar_os_rtspd_options.c"]
+requires = ["esp_timer", "esp_hw_support"]
 capabilities = ["wifi"]
 
 [packages.job_displayd]

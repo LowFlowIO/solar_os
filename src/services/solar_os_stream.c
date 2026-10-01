@@ -114,14 +114,14 @@ static bool stream_driver_valid(const solar_os_stream_driver_t *driver)
                            sizeof(driver->info.format), true) ||
         !stream_text_valid(driver->info.summary,
                            sizeof(driver->info.summary), false) ||
-        driver->info.type > SOLAR_OS_STREAM_TYPE_AUDIO ||
+        driver->info.type > SOLAR_OS_STREAM_TYPE_VIDEO ||
         driver->info.direction > SOLAR_OS_STREAM_DIRECTION_DUPLEX ||
         driver->info.sharing > SOLAR_OS_STREAM_SHARING_MIXED) {
         return false;
     }
     if (stream_direction_can_read(driver->info.direction) &&
         driver->read == NULL && driver->read_scalar == NULL &&
-        driver->read_csv == NULL) {
+        driver->read_csv == NULL && driver->acquire_frame == NULL) {
         return false;
     }
     if (stream_direction_can_write(driver->info.direction) &&
@@ -136,6 +136,13 @@ static bool stream_driver_valid(const solar_os_stream_driver_t *driver)
         (driver->info.audio.sample_rate == 0U ||
          driver->info.audio.channels == 0U ||
          driver->info.audio.bits_per_sample == 0U)) {
+        return false;
+    }
+    if (driver->info.type == SOLAR_OS_STREAM_TYPE_VIDEO &&
+        (driver->info.direction != SOLAR_OS_STREAM_DIRECTION_SOURCE ||
+         driver->info.video.codec != SOLAR_OS_STREAM_VIDEO_JPEG ||
+         driver->info.video.width == 0U || driver->info.video.height == 0U ||
+         driver->acquire_frame == NULL || driver->release_frame == NULL)) {
         return false;
     }
     return true;
@@ -297,6 +304,7 @@ const char *solar_os_stream_type_name(solar_os_stream_type_t type)
     case SOLAR_OS_STREAM_TYPE_EVENT: return "event";
     case SOLAR_OS_STREAM_TYPE_BYTES: return "bytes";
     case SOLAR_OS_STREAM_TYPE_AUDIO: return "audio";
+    case SOLAR_OS_STREAM_TYPE_VIDEO: return "video";
     default: return "unknown";
     }
 }
@@ -352,6 +360,9 @@ esp_err_t solar_os_stream_open_ex(const char *id,
 
     solar_os_stream_open_fn open = NULL;
     void *user = NULL;
+    if (solar_os_stream_handle_valid(handle)) {
+        return ESP_ERR_INVALID_STATE;
+    }
     *handle = (solar_os_stream_handle_t)SOLAR_OS_STREAM_HANDLE_INIT;
     stream_lock();
     const int index = stream_find_locked(id);
@@ -435,23 +446,33 @@ bool solar_os_stream_handle_valid(const solar_os_stream_handle_t *handle)
     return valid;
 }
 
-void solar_os_stream_close(solar_os_stream_handle_t *handle)
+esp_err_t solar_os_stream_close_ex(solar_os_stream_handle_t *handle)
 {
     if (!solar_os_stream_handle_valid(handle)) {
         if (handle != NULL) {
             *handle = (solar_os_stream_handle_t)SOLAR_OS_STREAM_HANDLE_INIT;
         }
-        return;
+        return ESP_ERR_INVALID_STATE;
+    }
+    if (handle->leased_frame != NULL) {
+        return ESP_ERR_INVALID_STATE;
     }
     const int slot = handle->slot;
     const uint32_t generation = handle->generation;
     solar_os_stream_close_fn close = NULL;
+    esp_err_t (*close_checked)(void *, solar_os_stream_handle_t *) = NULL;
     void *user = NULL;
     stream_lock();
     close = streams[slot].driver.close;
+    close_checked = streams[slot].driver.close_checked;
     user = streams[slot].driver.user;
     stream_unlock();
-    if (close != NULL) {
+    if (close_checked != NULL) {
+        const esp_err_t error = close_checked(user, handle);
+        if (error != ESP_OK) {
+            return error;
+        }
+    } else if (close != NULL) {
         close(user, handle);
     }
     stream_lock();
@@ -464,6 +485,12 @@ void solar_os_stream_close(solar_os_stream_handle_t *handle)
     }
     stream_unlock();
     *handle = (solar_os_stream_handle_t)SOLAR_OS_STREAM_HANDLE_INIT;
+    return ESP_OK;
+}
+
+void solar_os_stream_close(solar_os_stream_handle_t *handle)
+{
+    (void)solar_os_stream_close_ex(handle);
 }
 
 static esp_err_t stream_get_callbacks(solar_os_stream_handle_t *handle,
@@ -481,6 +508,62 @@ static esp_err_t stream_get_callbacks(solar_os_stream_handle_t *handle,
     *entry = candidate;
     *user = candidate->driver.user;
     return ESP_OK;
+}
+
+static esp_err_t stream_frame_operation(solar_os_stream_handle_t *handle,
+                                        solar_os_stream_video_frame_t *frame,
+                                        bool acquire)
+{
+    if (handle == NULL || frame == NULL) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    if (stream_ensure_init() != ESP_OK) {
+        return ESP_ERR_NO_MEM;
+    }
+    stream_entry_t *entry = NULL;
+    void *user = NULL;
+    esp_err_t (*callback)(void *, solar_os_stream_handle_t *,
+                          solar_os_stream_video_frame_t *) = NULL;
+    stream_lock();
+    esp_err_t error = stream_get_callbacks(handle, &entry, &user);
+    if (error == ESP_OK) {
+        if (handle->type != SOLAR_OS_STREAM_TYPE_VIDEO ||
+            !stream_direction_can_read(handle->direction)) {
+            error = ESP_ERR_NOT_SUPPORTED;
+        } else if ((acquire && handle->leased_frame != NULL) ||
+                   (!acquire && handle->leased_frame != frame)) {
+            error = ESP_ERR_INVALID_STATE;
+        } else {
+            callback = acquire ? entry->driver.acquire_frame : entry->driver.release_frame;
+            if (callback == NULL) error = ESP_ERR_NOT_SUPPORTED;
+        }
+    }
+    stream_unlock();
+    if (error != ESP_OK) return error;
+    error = callback(user, handle, frame);
+    if (error == ESP_OK) {
+        handle->leased_frame = acquire ? frame : NULL;
+        if (acquire) {
+            stream_lock();
+            entry->read_units++;
+            stream_unlock();
+        } else {
+            memset(frame, 0, sizeof(*frame));
+        }
+    }
+    return error;
+}
+
+esp_err_t solar_os_stream_acquire_frame(solar_os_stream_handle_t *handle,
+                                       solar_os_stream_video_frame_t *frame)
+{
+    return stream_frame_operation(handle, frame, true);
+}
+
+esp_err_t solar_os_stream_release_frame(solar_os_stream_handle_t *handle,
+                                       solar_os_stream_video_frame_t *frame)
+{
+    return stream_frame_operation(handle, frame, false);
 }
 
 static size_t stream_transfer_units(const stream_entry_t *entry,
@@ -652,6 +735,9 @@ esp_err_t solar_os_stream_csv_header(const solar_os_stream_info_t *info,
     stream_unlock();
     if (callback != NULL) {
         return callback(user, header, header_len);
+    }
+    if (info->type == SOLAR_OS_STREAM_TYPE_VIDEO) {
+        return ESP_ERR_NOT_SUPPORTED;
     }
     const char *text = info->type == SOLAR_OS_STREAM_TYPE_BYTES ?
         "time_ms,uptime_ms,stream,hex,text" :

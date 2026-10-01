@@ -42,12 +42,12 @@ class RuntimeBoundaryTest(unittest.TestCase):
             source = (ROOT / relative_path).read_text(encoding="utf-8")
             self.assertIn(declaration, source, relative_path)
 
-    def test_hardware_facing_core_registries_stay_internal(self):
+    def test_task_only_registries_move_but_provider_control_stays_internal(self):
         declarations = {
             "src/services/solar_os_buses.c":
-                "static solar_os_bus_info_t buses",
+                "static StaticSemaphore_t bus_mutex_buffers",
             "src/services/solar_os_port.c":
-                "static solar_os_port_entry_t ports",
+                "static EXT_RAM_BSS_ATTR solar_os_port_entry_t ports",
             "src/jobs/solar_os_telnetd_job.c":
                 "static telnetd_job_state_t telnetd_job",
         }

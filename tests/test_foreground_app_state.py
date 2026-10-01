@@ -36,6 +36,19 @@ class ForegroundAppStatePolicyTest(unittest.TestCase):
             check_foreground_app_state.lifecycle_bypasses(REPOSITORY), []
         )
 
+    def test_backend_operation_hooks_are_not_app_lifecycle_bypasses(self):
+        with tempfile.TemporaryDirectory() as directory:
+            repository = Path(directory)
+            source = repository / "src" / "services"
+            source.mkdir(parents=True)
+            (source / "backend.c").write_text(
+                "backend.ops->start(backend.ctx);\n",
+                encoding="utf-8",
+            )
+            self.assertEqual(
+                check_foreground_app_state.lifecycle_bypasses(repository), []
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

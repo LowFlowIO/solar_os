@@ -26,6 +26,10 @@
 #include "solar_os_contacts.h"
 #endif
 #include "solar_os_memory.h"
+#include "solar_os_script_media.h"
+#if SOLAR_OS_PACKAGE_SERVICE_CAMERA
+#include "solar_os_camera.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 #include "solar_os_messaging.h"
 #endif
@@ -4721,6 +4725,7 @@ static bool solua_expansion_key_known(const char *key)
         "spi", "cs", "ce", "i2c", "addr", "alt_addr", "uart", "ps2", "gpio", "irq", "reset",
         "rst", "data", "bck", "din", "rck", "mclk", "ws", "dout", "dc",
         "busy", "adc", "pwm", "backlight", "a", "b",
+        "d0", "d1", "d2", "d3", "d4", "d5", "d6", "d7", "siod", "sioc", "vsync", "href", "pclk", "xclk", "pwdn",
         "count", "keys", "x", "y", "min", "center", "max", "deadzone",
     };
     for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
@@ -4970,6 +4975,21 @@ static int solua_expansion_attach(lua_State *L)
         {"backlight", "backlight", SOLAR_OS_EXPANSION_BINDING_PWM},
         {"a", "a", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"b", "b", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"d0", "d0", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"d1", "d1", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"d2", "d2", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"d3", "d3", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"d4", "d4", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"d5", "d5", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"d6", "d6", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"d7", "d7", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"siod", "siod", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"sioc", "sioc", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"vsync", "vsync", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"href", "href", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"pclk", "pclk", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"xclk", "xclk", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"pwdn", "pwdn", SOLAR_OS_EXPANSION_BINDING_GPIO},
     };
     int reset = 0;
     int rst = 0;
@@ -7715,6 +7735,8 @@ static int solua_gfx_text(lua_State *L)
     return 0;
 }
 
+#include "solar_os_lua_media.inc"
+
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 static void solua_push_contact(lua_State *L,
                                const solar_os_contact_t *contact)
@@ -8316,6 +8338,7 @@ esp_err_t solar_os_lua_run(const solar_os_script_run_request_t *request,
 #if SOLAR_OS_PACKAGE_SERVICE_NET
     solua_net_destroy();
 #endif
+    solua_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     solua_http_stream_destroy();
     solua_http_session_destroy();
@@ -8421,6 +8444,7 @@ done:
 #if SOLAR_OS_PACKAGE_SERVICE_NET
         solua_net_destroy();
 #endif
+        solua_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
         solua_http_stream_destroy();
         solua_http_session_destroy();
@@ -8709,11 +8733,21 @@ static void solua_stop(solar_os_context_t *ctx)
                                            NULL,
                                            SOLUA_STOP_WAIT_MS,
                                            20U)) {
-            SOLAR_OS_LOGW(TAG, "force stopping unresponsive Lua task");
-            solar_os_task_delete(solua.task);
-            solua.task = NULL;
-            solua.task_done = true;
-            solua.vm_active = false;
+            /* A live media session can be inside a driver capture/release or
+             * joining its RTSP worker. Never delete that owner task mid-call.
+             * Interpreter cancellation remains active while we wait. */
+            while (__atomic_load_n(&solua_media_session, __ATOMIC_ACQUIRE) != NULL &&
+                   !solua_task_stopped(NULL)) {
+                (void)solar_os_script_wait_for_stop(solua_task_stopped, NULL,
+                    SOLUA_STOP_WAIT_MS, 20U);
+            }
+            if (!solua_task_stopped(NULL)) {
+                SOLAR_OS_LOGW(TAG, "force stopping unresponsive Lua task");
+                solar_os_task_delete(solua.task);
+                solua.task = NULL;
+                solua.task_done = true;
+                solua.vm_active = false;
+            }
         }
     }
 
@@ -8756,6 +8790,7 @@ static void solua_stop(solar_os_context_t *ctx)
 #if SOLAR_OS_PACKAGE_SERVICE_NET
     solua_net_destroy();
 #endif
+    solua_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     solua_http_stream_destroy();
     solua_http_session_destroy();
@@ -8990,7 +9025,9 @@ static void solua_apply_gfx_event(solar_os_context_t *ctx, const solua_event_t *
         solar_os_raster_image_t *image =
             (solar_os_raster_image_t *)event->object;
         if (gfx != NULL && image != NULL) {
-            const esp_err_t err = solar_os_raster_image_draw(image,
+            const esp_err_t err = event->attr == 1 ?
+                solar_os_raster_image_present(image, gfx, event->x0, event->y0, event->width, event->height) :
+                solar_os_raster_image_draw(image,
                                                               gfx,
                                                               (int)event->x0,
                                                               (int)event->y0,

@@ -42,6 +42,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Contacts and messages](lua.messaging.md) | `solaros.contacts`, `solaros.messages` |
 | [Text user interfaces](lua.tui.md) | `solaros.tui` |
 | [Graphics and raster images](lua.gfx.md) | `solaros.gfx`, `solaros.image` |
+| [Camera, streams, and RTSP](lua.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
 
 ## Top-Level Helpers
 
@@ -62,6 +63,11 @@ change it.
 ## Service availability
 
 Lua mirrors the Python `solaros` module structure:
+
+`solaros.streams` provides local owned handles. `solaros.camera` and
+`solaros.rtsp` are present only when their native services are compiled; see
+[Camera, streams, and RTSP](lua.media.md). Image decode and native presentation
+remain gated by `media.image`.
 
 The Lua runtime package requires PSRAM. Hardware and network tables are present
 only when the board/flavor includes the corresponding service package. For

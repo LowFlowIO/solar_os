@@ -12,6 +12,55 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
+TARGETS += camera_service_test camera_expansion_test media_test mjpeg_test
+TARGETS += http_server_test
+TARGETS += rtspd_job_test rtspd_audio_only_test
+TARGETS += rtsp_receiver_test
+TARGETS += rtsp_client_test
+TARGETS += gfx_mono_raster_test
+TARGETS += rgb565_raster_test
+TARGETS += rtspd_completion_test
+TARGETS += script_media_test script_media_rtsp_test
+TARGETS += raster_image_test
+TARGETS += media_lua_bindings_test
+
+raster_image_test: raster_image_test.c $(ROOT)/src/services/solar_os_raster_image.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(ROOT)/components/stb_image/include -I$(ROOT)/components/webp_decoder/include $^ -o $@
+
+SCRIPT_MEDIA_TEST_SOURCES := script_media_test.c $(ROOT)/src/services/solar_os_script_media.c \
+	$(ROOT)/src/services/solar_os_stream.c $(ROOT)/src/services/solar_os_camera.c \
+	$(ROOT)/src/services/solar_os_camera_stream.c
+script_media_test script_media_rtsp_test: $(SCRIPT_MEDIA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -pthread \
+		$(if $(filter script_media_rtsp_test,$@),-DSOLAR_OS_PACKAGE_SERVICE_RTSP_CLIENT=1,) \
+		-Iscript_media_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		$(SCRIPT_MEDIA_TEST_SOURCES) -o $@
+
+rtspd_completion_test: rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.h $(ROOT)/src/services/solar_os_stream.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services -I$(ROOT)/src/shell rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c -o $@
+
+rgb565_raster_test: rgb565_raster_test.c $(ROOT)/src/services/solar_os_rgb565.h $(ROOT)/src/services/solar_os_display_surface.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
+
+gfx_mono_raster_test: gfx_mono_raster_test.c $(ROOT)/src/services/solar_os_gfx_mono_raster.h $(ROOT)/src/services/solar_os_display_surface.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
+
+RTSP_CLIENT_TEST_SOURCES := rtsp_client_test.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_rtp_jpeg.c $(ROOT)/src/services/solar_os_media.c $(ROOT)/src/services/solar_os_audio_pcm.c
+rtsp_client_test: $(RTSP_CLIENT_TEST_SOURCES) $(ROOT)/src/services/solar_os_rtsp_client.c $(wildcard rtsp_stubs/*.h) $(wildcard rtsp_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -pthread -Irtsp_stubs -Irtspd_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services $(RTSP_CLIENT_TEST_SOURCES) -o $@
+
+rtsp_receiver_test: rtsp_receiver_test.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_media.c
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -I. -I$(ROOT)/src/services $^ -o $@
+
+RTSPD_TEST_SOURCES := rtspd_job_test.c $(ROOT)/src/jobs/solar_os_rtspd_options.c \
+	$(ROOT)/src/services/solar_os_media.c $(ROOT)/src/services/solar_os_rtp.c \
+	$(ROOT)/src/services/solar_os_rtp_jpeg.c $(ROOT)/src/services/solar_os_rtsp.c
+rtspd_job_test rtspd_audio_only_test: $(RTSPD_TEST_SOURCES) $(ROOT)/src/jobs/solar_os_rtspd_job.c \
+	$(wildcard rtspd_stubs/*.h) $(wildcard rtspd_stubs/*/*.h)
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread \
+		$(if $(filter rtspd_audio_only_test,$@),-DSOLAR_OS_PACKAGE_SERVICE_CAMERA=0,) \
+		-Irtspd_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services -I$(ROOT)/src/jobs $(RTSPD_TEST_SOURCES) -o $@
 
 all: $(TARGETS)
 
@@ -35,6 +84,14 @@ LUA_DIR := $(ROOT)/components/lua/lua/src
 LUA_TEST_SOURCES := $(filter-out $(LUA_DIR)/lua.c $(LUA_DIR)/luac.c \
 	$(LUA_DIR)/linit.c $(LUA_DIR)/liolib.c $(LUA_DIR)/loadlib.c $(LUA_DIR)/loslib.c, \
 	$(wildcard $(LUA_DIR)/*.c))
+
+media_lua_bindings_test: media_lua_bindings_test.c $(SCRIPT_MEDIA_TEST_SOURCES) \
+		$(WRITER_DIR)/solar_os_lua_media.inc $(LUA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -pthread \
+		-DSOLAR_OS_PACKAGE_SERVICE_RTSP_CLIENT=1 -DSOLAR_OS_PACKAGE_SERVICE_CAMERA=1 \
+		-Iscript_media_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(WRITER_DIR) -I$(LUA_DIR) media_lua_bindings_test.c $(filter-out script_media_test.c,$(SCRIPT_MEDIA_TEST_SOURCES)) \
+		$(LUA_TEST_SOURCES) -lm -o $@
 
 ble_lua_bindings_test: ble_lua_bindings_test.c ble_service_test.c ble_test_support.c \
 		$(WRITER_DIR)/solar_os_lua_ble.inc $(ROOT)/src/services/solar_os_ble.c \
@@ -239,6 +296,41 @@ charger_service_test: charger_service_test.c $(ROOT)/src/services/solar_os_charg
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
 		charger_service_test.c $(ROOT)/src/services/solar_os_charger.c -o $@
 
+CAMERA_EXPANSION_SOURCES := camera_expansion_test.c $(ROOT)/src/drivers/solar_os_camera_esp32.c \
+	$(ROOT)/src/services/solar_os_camera.c $(ROOT)/src/services/solar_os_camera_stream.c \
+	$(ROOT)/src/services/solar_os_stream.c $(ROOT)/src/services/solar_os_resources.c
+camera_expansion_test: $(CAMERA_EXPANSION_SOURCES) $(wildcard camera_stubs/*.h camera_stubs/*/*.h) \
+	$(ROOT)/src/services/solar_os_camera.h $(ROOT)/src/services/solar_os_stream.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Icamera_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/include -I$(ROOT)/src -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		$(CAMERA_EXPANSION_SOURCES) -o $@
+
+camera_service_test: camera_service_test.c $(ROOT)/src/services/solar_os_camera.c $(ROOT)/src/services/solar_os_camera.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
+		camera_service_test.c $(ROOT)/src/services/solar_os_camera.c -o $@
+
+mjpeg_test: mjpeg_test.c $(ROOT)/src/services/solar_os_mjpeg.c $(ROOT)/src/services/solar_os_mjpeg.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services \
+		mjpeg_test.c $(ROOT)/src/services/solar_os_mjpeg.c -o $@
+
+media_test: media_test.c $(ROOT)/src/services/solar_os_media.c \
+		$(ROOT)/src/services/solar_os_rtp.c \
+		$(ROOT)/src/services/solar_os_rtp_jpeg.c \
+		$(ROOT)/src/services/solar_os_rtsp.c \
+		$(ROOT)/src/services/solar_os_media.h $(ROOT)/src/services/solar_os_rtp.h \
+		$(ROOT)/src/services/solar_os_rtp_jpeg.h \
+		$(ROOT)/src/services/solar_os_rtsp.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services \
+		media_test.c $(ROOT)/src/services/solar_os_media.c \
+		$(ROOT)/src/services/solar_os_rtp.c \
+		$(ROOT)/src/services/solar_os_rtp_jpeg.c \
+		$(ROOT)/src/services/solar_os_rtsp.c -o $@
+
+http_server_test: http_server_test.c $(ROOT)/src/services/solar_os_http_server.c $(ROOT)/src/services/solar_os_http_server.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -pthread -include compat.h \
+		-Ihttp_server_stubs -I. -I$(ROOT)/src/services \
+		http_server_test.c $(ROOT)/src/services/solar_os_http_server.c -o $@
+
 drv2605_test: drv2605_test.c $(ROOT)/src/drivers/drv2605.c $(ROOT)/src/drivers/drv2605.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
 		drv2605_test.c $(ROOT)/src/drivers/drv2605.c -o $@
@@ -381,9 +473,9 @@ webradio_catalog_test: webradio_catalog_test.c $(ROOT)/src/services/solar_os_web
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src -I$(ROOT)/src/services \
 		webradio_catalog_test.c $(ROOT)/src/services/solar_os_webradio_catalog.c -o $@
 
-gif_decode_stack_test: gif_decode_stack_test.c deep_animation.gif.b64 esp_heap_caps.h esp_err.h $(ROOT)/components/stb_image/stb_image_port.c $(ROOT)/components/stb_image/include/solar_os_stb_image.h $(ROOT)/components/stb_image/include/stb_image.h
+gif_decode_stack_test: gif_decode_stack_test.c deep_animation.gif.b64 esp_heap_caps.h esp_err.h $(ROOT)/components/stb_image/stb_image_port.c $(ROOT)/components/stb_image/jpeg_fast.c $(ROOT)/components/stb_image/jpeg_simd.c $(ROOT)/components/stb_image/include/solar_os_stb_image.h $(ROOT)/components/stb_image/include/stb_image.h
 	$(CC) $(CFLAGS) -pthread -I. -I$(ROOT)/components/stb_image/include \
-		gif_decode_stack_test.c $(ROOT)/components/stb_image/stb_image_port.c -o $@
+		gif_decode_stack_test.c $(ROOT)/components/stb_image/stb_image_port.c $(ROOT)/components/stb_image/jpeg_fast.c $(ROOT)/components/stb_image/jpeg_simd.c -o $@
 
 nvs_backup_test: nvs_backup_test.c $(ROOT)/src/services/solar_os_nvs_backup.c $(ROOT)/src/services/solar_os_nvs_backup.h esp_partition.h nvs_flash.h esp_err.h freertos/FreeRTOS.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
@@ -536,6 +628,22 @@ test: $(TARGETS)
 	./cardkb_codec_test
 	./cl32_keyboard_test
 	./battery_service_test
+	./camera_service_test
+	./script_media_test
+	./script_media_rtsp_test
+	./raster_image_test
+	./media_lua_bindings_test
+	./camera_expansion_test
+	./media_test
+	./rtspd_job_test
+	./rtspd_audio_only_test
+	./rtsp_receiver_test
+	./rtsp_client_test
+	./gfx_mono_raster_test
+	./rgb565_raster_test
+	./rtspd_completion_test
+	./mjpeg_test
+	./http_server_test
 	./sensors_service_test
 	./midi_codec_test
 	./midi_service_test

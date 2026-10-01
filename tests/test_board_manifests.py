@@ -58,6 +58,37 @@ class BoardManifestTest(unittest.TestCase):
             with self.subTest(path=path.name):
                 self.assertLessEqual(required, set(board["defines"]))
 
+    def test_goouuu_esp32_s3cam_pin_contract(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "goouuu_esp32_s3cam.toml",
+            self.manifest_dir,
+        )
+        self.assertIn("camera", board["build"]["capabilities"])
+        self.assertIn(
+            "driver_camera_esp32",
+            required_packages(board, self.drivers),
+        )
+        self.assertEqual(board["build"]["psram_bytes"], 8 * 1024 * 1024)
+        pins = {pin["gpio"]: pin for pin in board["pins"]}
+        self.assertEqual(
+            {gpio for gpio, pin in pins.items() if pin["policy"] == "free"},
+            {1, 14, 21, 41, 42, 47},
+        )
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(
+            devices["storage0"]["bindings"],
+            {"clk": 39, "cmd": 38, "d0": 40},
+        )
+        self.assertEqual(devices["pixels0"]["bindings"], {"data": 48, "count": 1})
+        self.assertEqual(devices["camera0"]["driver"], "esp32-camera")
+        self.assertEqual(devices["camera0"]["bindings"], {
+            "d0": 11, "d1": 9, "d2": 8, "d3": 10, "d4": 12,
+            "d5": 18, "d6": 17, "d7": 16, "siod": 4, "sioc": 5,
+            "vsync": 6, "href": 7, "pclk": 13, "xclk": 15,
+        })
+        self.assertIn('.driver = "esp32-camera", .name = "camera0"',
+                      generate_header(board, self.drivers))
+
     def test_qdtech_es3n28p_uses_non_touch_fixed_hardware(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "qdtech_es3n28p.toml",
@@ -303,8 +334,9 @@ bindings = { gpio = 7 }
         self.assertIn(".miso_pin = GPIO_NUM_NC", header)
 
         too_many_bindings = deepcopy(board)
-        too_many_bindings["devices"][0]["bindings"]["rotation"] = 0
-        with self.assertRaisesRegex(ManifestError, "more than 8 bindings"):
+        for i in range(17):
+            too_many_bindings["devices"][0]["bindings"][f"extra{i}"] = 0
+        with self.assertRaisesRegex(ManifestError, "more than 16 bindings"):
             validate_board(too_many_bindings, self.drivers)
 
     def test_t_lora_exposes_a_real_spi_cs_and_claims_keyboard_pwm(self) -> None:

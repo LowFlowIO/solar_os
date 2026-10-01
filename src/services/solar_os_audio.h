@@ -152,6 +152,9 @@ typedef struct {
     solar_os_audio_wav_device_cb_t device;
     void *user;
     uint32_t progress_interval_ms;
+    /* File playback start position; zero starts at the beginning. WAV is
+     * sample-aligned. MP3 decodes/discards the prefix to support VBR safely. */
+    uint32_t start_ms;
 } solar_os_audio_wav_options_t;
 
 esp_err_t solar_os_audio_init(void);

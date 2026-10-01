@@ -58,7 +58,7 @@ class AgentReferenceTest(unittest.TestCase):
             descriptor,
             re.MULTILINE,
         )
-        self.assertEqual(len(modules), 50)
+        self.assertEqual(len(modules), 53)
 
         for language in ("python", "lua"):
             reference_text = ""

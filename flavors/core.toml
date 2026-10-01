@@ -9,6 +9,7 @@ wifi = true
 bluetooth = true
 sd_storage = true
 audio_support = true
+camera = true
 control_bindings = true
 signal_processing = true
 vector_math = true

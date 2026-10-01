@@ -4,10 +4,12 @@
 #include <math.h>
 #include <string.h>
 
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "freertos/portmacro.h"
 #include "solar_os_dsp.h"
+#include "solar_os_memory.h"
 
 #define VOICE_BLOCK_FRAMES SOLAR_OS_SYNTH_BLOCK_FRAMES_DEFAULT
 #define VOICE_OUTPUT_PEAK 12000
@@ -85,7 +87,6 @@ typedef struct {
 } mono_held_note_t;
 
 typedef struct {
-    SemaphoreHandle_t mutex;
     bool claimed;
     char owner[SOLAR_OS_SYNTH_OWNER_MAX];
     solar_os_synth_voice_config_t config;
@@ -111,7 +112,13 @@ typedef struct {
     float filter_g[FILTER_TABLE_SIZE];
 } voice_state_t;
 
-static voice_state_t voice_state;
+/* Retain configuration/wavetable/diagnostics without reserving idle SRAM.
+ * The renderer uses a complete internal copy while the voice service owns
+ * the synth; all pointer changes are protected by voice_mutex. */
+static EXT_RAM_BSS_ATTR voice_state_t voice_idle;
+static voice_state_t *voice_active;
+#define voice_state (*(voice_active != NULL ? voice_active : &voice_idle))
+static SemaphoreHandle_t voice_mutex;
 static StaticSemaphore_t voice_mutex_storage;
 static portMUX_TYPE voice_init_lock = portMUX_INITIALIZER_UNLOCKED;
 
@@ -169,26 +176,37 @@ static void voice_init_wavetable(void)
 static esp_err_t voice_ensure_mutex(void)
 {
     portENTER_CRITICAL(&voice_init_lock);
-    if (voice_state.mutex == NULL) {
-        voice_state.mutex = xSemaphoreCreateMutexStatic(&voice_mutex_storage);
+    if (voice_mutex == NULL) {
+        voice_mutex = xSemaphoreCreateMutexStatic(&voice_mutex_storage);
         voice_state.config = default_config;
         voice_state.performance = default_performance;
         voice_state.oscillator2_pitch_ratio = 1.0f;
         voice_init_wavetable();
     }
-    SemaphoreHandle_t mutex = voice_state.mutex;
+    SemaphoreHandle_t mutex = voice_mutex;
     portEXIT_CRITICAL(&voice_init_lock);
     return mutex != NULL ? ESP_OK : ESP_ERR_NO_MEM;
 }
 
 static void voice_lock(void)
 {
-    (void)xSemaphoreTake(voice_state.mutex, portMAX_DELAY);
+    (void)xSemaphoreTake(voice_mutex, portMAX_DELAY);
 }
 
 static void voice_unlock(void)
 {
-    (void)xSemaphoreGive(voice_state.mutex);
+    (void)xSemaphoreGive(voice_mutex);
+}
+
+/* Call only after the synth worker has stopped, with voice_mutex held. */
+static void voice_release_internal_locked(void)
+{
+    if (voice_active != NULL) {
+        voice_idle = *voice_active;
+        voice_state_t *finished = voice_active;
+        voice_active = NULL;
+        solar_os_memory_free(finished);
+    }
 }
 
 static bool voice_owner_matches(const char *owner)
@@ -868,14 +886,14 @@ static void voice_render(int16_t *samples,
                          void *user)
 {
     (void)user;
-    if (samples == NULL || sample_rate == 0 || voice_state.mutex == NULL) {
+    if (samples == NULL || sample_rate == 0 || voice_mutex == NULL) {
         return;
     }
     TickType_t lock_wait = pdMS_TO_TICKS(VOICE_RENDER_LOCK_WAIT_MS);
     if (lock_wait == 0U) {
         lock_wait = 1U;
     }
-    if (xSemaphoreTake(voice_state.mutex, lock_wait) != pdTRUE) {
+    if (xSemaphoreTake(voice_mutex, lock_wait) != pdTRUE) {
         return;
     }
 
@@ -1003,6 +1021,20 @@ static esp_err_t voice_claim(const char *owner)
         memset(voice_state.voices, 0, sizeof(voice_state.voices));
         memset(voice_state.mono_held, 0, sizeof(voice_state.mono_held));
     }
+#if defined(CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY) && \
+    CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY
+    if (voice_active == NULL) {
+        voice_state_t *active = solar_os_memory_alloc(
+            sizeof(*active), SOLAR_OS_MEMORY_INTERNAL_CRITICAL,
+            "synth.voices");
+        if (active == NULL) {
+            voice_unlock();
+            return ESP_ERR_NO_MEM;
+        }
+        *active = voice_idle;
+        voice_active = active;
+    }
+#endif
     voice_state.claimed = true;
     strlcpy(voice_state.owner, owner, sizeof(voice_state.owner));
     voice_unlock();
@@ -1015,12 +1047,17 @@ static esp_err_t voice_claim(const char *owner)
     };
     err = solar_os_synth_start(&synth_config);
     if (err != ESP_OK) {
+        /* A start timeout can still leave the renderer running. Do not
+         * release its internal state unless stop confirms completion. */
+        const esp_err_t stop_err = err == ESP_ERR_TIMEOUT
+            ? solar_os_synth_stop(owner) : ESP_OK;
         voice_lock();
-        if (voice_owner_matches(owner)) {
+        if (stop_err == ESP_OK && voice_owner_matches(owner)) {
             voice_state.claimed = false;
             voice_state.owner[0] = '\0';
             memset(voice_state.voices, 0, sizeof(voice_state.voices));
             memset(voice_state.mono_held, 0, sizeof(voice_state.mono_held));
+            voice_release_internal_locked();
         }
         voice_unlock();
     } else {
@@ -1434,6 +1471,7 @@ esp_err_t solar_os_synth_voice_stop(const char *owner)
         if (voice_owner_matches(owner)) {
             voice_state.claimed = false;
             voice_state.owner[0] = '\0';
+            voice_release_internal_locked();
         }
         voice_unlock();
     }

@@ -2,6 +2,7 @@
 
 #include <string.h>
 
+#include "esp_attr.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
@@ -27,7 +28,8 @@ typedef struct {
     uint64_t last_units;
 } engine_slot_t;
 
-static engine_slot_t engines[SOLAR_OS_ENGINE_MAX];
+/* Task-only telemetry; semaphore/provider state stays internal. */
+static EXT_RAM_BSS_ATTR engine_slot_t engines[SOLAR_OS_ENGINE_MAX];
 static SemaphoreHandle_t engines_mutex;
 static bool engines_initialized;
 static int64_t engines_epoch_us;

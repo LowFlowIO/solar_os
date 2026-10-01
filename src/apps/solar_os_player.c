@@ -34,7 +34,7 @@
 #define PLAYER_DISPLAY_HPM_HZ_TENTHS 255U
 #define PLAYER_SCOPE_SAMPLES 256U
 #define PLAYER_SPECTRUM_FFT_SIZE 256U
-#define PLAYER_HEADER_HEIGHT 28
+#define PLAYER_HEADER_HEIGHT SOLAR_OS_MEDIA_PLAYER_HEADER_HEIGHT
 #define PLAYER_ROW_HEIGHT 24
 #define PLAYER_FOOTER_HEIGHT 20
 #define PLAYER_VOLUME_STEP 5
@@ -53,6 +53,7 @@ typedef enum {
 typedef enum {
     PLAYER_STOPPED,
     PLAYER_STARTING,
+    PLAYER_SEEKING,
     PLAYER_PLAYING,
     PLAYER_PAUSED,
     PLAYER_ERROR,
@@ -74,6 +75,7 @@ typedef struct {
     size_t track_count;
     uint32_t playlist_generation;
     uint32_t elapsed_ms;
+    uint32_t start_ms;
     uint32_t total_ms;
     uint32_t sample_rate;
     uint64_t played_frames;
@@ -87,6 +89,8 @@ typedef struct {
     bool natural_completion;
     volatile bool stop_requested;
     volatile bool paused;
+    volatile bool seeking;
+    int16_t pointer_x, pointer_y;
     volatile bool task_done;
     TaskHandle_t task;
     player_playback_state_t playback_state;
@@ -198,10 +202,11 @@ static void player_progress_callback(
 {
     (void)user;
     if (progress != NULL) {
-        if (progress->info.sample_rate != 0U) {
+        /* Samples callbacks count output frames, not source-file frames. */
+        if (player.active_device_id[0] == '\0' && progress->info.sample_rate != 0U) {
             player.sample_rate = progress->info.sample_rate;
         }
-        if (player.played_frames == 0U) {
+        if (player.played_frames == 0U && progress->info.duration_ms >= player.start_ms) {
             player.elapsed_ms = progress->info.duration_ms;
         }
     }
@@ -226,10 +231,11 @@ static void player_samples_callback(const int16_t *samples,
             player.spectrum, samples, frames, channels);
     }
     portENTER_CRITICAL(&player_lock);
+    player.seeking = false;
     player.played_frames += frames;
     if (player.sample_rate != 0U) {
-        player.elapsed_ms = (uint32_t)((player.played_frames * 1000U) /
-                                       player.sample_rate);
+        player.elapsed_ms = player.start_ms + (uint32_t)((player.played_frames * 1000U) /
+                                                        player.sample_rate);
     }
     player.playback_state = player.paused ? PLAYER_PAUSED : PLAYER_PLAYING;
     portEXIT_CRITICAL(&player_lock);
@@ -244,6 +250,8 @@ static void player_device_callback(const solar_os_audio_device_info_t *device,
     strlcpy(player.active_device_id, device->id,
             sizeof(player.active_device_id));
     player.active_device_capabilities = device->capabilities;
+    if (device->native_format.sample_rate != 0U)
+        player.sample_rate = device->native_format.sample_rate;
     portEXIT_CRITICAL(&player_lock);
 }
 
@@ -261,10 +269,12 @@ static void player_worker(void *arg)
         portENTER_CRITICAL(&player_lock);
         player.sample_rate = info.sample_rate;
         player.total_ms = info.duration_ms;
-        player.playback_state = PLAYER_STARTING;
+        player.playback_state = player.paused ? PLAYER_PAUSED :
+            player.start_ms ? PLAYER_SEEKING : PLAYER_STARTING;
         portEXIT_CRITICAL(&player_lock);
         const solar_os_audio_wav_options_t options = {
             .owner = "player",
+            .start_ms = player.start_ms,
             .should_cancel = player_cancel_callback,
             .progress = player_progress_callback,
             .should_pause = player_pause_callback,
@@ -313,6 +323,7 @@ static void player_stop_playback(void)
     player.task = NULL;
     player.task_done = true;
     player.stop_requested = false;
+    player.seeking = false;
     player.natural_completion = false;
     player.playback_state = PLAYER_STOPPED;
     player.elapsed_ms = 0U;
@@ -320,7 +331,7 @@ static void player_stop_playback(void)
     player.redraw = true;
 }
 
-static esp_err_t player_play_index(size_t index)
+static esp_err_t player_play_index_at(size_t index, uint32_t start_ms, bool paused)
 {
     solar_os_player_track_t track;
     if (!solar_os_player_playlist_get(index, &track)) {
@@ -330,16 +341,19 @@ static esp_err_t player_play_index(size_t index)
     strlcpy(player.active_path, track.path, sizeof(player.active_path));
     player.active_index = index;
     player.cursor = index;
-    player.elapsed_ms = 0U;
+    player.start_ms = start_ms;
+    player.elapsed_ms = start_ms;
     player.total_ms = 0U;
     player.sample_rate = 0U;
     player.active_device_id[0] = '\0';
     player.active_device_capabilities = 0U;
     player.played_frames = 0U;
     player.playback_error = ESP_OK;
-    player.playback_state = PLAYER_STARTING;
+    player.playback_state = paused ? PLAYER_PAUSED : start_ms ? PLAYER_SEEKING : PLAYER_STARTING;
     player.task_done = false;
     player.stop_requested = false;
+    player.paused = paused;
+    player.seeking = start_ms != 0;
     solar_os_cassette_widget_reset(player.cassette);
     solar_os_oscilloscope_widget_reset(player.scope);
     solar_os_spectrum_widget_reset(player.spectrum);
@@ -355,6 +369,27 @@ static esp_err_t player_play_index(size_t index)
         return ESP_ERR_NO_MEM;
     }
     return ESP_OK;
+}
+
+static esp_err_t player_play_index(size_t index)
+{
+    return player_play_index_at(index, 0U, false);
+}
+
+static void player_seek(int direction)
+{
+    if (player.task == NULL || player.task_done) return;
+    portENTER_CRITICAL(&player_lock);
+    int64_t target = (int64_t)player.elapsed_ms + direction * 10000;
+    const uint32_t total = player.total_ms;
+    const bool paused = player.paused;
+    portEXIT_CRITICAL(&player_lock);
+    if (target < 0) target = 0;
+    /* MP3 duration is unknown until EOF; never use a bitrate estimate. */
+    if (total != 0U && target >= total) target = total - 1U;
+    if (target > UINT32_MAX) target = UINT32_MAX;
+    esp_err_t err = player_play_index_at(player.active_index, (uint32_t)target, paused);
+    if (err != ESP_OK) player_set_message("Cannot seek: audio task unavailable");
 }
 
 static void player_play_offset(int offset)
@@ -391,7 +426,8 @@ static void player_toggle_pause(void)
         return;
     }
     player.paused = !player.paused;
-    player.playback_state = player.paused ? PLAYER_PAUSED : PLAYER_PLAYING;
+    player.playback_state = player.paused ? PLAYER_PAUSED :
+        player.seeking ? PLAYER_SEEKING : PLAYER_PLAYING;
     player.redraw = true;
 }
 
@@ -437,6 +473,7 @@ static void player_format_time(uint32_t duration_ms, bool known,
 
 static const char *player_state_symbol(void)
 {
+    if (player.playback_state == PLAYER_SEEKING) return "SEEKING";
     if (player.playback_state == PLAYER_PAUSED) return "||";
     if (player.task != NULL) return ">";
     return "[]";
@@ -493,7 +530,7 @@ static void player_render_tui(void)
     } else if (player.playback_state == PLAYER_ERROR && player.message[0] != '\0') {
         snprintf(status, sizeof(status), "%s", player.message);
     } else {
-        snprintf(status, sizeof(status), "%s %s / %s | Up/Down  Enter play/stop  Space pause  A add  Del remove  Esc exit",
+        snprintf(status, sizeof(status), "%s %s / %s | Up/Down  Enter play/stop  Space pause  </> seek  A add  Del remove  Esc exit",
                  player_state_symbol(), elapsed, total);
     }
     solar_os_tui_draw_footer(
@@ -504,33 +541,18 @@ static void player_render_tui(void)
     solar_os_tui_refresh(&player.tui);
 }
 
-static void player_draw_centered(solar_os_gfx_t *gfx, int width,
-                                 int baseline, const char *text)
-{
-    solar_os_gfx_text(gfx,
-                      (width - (int)solar_os_gfx_text_width(gfx, text)) / 2,
-                      baseline, text);
-}
-
 static void player_draw_header(solar_os_gfx_t *gfx, int width)
 {
-    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-    solar_os_gfx_fill_rect(gfx, 0, 0, width, PLAYER_HEADER_HEIGHT);
-    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
-    solar_os_gfx_text(gfx, 7, 19, "Player");
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_MONO_12);
     const char *tabs = player.tab == PLAYER_TAB_PLAY ?
         "[PLAY]  PLAYLIST" : "PLAY  [PLAYLIST]";
-    solar_os_gfx_text(gfx, width - (int)solar_os_gfx_text_width(gfx, tabs) - 7,
-                      18, tabs);
+    solar_os_media_player_header_draw(gfx, width, "Player", tabs);
 }
 
 static void player_draw_visualizer(solar_os_gfx_t *gfx, int width, int height)
 {
-    const int media_top = height * 2 / 3;
-    const int visual_y = PLAYER_HEADER_HEIGHT + 4;
-    const int visual_height = media_top - visual_y - 4;
+    solar_os_media_player_layout_t layout;
+    solar_os_media_player_layout(width, height, true, &layout);
+    const int visual_y = layout.view_y, visual_height = layout.view_height;
     if (player.visualizer == PLAYER_VISUALIZER_CASSETTE) {
         solar_os_cassette_widget_draw(player.cassette, gfx, 5, visual_y,
                                       width - 10, visual_height);
@@ -549,62 +571,29 @@ static void player_draw_visualizer(solar_os_gfx_t *gfx, int width, int height)
     solar_os_gfx_text(gfx, 13, visual_y + 15, labels[player.visualizer]);
 }
 
-static void player_draw_progress(solar_os_gfx_t *gfx, int width, int height,
-                                 bool clear_background)
+static void player_progress_text(char *status, size_t capacity)
 {
-    const int media_top = height * 2 / 3;
-    if (clear_background) {
-        solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
-        solar_os_gfx_fill_rect(gfx, 1, media_top + 23, width - 2, 17);
-    }
-    char elapsed[12], total[12], status[40];
+    char elapsed[12], total[12];
     player_format_time(player.elapsed_ms, true, elapsed, sizeof(elapsed));
     player_format_time(player.total_ms, player.total_ms != 0U, total, sizeof(total));
     if (player.playback_state == PLAYER_ERROR && player.message[0] != '\0') {
-        snprintf(status, sizeof(status), "%s", player.message);
+        snprintf(status, capacity, "%s", player.message);
     } else {
-        snprintf(status, sizeof(status), "%s %s / %s", player_state_symbol(), elapsed, total);
+        static const char *states[] = {"STOPPED", "STARTING", "SEEKING", "PLAYING", "PAUSED", "ERROR"};
+        snprintf(status, capacity, "%s %s / %s", states[player.playback_state], elapsed, total);
     }
-    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_MONO_12);
-    player_draw_centered(gfx, width, media_top + 37, status);
 }
 
 static void player_render_play(solar_os_gfx_t *gfx, int width, int height)
 {
-    const int media_top = height * 2 / 3;
     player_draw_visualizer(gfx, width, height);
-    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-    solar_os_gfx_line(gfx, 0, media_top, width - 1, media_top);
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
-    player_draw_centered(gfx, width, media_top + 20,
-                         player.active_path[0] != '\0' ?
-                            player_basename(player.active_path) : "No track selected");
-    player_draw_progress(gfx, width, height, false);
-    const int volume_width = width / 2;
-    const int volume_x = (width - volume_width) / 2;
-    const int volume_y = media_top + 43;
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
-    solar_os_gfx_text(gfx, volume_x - 29, volume_y + 9, "VOL");
-    solar_os_gfx_rect(gfx, volume_x, volume_y, volume_width, 10);
-    if (player.volume > 0U) {
-        solar_os_gfx_fill_rect(gfx, volume_x + 2, volume_y + 2,
-                               (volume_width - 4) * player.volume / 100, 6);
-    }
-    const int gap = 5;
-    const int button_width = (width - 4 * gap) / 3;
-    const int button_y = height - 25;
-    solar_os_media_transport_button_draw(
-        gfx, gap, button_y, button_width, 21,
-        SOLAR_OS_MEDIA_TRANSPORT_PREVIOUS, false);
-    solar_os_media_transport_button_draw(
-        gfx, gap * 2 + button_width, button_y, button_width, 21,
-        player.task != NULL ? SOLAR_OS_MEDIA_TRANSPORT_STOP :
-                              SOLAR_OS_MEDIA_TRANSPORT_PLAY,
-        false);
-    solar_os_media_transport_button_draw(
-        gfx, gap * 3 + button_width * 2, button_y, button_width, 21,
-        SOLAR_OS_MEDIA_TRANSPORT_NEXT, false);
+    char status[96];
+    player_progress_text(status, sizeof(status));
+    solar_os_media_player_controls_draw(gfx, width, height,
+        player.active_path[0] ? player_basename(player.active_path) : "No track selected",
+        status, player.volume, true,
+        player.task == NULL ? SOLAR_OS_MEDIA_TRANSPORT_PLAY :
+        player.paused ? SOLAR_OS_MEDIA_TRANSPORT_PAUSE : SOLAR_OS_MEDIA_TRANSPORT_STOP);
 }
 
 static void player_render_list(solar_os_gfx_t *gfx, int width, int height)
@@ -686,7 +675,9 @@ static void player_render_dynamic(solar_os_context_t *ctx)
     const int width = (int)solar_os_gfx_width(gfx);
     const int height = (int)solar_os_gfx_height(gfx);
     player_draw_visualizer(gfx, width, height);
-    player_draw_progress(gfx, width, height, true);
+    char status[96];
+    player_progress_text(status, sizeof(status));
+    solar_os_media_player_status_draw(gfx, width, height, status);
     solar_os_gfx_present(gfx);
 }
 
@@ -764,7 +755,9 @@ static bool player_handle_key(solar_os_context_t *ctx, uint8_t key)
         player_render(ctx);
         return true;
     }
-    if (player.mode == PLAYER_MODE_GRAPHICS && key == '\t') {
+    if (key == '<' || key == '>') {
+        player_seek(key == '<' ? -1 : 1);
+    } else if (player.mode == PLAYER_MODE_GRAPHICS && key == '\t') {
         player.tab = (player_tab_t)((player.tab + 1U) % PLAYER_TAB_COUNT);
     } else if (player.mode == PLAYER_MODE_GRAPHICS && player.tab == PLAYER_TAB_PLAY) {
         if (key == SOLAR_OS_KEY_LEFT) player_play_offset(-1);
@@ -920,6 +913,35 @@ static void player_resume(solar_os_context_t *ctx)
 static bool player_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event == NULL) return false;
+    if (event->type == SOLAR_OS_EVENT_POINTER && player.mode == PLAYER_MODE_GRAPHICS &&
+        player.tab == PLAYER_TAB_PLAY && !player.browsing) {
+        const solar_os_input_pointer_event_t *pointer = &event->data.pointer;
+        solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
+        if (gfx == NULL) return false;
+        const int width = solar_os_gfx_width(gfx), height = solar_os_gfx_height(gfx);
+        if (pointer->mode == SOLAR_OS_INPUT_POINTER_ABSOLUTE) {
+            player.pointer_x = pointer->x;
+            player.pointer_y = pointer->y;
+        } else {
+            int x = player.pointer_x + pointer->delta_x, y = player.pointer_y + pointer->delta_y;
+            player.pointer_x = x < 0 ? 0 : x >= width ? width - 1 : x;
+            player.pointer_y = y < 0 ? 0 : y >= height ? height - 1 : y;
+        }
+        if (pointer->action == SOLAR_OS_INPUT_POINTER_PRESS &&
+            (pointer->buttons & SOLAR_OS_INPUT_POINTER_BUTTON_PRIMARY)) {
+            int button = solar_os_media_player_button_at(width, height, true,
+                                                          player.pointer_x, player.pointer_y);
+            if (button >= 0) {
+                if (button == 0 || button == 4) player_play_offset(button == 0 ? -1 : 1);
+                else if (button == 2) player_toggle_play_stop();
+                else player_seek(button == 1 ? -1 : 1);
+                player.redraw = true;
+                player_render(ctx);
+                return true;
+            }
+        }
+        return false;
+    }
     if (event->type == SOLAR_OS_EVENT_RESUME) {
         player_resume(ctx);
         return true;
@@ -963,7 +985,7 @@ const solar_os_app_t solar_os_player_app = {
     .name = "player",
     .summary = "playlist audio player",
     .app_class = SOLAR_OS_APP_CLASS_TUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_POINTER_EVENTS,
     .start = player_start,
     .suspend = player_suspend,
     .resume = player_resume,

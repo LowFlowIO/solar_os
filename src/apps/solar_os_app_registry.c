@@ -50,6 +50,9 @@
 #if SOLAR_OS_PACKAGE_APP_WEBRADIO
 #include "solar_os_webradio.h"
 #endif
+#if SOLAR_OS_PACKAGE_APP_RTSP
+#include "solar_os_rtsp_app.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_PLAYER
 #include "solar_os_player.h"
 #endif
@@ -140,6 +143,9 @@
 #if SOLAR_OS_PACKAGE_APP_VIEW
 #include "solar_os_view.h"
 #endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+#include "solar_os_vplay.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_SKETCH
 #include "solar_os_sketch.h"
 #endif
@@ -194,6 +200,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_APP_WEBRADIO
     APP_ENTRY("webradio", "streaming internet radio", &solar_os_webradio_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "webradio [--tui] [URL] | webradio [--tui] <list | add NAME URL | remove NAME | reset>", 1, 5),
+#endif
+#if SOLAR_OS_PACKAGE_APP_RTSP
+    APP_ENTRY("rtsp", "RTSP JPEG/L16 viewer", &solar_os_rtsp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "rtsp [--audio-only] [--stats] <[rtsp://]host[:port][/path]>", 2, 4),
 #endif
 #if SOLAR_OS_PACKAGE_APP_PLAYER
     APP_FILE_ENTRY("player", "playlist audio player", &solar_os_player_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "player [--tui] [file.wav|file.mp3]", 1, 3, ".wav .mp3"),
@@ -282,6 +291,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_APP_VIEW
     APP_FILE_ENTRY("view", "image viewer", &solar_os_view_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "view [-fit|-actual] <image>", 2, 3, ".png .jpg .jpeg .gif .webp .bmp .pnm .pbm .pgm .ppm"),
+#endif
+#if SOLAR_OS_PACKAGE_APP_VPLAY
+    APP_FILE_ENTRY("vplay", "MPEG-1 media player", &solar_os_vplay_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "vplay [-fit|-actual] <file.mpg>", 2, 3, ".mpg .mpeg"),
 #endif
 #if SOLAR_OS_PACKAGE_APP_SKETCH
     APP_FILE_ENTRY("sketch", "pointer-driven paint application", &solar_os_sketch_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "sketch [file.png]", 1, 2, ".png"),

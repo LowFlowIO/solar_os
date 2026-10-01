@@ -49,7 +49,7 @@ SOLAR_OS_TASK_REQUIRE_FOREGROUND_STACK(WEBRADIO_TASK_STACK);
 #define WEBRADIO_JITTER_TARGET_MS 500U
 #define WEBRADIO_WORKER_POLL_MS 20U
 #define WEBRADIO_INVALID_STREAM_BYTES (64U * 1024U)
-#define WEBRADIO_GUI_HEADER_HEIGHT 28
+#define WEBRADIO_GUI_HEADER_HEIGHT SOLAR_OS_MEDIA_PLAYER_HEADER_HEIGHT
 #define WEBRADIO_GUI_ROW_HEIGHT 24
 #define WEBRADIO_GUI_FOOTER_HEIGHT 20
 #define WEBRADIO_SCOPE_SAMPLES 256U
@@ -126,6 +126,7 @@ typedef struct {
     char display_target[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
     bool redraw;
     volatile bool stop_requested;
+    volatile bool paused;
     volatile bool task_done;
     TaskHandle_t task;
     webradio_playback_state_t playback_state;
@@ -143,6 +144,9 @@ typedef struct {
     solar_os_spectrum_widget_t *spectrum;
     uint32_t last_visualizer_ms;
     uint8_t volume;
+    uint64_t played_frames;
+    uint32_t output_rate;
+    int16_t pointer_x, pointer_y;
     char ui_message[96];
     char edit_original_name[SOLAR_OS_WEBRADIO_STATION_NAME_MAX];
     char edit_name[SOLAR_OS_WEBRADIO_STATION_NAME_MAX];
@@ -537,36 +541,20 @@ static void webradio_render_tui(void)
     solar_os_tui_refresh(&webradio.tui);
 }
 
-static void webradio_draw_centered(solar_os_gfx_t *gfx,
-                                   int width,
-                                   int baseline,
-                                   const char *text)
-{
-    const int text_width = (int)solar_os_gfx_text_width(gfx, text);
-    solar_os_gfx_text(gfx, (width - text_width) / 2, baseline, text);
-}
-
 static void webradio_draw_graphics_header(solar_os_gfx_t *gfx, int width)
 {
-    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-    solar_os_gfx_fill_rect(gfx, 0, 0, width, WEBRADIO_GUI_HEADER_HEIGHT);
-    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_WHITE);
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
-    solar_os_gfx_text(gfx, 7, 19, "WebRadio");
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_MONO_12);
     const char *tabs = webradio.tab == WEBRADIO_TAB_PLAYER ?
         "[PLAYER]  CHANNELS" : "PLAYER  [CHANNELS]";
-    const int tabs_width = (int)solar_os_gfx_text_width(gfx, tabs);
-    solar_os_gfx_text(gfx, width - tabs_width - 7, 18, tabs);
+    solar_os_media_player_header_draw(gfx, width, "WebRadio", tabs);
 }
 
 static void webradio_draw_visualizer(solar_os_gfx_t *gfx,
                                      int width,
                                      int height)
 {
-    const int player_top = (height * 2) / 3;
-    const int visualizer_y = WEBRADIO_GUI_HEADER_HEIGHT + 4;
-    const int visualizer_height = player_top - visualizer_y - 4;
+    solar_os_media_player_layout_t layout;
+    solar_os_media_player_layout(width, height, false, &layout);
+    const int visualizer_y = layout.view_y, visualizer_height = layout.view_height;
     if (webradio.visualizer == WEBRADIO_VISUALIZER_SPECTRUM) {
         solar_os_spectrum_widget_draw(
             webradio.spectrum, gfx, 5, visualizer_y, width - 10, visualizer_height);
@@ -585,6 +573,21 @@ static void webradio_draw_visualizer(solar_os_gfx_t *gfx,
                           "SPECTRUM  V" : "SCOPE  V");
 }
 
+static void webradio_progress_text(webradio_playback_state_t state, const char *message,
+                                    char *status, size_t capacity)
+{
+    static const char *states[] = {"STOPPED", "CONNECTING", "BUFFERING", "PLAYING", "RECONNECTING", "ERROR"};
+    portENTER_CRITICAL(&webradio_lock);
+    uint64_t seconds = webradio.output_rate ? webradio.played_frames / webradio.output_rate : 0;
+    bool paused = webradio.paused;
+    portEXIT_CRITICAL(&webradio_lock);
+    if (state == WEBRADIO_PLAYBACK_ERROR && message[0])
+        snprintf(status, capacity, "ERROR - %s", message);
+    else
+        snprintf(status, capacity, "%s %02llu:%02llu", paused ? "PAUSED" : states[state],
+                 (unsigned long long)(seconds / 60), (unsigned long long)(seconds % 60));
+}
+
 static void webradio_render_player(solar_os_gfx_t *gfx,
                                    int width,
                                    int height)
@@ -592,95 +595,24 @@ static void webradio_render_player(solar_os_gfx_t *gfx,
     webradio_playback_state_t state;
     char message[96];
     char active_name[SOLAR_OS_WEBRADIO_STATION_NAME_MAX];
-    uint32_t sample_rate = 0U;
-    uint8_t channels = 0U;
     webradio_snapshot_status(&state,
                              message,
                              sizeof(message),
                              active_name,
                              sizeof(active_name),
-                             &sample_rate,
-                             &channels,
+                             NULL,
+                             NULL,
                              NULL);
 
-    const int player_top = (height * 2) / 3;
     webradio_draw_visualizer(gfx, width, height);
-
-    solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-    solar_os_gfx_line(gfx, 0, player_top, width - 1, player_top);
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
-    webradio_draw_centered(gfx,
-                           width,
-                           player_top + 20,
-                           active_name[0] != '\0' ? active_name :
-                                                   "No channel selected");
-
     char status[96];
-    if (state == WEBRADIO_PLAYBACK_PLAYING) {
-        snprintf(status,
-                 sizeof(status),
-                 "playing  %" PRIu32 " Hz  %u ch",
-                 sample_rate,
-                 (unsigned)channels);
-    } else {
-        snprintf(status,
-                 sizeof(status),
-                 "%s%s%s",
-                 webradio_state_name(state),
-                 message[0] != '\0' ? " - " : "",
-                 message);
-    }
-    char clipped[96];
-    webradio_clip(clipped, sizeof(clipped), status, (size_t)(width / 7));
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_MONO_12);
-    webradio_draw_centered(gfx, width, player_top + 36, clipped);
-
-    const int volume_width = width / 2;
-    const int volume_height = 10;
-    const int volume_x = (width - volume_width) / 2;
-    const int volume_y = player_top + 43;
-    const int volume_fill =
-        ((volume_width - 4) * (int)webradio.volume) / 100;
-    solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
-    solar_os_gfx_text(gfx, volume_x - 29, volume_y + 9, "VOL");
-    solar_os_gfx_rect(gfx,
-                      volume_x,
-                      volume_y,
-                      volume_width,
-                      volume_height);
-    if (volume_fill > 0) {
-        solar_os_gfx_fill_rect(gfx,
-                               volume_x + 2,
-                               volume_y + 2,
-                               volume_fill,
-                               volume_height - 4);
-    }
-    char volume_percent[8];
-    snprintf(volume_percent,
-             sizeof(volume_percent),
-             "%u%%",
-             (unsigned)webradio.volume);
-    solar_os_gfx_text(gfx,
-                      volume_x + volume_width + 5,
-                      volume_y + 9,
-                      volume_percent);
-
-    const int button_y = height - 25;
-    const int gap = 5;
-    const int button_width = (width - 4 * gap) / 3;
+    webradio_progress_text(state, message, status, sizeof(status));
     const bool stopped = state == WEBRADIO_PLAYBACK_IDLE ||
                          state == WEBRADIO_PLAYBACK_ERROR;
-    solar_os_media_transport_button_draw(
-        gfx, gap, button_y, button_width, 21,
-        SOLAR_OS_MEDIA_TRANSPORT_PREVIOUS, false);
-    solar_os_media_transport_button_draw(
-        gfx, gap * 2 + button_width, button_y, button_width, 21,
+    solar_os_media_player_controls_draw(gfx, width, height,
+        active_name[0] ? active_name : "No channel selected", status, webradio.volume, false,
         stopped ? SOLAR_OS_MEDIA_TRANSPORT_PLAY :
-                  SOLAR_OS_MEDIA_TRANSPORT_STOP,
-        false);
-    solar_os_media_transport_button_draw(
-        gfx, gap * 3 + button_width * 2, button_y, button_width, 21,
-        SOLAR_OS_MEDIA_TRANSPORT_NEXT, false);
+        webradio.paused ? SOLAR_OS_MEDIA_TRANSPORT_PAUSE : SOLAR_OS_MEDIA_TRANSPORT_STOP);
 }
 
 static const char *webradio_dialog_label(void)
@@ -830,6 +762,11 @@ static void webradio_render_visualizer(solar_os_context_t *ctx)
     webradio_draw_visualizer(gfx,
                              (int)solar_os_gfx_width(gfx),
                              (int)solar_os_gfx_height(gfx));
+    webradio_playback_state_t state;
+    char message[96], status[96];
+    webradio_snapshot_status(&state, message, sizeof(message), NULL, 0U, NULL, NULL, NULL);
+    webradio_progress_text(state, message, status, sizeof(status));
+    solar_os_media_player_status_draw(gfx, solar_os_gfx_width(gfx), solar_os_gfx_height(gfx), status);
     solar_os_gfx_present(gfx);
 }
 
@@ -1064,7 +1001,17 @@ static void webradio_player_samples(const int16_t *samples,
                                     uint8_t channels,
                                     void *user)
 {
-    (void)user;
+    webradio_worker_t *worker = user;
+    /* A buffered sink can resume without re-priming. Actual output is also
+     * authoritative when its earlier pause callback reported buffering. */
+    if (samples && sample_count && channels && worker->output_format.sample_rate) {
+        if (!webradio.stop_requested && !worker->playback_started)
+            webradio_player_state(true, worker);
+        portENTER_CRITICAL(&webradio_lock);
+        webradio.played_frames += sample_count / channels;
+        webradio.output_rate = worker->output_format.sample_rate;
+        portEXIT_CRITICAL(&webradio_lock);
+    }
     webradio_publish_visualizer(samples, sample_count, channels);
 }
 
@@ -1078,6 +1025,12 @@ static void webradio_worker_free(webradio_worker_t *worker)
     solar_os_memory_free(worker->output);
     solar_os_memory_free(worker->playback);
     memset(worker, 0, sizeof(*worker));
+}
+
+static bool webradio_should_pause(void *user)
+{
+    (void)user;
+    return webradio.paused && !webradio.stop_requested;
 }
 
 static esp_err_t webradio_worker_init(webradio_worker_t *worker)
@@ -1114,6 +1067,7 @@ static esp_err_t webradio_worker_init(webradio_worker_t *worker)
         .external_buffer_bytes = WEBRADIO_JITTER_EXTERNAL_BYTES,
         .internal_buffer_bytes = WEBRADIO_JITTER_INTERNAL_BYTES,
         .target_ms = WEBRADIO_JITTER_TARGET_MS,
+        .should_pause = webradio_should_pause,
         .state = webradio_player_state,
         .samples = webradio_player_samples,
         .user = worker,
@@ -1241,6 +1195,7 @@ done:
 static void webradio_stop_playback(void)
 {
     webradio.stop_requested = true;
+    webradio.paused = false;
     TaskHandle_t task = webradio.task;
     if (task != NULL &&
         !solar_os_task_wait_done(task,
@@ -1284,6 +1239,8 @@ static esp_err_t webradio_start_playback(const char *name, const char *url)
     strlcpy(webradio.active_url, url, sizeof(webradio.active_url));
     webradio.source_rate = 0U;
     webradio.source_channels = 0U;
+    webradio.played_frames = 0U;
+    webradio.output_rate = 0U;
     webradio.active_device_id[0] = '\0';
     webradio.active_device_capabilities = 0U;
     webradio.stop_requested = false;
@@ -1368,6 +1325,13 @@ static void webradio_toggle_playback(void)
     } else {
         webradio_play_selected();
     }
+}
+
+static void webradio_toggle_pause(void)
+{
+    if (webradio.task == NULL || webradio.task_done) return;
+    webradio.paused = !webradio.paused;
+    webradio.redraw = true;
 }
 
 static void webradio_adjust_volume(int direction)
@@ -1881,8 +1845,10 @@ static bool webradio_handle_graphics_key(solar_os_context_t *ctx, uint8_t key)
             break;
         case '\r':
         case '\n':
-        case ' ':
             webradio_toggle_playback();
+            break;
+        case ' ':
+            webradio_toggle_pause();
             break;
         case 'v':
         case 'V':
@@ -1942,6 +1908,31 @@ static bool webradio_event(solar_os_context_t *ctx,
 {
     if (event == NULL) {
         return false;
+    }
+    if (event->type == SOLAR_OS_EVENT_POINTER && webradio.mode == WEBRADIO_MODE_GRAPHICS &&
+        webradio.tab == WEBRADIO_TAB_PLAYER && webradio.dialog == WEBRADIO_DIALOG_NONE) {
+        solar_os_gfx_t *gfx = solar_os_context_gfx(ctx);
+        if (!gfx) return false;
+        const solar_os_input_pointer_event_t *pointer = &event->data.pointer;
+        int width = solar_os_gfx_width(gfx), height = solar_os_gfx_height(gfx);
+        if (pointer->mode == SOLAR_OS_INPUT_POINTER_ABSOLUTE) {
+            webradio.pointer_x = pointer->x;
+            webradio.pointer_y = pointer->y;
+        } else {
+            int x = webradio.pointer_x + pointer->delta_x, y = webradio.pointer_y + pointer->delta_y;
+            webradio.pointer_x = x < 0 ? 0 : x >= width ? width - 1 : x;
+            webradio.pointer_y = y < 0 ? 0 : y >= height ? height - 1 : y;
+        }
+        if (pointer->action != SOLAR_OS_INPUT_POINTER_PRESS ||
+            !(pointer->buttons & SOLAR_OS_INPUT_POINTER_BUTTON_PRIMARY)) return false;
+        int button = solar_os_media_player_button_at(width, height, false,
+                                                      webradio.pointer_x, webradio.pointer_y);
+        if (button < 0) return false;
+        if (button == 1) webradio_toggle_playback();
+        else webradio_play_catalog_offset(button == 0 ? -1 : 1);
+        webradio.redraw = true;
+        webradio_render(ctx);
+        return true;
     }
     if (event->type == SOLAR_OS_EVENT_RESUME) {
         webradio_resume(ctx);
@@ -2064,7 +2055,7 @@ const solar_os_app_t solar_os_webradio_app = {
     .name = "webradio",
     .summary = "streaming internet radio",
     .app_class = SOLAR_OS_APP_CLASS_TUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_POINTER_EVENTS,
     .start = webradio_start,
     .suspend = webradio_suspend,
     .resume = webradio_resume,

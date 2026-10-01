@@ -79,6 +79,9 @@ gfx.sprite(20, 20, 8, 8, person)
 
 ## Raster images
 
+For JPEG data, camera/RTSP frame decoding, and direct RGB565 presentation, see
+[Camera, streams, and RTSP](python.media.md).
+
 When the firmware includes `media.image`, `solaros.image` decodes static PNG,
 JPEG, GIF, and WebP files into native PSRAM-backed handles. This keeps map tiles
 and other large images outside the MicroPython heap. Up to 16 handles can be

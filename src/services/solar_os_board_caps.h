@@ -47,6 +47,7 @@ typedef uint64_t solar_os_board_capability_t;
 #define SOLAR_OS_BOARD_CAP_PS2_KEYBOARD (1ULL << 33)
 #define SOLAR_OS_BOARD_CAP_POINTER (1ULL << 34)
 #define SOLAR_OS_BOARD_CAP_STREAMING_DISPLAY (1ULL << 35)
+#define SOLAR_OS_BOARD_CAP_CAMERA (1ULL << 36)
 
 #ifndef SOLAR_OS_BOARD_HAS_PSRAM
 #define SOLAR_OS_BOARD_HAS_PSRAM 0
@@ -158,6 +159,9 @@ typedef uint64_t solar_os_board_capability_t;
 #endif
 #ifndef SOLAR_OS_BOARD_HAS_STREAMING_DISPLAY
 #define SOLAR_OS_BOARD_HAS_STREAMING_DISPLAY 0
+#endif
+#ifndef SOLAR_OS_BOARD_HAS_CAMERA
+#define SOLAR_OS_BOARD_HAS_CAMERA 0
 #endif
 
 solar_os_board_capabilities_t solar_os_board_capabilities(void);

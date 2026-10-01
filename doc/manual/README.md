@@ -22,6 +22,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [battery command](commands.md) — Show voltage, state of charge, power source, config, and monitor trend.
 - [ble command](commands.md) — Show BLE keyboard state and the current/next boot setting.
 - [board command](commands.md) — Print board ID, name, and capabilities.
+- [camera command](commands.md) — Initialize the camera on first use and show the detected sensor, JPEG configuration, current owner and frame lease, capture count, and last error.
 - [cat command](commands.md) — Print a small text file.
 - [cd command](commands.md) — Change current shell directory.
 - [charger command](commands.md) — List registered battery chargers, concrete drivers, and valid configuration ranges.
@@ -36,7 +37,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [deepsleep command](commands.md) — Turn off the ESP32 radios and enter deep sleep. KEY, an armed RTC or scheduled timer, or RESET starts a fresh boot.
 - [df command](commands.md) — Show free space on mounted storage volumes.
 - [disk command](commands.md) — Show persistent-storage status.
-- [display command](commands.md) — List drawable targets, join or split display layouts, draw a test pattern, or change driver-specific settings.
+- [display command](commands.md) — List targets and layouts, draw a test pattern, or change driver-specific display settings.
 - [dpad command](commands.md) — Show ADC D-pad pins, raw values, zones, and calibration thresholds.
 - [echo command](commands.md) — Print the arguments separated by spaces, followed by a newline. Quotes preserve spaces and are not printed.
 - [email command](commands.md) — Open the receive-only email app.
@@ -61,6 +62,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [jobs command](jobs.md) — List registered jobs and their state.
 - [led command](commands.md) — Inspect or control the built-in status LED when available.
 - [link command](link.md) — List active SolarOS Link instances and their queue/protocol counters.
+- [load command](commands.md) — Validate, relocate, run, and unload one native ELF module from storage.
 - [log command](commands.md) — Show runtime log ring status.
 - [ls command](commands.md) — List files. Hidden files are shown only with -a; sizes are human-readable with -h.
 - [man command](commands.md) — Read or search the package-aware SolarOS manual.
@@ -83,7 +85,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [ota command](commands.md) — Show running and configured OTA state.
 - [outbox command](commands.md) — List pending outbound messages. Sent and failed messages remain in conversation history, not Outbox.
 - [ping command](commands.md) — Send ICMP echo requests. Without count, ping runs until Esc, Ctrl+C, or app-exit.
-- [pkg command](commands.md) — Inspect compiled packages and install signed native modules.
+- [pkg command](commands.md) — Open the native-module package manager.
 - [pocsag command](commands.md) — Show POCSAG receiver configuration, counters, correction statistics, and RSSI.
 - [port command](commands.md) — List byte-stream ports.
 - [power command](commands.md) — Show the selected and effective profiles, suspend state, sleep policy, and wake statistics.
@@ -93,6 +95,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [reboot command](commands.md) — Restart the board.
 - [rm command](commands.md) — Remove files. -f allows directories; -rf removes directories recursively.
 - [rtc command](commands.md) — Show the RTC provider, capabilities, interrupt wiring, and alarm/timer owners. Reports unavailable when no RTC is present.
+- [say command](commands.md) — Queue text for offline speech, or stream a plain UTF-8 text file aloud with live progress. Pitch and speed default to 100. File mode submits bounded chunks through one continuous PicoTTS/audio session, completes paths with Tab, and remains responsive; press Esc or Ctrl+C to stop. Start speechd with a PicoTTS voice directory first.
 - [schedule command](commands.md) — List persistent alarms and scheduled shell scripts. Entries show their enabled state, trigger, and action.
 - [session command](commands.md) — List display sessions, port shells, and retained port-owned application sessions with their owner.
 - [sessions command](commands.md) — List display app sessions, display shell sessions, and port shell sessions.
@@ -146,8 +149,8 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [io application](apps.md#io) — Interactive expansion I/O manager. Its default Layout view presents the board's connectors in their physical arrangement, followed by the existing pin, named-bus, and resource-claim views. It uses the same ownership and validation services as the gpio, i2c, spi, uart, midi, onewire, and expansion commands.
 - [launcher application](apps.md#launcher) — Configurable native graphical launcher for display shells. It draws the configured grid, centers one icon in each occupied cell, and shows the selected icon larger with its title centered underneath. Arrow keys move between occupied cells, Enter opens the selection, and a pointer selects and opens items by point and click. Esc or the app-exit key returns to the shell.
 - [less application](apps.md#less) — Terminal pager for text files. It preserves original text layout and is useful for quick file inspection.
-- [ltop application](apps.md#ltop) — Resumable live text task monitor with per-core and aggregate interval CPU load, internal and external memory bars, and a width-aware task table with peak stack consumption.
 - [logic application](apps.md#logic) — On-device logic analyzer waveform viewer. It displays the latest capture made by the shared logic analyzer service or the SUMP job. With pin arguments it makes a new local capture before opening the viewer.
+- [ltop application](apps.md#ltop) — Live text task monitor for display and port terminals. Unlike the top command's cumulative snapshot, ltop samples the FreeRTOS runtime counters once per second and reports the interval deltas. One progress bar shows the busy share of each CPU core, derived from that core's idle-task delta. Each task percentage is its share of one core, so the task total can approach 200% on a dual-core target. The title shows the current aggregate CPU load instead of the fixed maximum capacity.
 - [lua application](apps.md#lua) — Embedded Lua runtime. It can run an interactive REPL or execute .lua scripts from storage. Lua scripts can use SolarOS service bindings when the selected firmware includes the corresponding packages. Foreground scripts can consume touch coordinates, relative mouse motion, buttons, and joystick axes through solaros.input.
 - [Native SolarOS agent](agent.md) — Configure and use the resumable LLM agent and its typed tools
 - [notes application](apps.md#notes) — Markdown-backed checklist and category manager. It stores unchecked and checked items and supports one level of category folding. A persistent bottom help bar shows the available controls, with status or text input directly above it.
@@ -158,6 +161,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [python application](apps.md#python) — Embedded MicroPython runtime. It can run an interactive REPL, .py scripts, or .mpy files from storage. Python scripts can use SolarOS service bindings when the selected firmware includes the corresponding packages. Foreground scripts can consume touch coordinates, relative mouse motion, buttons, and joystick axes through solaros.input.
 - [reader application](apps.md#reader) — Graphical document reader for plain text, Markdown, and EPUB. It remembers reading position and zoom per opened file when storage is available.
 - [recorder application](apps.md#recorder) — Interactive GUI/TUI counterpart to arecord. Recorder writes PCM WAV files so the channel count, sample rate, and resolution travel with the recording and the result can be played immediately. It accepts any registered signed-16-bit PCM capture stream. On the Waveshare board it initially selects audio0.capture. Mono/stereo output, 8/16-bit file resolution, and sample rates from 8 kHz through 48 kHz are converted from the selected stream as necessary.
+- [rtsp application](apps.md#rtsp) — Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.
 - [scp application](apps.md#scp) — SCP file transfer over SSH. It supports password or key authentication through the shared SSH transport and host lookup/known-host storage. When user@ is omitted, SCP uses the NVS-backed SolarOS identity user. Tab completion reads aliases from /.ssh/hosts, preserves an explicit user@ prefix, and appends : after a unique host match.
 - [sftp application](apps.md#sftp) — Two-pane SFTP file manager with the same panes, file operations, progress, and key bindings as ftp. The left pane is local mounted storage and the right pane is a remote SSH server's SFTP subsystem. It uses the shared SSH transport, known-host policy, host aliases, and password or public-key authentication.
 - [sftpsync application](apps.md#sftpsync) — Incremental file and directory synchronization over SSH. The SolarOS client uses the server's SFTP subsystem, so it works with a normal SSH server without requiring a matching remote program. It skips regular files whose size and modification time already match. It does not delete destination-only files.
@@ -167,7 +171,8 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [synth application](apps.md#synth) — Open the native synthesizer and sound designer:
 - [telnet application](apps.md#telnet) — Telnet client for classic TCP terminal sessions. It supports basic Telnet option negotiation, terminal type reporting, window size reporting, and raw mode.
 - [view application](apps.md#view) — Graphical image viewer. It supports the image formats compiled into the current firmware, including common PNG/JPEG/GIF/WebP paths and automatic animated GIF playback when the media package is enabled. Images are decoded as RGB on a negotiated indexed-color display and as grayscale on a one-bit display. In the default fit mode, JPEG color conversion writes display-sized output directly, so a large source photograph does not require a full-size RGB destination.
-- [web application](apps.md#web) — Simple graphical web browser for lightweight HTML pages. It shares document and image rendering infrastructure with reader where possible. Embedded and direct PNG, JPEG, GIF, and WebP images retain color on indexed-color displays; one-bit displays keep the grayscale decode and dither path.
+- [vplay application](apps.md#vplay) — Graphical MPEG-1 media player with optional MP2 audio. The bottom controls show playback status and elapsed time above the volume bar; full screen hides the controls and time. The middle Stop/Play icon indicates pause while paused.
+- [web application](apps.md#web) — Simple graphical web browser for lightweight HTML pages. It shares document and image rendering infrastructure with reader where possible. Embedded and direct PNG, JPEG, GIF, and WebP images retain color on indexed-color displays; one-bit displays keep the grayscale decode and dither path. Direct MJPEG URLs are shown as live video using the same JPEG renderer.
 - [webradio application](apps.md#webradio) — Stream a direct MP3 URL through the default registered audio output. On a graphical display shell, WebRadio opens a two-tab media-player GUI. On UART, USB CDC, Telnet, SSH, and other text shells, it opens a station-list TUI.
 - [writer application](apps.md#writer) — Resumable graphical Markdown editor for PSRAM display boards. Inactive blocks are formatted like reader; the block containing the cursor and every block touched by a selection show their exact Markdown source. edit remains the portable text editor for port shells and boards without graphics or PSRAM.
 
@@ -177,6 +182,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Background jobs](jobs.md) — Inspect and control bounded background workers
 - [batmon job](jobs.reference.md#batmon) — Battery monitor. It periodically samples battery voltage, maintains a smoothed trend, estimates power state, and can request light sleep when the configured minimum voltage is reached.
 - [bridge job](jobs.reference.md#bridge) — Bidirectional byte bridge between two byte-stream ports, or between one byte-stream port and an active SolarOS Link instance.
+- [cam-webd job](jobs.reference.md#cam-webd) — HTTP access to the fitted camera as one-shot JPEG images or a single-client MJPEG stream.
 - [chatd job](jobs.reference.md#chatd) — Local SolarOS chat gateway server. It is useful for testing the chat app or for small trusted local networks.
 - [controls job](jobs.reference.md#controls) — Continuous-control mapper. It samples every configured scalar-stream control at 50 Hz, applies smoothing, deadband, calibration, and inversion, then updates changed native parameter and MIDI CC bindings.
 - [daq job](jobs.reference.md#daq) — Data acquisition job. It captures scalar and event streams to timestamped CSV, or one byte or PCM audio source directly to a raw file.
@@ -191,7 +197,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [httpd job](jobs.reference.md#httpd) — Static HTTP file server for a folder on mounted storage.
 - [log job](jobs.reference.md#log) — Runtime SolarOS log follower. It mirrors log entries to a byte-stream port or appends them to a file.
 - [meshcore job](jobs.reference.md#meshcore) — Non-forwarding MeshCore companion provider for Contacts and Messages.
-- [meshcore-ble job](jobs.reference.md#meshcore-ble) — Connect a MeshCore companion device over BLE and expose its contacts, channels, and messages through the same Contacts, Chat, and Inbox services.
+- [meshcore-ble job](jobs.reference.md#meshcore-ble) — MeshCore companion-protocol client for a separate BLE radio device. The job connects to one explicit peer, synchronizes its contacts and channels, drains queued messages, and carries Chat messages through the standard MeshCore messaging provider.
 - [midi job](jobs.reference.md#midi) — Bidirectional MIDI transport on an exclusive named MIDI bus. The bus selects an available UART controller internally; users supply only its MIDI name, TX and RX pins, and an optional baud rate.
 - [ntp-sync job](jobs.reference.md#ntp-sync) — Network time synchronization job. It updates the SolarOS wall clock from NTP and also updates the hardware RTC when the board provides one.
 - [osc job](jobs.reference.md#osc) — OSC 1.0 IPv4 UDP adapter for automatic incoming native-parameter writes and explicit named outbound stream, event-stream, or normalized-control bindings.
@@ -199,7 +205,9 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [pppd job](jobs.reference.md#pppd) — PPP over any bidirectional SolarOS byte-stream port. A physical UART, USB CDC, or a virtual port carried by a packet-radio link can provide the bytes; the PPP negotiation mode and the interface's routing role are configured separately.
 - [ps2-keyboard job](jobs.reference.md#ps2-keyboard) — Receives keyboard scan-code set 2 from an exclusive named PS/2 bus and publishes press and release transitions through the generic SolarOS input service. This job is a compatibility wrapper around a ps2-keyboard expansion attachment; new configurations can attach the device directly.
 - [radio-link job](jobs.reference.md#radio-link) — Packet-radio adapter for the transport-independent SolarOS Link service.
+- [rtspd job](jobs.reference.md#rtspd) — Publish explicitly selected sources as a standard single-client RTSP session. Video uses RTP/JPEG; audio uses RTP/L16 PCM. Each enabled track has its own RTP/RTCP UDP port pair, SSRC, and sender reports, with a shared RTCP CNAME and session start clock.
 - [slip job](jobs.reference.md#slip) — IPv4 SLIP gateway on a byte-stream port. This is intended for retro machines, headless boards, and serial networking experiments. The active interface is named with the slip- prefix plus the selected port, for example slip-uart0. It appears as a downstream NAT link in the Network views; its traffic follows the selected SolarOS route, which can be Wi-Fi, cellular, or WireGuard.
+- [speechd job](jobs.reference.md#speechd) — Offline text-to-speech queue. The optional job loads a PicoTTS voice from storage into PSRAM and accepts asynchronous requests from native applications, Python, and Lua.
 - [sump job](jobs.reference.md#sump) — SUMP-compatible logic analyzer server on cdc0. It claims the CDC port and uses the shared logic analyzer service for acquisition. PulseView and sigrok can connect with the OpenBench Logic Sniffer/SUMP serial driver.
 - [telnetd job](jobs.reference.md#telnetd) — Remote Telnet shell server. The listener is a background job; each accepted connection is attached to its own normal SolarOS port-shell session.
 
@@ -227,6 +235,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Lua audio and control API](lua.audio.md) — Audio and control: audio, synth, dsp, controls, parameters, midi, osc
 - [Lua bluetooth API](lua.ble.md) — Bluetooth: ble
 - [Lua buses and expansion API](lua.buses.md) — Buses and expansion: buses, expansion
+- [Lua camera, streams, and RTSP API](lua.media.md) — Owned local stream frames, camera snapshots, native images, and asynchronous RTSP sessions
 - [Lua contacts and messages API](lua.messaging.md) — Contacts and messages: contacts, messages
 - [Lua gpio and peripherals API](lua.hardware.md) — GPIO and peripherals: gpio, onewire, led, adc, pwm, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC
 - [Lua graphics API](lua.gfx.md) — Draw through SolarOS displays from Lua
@@ -241,6 +250,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Python audio and control API](python.audio.md) — Audio and control: audio, synth, dsp, controls, parameters, midi, osc
 - [Python bluetooth API](python.ble.md) — Bluetooth: ble
 - [Python buses and expansion API](python.buses.md) — Buses and expansion: buses, expansion
+- [Python camera, streams, and RTSP API](python.media.md) — Owned local stream frames, camera snapshots, native images, and asynchronous RTSP sessions
 - [Python contacts and messages API](python.messaging.md) — Contacts and messages: contacts, messages
 - [Python gpio and peripherals API](python.hardware.md) — GPIO and peripherals: gpio, onewire, led, adc, pwm, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC
 - [Python graphics API](python.gfx.md) — Draw through SolarOS displays from MicroPython
@@ -255,7 +265,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Cellular modem](sim7670.md) — Configure cellular profiles without modem-specific AT commands
 - [Device identity](identity.md) — Read and configure the NVS-backed user and hostname
 - [Foreground sessions and applications](sessions.apps.md) — Create shells and inspect resumable foreground applications
-- [MeshCore companion messaging](meshcore.md) — Secure messages and trusted virtual serial ports over a claimed packet radio
+- [MeshCore companion messaging](meshcore.md) — Secure MeshCore messaging over a local packet radio or BLE companion device
 - [Messaging, contacts, and credential security](messaging.md) — Provider-neutral messaging identities, trust, persistence, and secret handling
 - [SolarOS Link](link.md) — Packet messaging and reliable virtual serial ports over packet radio or ESP-NOW
 
