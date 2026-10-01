@@ -432,6 +432,11 @@ label = "Image viewer"
 category = "Media"
 members = ["app_view"]
 
+[groups.vplay]
+label = "MPEG-1 media player"
+category = "Media"
+members = ["app_vplay"]
+
 [groups.sketch]
 label = "Sketch"
 category = "Media"
@@ -2204,6 +2209,18 @@ label = "app.view"
 depends = ["service_image", "service_vector"]
 sources = ["apps/solar_os_view.c"]
 capabilities = ["psram", "gfx"]
+
+[packages.app_vplay]
+label = "app.vplay"
+depends = ["service_mpeg", "service_audio", "service_media_widgets"]
+sources = ["apps/solar_os_vplay.c"]
+capabilities = ["psram", "gfx"]
+
+[packages.service_mpeg]
+label = "service.mpeg"
+sources = ["services/solar_os_mpeg.c", "services/solar_os_mpeg_raster.c", "services/solar_os_mpeg_simd.S"]
+requires = ["pl_mpeg"]
+capabilities = ["psram"]
 
 [packages.app_sketch]
 label = "app.sketch"

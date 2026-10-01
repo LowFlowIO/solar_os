@@ -476,6 +476,11 @@ if(SOLAR_OS_PACKAGE_BHI260AP)
     target_add_binary_data(${COMPONENT_LIB} "vendor/bhy2/BHI260AP.fw" BINARY)
 endif()
 
+if(SOLAR_OS_PACKAGE_SERVICE_MPEG)
+    set_source_files_properties(services/solar_os_mpeg.c
+        services/solar_os_mpeg_raster.c PROPERTIES COMPILE_OPTIONS "-O2")
+endif()
+
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     ${SOLAR_OS_BOARD_DEFINE}=1
     ${SOLAR_OS_BOARD_CAPABILITY_DEFINES}

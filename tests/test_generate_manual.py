@@ -67,6 +67,14 @@ class ManualReleaseLimitTest(unittest.TestCase):
         )
         by_id = {str(page["id"]): page for page in pages}
 
+        self.assertEqual(by_id["app.vplay"]["packages_any"], ["app_vplay"])
+        self.assertIn("vplay", by_id["app.vplay"]["aliases"])
+        self.assertIn("MPEG-1", by_id["app.vplay"]["contract"])
+        self.assertNotIn("app.mplayer", by_id)
+        self.assertIn("full screen", by_id["app.vplay"]["contract"])
+        self.assertIn("Previous, Stop/Play, and Next", by_id["app.vplay"]["contract"])
+        self.assertNotIn("MPEG playback", by_id["app.view"]["contract"])
+
         self.assertEqual(
             by_id["command.mqtt"]["packages_any"], ["service_mqtt"]
         )

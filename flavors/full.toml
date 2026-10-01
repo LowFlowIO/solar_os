@@ -84,6 +84,7 @@ reader = true
 writer = true
 notes = true
 image_viewer = true
+vplay = true
 sketch = true
 invaders = true
 gameboy = true

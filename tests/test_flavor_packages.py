@@ -87,6 +87,23 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertTrue(pruned_packages["app_sketch"])
         self.assertFalse(pruned_packages["app_view"])
 
+    def test_vplay_is_separate_from_the_image_viewer(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["vplay"])
+        self.assertTrue(packages["app_vplay"])
+        self.assertNotIn("mplayer", groups)
+        self.assertNotIn("app_mplayer", packages)
+        self.assertIn("service_media_widgets", self.catalog.package_defs["app_vplay"].depends)
+        self.assertTrue(packages["service_mpeg"])
+        view = self.catalog.package_defs["app_view"]
+        self.assertNotIn("service_mpeg", view.depends)
+        self.assertNotIn("service_audio", view.depends)
+        self.assertEqual(view.sources, ("apps/solar_os_view.c",))
+        for caps, expected in (({"psram", "gfx"}, True), ({"psram"}, False), ({"gfx"}, False)):
+            _, pruned = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, packages, caps)
+            self.assertEqual(pruned["app_vplay"], expected)
+
     def test_graffiti_is_available_for_runtime_attached_pointers(self):
         _, _, groups, packages = self.resolve("full")
         self.assertTrue(groups["handwriting_input"])

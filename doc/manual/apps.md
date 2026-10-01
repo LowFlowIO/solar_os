@@ -1799,6 +1799,46 @@ Controls:
 - `1` selects fit-to-screen.
 - `Esc` or app-exit key exits.
 
+## vplay
+
+Graphical MPEG-1 media player with optional MP2 audio.
+
+Usage:
+
+```text
+vplay [-fit|-actual] <file.mpg>
+```
+
+Supports MPEG-1 program streams (`.mpg` and `.mpeg`) containing
+one MPEG-1 video track and optionally one MPEG-1 Layer II (MP2) audio track.
+MPEG-2, MPEG-4/H.264, AVI, transport streams, and MP3/AAC audio are not supported.
+The source limit is 640x480; lower resolutions and frame rates are recommended
+for smooth playback. Decoding reads the file incrementally into bounded PSRAM
+buffers. Color screens use native RGB565 output and ESP32-S3 SIMD color
+conversion; monochrome screens use the luma plane. Playback speed depends on
+source complexity, display transfer speed, and output size.
+
+Controls:
+
+- `Space` pauses/resumes.
+- `Up`/`Down` changes global volume.
+- `Enter` stops playback or restarts the selected file.
+- `Left`/`Right` selects the previous/next MPEG file in the same folder, in
+  filename order. At either end, the selection stays unchanged.
+- The shared Previous, Stop/Play, and Next buttons provide the same actions
+  when clicked or tapped.
+- `f` toggles full screen, hiding the header, volume strip, and transport buttons.
+- `0` selects actual size and `1` selects fit.
+  Actual-size video larger than the viewport is cropped centrally.
+- `d` toggles frame/timing log diagnostics.
+- `Esc` or app-exit key exits.
+
+Playback pauses while its session is suspended and returns to the shell at the
+end of the file. Audio uses the selected SolarOS output and acts as the playback
+clock when present; a file with audio requires an available playback output.
+Video dimensions and frame rate must remain constant, and the initial audio/video
+timestamp difference must be no more than ten seconds.
+
 ## sketch
 
 Pointer-driven graphical paint application. Its layout follows classic desktop

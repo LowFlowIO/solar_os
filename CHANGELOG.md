@@ -2,6 +2,13 @@
 
 ## 4.x
 
+- **4.15.11** — 2026-10-01 — Added `vplay` for MPEG-1 program
+  stream files with optional MP2 audio. Playback uses bounded PSRAM buffers,
+  audio-clock synchronization, native RGB565 or monochrome output, and
+  ESP32-S3 SIMD color conversion. The shared player controls provide pause,
+  Stop/Play, volume, and previous/next MPEG files in the current folder.
+  Fit, actual-size, and full-screen modes are available; the source limit
+  is 640x480. MPEG-2, H.264, AVI, and transport streams are not supported.
 - **4.15.10** — 2026-10-01 — Shared JPEG decoding now uses a
   fast ROM path and bounded ESP32-S3 SIMD acceleration, with fallbacks for
   unsupported images or limited working memory. Color and monochrome consumers

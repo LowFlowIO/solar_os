@@ -55,6 +55,9 @@ esp_err_t solar_os_audio_player_write(solar_os_audio_player_t *player,
                                       const void *data,
                                       size_t len,
                                       const volatile bool *cancelled);
+/* Signal finite input EOF without waiting for buffered playback to drain.
+ * No writes are permitted after this call. finish() also signals EOF. */
+esp_err_t solar_os_audio_player_end_input(solar_os_audio_player_t *player);
 esp_err_t solar_os_audio_player_finish(solar_os_audio_player_t *player,
                                        const volatile bool *cancelled);
 esp_err_t solar_os_audio_player_error(const solar_os_audio_player_t *player);
