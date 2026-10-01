@@ -1,4 +1,5 @@
 #include "solar_os_stb_image.h"
+#include "jpeg_fast.h"
 
 #include <stdbool.h>
 #include <limits.h>
@@ -520,6 +521,9 @@ esp_err_t solar_os_stb_decode_gray(const uint8_t *data,
         return ESP_ERR_INVALID_SIZE;
     }
 
+    esp_err_t fast = solar_os_jpeg_fast_decode(data, len, max_pixels, 0, 0,
+        SOLAR_OS_JPEG_GRAY8, out_gray, out_width, out_height);
+    if (fast != ESP_ERR_NOT_SUPPORTED) return fast;
     uint8_t *gray = stbi_load_from_memory(data, (int)len, &width, &height, &channels, 1);
     if (gray == NULL) {
         return ESP_FAIL;
@@ -560,6 +564,9 @@ esp_err_t solar_os_stb_decode_rgb(const uint8_t *data,
     if (pixels > SIZE_MAX / 3U || (max_pixels != 0 && pixels > max_pixels)) {
         return ESP_ERR_INVALID_SIZE;
     }
+    esp_err_t fast = solar_os_jpeg_fast_decode(data, len, max_pixels, 0, 0,
+        SOLAR_OS_JPEG_RGB888, out_rgb, out_width, out_height);
+    if (fast != ESP_ERR_NOT_SUPPORTED) return fast;
     uint8_t *rgb = stbi_load_from_memory(data, (int)len, &width, &height,
                                          &channels, 3);
     if (rgb == NULL) {
@@ -619,6 +626,10 @@ esp_err_t solar_os_stb_decode_jpeg_rgb_scaled(const uint8_t *data,
 
     uint32_t decoded_source_width = 0;
     uint32_t decoded_source_height = 0;
+    esp_err_t fast = solar_os_jpeg_fast_decode(data, len, max_pixels,
+        max_output_width, max_output_height, SOLAR_OS_JPEG_RGB888,
+        out_rgb, out_width, out_height);
+    if (fast != ESP_ERR_NOT_SUPPORTED) return fast;
     uint8_t *rgb = solar_os_stbi_load_jpeg_rgb_scaled(
         data,
         (int)len,
@@ -884,6 +895,28 @@ esp_err_t solar_os_stb_decode_gif_rgb(const uint8_t *data,
                                    NULL,
                                    converter,
                                    out_animation);
+}
+
+esp_err_t solar_os_stb_decode_jpeg_rgb565_scaled(const uint8_t *data, size_t len,
+    uint32_t max_pixels, uint32_t max_width, uint32_t max_height,
+    uint8_t **pixels, uint32_t *width, uint32_t *height)
+{
+    if (!data || !len || len > INT_MAX || !max_width || !max_height ||
+        !pixels || !width || !height) return ESP_ERR_INVALID_ARG;
+    *pixels = NULL; *width = *height = 0;
+    esp_err_t error = solar_os_jpeg_fast_decode(data, len, max_pixels,
+        max_width, max_height, SOLAR_OS_JPEG_RGB565, pixels, width, height);
+    if (error != ESP_ERR_NOT_SUPPORTED) return error;
+    error = solar_os_stb_decode_jpeg_rgb_scaled(data, len, max_pixels,
+        max_width, max_height, pixels, width, height);
+    if (error != ESP_OK) return error;
+    for (size_t i = 0; i < (size_t)*width * *height; i++) {
+        const uint8_t *rgb = *pixels + i * 3U;
+        uint16_t color = ((uint16_t)(rgb[0] & 0xf8U) << 8U) |
+            ((uint16_t)(rgb[1] & 0xfcU) << 3U) | (rgb[2] >> 3U);
+        (*pixels)[i * 2U] = color >> 8U; (*pixels)[i * 2U + 1U] = color;
+    }
+    return ESP_OK;
 }
 
 esp_err_t solar_os_stb_jpeg_decode_gray(const uint8_t *data,

@@ -8,7 +8,6 @@
 #include "solar_os_audio.h"
 #include "solar_os_display.h"
 #include "solar_os_gfx.h"
-#include "solar_os_rgb565.h"
 #include "solar_os_keys.h"
 #include "solar_os_media_widgets.h"
 #include "solar_os_rtsp_client.h"
@@ -148,6 +147,9 @@ static void decode_worker(void *arg)
         esp_err_t err = rtsp.monochrome ?
             solar_os_stb_jpeg_decode_gray(frame.data, frame.length,
                 RTSP_IMAGE_PIXELS, &pixels, &w, &h) :
+            rtsp.direct_rgb565 ?
+            solar_os_stb_decode_jpeg_rgb565_scaled(frame.data, frame.length,
+                RTSP_IMAGE_PIXELS, output_width, output_height, &pixels, &w, &h) :
             solar_os_stb_decode_jpeg_rgb_scaled(frame.data, frame.length,
                 RTSP_IMAGE_PIXELS, output_width, output_height, &pixels, &w, &h);
         solar_os_rtsp_client_release_video(rtsp.client);
@@ -161,7 +163,6 @@ static void decode_worker(void *arg)
         if (rtsp.direct_rgb565) {
             /* Retain the compact decoded raster, not an enlarged RGB888 copy.
              * The display driver scales wire-order RGB565 into DMA bands. */
-            solar_os_rgb565_from_rgb888(pixels, (size_t)w * h);
             prepared = pixels;
         } else {
             prepared = prepare_image(pixels, w, h, output_width, output_height, &draw_w, &draw_h);

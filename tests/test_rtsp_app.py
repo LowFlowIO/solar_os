@@ -118,7 +118,8 @@ class RtspAppTest(unittest.TestCase):
 
     def test_true_color_frames_bypass_indexed_blitter(self):
         self.assertIn("solar_os_gfx_supports_frame_format", APP)
-        self.assertIn("solar_os_rgb565_from_rgb888", APP)
+        self.assertIn("solar_os_stb_decode_jpeg_rgb565_scaled", APP)
+        self.assertNotIn("solar_os_rgb565_from_rgb888", APP)
         self.assertIn("prepared = pixels", APP)
         self.assertIn("status.video && !direct", APP)
         self.assertIn("if (!direct || rtsp.layout_dirty) solar_os_gfx_clear", APP)
