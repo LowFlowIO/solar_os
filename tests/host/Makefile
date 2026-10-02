@@ -13,6 +13,14 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
 TARGETS += epd_ssd1677_test
+TARGETS += axp2101_service_test
+
+axp2101_service_test: axp2101_service_test.c $(ROOT)/src/services/solar_os_axp2101.c \
+	$(ROOT)/src/services/solar_os_axp2101.h $(ROOT)/src/drivers/axp2101.c
+	$(CC) $(CFLAGS) -include compat.h -Iaxp2101_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		axp2101_service_test.c $(ROOT)/src/services/solar_os_axp2101.c \
+		$(ROOT)/src/drivers/axp2101.c -o $@
 
 epd_ssd1677_test: epd_ssd1677_test.c $(ROOT)/src/drivers/epd_ssd1677.c $(ROOT)/src/drivers/epd_ssd1677.h \
 	$(wildcard epd_stubs/*.h epd_stubs/driver/*.h epd_stubs/freertos/*.h)
@@ -366,6 +374,7 @@ gpio_controller_test: gpio_controller_test.c \
 		$(ROOT)/src/services/solar_os_resources.c -o $@
 
 expansion_registry_test: expansion_registry_test.c \
+		$(ROOT)/src/services/solar_os_ssd1677_driver.c \
 		$(ROOT)/src/services/solar_os_expansion.c \
 		$(ROOT)/src/services/solar_os_expansion.h \
 		$(ROOT)/src/services/solar_os_memory.h \
@@ -375,7 +384,8 @@ expansion_registry_test: expansion_registry_test.c \
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -ffunction-sections -fdata-sections \
 		-include compat.h -Iexpansion_stubs -I. -I$(ROOT)/include \
 		-I$(ROOT)/src -I$(ROOT)/src/services expansion_registry_test.c \
-		$(ROOT)/src/services/solar_os_expansion.c -Wl,--gc-sections -o $@
+		$(ROOT)/src/services/solar_os_expansion.c \
+		$(ROOT)/src/services/solar_os_ssd1677_driver.c -Wl,--gc-sections -o $@
 
 expansion_command_test: expansion_command_test.c \
 		$(ROOT)/src/shell/solar_os_shell_expansion_command.c \
@@ -514,6 +524,7 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 		rtc_pcf85063_test.c $(ROOT)/src/drivers/rtc_pcf85063.c -o $@
 
 test: $(TARGETS)
+	./axp2101_service_test
 	./ble_service_test
 	./ble_multi_peer_test
 	./ble_nimble_test

@@ -412,7 +412,7 @@ class FlavorPackagesTest(unittest.TestCase):
         )
         self.assertEqual(
             self.catalog.package_defs["expansion_ssd1677"].depends,
-            ("driver_axp2101", "service_expansion", "service_spi"),
+            ("axp2101", "service_expansion", "service_spi"),
         )
         self.assertEqual(
             self.catalog.package_defs["expansion_ssd1677"].capabilities,

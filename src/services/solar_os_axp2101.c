@@ -28,6 +28,7 @@ typedef struct {
 
 typedef struct {
     bool active;
+    size_t aldo3_users;
     char name[SOLAR_OS_EXPANSION_DEVICE_NAME_MAX];
     char i2c_bus[SOLAR_OS_EXPANSION_TARGET_MAX];
     uint8_t address;
@@ -302,11 +303,51 @@ esp_err_t solar_os_axp2101_detach(const char *name)
     if (!power_device.active || strcmp(power_device.name, name) != 0) {
         return ESP_ERR_NOT_FOUND;
     }
+    xSemaphoreTake(power_device.mutex, portMAX_DELAY);
+    const bool panel_active = power_device.aldo3_users > 0U;
+    xSemaphoreGive(power_device.mutex);
+    if (panel_active) return ESP_ERR_INVALID_STATE;
     ESP_RETURN_ON_ERROR(solar_os_charger_unregister(AXP2101_CHARGER_NAME),
                         TAG, "charger is busy");
     const esp_err_t battery_ret = solar_os_battery_unregister_provider(name);
     if (battery_ret != ESP_OK) return battery_ret;
     const esp_err_t ret = axp2101_deinit(&power_device.chip);
     clear_device();
+    return ret;
+}
+
+esp_err_t solar_os_axp2101_acquire_aldo3(const char *i2c_bus, uint8_t address)
+{
+    if (i2c_bus == NULL) return ESP_ERR_INVALID_ARG;
+    if (!power_device.active || !power_device.chip.initialized ||
+        power_device.address != address ||
+        strcmp(power_device.i2c_bus, i2c_bus) != 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    xSemaphoreTake(power_device.mutex, portMAX_DELAY);
+    /* One panel owns the rail; another panel must not switch it off. */
+    const esp_err_t ret = power_device.aldo3_users == 0U ?
+        ESP_OK : ESP_ERR_INVALID_STATE;
+    if (ret == ESP_OK) power_device.aldo3_users++;
+    xSemaphoreGive(power_device.mutex);
+    return ret;
+}
+
+void solar_os_axp2101_release_aldo3(void)
+{
+    if (!power_device.active) return;
+    xSemaphoreTake(power_device.mutex, portMAX_DELAY);
+    if (power_device.aldo3_users > 0U) power_device.aldo3_users--;
+    xSemaphoreGive(power_device.mutex);
+}
+
+esp_err_t solar_os_axp2101_set_aldo3(bool enabled)
+{
+    if (!power_device.active) return ESP_ERR_INVALID_STATE;
+    xSemaphoreTake(power_device.mutex, portMAX_DELAY);
+    const esp_err_t ret = power_device.aldo3_users > 0U ?
+        axp2101_set_aldo3(&power_device.chip, enabled, 3300U) :
+        ESP_ERR_INVALID_STATE;
+    xSemaphoreGive(power_device.mutex);
     return ret;
 }

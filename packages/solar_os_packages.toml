@@ -1420,7 +1420,7 @@ capabilities = ["gfx", "expansion_gpio"]
 label = "expansion.ssd1677"
 targets = ["esp32s3"]
 expansion_drivers = ["solar_os_ssd1677_expansion_driver"]
-depends = ["driver_axp2101", "service_expansion", "service_spi"]
+depends = ["axp2101", "service_expansion", "service_spi"]
 sources = [
   "board/solar_os_board_display_expansion.c",
   "drivers/epd_ssd1677.c",

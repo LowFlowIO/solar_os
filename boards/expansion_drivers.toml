@@ -207,7 +207,6 @@ summary = "QMI8658 six-axis IMU"
 package = "qmi8658"
 targets = ["esp32", "esp32s3"]
 capabilities = ["i2c"]
-early = true
 default_name = "imu0"
 
 [[drivers.qmi8658.bindings]]
@@ -514,10 +513,10 @@ role = "power"
 
 [[drivers.ssd1677.bindings]]
 key = "power_addr"
-kind = "i2c_address"
+kind = "parameter"
 hint = "0x34"
-role = "power"
-values = [0x34]
+role = "power_addr"
+allowed = [0x34]
 
 [[drivers.ssd1677.bindings]]
 key = "clock"

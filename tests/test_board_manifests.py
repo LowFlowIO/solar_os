@@ -409,7 +409,15 @@ bindings = { gpio = 7 }
             'SOLAR_OS_EXPANSION_BINDING_I2C_BUS, .role = "power", .target = "i2c0"',
             header,
         )
-        self.assertIn('.role = "power", .value = 52', header)
+        self.assertIn(
+            '.kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER, '
+            '.role = "power_addr", .value = 52', header,
+        )
+        self.assertNotIn(
+            '.kind = SOLAR_OS_EXPANSION_BINDING_I2C_ADDRESS, '
+            '.role = "power"', header,
+        )
+        self.assertFalse(self.drivers["qmi8658"].early)
         self.assertIn("expansion_ssd1677", required_packages(board, self.drivers))
 
         hardware = json.loads(

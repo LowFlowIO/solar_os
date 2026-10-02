@@ -180,6 +180,8 @@ esp_err_t solar_os_qmi8658_attach(
     };
     esp_err_t ret = qmi8658_init(&device->chip, &io);
     if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "%s chip initialization on %s addr=0x%02x failed: %s",
+                 name, i2c_bus, address, esp_err_to_name(ret));
         clear_device(device);
         return ret;
     }
@@ -193,6 +195,7 @@ esp_err_t solar_os_qmi8658_attach(
     };
     ret = solar_os_imu_register(&registration);
     if (ret != ESP_OK) {
+        ESP_LOGW(TAG, "%s IMU registration failed: %s", name, esp_err_to_name(ret));
         (void)qmi8658_deinit(&device->chip);
         clear_device(device);
         return ret;

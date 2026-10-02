@@ -18,7 +18,6 @@ const solar_os_expansion_driver_t solar_os_qmi8658_expansion_driver = {
     .summary = "QMI8658 six-axis IMU",
     .required_capabilities = SOLAR_OS_BOARD_CAP_I2C,
     .probe_supported = true,
-    .early = true,
     .binding_specs = binding_specs,
     .binding_spec_count = sizeof(binding_specs) / sizeof(binding_specs[0]),
     .attach = solar_os_qmi8658_attach,
