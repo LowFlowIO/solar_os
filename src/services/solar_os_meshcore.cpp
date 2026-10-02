@@ -1682,8 +1682,6 @@ extern "C" esp_err_t solar_os_meshcore_init(void)
     ProviderChannel channels[SOLAR_OS_MESHCORE_GROUP_CAPACITY]{};
     const size_t count =
         channel_configs(channels, SOLAR_OS_MESHCORE_GROUP_CAPACITY);
-    upsert_group_conversations(channels, count);
-
     memset(&service, 0, sizeof(service));
     service.lock = lock;
     service.status.last_error = ESP_OK;
@@ -2182,6 +2180,7 @@ extern "C" esp_err_t solar_os_meshcore_start(const char *radio,
     }
     solar_os_credentials_wipe(identity, sizeof(identity));
     if (error == ESP_OK) {
+        (void)solar_os_messaging_groups_begin_sync(SOLAR_OS_MESSAGING_PROVIDER_MESHCORE, "group:");
         upsert_group_conversations(channels, channel_count);
     }
     for (size_t index = 0; index < channel_count; index++) {

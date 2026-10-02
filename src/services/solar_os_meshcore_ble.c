@@ -166,7 +166,7 @@ static esp_err_t upsert_contact(const solar_os_meshcore_ble_contact_t *contact)
     const bool known = solar_os_contacts_find_endpoint(
         SOLAR_OS_MESSAGING_PROVIDER_MESHCORE,
         contact->public_key, sizeof(contact->public_key), &existing) == ESP_OK;
-    return solar_os_contacts_upsert_discovered(
+    return solar_os_contacts_import_discovered(
         SOLAR_OS_MESSAGING_PROVIDER_MESHCORE,
         contact->public_key,
         sizeof(contact->public_key),
@@ -417,31 +417,41 @@ static esp_err_t sync_contacts(void)
                               sizeof(start_types), NULL, NULL);
     if (error != ESP_OK) return error;
     size_t count = 0U;
+    size_t seen = 0U;
+    size_t skipped = 0U;
     for (;;) {
         uint8_t frame[SOLAR_OS_MESHCORE_BLE_FRAME_MAX];
         size_t length = 0U;
         error = next_frame(frame, &length, MESHCORE_BLE_OPERATION_TIMEOUT_MS);
-        if (error != ESP_OK) return error;
+        if (error != ESP_OK) break;
         if (frame[0] == SOLAR_OS_MESHCORE_BLE_RESP_CONTACTS_END) break;
-        if (frame[0] == SOLAR_OS_MESHCORE_BLE_RESP_ERROR) return ESP_FAIL;
+        if (frame[0] == SOLAR_OS_MESHCORE_BLE_RESP_ERROR) {
+            error = ESP_FAIL;
+            break;
+        }
         if (frame[0] == SOLAR_OS_MESHCORE_BLE_RESP_CONTACT) {
+            seen++;
             solar_os_meshcore_ble_contact_t contact;
             if (solar_os_meshcore_ble_parse_contact(frame, length, &contact) &&
                 upsert_contact(&contact) == ESP_OK) {
                 count++;
-            }
+            } else skipped++;
         }
     }
-    service.contacts_refresh = false;
+    if (error == ESP_OK) service.contacts_refresh = false;
+    if (count > 0U) (void)solar_os_contacts_flush();
     portENTER_CRITICAL(&service_lock);
     service.status.contacts = count;
+    service.status.contacts_seen = seen;
+    service.status.contacts_skipped = skipped;
     portEXIT_CRITICAL(&service_lock);
-    return ESP_OK;
+    return error;
 }
 
 static esp_err_t sync_channels(void)
 {
     memset(service.channels, 0, sizeof(service.channels));
+    (void)solar_os_messaging_groups_begin_sync(SOLAR_OS_MESSAGING_PROVIDER_MESHCORE, "ble-group:");
     size_t count = 0U;
     for (uint8_t index = 0; index < SOLAR_OS_MESHCORE_BLE_CHANNEL_CAPACITY; index++) {
         uint8_t request[2];
@@ -583,6 +593,7 @@ static esp_err_t handshake(void)
     portENTER_CRITICAL(&service_lock);
     service.status.protocol_version = SOLAR_OS_MESHCORE_BLE_PROTOCOL_VERSION;
     service.status.firmware_code = device.firmware_code;
+    service.status.companion_contact_capacity = device.max_contacts;
     strlcpy(service.status.model, device.model, sizeof(service.status.model));
     strlcpy(service.status.version, device.version, sizeof(service.status.version));
     strlcpy(service.status.build, device.build, sizeof(service.status.build));

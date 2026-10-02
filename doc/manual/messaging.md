@@ -24,11 +24,15 @@ A signed MeshCore advert proves ownership of its public key, not the human
 identity using the device. New adverts therefore remain `discovered` until the
 user trusts them.
 
-Contacts keeps at most 64 contacts and 80 endpoints in PSRAM. Its bounded,
+Contacts keeps at most 512 contacts and 576 endpoints in PSRAM. Its bounded,
 CRC-checked store uses alternating headers and data copies under
 `/.contacts/contacts.bin`. Persistence writes and `fsync` occur after releasing
 the service lock. If the filesystem is unavailable, the service stays usable
 in volatile mode and reports the error through `contacts status`.
+The store remains below 192 KiB. Existing contact files migrate on the next
+successful write, preserving contact IDs, names, endpoint trust, and metadata.
+Companion imports preserve retained contacts and report entries skipped when
+the shared store is full.
 
 Credentials keeps at most 12 opaque NVS records with at most 128 secret bytes
 each. Supported record kinds are asymmetric identities, shared keys, and
@@ -54,6 +58,12 @@ Direct messages to a blocked endpoint are always rejected. A discovered
 endpoint requires an explicit second confirmation in Chat or
 `--allow-untrusted` in the shell. That opt-in applies only to the one send and
 does not change the endpoint's trust state.
+
+MeshCore group labels distinguish `[radio]` from `[companion]`. A retained
+group outside the current transport or channel configuration has a `(history)`
+label: its messages remain readable, but it cannot accept new sends. Outbound
+queues are held in memory; after a restart, retained `queued` or `sending`
+messages become `failed` and must be resent explicitly.
 
 ## Quick reference
 

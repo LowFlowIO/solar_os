@@ -50,6 +50,7 @@ typedef struct {
     uint32_t security_flags;
     char title[SOLAR_OS_MESSAGING_TITLE_MAX];
     char provider_key[SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX];
+    bool history_only;
 } solar_os_messaging_conversation_t;
 
 typedef struct {
@@ -162,6 +163,13 @@ esp_err_t solar_os_messaging_provider_get_status(
 esp_err_t solar_os_messaging_conversation_upsert(
     const solar_os_messaging_conversation_upsert_t *request,
     solar_os_conversation_id_t *conversation_id);
+/* A provider refresh marks old groups as history; upsert reactivates its
+ * configured groups. History and message IDs are preserved. */
+esp_err_t solar_os_messaging_groups_begin_sync(
+    solar_os_messaging_provider_id_t provider, const char *provider_key_prefix);
+void solar_os_messaging_conversation_label(
+    const solar_os_messaging_conversation_t *conversation,
+    char *label, size_t capacity);
 esp_err_t solar_os_messaging_conversation_remove(
     solar_os_messaging_provider_id_t provider,
     const char *provider_key);

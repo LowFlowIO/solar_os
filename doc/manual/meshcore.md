@@ -74,6 +74,14 @@ Direct sends remain in `sending` state until the companion reports the expected
 MeshCore acknowledgement; group sends become `sent` after the device accepts
 them.
 
+Job status reports imported contacts as `contacts=stored/seen`, with `skipped`
+and the companion's advertised `companion_limit`. SolarOS can retain up to 512
+contacts across providers; imports do not evict existing contacts when this
+store is full. The companion's own firmware can impose a smaller limit.
+The status bar shows the radio icon while the companion is online. Group
+labels identify `[companion]` or `[radio]`; groups absent from the current
+channel configuration remain readable as `(history)` entries.
+
 The optional PIN is kept in memory only while the job runs, but the command can
 remain in shell history. Verify `encrypted=yes` and `bonded=yes` in job status
 when BLE link security is required. MeshCore's direct-message and shared-channel

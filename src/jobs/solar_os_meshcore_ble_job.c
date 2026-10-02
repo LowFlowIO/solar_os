@@ -181,9 +181,12 @@ static void meshcore_ble_detail(solar_os_context_t *ctx)
         status.version[0] != '\0' ? status.version : "unknown",
         status.build[0] != '\0' ? status.build : "unknown");
     solar_os_shell_io_printf(
-        io, "  sync: protocol=%u firmware_code=%u contacts=%u channels=%u\n",
+        io, "  sync: protocol=%u firmware_code=%u contacts=%u/%u skipped=%u companion_limit=%u channels=%u\n",
         (unsigned)status.protocol_version, (unsigned)status.firmware_code,
         (unsigned)status.contacts,
+        (unsigned)status.contacts_seen,
+        (unsigned)status.contacts_skipped,
+        (unsigned)status.companion_contact_capacity,
         (unsigned)status.channels);
     solar_os_shell_io_printf(
         io, "  traffic: rx=%lu tx=%lu reconnects=%lu errors=%lu stack_min=%lu detail=%s\n",

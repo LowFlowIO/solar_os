@@ -29,6 +29,10 @@ Scripts cannot read credentials or endpoint secret material. Blocked direct
 endpoints are rejected, and discovered endpoints require
 `allow_untrusted=True` for that one send.
 
+Conversation summaries include the raw `title`, a display `label` that identifies
+MeshCore group transports, and `history_only`. History-only conversations are
+readable but reject sends.
+
 ## Quick reference
 
 Use `solaros.contacts`, `solaros.messages` for contacts and messages.

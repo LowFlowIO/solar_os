@@ -76,6 +76,7 @@ typedef struct {
     size_t event_count;
     solar_os_messaging_provider_status_t providers[
         SOLAR_OS_MESSAGING_PROVIDER_CAPACITY];
+    char group_prefix[SOLAR_OS_MESSAGING_PROVIDER_CAPACITY][SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX];
     messaging_store_record_t *record_scratch;
     uint32_t next_conversation_id;
     uint32_t next_outbox_id;
@@ -259,6 +260,10 @@ static solar_os_conversation_id_t messaging_upsert_conversation_locked(
     conversation->endpoint_id = request->endpoint_id;
     conversation->group_ref = request->group_ref;
     conversation->security_flags = request->security_flags;
+    const char *group_prefix = messaging.group_prefix[messaging_provider_index(request->provider)];
+    conversation->history_only = request->kind == SOLAR_OS_CONVERSATION_GROUP &&
+        group_prefix[0] != '\0' &&
+        strncmp(request->provider_key, group_prefix, strlen(group_prefix)) != 0;
     strlcpy(conversation->provider_key,
             request->provider_key,
             sizeof(conversation->provider_key));
@@ -797,6 +802,18 @@ static void messaging_restore_record_locked(
     }
     memset(slot, 0, sizeof(*slot));
     slot->message = record->message;
+    if (slot->message.direction == SOLAR_OS_MESSAGE_OUTBOUND &&
+        (slot->message.delivery == SOLAR_OS_DELIVERY_QUEUED ||
+         slot->message.delivery == SOLAR_OS_DELIVERY_SENDING)) {
+        slot->message.delivery = SOLAR_OS_DELIVERY_FAILED;
+        strlcpy(slot->message.error, "Send interrupted by restart; resend explicitly",
+                sizeof(slot->message.error));
+    }
+    const int restored_index = messaging_conversation_id_index_locked(conversation_id);
+    if (restored_index >= 0 && record->message.provider == SOLAR_OS_MESSAGING_PROVIDER_MESHCORE &&
+        record->conversation_kind == SOLAR_OS_CONVERSATION_GROUP) {
+        messaging.conversations[restored_index].history_only = true;
+    }
     slot->message.conversation_id = conversation_id;
     slot->disk_index = disk_index;
     slot->revision = messaging.generation;
@@ -1374,6 +1391,50 @@ esp_err_t solar_os_messaging_conversation_upsert(
     return ESP_OK;
 }
 
+esp_err_t solar_os_messaging_groups_begin_sync(
+    solar_os_messaging_provider_id_t provider, const char *provider_key_prefix)
+{
+    if (!messaging_provider_valid(provider) ||
+        !messaging_text_valid(provider_key_prefix, SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX, false)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    esp_err_t error = solar_os_messaging_init();
+    if (error != ESP_OK) return error;
+    messaging_lock();
+    strlcpy(messaging.group_prefix[messaging_provider_index(provider)],
+            provider_key_prefix, SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX);
+    for (size_t i = 0; i < messaging.conversation_count; i++) {
+        solar_os_messaging_conversation_t *conversation = &messaging.conversations[i];
+        if (conversation->provider == provider &&
+            conversation->kind == SOLAR_OS_CONVERSATION_GROUP) {
+            conversation->history_only = true;
+        }
+    }
+    messaging_note_generation_locked();
+    messaging_publish_event_locked(SOLAR_OS_MESSAGING_EVENT_CONVERSATION, provider,
+        0, 0, SOLAR_OS_DELIVERY_RECEIVED, ESP_OK);
+    messaging_unlock();
+    return ESP_OK;
+}
+
+void solar_os_messaging_conversation_label(
+    const solar_os_messaging_conversation_t *conversation,
+    char *label, size_t capacity)
+{
+    if (conversation == NULL || label == NULL || capacity == 0U) return;
+    const char *transport = "";
+    if (conversation->provider == SOLAR_OS_MESSAGING_PROVIDER_MESHCORE &&
+        conversation->kind == SOLAR_OS_CONVERSATION_GROUP) {
+        if (strncmp(conversation->provider_key, "ble-group:", 10U) == 0) transport = " [companion]";
+        else if (strncmp(conversation->provider_key, "group:", 6U) == 0) transport = " [radio]";
+    }
+    const char *history = conversation->history_only ? " (history)" : "";
+    const size_t suffix = strlen(transport) + strlen(history);
+    const size_t title_limit = capacity > suffix + 1U ? capacity - suffix - 1U : 0U;
+    snprintf(label, capacity, "%.*s%s%s", (int)title_limit,
+             conversation->title, transport, history);
+}
+
 esp_err_t solar_os_messaging_conversation_remove(
     solar_os_messaging_provider_id_t provider,
     const char *provider_key)
@@ -1727,6 +1788,7 @@ esp_err_t solar_os_messaging_send(solar_os_conversation_id_t conversation_id,
         &messaging.conversations[conversation_index];
     conversation_snapshot = *conversation;
     messaging_unlock();
+    if (conversation_snapshot.history_only) return ESP_ERR_NOT_SUPPORTED;
     if (conversation_snapshot.kind == SOLAR_OS_CONVERSATION_DIRECT &&
         conversation_snapshot.endpoint_id != 0) {
         solar_os_endpoint_t endpoint;
@@ -1750,6 +1812,10 @@ esp_err_t solar_os_messaging_send(solar_os_conversation_id_t conversation_id,
         return ESP_ERR_NOT_FOUND;
     }
     conversation = &messaging.conversations[current_conversation_index];
+    if (conversation->history_only) {
+        messaging_unlock();
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     if (messaging.outbox_count >= SOLAR_OS_MESSAGING_OUTBOX_CAPACITY) {
         messaging.dropped_outbox++;
         messaging_unlock();

@@ -518,6 +518,11 @@ history on the Chat tab, which also contains the message/command input. The app
 opens and remains useful offline; network or radio transport jobs connect
 independently.
 
+MeshCore channel labels distinguish `[radio]` and `[companion]`. Entries marked
+`(history)` retain readable messages but cannot accept sends. After submitting
+a message, the footer follows its delivery state through `queued`, `sending`,
+`sent`, `delivered`, or `failed`.
+
 Usage:
 
 ```text
@@ -1062,12 +1067,14 @@ contacts link TARGET_CONTACT_ID SOURCE_CONTACT_ID
 
 Contact and endpoint identifiers autocomplete from live service snapshots.
 Linking moves the source endpoints to the target contact and removes the source
-record. When the 64-contact store is full, SolarOS may evict the oldest
+record. When the 512-contact store is full, radio discovery may evict the oldest
 unpinned contact whose endpoints are all still discovered; trusted and blocked
 records are never automatically evicted.
+BLE companion imports preserve existing records and report overflow instead
+of evicting contacts. The shared store supports up to 576 endpoints.
 
 The versioned store is CRC checked, uses two alternating headers and data
-copies, remains below 24 KiB, and normally lives at
+copies, remains below 192 KiB, and normally lives at
 `/.contacts/contacts.bin`. If storage is unavailable, Contacts remains usable
 in volatile mode and `contacts status` reports the storage error.
 

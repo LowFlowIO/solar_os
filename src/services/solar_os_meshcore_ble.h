@@ -34,6 +34,9 @@ typedef struct {
     uint8_t protocol_version;
     uint8_t firmware_code;
     size_t contacts;
+    size_t contacts_seen;
+    size_t contacts_skipped;
+    uint16_t companion_contact_capacity;
     size_t channels;
     uint32_t received;
     uint32_t transmitted;

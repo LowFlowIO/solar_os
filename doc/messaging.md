@@ -168,8 +168,22 @@ command; either order is safe.
 ## Persistence
 
 Contacts uses a versioned, CRC-checked store with two alternating headers at
-`/.contacts/contacts.bin`, capped below 24 KiB. It remains usable in volatile
+`/.contacts/contacts.bin`, capped below 192 KiB, with 512 contacts and 576
+endpoints. Version 1 files migrate through a staged file and backup on the next
+successful write, preserving IDs, names, trust, and provider metadata. Snapshot
+I/O uses requests of at most 4 KiB, and a restart recovers a retained backup
+when replacement was interrupted. Companion imports defer
+persistence until the batch ends and reject overflow without evicting retained
+contacts. It remains usable in volatile
 mode and reports the storage error when persistence is unavailable.
+
+The active MeshCore group namespace is selected when a transport synchronizes
+its configured channels. Retained groups outside that configuration are
+history-only; their messages remain readable and sends are rejected. Restored
+groups stay history-only until synchronized. Conversation labels expose the
+radio or companion transport without changing provider keys or message IDs.
+The outbox is volatile. Restored outbound `queued` and `sending` messages become
+`failed`, with an interruption reason, rather than implying pending work.
 
 Messages uses the same bounded fixed-slot and dual-header approach at
 `/.messages/messages.bin` only when the active storage has the large-history

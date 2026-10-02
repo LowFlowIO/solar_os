@@ -192,6 +192,8 @@ static void messages_conversations(solar_os_shell_io_t *io)
     for (size_t i = 0; i < count; i++) {
         const solar_os_messaging_conversation_t *conversation =
             &conversations[i];
+        char label[SOLAR_OS_MESSAGING_TITLE_MAX];
+        solar_os_messaging_conversation_label(conversation, label, sizeof(label));
         solar_os_shell_io_printf(
             io,
             "%" PRIu32 "  %-8s %-9s unread=%" PRIu32
@@ -201,7 +203,7 @@ static void messages_conversations(solar_os_shell_io_t *io)
             solar_os_conversation_kind_name(conversation->kind),
             conversation->unread_count,
             conversation->security_flags,
-            conversation->title);
+            label);
     }
     if (count == 0) {
         solar_os_shell_io_writeln(io, "No conversations");

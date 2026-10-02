@@ -107,6 +107,7 @@ typedef struct {
     uint8_t channel_scroll;
     size_t message_scroll;
     char status[CHAT_APP_STATUS_MAX];
+    solar_os_message_key_t status_message_key;
     chat_app_channel_t channels[CHAT_APP_CHANNEL_COUNT];
     chat_app_channel_row_t channel_rows[CHAT_APP_CHANNEL_VIEW_COUNT];
     chat_app_message_t *messages;
@@ -194,6 +195,7 @@ static const char *chat_provider_state_name(
 
 static void chat_set_status(const char *status)
 {
+    chat_app.status_message_key = SOLAR_OS_MESSAGE_KEY_NONE;
     strlcpy(chat_app.status, status != NULL ? status : "", sizeof(chat_app.status));
     chat_app.redraw = true;
 }
@@ -439,9 +441,8 @@ static void chat_refresh_conversations(void)
             conversation->unread_count = snapshot[i].unread_count;
             conversation->last_message_ms = snapshot[i].last_message_ms;
             conversation->unread = snapshot[i].unread_count != 0;
-            strlcpy(conversation->name,
-                    snapshot[i].title,
-                    sizeof(conversation->name));
+            solar_os_messaging_conversation_label(
+                &snapshot[i], conversation->name, sizeof(conversation->name));
             strlcpy(conversation->provider_key,
                     snapshot[i].provider_key,
                     sizeof(conversation->provider_key));
@@ -590,6 +591,11 @@ static bool chat_restore_message(
     stored->direction = message->direction;
     stored->delivery = message->delivery;
     stored->security_flags = message->security_flags;
+    if (message->key == chat_app.status_message_key &&
+        chat_app.status_message_key != SOLAR_OS_MESSAGE_KEY_NONE) {
+        chat_set_status(solar_os_delivery_state_name(message->delivery));
+        chat_app.status_message_key = message->key;
+    }
     return true;
 }
 
@@ -1516,6 +1522,7 @@ static void chat_select_channel(uint8_t index, bool join)
     }
     chat_app.selected_channel = index;
     chat_app.current_channel = index;
+    chat_app.status_message_key = SOLAR_OS_MESSAGE_KEY_NONE;
     chat_app.channels[index].unread = false;
     chat_app.channels[index].unread_count = 0;
     if (!chat_app.channels[index].system) {
@@ -1573,6 +1580,14 @@ static void chat_handle_messaging_event(
         return;
     }
     chat_app.messaging_dirty = true;
+    if (event->message_key == chat_app.status_message_key &&
+        chat_app.status_message_key != SOLAR_OS_MESSAGE_KEY_NONE &&
+        (event->type == SOLAR_OS_MESSAGING_EVENT_DELIVERY ||
+         event->type == SOLAR_OS_MESSAGING_EVENT_MESSAGE)) {
+        const solar_os_message_key_t key = chat_app.status_message_key;
+        chat_set_status(solar_os_delivery_state_name(event->delivery));
+        chat_app.status_message_key = key;
+    }
 }
 
 static void chat_drain_messaging_events(void)
@@ -1744,11 +1759,12 @@ static void chat_submit_input(solar_os_context_t *ctx)
         chat_app.confirm_untrusted &&
         chat_app.pending_untrusted != NULL &&
         strcmp(chat_app.pending_untrusted, line) == 0;
+    solar_os_message_key_t message_key = SOLAR_OS_MESSAGE_KEY_NONE;
     const esp_err_t err =
         solar_os_messaging_send(chat_current_conversation_id(),
                                 line,
                                 confirmed,
-                                NULL);
+                                &message_key);
     if (err == ESP_ERR_INVALID_STATE && !confirmed &&
         chat_current_is_discovered_direct() &&
         chat_app.pending_untrusted != NULL) {
@@ -1767,6 +1783,10 @@ static void chat_submit_input(solar_os_context_t *ctx)
     solar_os_memory_free(line);
     if (err == ESP_OK) {
         chat_set_status("queued");
+        chat_app.status_message_key = message_key;
+    } else if (err == ESP_ERR_NOT_SUPPORTED) {
+        chat_app.status_message_key = SOLAR_OS_MESSAGE_KEY_NONE;
+        chat_set_status("history only; select an active channel");
     } else {
         chat_set_status(esp_err_to_name(err));
         chat_append_statusf("send failed: %s", esp_err_to_name(err));
