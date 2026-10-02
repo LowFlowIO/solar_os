@@ -19,7 +19,9 @@ static const char *const AGENT_REFERENCE_GUIDANCE =
     "service tables are mirrored; a counterpart-language excerpt preserves "
     "the service contract, but calls must use the requested language's table, "
     "nil/None, and error conventions. If a needed API is not documented here, "
-    "call solaros_reference again before writing code.";
+    "call solaros_reference again before writing code. If a match directs you "
+    "to the downloadable manual, install it with help update before using "
+    "that topic's APIs; topic metadata is not an API contract.";
 
 typedef struct {
     char *buffer;
