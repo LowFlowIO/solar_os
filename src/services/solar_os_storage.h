@@ -13,6 +13,7 @@
 #define SOLAR_OS_STORAGE_TYPE_NAME_MAX 12
 #define SOLAR_OS_STORAGE_MOUNT_POINT_MAX 32
 #define SOLAR_OS_STORAGE_READ_MAX_BYTES 65536U
+#define SOLAR_OS_STORAGE_WRITE_MAX_BYTES 65536U
 #define SOLAR_OS_STORAGE_SCANDIR_MAX_LIMIT 128U
 #define SOLAR_OS_STORAGE_LOGICAL_VOLUME_INVALID UINT8_MAX
 
@@ -161,6 +162,13 @@ esp_err_t solar_os_storage_read_file(const char *path,
                                      void *buffer,
                                      size_t buffer_len,
                                      size_t *read_len);
+// Creates or truncates a regular file, or appends when append is true. Empty
+// data is allowed. Flushes and syncs before success; failures can leave partial
+// data. The caller resolves the path and creates any parent directories.
+esp_err_t solar_os_storage_write_file(const char *path,
+                                      const void *data,
+                                      size_t data_len,
+                                      bool append);
 typedef void (*solar_os_storage_copy_progress_fn)(uint64_t bytes_done,
                                                   uint64_t bytes_total,
                                                   void *user);

@@ -2,6 +2,10 @@
 
 ## 4.x
 
+- **4.15.17** — 2026-10-02 — Python and Lua gain
+  `solaros.storage.write_file()` for creating, saving, and appending text or
+  binary files through the storage service. Writes support up to 64 KiB per
+  call and flush and sync the file before returning the byte count.
 - **4.15.16** — 2026-10-02 — MeshCore group conversations identify radio
   and companion transports; unavailable channels remain readable as history
   and reject new sends. Chat follows actual delivery updates, and messages

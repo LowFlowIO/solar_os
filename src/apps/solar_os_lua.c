@@ -1496,6 +1496,22 @@ static int solua_storage_read_file(lua_State *L)
     return 1;
 }
 
+static int solua_storage_write_file(lua_State *L)
+{
+    size_t data_len = 0U;
+    const char *data = luaL_checklstring(L, 2, &data_len);
+    if (data_len > SOLAR_OS_STORAGE_WRITE_MAX_BYTES) {
+        return luaL_error(L, "data exceeds 65536 bytes");
+    }
+
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    solua_resolve_path(L, 1, path, sizeof(path));
+    const bool append = lua_toboolean(L, 3);
+    (void)solua_check_esp(L, solar_os_storage_write_file(path, data, data_len, append));
+    lua_pushinteger(L, (lua_Integer)data_len);
+    return 1;
+}
+
 static int solua_storage_rescan(lua_State *L)
 {
     return solua_check_esp(L, solar_os_storage_rescan());

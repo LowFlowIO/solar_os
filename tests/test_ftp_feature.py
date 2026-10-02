@@ -76,7 +76,7 @@ class FtpFeatureTest(unittest.TestCase):
         self.assertIn('"F2 opens the connection setup"', FTP_APP)
         self.assertIn("case SOLAR_OS_KEY_F2:", FTP_APP)
         self.assertIn(
-            '"F2 Connect F3 View F5 Copy F6 Move F7 mKdir F8 Delete"',
+            '"F2 Connect F3 View F5 Copy F6 Move F7 mKdir F8 Delete Alt+S Search"',
             FTP_APP,
         )
         self.assertIn('{"Connect", 2U}', FTP_APP)

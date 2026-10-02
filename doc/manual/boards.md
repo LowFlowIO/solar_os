@@ -967,8 +967,6 @@ in SI units.
 Use `imu sample imu0` to read both vectors. Orientation is not advertised
 because this profile enables the raw accelerometer and gyroscope rather than
 the chip's AttitudeEngine.
-The display and the peripherals listed above still require physical-target
-validation; a successful firmware build only validates the software profile.
 
 Build the target with:
 
