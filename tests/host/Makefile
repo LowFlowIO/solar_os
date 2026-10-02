@@ -25,6 +25,7 @@ TARGETS += rtspd_completion_test
 TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
 TARGETS += vision_test
+TARGETS += inference_test inference_lua_bindings_test inference_schema_test
 TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
@@ -131,6 +132,21 @@ LUA_DIR := $(ROOT)/components/lua/lua/src
 LUA_TEST_SOURCES := $(filter-out $(LUA_DIR)/lua.c $(LUA_DIR)/luac.c \
 	$(LUA_DIR)/linit.c $(LUA_DIR)/liolib.c $(LUA_DIR)/loadlib.c $(LUA_DIR)/loslib.c, \
 	$(wildcard $(LUA_DIR)/*.c))
+
+inference_test: inference_test.c $(ROOT)/src/services/solar_os_inference.c $(ROOT)/src/services/solar_os_inference.h
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread \
+		-Iinference_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		$(filter %.c,$^) -o $@
+
+inference_lua_bindings_test: inference_lua_bindings_test.c inference_test.c \
+		$(ROOT)/src/apps/solar_os_lua_inference.inc $(ROOT)/src/services/solar_os_inference.c $(LUA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -Wno-unused-function -D_POSIX_C_SOURCE=200809L -pthread \
+		-Iinference_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(ROOT)/src/apps -I$(LUA_DIR) $(filter-out inference_test.c %.inc,$^) -lm -o $@
+
+inference_schema_test: inference_schema_test.cpp $(ROOT)/components/espdl_schema/solar_os_espdl_validate.cpp
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Werror -I. -I$(ROOT)/src/services \
+		-I$(ROOT)/components/espdl_schema/include $^ -o $@
 
 generated/vision/solar_os_lua_vision.inc: $(WRITER_DIR)/solar_os_lua_media.inc
 	@mkdir -p generated/vision
@@ -704,6 +720,9 @@ test: $(TARGETS)
 	./script_media_rtsp_test
 	./raster_image_test
 	./vision_test
+	./inference_test
+	./inference_lua_bindings_test
+	./inference_schema_test
 	./vision_lua_bindings_test
 	./media_lua_bindings_test
 	./camera_expansion_test

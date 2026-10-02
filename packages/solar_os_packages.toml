@@ -56,6 +56,11 @@ label = "QR vision"
 category = "Media"
 members = ["service_vision"]
 
+[groups.inference]
+label = "Model inference"
+category = "Media"
+members = ["service_inference"]
+
 [groups.control_bindings]
 label = "Control bindings"
 category = "System"
@@ -1101,6 +1106,13 @@ depends = ["service_image"]
 sources = ["services/solar_os_vision.c"]
 requires = ["quirc"]
 capabilities = ["psram"]
+
+[packages.service_inference]
+label = "service.inference"
+sources = ["services/solar_os_inference.c", "services/solar_os_inference_espdl.cpp"]
+requires = ["esp-dl", "espdl_schema", "esp_timer"]
+capabilities = ["psram"]
+targets = ["esp32s3"]
 
 [packages.service_document]
 label = "media.document"

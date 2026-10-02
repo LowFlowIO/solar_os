@@ -26,3 +26,6 @@ tests/host/ble_multi_peer_test
 tests/host/ble_hid_test
 tests/host/vision_test
 tests/host/vision_lua_bindings_test
+tests/host/inference_test
+tests/host/inference_lua_bindings_test
+tests/host/inference_schema_test

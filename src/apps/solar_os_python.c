@@ -8665,6 +8665,7 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_gfx_text_obj, 3, 3, solaros_gfx_text
 #endif
 
 #include "solar_os_python_media.inc"
+#include "solar_os_python_inference.inc"
 
 static void python_module_store(mp_obj_t module, const char *name, mp_obj_t value)
 {
@@ -9005,6 +9006,7 @@ esp_err_t solar_os_python_run(const solar_os_script_run_request_t *request,
 #if SOLAR_OS_PACKAGE_SERVICE_NET
     python_net_destroy();
 #endif
+    python_inference_destroy();
     python_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     python_http_stream_destroy();
@@ -9220,6 +9222,7 @@ static void python_task(void *arg)
 #if SOLAR_OS_PACKAGE_SERVICE_NET
         python_net_destroy();
 #endif
+        python_inference_destroy();
         python_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
         python_http_stream_destroy();
@@ -9669,10 +9672,11 @@ static void python_stop(solar_os_context_t *ctx)
                                            NULL,
                                            PYTHON_STOP_WAIT_MS,
                                            20U)) {
-            /* A live media session can be inside a driver capture/release or
-             * joining its RTSP worker. Never delete that owner task mid-call.
+            /* Media or inference can be inside a driver or joining a native
+             * worker. Never delete that owner task mid-call.
              * Interpreter cancellation remains active while we wait. */
-            while (__atomic_load_n(&python_media_session, __ATOMIC_ACQUIRE) != NULL &&
+            while ((__atomic_load_n(&python_media_session, __ATOMIC_ACQUIRE) != NULL ||
+                    python_inference_active()) &&
                    !python_task_stopped(NULL)) {
                 (void)solar_os_script_wait_for_stop(python_task_stopped, NULL,
                     PYTHON_STOP_WAIT_MS, 20U);
@@ -9732,6 +9736,7 @@ static void python_stop(solar_os_context_t *ctx)
 #if SOLAR_OS_PACKAGE_SERVICE_NET
     python_net_destroy();
 #endif
+    python_inference_destroy();
     python_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     python_http_stream_destroy();
