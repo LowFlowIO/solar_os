@@ -9,8 +9,15 @@ packages_any = []
 +++
 # Browse and refresh documentation
 
-SolarOS always carries a manual in firmware, so `man` and the agent reference
-tool work without a network connection.
+SolarOS carries a small setup and recovery guide in firmware, together with a
+searchable directory of the topics available in the current build. Full guides
+and scripting API references come from the downloaded manual. Before that
+manual is installed, other topics explain how to download it.
+
+The built-in guide covers documentation setup, Wi-Fi connection, storage mounts,
+firmware updates, basic diagnostics, and session controls. Run `commands` to
+list the commands in this firmware, `man --list` to list manual topics, or
+`man -k QUERY` to search the topic directory.
 
 Run `help` to open the foreground documentation browser. Topics are grouped in
 a tree with all groups initially folded. Use Left and Right or Enter on a group
@@ -22,16 +29,26 @@ document content.
 
 ## Refresh from solar-os.eu
 
-On devices with Wi-Fi, PSRAM, and an SD card, the same manual can be refreshed
-without installing new firmware.
+On devices with Wi-Fi, PSRAM, and an SD card, install or refresh the full manual
+without installing new firmware. The downloaded manual remains available
+without a network connection while the SD card is mounted. Devices without
+download support retain the setup and recovery guide; the full manual is also
+available at [solar-os.eu](https://solar-os.eu/).
 
 First connect Wi-Fi, inspect the available persistent disks, and mount the
 default removable volume if necessary:
 
 ```text
+wifi on
 disk lsblk
 disk mount
 ```
+
+Use the display Wi-Fi menu with `wifi`, or connect from a text shell with
+`wifi connect SSID PASSWORD`. Run `man command.wifi` for saved-network and
+connection commands. `disk lsblk` lists the detected volumes; `disk mount`
+mounts the default removable volume. Run `man command.disk` if you need to
+select a different volume.
 
 Then run:
 
@@ -78,4 +95,6 @@ exact-version manual on SD, and activates it only after signature, size, and
 SHA-256 verification. Use
 `help command.status` for the command page rather than the maintenance status.
 `help reset` immediately returns `man`, `help`, and the agent to the embedded
-manual. Refreshing requires Wi-Fi, PSRAM, and SD.
+setup and recovery guide. Full topic guides and scripting API references
+require the downloaded manual. Refreshing requires Wi-Fi, PSRAM, and SD; the
+installed manual can be read offline while its storage is mounted.

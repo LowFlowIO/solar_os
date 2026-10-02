@@ -9,6 +9,7 @@
 #include "solar_os_memory.h"
 
 static bool external_active = true;
+static bool external_file_available = true;
 
 static const solar_os_manual_page_t external_pages[] = {
     {
@@ -54,10 +55,20 @@ const solar_os_manual_page_t *solar_os_docs_manual_get(size_t index)
 
 esp_err_t solar_os_docs_load_page(const char *id, char **body, size_t *body_len)
 {
-    (void)id;
-    (void)body;
-    (void)body_len;
-    return ESP_ERR_NOT_FOUND;
+    if (!external_active || !external_file_available ||
+        strcmp(id, "overview") != 0) {
+        return ESP_ERR_NOT_FOUND;
+    }
+    const char *source = "+++\nid = \"overview\"\n+++\n"
+                         "# Downloaded overview\n\n"
+                         "The complete downloaded guide.\n\n"
+                         "## Quick reference\n\n"
+                         "The complete downloaded API contract.\n";
+    *body_len = strlen(source);
+    *body = malloc(*body_len + 1U);
+    assert(*body != NULL);
+    memcpy(*body, source, *body_len + 1U);
+    return ESP_OK;
 }
 
 void *solar_os_memory_alloc(size_t size,
@@ -86,9 +97,41 @@ int main(void)
     assert(matches[0] == &external_pages[1]);
     assert(solar_os_manual_reference_count() == 0U);
 
+    page = solar_os_manual_find("overview");
+    const char *text = NULL;
+    size_t text_len = 0U;
+    bool owned = false;
+    assert(solar_os_manual_load_body(page, &text, &text_len, &owned) == ESP_OK);
+    assert(owned && strstr(text, "complete downloaded guide") != NULL);
+    solar_os_manual_release_text(text, owned);
+    assert(solar_os_manual_load_markdown(page, &text, &text_len, &owned) == ESP_OK);
+    assert(owned && strstr(text, "# Downloaded overview") != NULL);
+    assert(strstr(text, "+++") == NULL);
+    solar_os_manual_release_text(text, owned);
+    assert(solar_os_manual_load_contract(page, &text, &text_len, &owned) == ESP_OK);
+    assert(owned && strcmp(text, "\nThe complete downloaded API contract.") == 0);
+    solar_os_manual_release_text(text, owned);
+
+    external_file_available = false;
+    assert(solar_os_manual_load_body(page, &text, &text_len, &owned) == ESP_OK);
+    assert(!owned && strcmp(text, "embedded body") == 0);
+
     external_active = false;
     assert(solar_os_manual_count() == solar_os_manual_embedded_count());
     assert(solar_os_manual_find("overview") == solar_os_manual_embedded_get(1U));
-    assert(solar_os_manual_reference_count() > 0U);
+    assert(solar_os_manual_reference_count() == 0U);
+    page = solar_os_manual_find("help");
+    assert(solar_os_manual_load_body(page, &text, &text_len, &owned) == ESP_OK);
+    assert(!owned && strstr(text, "wifi connect SSID PASSWORD") != NULL);
+    assert(strstr(text, "disk mount") != NULL);
+    assert(strstr(text, "help update") != NULL);
+    page = solar_os_manual_find("python.network");
+    assert(page != NULL);
+    assert(solar_os_manual_load_body(page, &text, &text_len, &owned) == ESP_OK);
+    assert(!owned && strstr(text, "downloadable manual") != NULL);
+    assert(strstr(text, "post(url") == NULL);
+    const char *body = text;
+    assert(solar_os_manual_load_markdown(page, &text, &text_len, &owned) == ESP_OK);
+    assert(!owned && text == body);
     return 0;
 }
