@@ -251,7 +251,7 @@ static void docs_app_header(char *line, size_t line_len)
 #endif
     snprintf(line,
              line_len,
-             "SolarOS manual  %u topics  embedded",
+             "SolarOS manual  %u topics  setup guide",
              (unsigned)count);
 }
 

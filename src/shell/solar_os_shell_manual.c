@@ -426,7 +426,7 @@ static void docs_print_status(solar_os_shell_io_t *io)
     solar_os_shell_io_printf(io, "Firmware: %s\n", SOLAR_OS_VERSION);
     solar_os_shell_io_printf(io,
                              "External manual: %s\n",
-                             status.available ? "active" : "embedded fallback");
+                             status.available ? "active" : "built-in setup guide");
     if (status.available) {
         solar_os_shell_io_printf(io,
                                  "Manual version: %s%s\n",
@@ -502,7 +502,7 @@ void solar_os_shell_cmd_help(solar_os_context_t *ctx, int argc, char **argv)
     }
 #else
     if (argc == 2 && strcmp(argv[1], "status") == 0) {
-        solar_os_shell_io_writeln(io, "External manual: embedded");
+        solar_os_shell_io_writeln(io, "Manual: built-in setup guide");
         solar_os_shell_io_writeln(io, "Updates: unavailable on this build");
         return;
     }

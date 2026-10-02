@@ -1,7 +1,9 @@
 import importlib.util
+import io
 import json
 import re
 import unittest
+import zipfile
 from pathlib import Path
 
 
@@ -14,6 +16,64 @@ SPEC.loader.exec_module(generate_manual)
 
 
 class ManualReleaseLimitTest(unittest.TestCase):
+    def test_embedded_manual_is_a_small_setup_guide_and_topic_directory(self):
+        pages = generate_manual.load_pages(
+            REPOSITORY / "doc/manual",
+            REPOSITORY / "packages/solar_os_packages.toml",
+        )
+        header = generate_manual.render_header(pages, REPOSITORY / "doc/manual")
+        by_id = {str(page["id"]): page for page in pages}
+
+        for page in pages:
+            self.assertIn(f'.id = "{page["id"]}"', header)
+        setup_topics = (
+            generate_manual.EMBEDDED_GUIDE_TOPICS
+            | generate_manual.EMBEDDED_REFERENCE_TOPICS
+        )
+        self.assertLessEqual(len(setup_topics), 20)
+        self.assertTrue(setup_topics <= by_id.keys())
+        for topic in ("help", "command.wifi", "command.disk", "command.ota"):
+            self.assertIn(topic, setup_topics)
+        for topic in ("python.network", "lua.hardware", "app.gameboy"):
+            self.assertNotIn(topic, setup_topics)
+            self.assertNotIn(generate_manual.c_string(str(by_id[topic]["body"])), header)
+            self.assertNotIn(generate_manual.c_string(str(by_id[topic]["markdown"])), header)
+        self.assertNotIn('.page_id = "python', header)
+
+        # Bound the embedded string payload independently of generated C syntax.
+        # The old payload was about 2 MiB; the directory and setup guide must
+        # remain below 96 KiB even with all package gates enabled.
+        literals = {
+            json.loads(literal)
+            for literal in re.findall(r'"(?:[^"\\]|\\.)*"', header)
+        }
+        self.assertLess(
+            sum(len(literal.encode("utf-8")) + 1 for literal in literals),
+            96 * 1024,
+        )
+
+    def test_downloaded_manual_retains_full_guides_and_api_references(self):
+        pages = generate_manual.load_pages(
+            REPOSITORY / "doc/manual",
+            REPOSITORY / "packages/solar_os_packages.toml",
+        )
+        archive = generate_manual.build_archive(pages)
+        catalog = json.loads(generate_manual.render_catalog(pages, "4.15.17", archive))
+        catalog_pages = {page["id"]: page for page in catalog["pages"]}
+        with zipfile.ZipFile(io.BytesIO(archive)) as download:
+            self.assertEqual(len(download.namelist()), len(pages))
+            for page in pages:
+                self.assertEqual(
+                    download.read(f'manual/{page["id"]}.md'),
+                    str(page["release_markdown"]).encode("utf-8"),
+                )
+                self.assertEqual(
+                    catalog_pages[page["id"]]["reference"], page["contract"]
+                )
+        network = next(page for page in pages if page["id"] == "python.network")
+        self.assertIn("status_code", str(network["body"]))
+        self.assertIn("solaros.http", str(network["markdown"]))
+
     def test_release_limit_matches_firmware(self):
         docs_header = (
             REPOSITORY / "src/services/solar_os_docs.h"
