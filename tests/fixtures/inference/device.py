@@ -53,7 +53,8 @@ for name, dtype, fmt, width in [("arithmetic_int8", "int8", "<8b", 4),
     fails(inference.run, handle, {"a": av, "b": bv}, 0)
     fails(inference.run, handle, {"a": av, "b": bv}, 60001)
     fails(inference.run, handle, {"a": av, "b": bv}, 1)
-    recovered = inference.run(handle, {"a": av, "b": bv})
+    # Recovery must also fit below the former 100 ms worker-reap delay.
+    recovered = inference.run(handle, {"a": av, "b": bv}, 50)
     assert list(struct.unpack(fmt, recovered["outputs"]["sum"]["data"])) == expected["sum"] * repeats
     fails(inference.load, "/inference-hil/missing.espdl")
     fails(inference.load, "/inference-hil/corrupt.espdl")

@@ -9,6 +9,10 @@ image preprocessing, camera ownership, or a task-specific model adapter.
 `arithmetic_simd_int8.espdl` widens the int8 ports to `[2,16]`, exercising the
 ESP32-S3 vector Add/Sub path with four repetitions of the reference values.
 
+`arithmetic_optional.espdl` includes an unnamed internal value-info placeholder,
+as used by compatible exporters for omitted optional operator inputs. The schema
+suite accepts it while continuing to reject unnamed public input/output ports.
+
 `arithmetic_oversized.espdl` has the same int8 graph with `[1024,4096]` ports;
 its workspace exceeds an 8 MiB PSRAM board. Use it to check load failure and
 subsequent recovery, rather than running numerical inference.

@@ -56,10 +56,8 @@ void solar_os_task_delete_internal(TaskHandle_t t)
 {
     assert(!pthread_join(t->thread, NULL)); free(t); atomic_fetch_sub(&workers, 1);
 }
-bool solar_os_task_wait_done(TaskHandle_t task, volatile bool *done, uint32_t ms)
-{
-    (void)task; (void)ms; vTaskDelay(1); return __atomic_load_n(done, __ATOMIC_ACQUIRE);
-}
+/* Deliberately provide no solar_os_task_wait_done implementation: inference's
+ * owner-deleted worker must not use the self-delete helper and its reap delay. */
 struct solar_os_inference_backend { int resets; };
 static esp_err_t tensor(solar_os_inference_tensor_t *t, const char *name)
 {
@@ -164,6 +162,12 @@ int main(void)
     cancellation = 0;
     assert(solar_os_inference_run(s, id, inputs, 2, 5, &r) == ESP_ERR_TIMEOUT);
     atomic_store(&backend_wait, 0);
+    /* A completed operation must succeed with a budget below the old 100 ms
+     * reap delay. Existing cancellation tests also require worker join before
+     * releasing backend/work/result allocations. */
+    assert(solar_os_inference_run(s, id, inputs, 2, 50, &r) == ESP_OK);
+    solar_os_inference_result_free(r);
+    assert(allocations == baseline && !workers);
     for (int repeat = 0; repeat < 75; ++repeat) {
         assert(solar_os_inference_run(s, id, inputs, 2, 1000, &r) == ESP_OK);
         for (size_t j = 0; j < 8; ++j) {

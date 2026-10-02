@@ -127,6 +127,8 @@ static void worker(void *user)
         &w->model->backend, &w->model->info) :
         solar_os_inference_backend_run(w->model->backend, w->inputs, w->count,
             progress, w, w->result);
+    /* Publishing completion is the worker's last access to shared work. The
+     * owner deletes this task; it must not self-delete or touch w afterward. */
     __atomic_store_n(&w->done, true, __ATOMIC_RELEASE);
     vTaskSuspend(NULL);
 }
@@ -141,11 +143,14 @@ static esp_err_t execute(solar_os_inference_t *s, inference_work_t *w, uint32_t 
         w, tskIDLE_PRIORITY + 1, &task, tskNO_AFFINITY,
         SOLAR_OS_TASK_ROLE_FOREGROUND) != pdPASS) return ESP_ERR_NO_MEM;
     bool cancelled = false;
-    while (!solar_os_task_wait_done(task, &w->done, SOLAR_OS_TASK_STOP_POLL_MS)) {
+    /* This worker suspends for owner deletion. The generic wait helper's reap
+     * delay is for self-deleting tasks and adds latency to every operation. */
+    while (!__atomic_load_n(&w->done, __ATOMIC_ACQUIRE)) {
         if ((s->cancel && s->cancel(s->user)) || esp_timer_get_time() >= w->deadline) {
             cancelled = true;
             __atomic_store_n(&w->cancel, true, __ATOMIC_RELEASE);
         }
+        vTaskDelay(1);
     }
     solar_os_task_delete_internal(task);
     if ((s->cancel && s->cancel(s->user)) || progress(w)) cancelled = true;

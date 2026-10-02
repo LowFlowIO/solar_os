@@ -26,6 +26,7 @@ def generate(flatc: str) -> None:
             "TypeInfo", "ValueInfo", "Attribute", "Node", "Graph", "Model")}
         for suffix, dtype, quant, dimensions in [("int8", 3, "S8", [2, 4]),
                 ("float32", 1, "F32", [2, 4]), ("simd_int8", 3, "S8", [2, 16]),
+                ("optional", 3, "S8", [2, 4]),
                 ("oversized", 3, "S8", [1024, 4096])]:
             b = flatbuffers.Builder(2048)
 
@@ -69,9 +70,12 @@ def generate(flatc: str) -> None:
             output_ports = [port("sum"), port("difference")]
             inputs = vector(input_ports)
             outputs = vector(output_ports)
+            values = input_ports + output_ports
+            if suffix == "optional":
+                values.append(port(""))  # Exporter placeholder for omitted optional inputs.
             graph = table("Graph", {"Node": nodes, "Name": b.CreateString("SolarOS numerical fixture"),
                                     "Input": inputs, "Output": outputs,
-                                    "Initializer": vector([]), "ValueInfo": vector(input_ports + output_ports),
+                                    "Initializer": vector([]), "ValueInfo": vector(values),
                                     "TestInputsValue": vector([]), "TestOutputsValue": vector([])})
             model = table("Model", {"IrVersion": 1, "ProducerName": b.CreateString("SolarOS fixture generator"),
                                     "ModelVersion": 1, "Graph": graph})

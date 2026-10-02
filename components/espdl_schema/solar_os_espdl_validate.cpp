@@ -15,11 +15,14 @@ static bool name_ok(const flatbuffers::String *s)
         !std::memchr(s->c_str(), 0, s->size());
 }
 static bool ports_ok(const flatbuffers::Vector<flatbuffers::Offset<espdl::ValueInfo>> *ports,
-    size_t max = SOLAR_OS_INFERENCE_PORTS_MAX)
+    size_t max = SOLAR_OS_INFERENCE_PORTS_MAX, bool optional_placeholders = false)
 {
     if (!ports || !ports->size() || ports->size() > max) return false;
     std::set<std::string> names;
     for (auto p : *ports) {
+        /* Exported value_info may contain the unnamed placeholder used for
+         * omitted optional operator inputs. It is not a public tensor port. */
+        if (optional_placeholders && p && p->name() && !p->name()->size()) continue;
         if (!p || !name_ok(p->name()) || !names.emplace(p->name()->str()).second ||
             !p->value_info_type()) return false;
         auto t = p->value_info_type()->value_as_tensor_type();
@@ -54,7 +57,7 @@ extern "C" esp_err_t solar_os_espdl_validate(const uint8_t *data, size_t size,
     auto model = espdl::GetModel(data + header);
     auto graph = model->graph();
     if (!graph || !ports_ok(graph->input()) || !ports_ok(graph->output()) ||
-        !graph->initializer() || !ports_ok(graph->value_info(), 65536) ||
+        !graph->initializer() || !ports_ok(graph->value_info(), 65536, true) ||
         !graph->test_inputs_value() || !graph->test_outputs_value() ||
         !graph->node() || !graph->node()->size() || graph->node()->size() > 4096)
         return ESP_ERR_INVALID_RESPONSE;

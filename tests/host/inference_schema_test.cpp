@@ -15,11 +15,18 @@ static esp_err_t validate(const std::vector<uint8_t> &bytes)
 }
 int main()
 {
-    for (const char *name : {"arithmetic_int8", "arithmetic_float32", "arithmetic_simd_int8", "arithmetic_oversized"}) {
+    for (const char *name : {"arithmetic_int8", "arithmetic_float32", "arithmetic_simd_int8", "arithmetic_optional", "arithmetic_oversized"}) {
         std::ifstream file(std::string("../fixtures/inference/") + name + ".espdl", std::ios::binary);
         assert(file);
         std::vector<uint8_t> original((std::istreambuf_iterator<char>(file)), {});
         assert(validate(original) == ESP_OK);
+        /* An unnamed internal placeholder is legal, but public ports must
+         * always have a nonempty exported name. */
+        auto unnamed = original;
+        auto input_name = espdl::GetModel(unnamed.data() + 16)->graph()->input()->Get(0)->name();
+        flatbuffers::WriteScalar<flatbuffers::uoffset_t>(
+            const_cast<uint8_t *>(reinterpret_cast<const uint8_t *>(input_name)), 0);
+        assert(validate(unnamed) == ESP_ERR_INVALID_RESPONSE);
         for (size_t size = 0; size < original.size(); ++size) {
             auto bytes = original; bytes.resize(size);
             assert(validate(bytes) != ESP_OK);

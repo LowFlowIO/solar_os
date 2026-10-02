@@ -41,7 +41,8 @@ for _, model in ipairs({{"arithmetic_int8","int8","bbbbbbbb",4},
     typed.dtype=dtype .. "\0suffix"; fails(inference.run,handle,{a=typed,b=bv}); typed.dtype=dtype
     typed.shape={1,8}; fails(inference.run,handle,{a=typed,b=bv})
     fails(inference.run,handle,{a=av,b=bv},1)
-    local recovered = inference.run(handle,{a=av,b=bv})
+    -- Recovery must also fit below the former 100 ms worker-reap delay.
+    local recovered = inference.run(handle,{a=av,b=bv},50)
     check(recovered.outputs.sum.data,fmt,false)
     fails(inference.load,"/inference-hil/missing.espdl")
     fails(inference.load,"/inference-hil/corrupt.espdl")
