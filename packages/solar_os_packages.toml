@@ -487,6 +487,11 @@ label = "SSD1683 e-paper display"
 category = "Expansion hardware"
 members = ["expansion_ssd1683"]
 
+[groups.ssd1677]
+label = "SSD1677 e-paper display"
+category = "Expansion hardware"
+members = ["expansion_ssd1677"]
+
 [groups.ssd1306]
 label = "SSD1306 OLED display"
 category = "Expansion hardware"
@@ -522,6 +527,11 @@ label = "BHI260AP IMU"
 category = "Expansion hardware"
 members = ["bhi260ap"]
 
+[groups.qmi8658]
+label = "QMI8658 IMU"
+category = "Expansion hardware"
+members = ["qmi8658"]
+
 [groups.drv2605]
 label = "DRV2605 haptic controller"
 category = "Expansion hardware"
@@ -531,6 +541,11 @@ members = ["drv2605"]
 label = "BQ25896 battery charger"
 category = "Expansion hardware"
 members = ["bq25896"]
+
+[groups.axp2101]
+label = "AXP2101 power manager"
+category = "Expansion hardware"
+members = ["axp2101"]
 
 [groups.xl9555]
 label = "XL9555 GPIO controller"
@@ -1455,6 +1470,43 @@ sources = [
 requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
 capabilities = ["gfx", "expansion_gpio"]
 
+[packages.expansion_ssd1677]
+label = "expansion.ssd1677"
+targets = ["esp32s3"]
+expansion_drivers = ["solar_os_ssd1677_expansion_driver"]
+depends = ["axp2101", "service_expansion", "service_spi"]
+sources = [
+  "board/solar_os_board_display_expansion.c",
+  "drivers/epd_ssd1677.c",
+  "services/solar_os_ssd1677.c",
+  "services/solar_os_ssd1677_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
+capabilities = ["gfx"]
+
+[packages.driver_axp2101]
+label = "driver.axp2101"
+targets = ["esp32s3"]
+sources = ["drivers/axp2101.c"]
+
+[packages.axp2101]
+label = "expansion.axp2101"
+targets = ["esp32s3"]
+expansion_drivers = ["solar_os_axp2101_expansion_driver"]
+depends = [
+  "driver_axp2101",
+  "service_battery",
+  "service_charger",
+  "service_expansion",
+  "service_i2c",
+]
+sources = [
+  "services/solar_os_axp2101.c",
+  "services/solar_os_axp2101_driver.c",
+]
+requires = ["esp_driver_i2c"]
+capabilities = ["i2c"]
+
 [packages.expansion_ssd1306]
 label = "expansion.ssd1306"
 expansion_drivers = [
@@ -1534,6 +1586,19 @@ sources = [
 ]
 requires = ["esp_driver_gpio", "esp_timer"]
 capabilities = ["expansion_gpio", "expansion_i2c"]
+
+[packages.qmi8658]
+label = "expansion.qmi8658"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_qmi8658_expansion_driver"]
+depends = ["service_expansion", "service_i2c", "service_imu"]
+sources = [
+  "drivers/qmi8658.c",
+  "services/solar_os_qmi8658.c",
+  "services/solar_os_qmi8658_driver.c",
+]
+requires = ["esp_timer"]
+capabilities = ["i2c"]
 
 [packages.drv2605]
 label = "expansion.drv2605"

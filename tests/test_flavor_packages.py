@@ -196,6 +196,7 @@ class FlavorPackagesTest(unittest.TestCase):
             "rotary_encoder": "rotary_encoder",
             "bq27220": "bq27220",
             "bq25896": "bq25896",
+            "qmi8658": "qmi8658",
         }
         for group, package in reusable.items():
             with self.subTest(group=group):
@@ -223,6 +224,7 @@ class FlavorPackagesTest(unittest.TestCase):
             "solar_os_rotary_encoder_expansion_driver",
             "solar_os_bq27220_expansion_driver",
             "solar_os_bq25896_expansion_driver",
+            "solar_os_qmi8658_expansion_driver",
         ):
             self.assertIn(symbol, drivers)
 
@@ -436,6 +438,44 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertEqual(
             self.catalog.package_defs["expansion_ssd1683"].capabilities,
             ("gfx", "expansion_gpio"),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["expansion_ssd1677"].depends,
+            ("axp2101", "service_expansion", "service_spi"),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["expansion_ssd1677"].capabilities,
+            ("gfx",),
+        )
+        self.assertEqual(
+            self.catalog.group_defs["axp2101"].members,
+            ("axp2101",),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["axp2101"].depends,
+            (
+                "driver_axp2101", "service_battery", "service_charger",
+                "service_expansion", "service_i2c",
+            ),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["driver_axp2101"].sources,
+            ("drivers/axp2101.c",),
+        )
+        self.assertEqual(
+            self.catalog.group_defs["qmi8658"].members,
+            ("qmi8658",),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["qmi8658"].depends,
+            ("service_expansion", "service_i2c", "service_imu"),
+        )
+        self.assertEqual(
+            self.catalog.package_defs["qmi8658"].sources,
+            (
+                "drivers/qmi8658.c", "services/solar_os_qmi8658.c",
+                "services/solar_os_qmi8658_driver.c",
+            ),
         )
         self.assertEqual(
             self.catalog.package_defs["service_espnow"].depends,

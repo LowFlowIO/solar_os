@@ -72,7 +72,8 @@ Both use the generic audio backend; a board with built-in audio declares a
 fixed default attachment instead of compiling a separate board adapter.
 The `driver.display-st7305`, `driver.display-st7796`,
 `driver.display-st7789`, `driver.display-ili9341`, `driver.display-cvbs-pal`,
-`driver.display-vga32`, and `expansion.ssd1683` packages use the same model.
+`driver.display-vga32`, `expansion.ssd1677`, and `expansion.ssd1683` packages use
+the same model.
 Each package registers an expansion driver and a board with that integrated
 panel declares an immutable early `display0` attachment. SSD1683, ST7305,
 ST7796, and ILI9341 are available on both ESP32 and ESP32-S3; ST7789 is
@@ -85,6 +86,24 @@ Elecrow declares the same driver as its fixed primary display. Automatic mode
 uses changed-frame partial windows when the panel profile supports them; the
 dual-controller 792x272 profile transfers both RAM halves with the panel's
 partial-update waveform.
+`expansion.ssd1677` follows the same resource model for 800x480 panels. Its
+automatic mode uses byte-aligned dirty windows and periodic full cleanup
+refreshes. It can control a GPIO power gate or the AXP2101 ALDO3 rail used by
+the Waveshare ESP32-S3-ePaper-3.97 fixed `display0`. PMIC-controlled panels use
+the attached `expansion.axp2101` service, which owns the I2C address and serializes
+rail control with battery and charger operations. The panel holds an exclusive
+ALDO3 lease and prevents PMIC detach until the panel is detached.
+`expansion.axp2101` verifies the PMIC identity, enables its battery ADC and fuel
+gauge, and publishes battery percentage, voltage, external-power, charging,
+and charger-control data through the common battery and charger services. The
+Waveshare board declares it as the fixed early `power0` attachment and exposes
+the charger as `charger0`.
+`expansion.qmi8658` configures the six-axis IMU for the Waveshare reference
+profile's 8 g accelerometer and 512 degrees-per-second gyroscope ranges at
+1 kHz, then publishes SI-unit acceleration and angular velocity through
+`imu0`. It polls the data-ready register, so the fixed board attachment does
+not claim either interrupt pin. It attaches after the early display setup and
+uses the board-device retry policy if the sensor is not ready at startup.
 `expansion.cardkb` polls the M5Stack Unit CardKB at its fixed I2C address and
 publishes its character taps and navigation keys through the shared input
 service used by shells and foreground apps.

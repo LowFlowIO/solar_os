@@ -1,0 +1,29 @@
+schema = 1
+extends = "qdtech_es3n28p"
+
+[board]
+id = "qdtech_es3c28p"
+name = "QDtech ES3C28P 2.8-inch ESP32-S3 Touch Display"
+
+[build]
+drivers = ["pointer_ft6336"]
+capabilities = ["pointer"]
+
+[defines]
+SOLAR_OS_BOARD_PIN_TOUCH_INT = "GPIO_NUM_17"
+SOLAR_OS_BOARD_PIN_TOUCH_RST = "GPIO_NUM_18"
+
+[[devices]]
+driver = "ft6336"
+name = "touch0"
+bindings = { i2c = "i2c0", addr = 0x38, reset = 18, irq = 17, rotation = 1 }
+
+[[pins]]
+gpio = 17
+policy = "fixed"
+role = "touch interrupt"
+
+[[pins]]
+gpio = 18
+policy = "fixed"
+role = "touch reset"
