@@ -19,6 +19,8 @@ agent_reference_sections = true
   or `capture(path[, size[, quality[, source]]])`.
 - Native decode/presentation: `solaros.image.from_frame(frame)`,
   `decode(data)`, `present(image, x, y[, width, height])`, and `close(image)`.
+- QR detection: `solaros.vision.qrcodes(image[, options])` when `service.vision`
+  is compiled; see [QR vision](vision.md) for payloads, regions, and results.
 - Network receiver: `solaros.rtsp.open(url[, video[, audio]])`,
   `status(handle)`, `read_frame(handle[, timeout_ms])`,
   `lateness(handle, frame)`, and `close(handle)`.
@@ -146,6 +148,15 @@ wall-clock time. Local camera timestamps are capture timestamps.
 Current RTSP restrictions are unchanged: trusted LAN, UDP media, JPEG/L16,
 IPv4/hostnames, and no URL credentials/authentication or TCP-interleaved media.
 Interpreters are never called from network/audio tasks.
+
+## QR detection
+
+`solaros.vision.qrcodes(image[, options])` processes an existing native image
+handle. Release a camera/RTSP frame after `image.from_frame` and before detection.
+Results contain binary string payloads and original-image corner coordinates;
+they remain valid after the image is closed. Processing is limited to 640 by
+480 and eight decoded codes. Use `pcall` to close the image on error. See
+[QR vision](vision.md) for crop/resize options, result fields, and examples.
 
 ## Cleanup
 

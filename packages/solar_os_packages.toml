@@ -51,6 +51,11 @@ label = "RTSP streaming"
 category = "Networking"
 members = ["job_rtspd", "app_rtsp"]
 
+[groups.vision]
+label = "QR vision"
+category = "Media"
+members = ["service_vision"]
+
 [groups.control_bindings]
 label = "Control bindings"
 category = "System"
@@ -1089,6 +1094,13 @@ sources = [
   "services/solar_os_rtp_jpeg.c",
   "services/solar_os_rtsp.c",
 ]
+
+[packages.service_vision]
+label = "service.vision"
+depends = ["service_image"]
+sources = ["services/solar_os_vision.c"]
+requires = ["quirc"]
+capabilities = ["psram"]
 
 [packages.service_document]
 label = "media.document"

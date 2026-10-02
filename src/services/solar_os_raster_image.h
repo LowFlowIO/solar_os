@@ -8,6 +8,25 @@
 typedef struct solar_os_gfx solar_os_gfx_t;
 typedef struct solar_os_raster_image solar_os_raster_image_t;
 
+typedef struct {
+    const uint8_t *data;
+    size_t length;
+    size_t stride;
+    uint32_t width, height;
+} solar_os_raster_image_pixels_t;
+
+typedef enum {
+    SOLAR_OS_RASTER_IMAGE_GRAY8,
+    SOLAR_OS_RASTER_IMAGE_RGB565_LE,
+    SOLAR_OS_RASTER_IMAGE_RGB888,
+} solar_os_raster_image_format_t;
+
+typedef struct {
+    uint32_t x, y, width, height; /* Zero dimensions select the remaining image. */
+    uint32_t output_width, output_height; /* Zero selects the crop dimension. */
+    solar_os_raster_image_format_t format;
+} solar_os_raster_image_convert_options_t;
+
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -26,6 +45,17 @@ void solar_os_raster_image_release(solar_os_raster_image_t *image);
 
 uint32_t solar_os_raster_image_width(const solar_os_raster_image_t *image);
 uint32_t solar_os_raster_image_height(const solar_os_raster_image_t *image);
+
+/* Borrow immutable RGB888 pixels. Keep an image reference for the entire use;
+ * this view does not retain the image and is never an interpreter buffer. */
+esp_err_t solar_os_raster_image_pixels(const solar_os_raster_image_t *image,
+                                      solar_os_raster_image_pixels_t *pixels);
+/* Copy/convert a crop into caller-owned storage using nearest-neighbour resize.
+ * The destination must not overlap image pixels. Stride zero selects packed
+ * rows. No allocation or modification of the source image occurs. */
+esp_err_t solar_os_raster_image_convert(const solar_os_raster_image_t *image,
+    const solar_os_raster_image_convert_options_t *options,
+    uint8_t *destination, size_t length, size_t stride);
 
 /* Draw with nearest-neighbour scaling and display clipping. A zero width or
  * height selects the source dimension for that axis. */

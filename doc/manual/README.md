@@ -259,6 +259,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Python storage and files API](python.storage.md) — Storage and files: storage
 - [Python text user-interface API](python.tui.md) — Build terminal applications from MicroPython
 - [Python time and scheduling API](python.time.md) — Time and scheduling: time, rtc, schedule
+- [QR vision](vision.md) — Read QR payloads and image coordinates from stored images, cameras, or received JPEG frames
 
 ## System services
 

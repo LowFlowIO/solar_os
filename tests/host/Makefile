@@ -24,6 +24,8 @@ TARGETS += rgb565_raster_test
 TARGETS += rtspd_completion_test
 TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
+TARGETS += vision_test
+TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
 
@@ -58,6 +60,20 @@ messaging_service_test: messaging_service_test.c $(ROOT)/src/services/solar_os_c
 raster_image_test: raster_image_test.c $(ROOT)/src/services/solar_os_raster_image.c
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -I. -I$(ROOT)/src -I$(ROOT)/src/services \
 		-I$(ROOT)/components/stb_image/include -I$(ROOT)/components/webp_decoder/include $^ -o $@
+
+QUIRC_DIR := $(ROOT)/components/quirc/lib
+QUIRC_HOST_OBJECTS := $(addprefix generated/vision/,$(notdir $(patsubst %.c,%.o,$(wildcard $(QUIRC_DIR)/*.c))))
+generated/vision/%.o: $(QUIRC_DIR)/%.c $(QUIRC_DIR)/quirc.h $(QUIRC_DIR)/quirc_internal.h
+	@mkdir -p generated/vision
+	$(CC) $(CFLAGS) -Wno-sign-compare -Wno-unused-parameter \
+		-DQUIRC_FLOAT_TYPE=float -DQUIRC_USE_TGMATH=1 \
+		-Dmalloc=solar_os_quirc_malloc -Dcalloc=solar_os_quirc_calloc -Dfree=solar_os_quirc_free -c $< -o $@
+
+vision_test: vision_test.c $(ROOT)/src/services/solar_os_vision.c \
+		$(ROOT)/src/services/solar_os_raster_image.c $(QUIRC_HOST_OBJECTS)
+	$(CC) $(CFLAGS) -Wno-unused-function -D_POSIX_C_SOURCE=200809L -pthread \
+		-I$(ROOT)/src -Irtsp_stubs -I. -I$(ROOT)/src/services -I$(QUIRC_DIR) \
+		-I$(ROOT)/components/stb_image/include -I$(ROOT)/components/webp_decoder/include $^ -lm -o $@
 
 SCRIPT_MEDIA_TEST_SOURCES := script_media_test.c $(ROOT)/src/services/solar_os_script_media.c \
 	$(ROOT)/src/services/solar_os_stream.c $(ROOT)/src/services/solar_os_camera.c \
@@ -115,6 +131,18 @@ LUA_DIR := $(ROOT)/components/lua/lua/src
 LUA_TEST_SOURCES := $(filter-out $(LUA_DIR)/lua.c $(LUA_DIR)/luac.c \
 	$(LUA_DIR)/linit.c $(LUA_DIR)/liolib.c $(LUA_DIR)/loadlib.c $(LUA_DIR)/loslib.c, \
 	$(wildcard $(LUA_DIR)/*.c))
+
+generated/vision/solar_os_lua_vision.inc: $(WRITER_DIR)/solar_os_lua_media.inc
+	@mkdir -p generated/vision
+	python3 -c 'from pathlib import Path; s = Path("$<").read_text(); Path("$@").write_text(s[s.index("#if SOLAR_OS_PACKAGE_SERVICE_VISION"):])'
+
+vision_lua_bindings_test: vision_lua_bindings_test.c vision_test.c \
+		$(ROOT)/src/services/solar_os_vision.c $(ROOT)/src/services/solar_os_raster_image.c \
+		generated/vision/solar_os_lua_vision.inc $(QUIRC_HOST_OBJECTS) $(LUA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -Wno-unused-function -D_POSIX_C_SOURCE=200809L -pthread \
+		-Igenerated/vision -I$(ROOT)/src -Irtsp_stubs -I. -I$(ROOT)/src/services -I$(QUIRC_DIR) -I$(LUA_DIR) \
+		-I$(ROOT)/components/stb_image/include -I$(ROOT)/components/webp_decoder/include \
+		$(filter-out vision_test.c %.inc,$^) -lm -o $@
 
 media_lua_bindings_test: media_lua_bindings_test.c $(SCRIPT_MEDIA_TEST_SOURCES) \
 		$(WRITER_DIR)/solar_os_lua_media.inc $(LUA_TEST_SOURCES)
@@ -675,6 +703,8 @@ test: $(TARGETS)
 	./script_media_test
 	./script_media_rtsp_test
 	./raster_image_test
+	./vision_test
+	./vision_lua_bindings_test
 	./media_lua_bindings_test
 	./camera_expansion_test
 	./media_test

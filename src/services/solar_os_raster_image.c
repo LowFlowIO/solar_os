@@ -178,6 +178,74 @@ uint32_t solar_os_raster_image_height(const solar_os_raster_image_t *image)
     return image != NULL ? image->height : 0U;
 }
 
+esp_err_t solar_os_raster_image_pixels(const solar_os_raster_image_t *image,
+                                      solar_os_raster_image_pixels_t *pixels)
+{
+    if (!pixels) return ESP_ERR_INVALID_ARG;
+    *pixels = (solar_os_raster_image_pixels_t){0};
+    if (!image || !image->pixels) return ESP_ERR_INVALID_ARG;
+    *pixels = (solar_os_raster_image_pixels_t){
+        .data = image->pixels, .length = (size_t)image->width * image->height * 3U,
+        .stride = (size_t)image->width * 3U,
+        .width = image->width, .height = image->height,
+    };
+    return ESP_OK;
+}
+
+esp_err_t solar_os_raster_image_convert(const solar_os_raster_image_t *image,
+    const solar_os_raster_image_convert_options_t *options,
+    uint8_t *destination, size_t length, size_t stride)
+{
+    if (!image || !image->pixels || !options || !destination)
+        return ESP_ERR_INVALID_ARG;
+    const uint32_t x = options->x, y = options->y;
+    if (x >= image->width || y >= image->height) return ESP_ERR_INVALID_SIZE;
+    const uint32_t cw = options->width ? options->width : image->width - x;
+    const uint32_t ch = options->height ? options->height : image->height - y;
+    const uint32_t w = options->output_width ? options->output_width : cw;
+    const uint32_t h = options->output_height ? options->output_height : ch;
+    if (cw > image->width - x || ch > image->height - y ||
+        !w || !h || (uint64_t)w * h > RASTER_IMAGE_MAX_PIXELS)
+        return ESP_ERR_INVALID_SIZE;
+    size_t bytes;
+    switch (options->format) {
+    case SOLAR_OS_RASTER_IMAGE_GRAY8: bytes = 1; break;
+    case SOLAR_OS_RASTER_IMAGE_RGB565_LE: bytes = 2; break;
+    case SOLAR_OS_RASTER_IMAGE_RGB888: bytes = 3; break;
+    default: return ESP_ERR_NOT_SUPPORTED;
+    }
+    const size_t row_bytes = (size_t)w * bytes;
+    if (!stride) stride = row_bytes;
+    if (stride < row_bytes || row_bytes > length ||
+        (h > 1 && stride > (length - row_bytes) / (h - 1U)))
+        return ESP_ERR_INVALID_SIZE;
+    const size_t used = (size_t)(h - 1U) * stride + row_bytes;
+    const uintptr_t dst_start = (uintptr_t)destination;
+    const uintptr_t src_start = (uintptr_t)image->pixels;
+    const size_t src_length = (size_t)image->width * image->height * 3U;
+    if (used > UINTPTR_MAX - dst_start) return ESP_ERR_INVALID_SIZE;
+    if (dst_start < src_start + src_length && src_start < dst_start + used)
+        return ESP_ERR_INVALID_ARG;
+    for (uint32_t row = 0; row < h; ++row) {
+        const uint32_t sy = y + (uint64_t)row * ch / h;
+        uint8_t *dst = destination + (size_t)row * stride;
+        for (uint32_t col = 0; col < w; ++col) {
+            const uint32_t sx = x + (uint64_t)col * cw / w;
+            const uint8_t *rgb = image->pixels + ((size_t)sy * image->width + sx) * 3U;
+            if (options->format == SOLAR_OS_RASTER_IMAGE_GRAY8) {
+                *dst++ = ((uint32_t)rgb[0] * 77U + rgb[1] * 150U + rgb[2] * 29U) >> 8;
+            } else if (options->format == SOLAR_OS_RASTER_IMAGE_RGB565_LE) {
+                const uint16_t value = ((uint16_t)(rgb[0] & 0xf8U) << 8U) |
+                    ((uint16_t)(rgb[1] & 0xfcU) << 3U) | (rgb[2] >> 3U);
+                *dst++ = value; *dst++ = value >> 8U;
+            } else {
+                memcpy(dst, rgb, 3U); dst += 3U;
+            }
+        }
+    }
+    return ESP_OK;
+}
+
 esp_err_t solar_os_raster_image_draw(const solar_os_raster_image_t *image,
                                      solar_os_gfx_t *gfx,
                                      int x,

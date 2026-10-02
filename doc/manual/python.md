@@ -47,6 +47,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Text user interfaces](python.tui.md) | `solaros.tui` |
 | [Graphics and raster images](python.gfx.md) | `solaros.gfx`, `solaros.image` |
 | [Camera, streams, and RTSP](python.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
+| [QR vision](vision.md) | `solaros.vision` |
 
 ## Conventions
 
@@ -109,6 +110,7 @@ Optional API groups follow these package gates:
 - `service.script-media`: `solaros.streams` local handles and leased JPEG frames
 - `service.camera`: `solaros.camera` snapshots and ownership status
 - `service.rtsp-client`: `solaros.rtsp` asynchronous receivers and native audio
+- `service.vision`: `solaros.vision` native QR recognition and decoding
 
 ## Top-Level Helpers
 
