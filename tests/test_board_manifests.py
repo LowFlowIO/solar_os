@@ -390,6 +390,10 @@ bindings = { gpio = 7 }
             board["defines"]["SOLAR_OS_BOARD_DISPLAY_U8G2_ROTATION"],
             "U8G2_R3",
         )
+        self.assertEqual(
+            board["defines"]["SOLAR_OS_BOARD_DISPLAY_DEFAULT_ORIENTATION"],
+            "270",
+        )
 
         devices = {device["name"]: device for device in board["devices"]}
         self.assertEqual(
@@ -435,6 +439,7 @@ bindings = { gpio = 7 }
 
         header = generate_header(board, self.drivers)
         self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_CONTROLLER "SSD1677"', header)
+        self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_DEFAULT_ORIENTATION 270', header)
         self.assertIn('.driver = "ssd1677", .name = "display0"', header)
         self.assertIn('.role = "rotation", .value = 3', header)
         self.assertIn(
