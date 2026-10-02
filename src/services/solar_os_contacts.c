@@ -10,12 +10,16 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "solar_os_memory.h"
+#include "solar_os_log.h"
 #include "solar_os_storage.h"
 
 #define CONTACTS_STORE_MAGIC 0x544e4f43UL
-#define CONTACTS_STORE_VERSION 1U
+#define CONTACTS_STORE_VERSION 2U
+#define CONTACTS_LEGACY_CONTACT_CAPACITY 64U
+#define CONTACTS_LEGACY_ENDPOINT_CAPACITY 80U
 #define CONTACTS_STORE_HEADER_COPIES 2U
 #define CONTACTS_STORE_DATA_COPIES 2U
+#define CONTACTS_STORE_IO_CHUNK 4096U
 
 typedef struct {
     bool active;
@@ -64,13 +68,29 @@ typedef struct __attribute__((packed)) {
 typedef struct __attribute__((packed)) {
     uint32_t magic;
     uint16_t version;
-    uint16_t data_size;
+    uint32_t data_size;
     uint32_t generation;
     uint8_t data_slot;
     uint8_t reserved[3];
     uint32_t data_crc32;
     uint32_t header_crc32;
 } contacts_store_header_t;
+
+typedef struct __attribute__((packed)) {
+    uint32_t magic;
+    uint16_t version;
+    uint16_t data_size;
+    uint32_t generation;
+    uint8_t data_slot;
+    uint8_t reserved[3];
+    uint32_t data_crc32;
+    uint32_t header_crc32;
+} contacts_legacy_header_t;
+
+#define CONTACTS_LEGACY_DATA_SIZE \
+    (offsetof(contacts_store_data_t, contacts) + \
+     CONTACTS_LEGACY_CONTACT_CAPACITY * sizeof(contacts_disk_contact_t) + \
+     CONTACTS_LEGACY_ENDPOINT_CAPACITY * sizeof(contacts_disk_endpoint_t))
 
 #define CONTACTS_STORE_DATA_OFFSET \
     (CONTACTS_STORE_HEADER_COPIES * sizeof(contacts_store_header_t))
@@ -79,12 +99,13 @@ typedef struct __attribute__((packed)) {
      CONTACTS_STORE_DATA_COPIES * sizeof(contacts_store_data_t))
 
 _Static_assert(CONTACTS_STORE_BYTES < SOLAR_OS_CONTACT_STORE_LIMIT_BYTES,
-               "contacts store must remain below 24 KiB");
+               "contacts store must remain below 192 KiB");
 
 typedef struct {
     bool initialized;
     bool records_in_psram;
     bool persistent;
+    bool legacy_format;
     uint32_t generation;
     uint32_t disk_generation;
     uint8_t disk_slot;
@@ -95,6 +116,8 @@ typedef struct {
     size_t endpoint_count;
     esp_err_t storage_error;
     char store_path[SOLAR_OS_STORAGE_PATH_MAX];
+    char staging_path[SOLAR_OS_STORAGE_PATH_MAX + 8U];
+    char backup_path[SOLAR_OS_STORAGE_PATH_MAX + 8U];
     contacts_contact_slot_t *contacts;
     contacts_endpoint_slot_t *endpoints;
     contacts_store_data_t *scratch;
@@ -547,6 +570,38 @@ static esp_err_t contacts_sync_file(FILE *file)
     return fd >= 0 && fsync(fd) == 0 ? ESP_OK : ESP_FAIL;
 }
 
+/* Keep PSRAM-backed snapshot transfers within the bounded I/O size used
+ * by other storage clients. */
+static bool contacts_read_data(FILE *file, void *data, size_t size)
+{
+    uint8_t *bytes = data;
+    for (size_t offset = 0; offset < size;) {
+        const size_t remaining = size - offset;
+        const size_t chunk = remaining < CONTACTS_STORE_IO_CHUNK ?
+            remaining : CONTACTS_STORE_IO_CHUNK;
+        if (fread(bytes + offset, 1U, chunk, file) != chunk) return false;
+        offset += chunk;
+    }
+    return true;
+}
+
+static bool contacts_write_data(FILE *file, const void *data, size_t size)
+{
+    const uint8_t *bytes = data;
+    for (size_t offset = 0; offset < size;) {
+        const size_t remaining = size - offset;
+        const size_t chunk = remaining < CONTACTS_STORE_IO_CHUNK ?
+            remaining : CONTACTS_STORE_IO_CHUNK;
+        if (fwrite(bytes + offset, 1U, chunk, file) != chunk) {
+            SOLAR_OS_LOGW("contacts", "store write failed at %u/%u bytes: errno=%d",
+                          (unsigned)offset, (unsigned)size, errno);
+            return false;
+        }
+        offset += chunk;
+    }
+    return true;
+}
+
 static esp_err_t contacts_prepare_store_path(void)
 {
     if (!solar_os_storage_is_mounted()) {
@@ -563,15 +618,26 @@ static esp_err_t contacts_prepare_store_path(void)
     if (error != ESP_OK && errno != EEXIST) {
         return error;
     }
-    return solar_os_storage_default_path(
+    error = solar_os_storage_default_path(
         SOLAR_OS_CONTACT_STORE_DIR "/" SOLAR_OS_CONTACT_STORE_FILE,
         contacts_store.store_path,
         sizeof(contacts_store.store_path));
+    if (error == ESP_OK) {
+        snprintf(contacts_store.staging_path, sizeof(contacts_store.staging_path),
+                 "%s.tmp", contacts_store.store_path);
+        snprintf(contacts_store.backup_path, sizeof(contacts_store.backup_path),
+                 "%s.bak", contacts_store.store_path);
+    }
+    return error;
 }
 
 static esp_err_t contacts_restore(void)
 {
     FILE *file = fopen(contacts_store.store_path, "rb");
+    if (file == NULL && errno == ENOENT &&
+        rename(contacts_store.backup_path, contacts_store.store_path) == 0) {
+        file = fopen(contacts_store.store_path, "rb");
+    }
     if (file == NULL) {
         return errno == ENOENT ? ESP_ERR_NOT_FOUND : ESP_FAIL;
     }
@@ -608,10 +674,8 @@ static esp_err_t contacts_restore(void)
         const long offset = (long)(CONTACTS_STORE_DATA_OFFSET +
             header->data_slot * sizeof(*contacts_store.scratch));
         if (fseek(file, offset, SEEK_SET) != 0 ||
-            fread(contacts_store.scratch,
-                  sizeof(*contacts_store.scratch),
-                  1U,
-                  file) != 1U) {
+            !contacts_read_data(file, contacts_store.scratch,
+                                sizeof(*contacts_store.scratch))) {
             clearerr(file);
             continue;
         }
@@ -627,6 +691,56 @@ static esp_err_t contacts_restore(void)
         error = ESP_OK;
         break;
     }
+    if (error != ESP_OK) {
+        contacts_legacy_header_t legacy[CONTACTS_STORE_HEADER_COPIES];
+        if (fseek(file, 0, SEEK_SET) == 0 &&
+            fread(legacy, sizeof(legacy), 1U, file) == 1U) {
+            int first = 0;
+            if (contacts_generation_newer(legacy[1].generation,
+                                          legacy[0].generation)) first = 1;
+            for (int candidate = 0; candidate < 2; candidate++) {
+                const contacts_legacy_header_t *header =
+                    &legacy[candidate == 0 ? first : 1 - first];
+                if (header->magic != CONTACTS_STORE_MAGIC ||
+                    header->version != 1U ||
+                    header->data_size != CONTACTS_LEGACY_DATA_SIZE ||
+                    header->generation == 0U ||
+                    header->data_slot >= CONTACTS_STORE_DATA_COPIES ||
+                    header->header_crc32 != contacts_crc32(
+                        header, offsetof(contacts_legacy_header_t, header_crc32))) {
+                    continue;
+                }
+                const long offset = (long)(sizeof(legacy) +
+                    header->data_slot * CONTACTS_LEGACY_DATA_SIZE);
+                memset(contacts_store.scratch, 0, sizeof(*contacts_store.scratch));
+                clearerr(file);
+                if (fseek(file, offset, SEEK_SET) != 0 ||
+                    !contacts_read_data(file, contacts_store.scratch,
+                                        CONTACTS_LEGACY_DATA_SIZE) ||
+                    header->data_crc32 != contacts_crc32(
+                        contacts_store.scratch, CONTACTS_LEGACY_DATA_SIZE) ||
+                    contacts_store.scratch->contact_count > CONTACTS_LEGACY_CONTACT_CAPACITY ||
+                    contacts_store.scratch->endpoint_count > CONTACTS_LEGACY_ENDPOINT_CAPACITY) {
+                    continue;
+                }
+                uint8_t *old_endpoints = (uint8_t *)contacts_store.scratch +
+                    offsetof(contacts_store_data_t, contacts) +
+                    CONTACTS_LEGACY_CONTACT_CAPACITY * sizeof(contacts_disk_contact_t);
+                memmove(contacts_store.scratch->endpoints, old_endpoints,
+                        CONTACTS_LEGACY_ENDPOINT_CAPACITY * sizeof(contacts_disk_endpoint_t));
+                memset(contacts_store.scratch->contacts + CONTACTS_LEGACY_CONTACT_CAPACITY,
+                       0, (SOLAR_OS_CONTACT_CAPACITY - CONTACTS_LEGACY_CONTACT_CAPACITY) *
+                          sizeof(contacts_disk_contact_t));
+                if (!contacts_store_data_valid(contacts_store.scratch)) continue;
+                contacts_disk_to_runtime(contacts_store.scratch);
+                contacts_store.disk_generation = header->generation;
+                contacts_store.disk_slot = header->data_slot;
+                contacts_store.legacy_format = true;
+                error = ESP_OK;
+                break;
+            }
+        }
+    }
     fclose(file);
     return error;
 }
@@ -635,9 +749,11 @@ static esp_err_t contacts_write_snapshot(const contacts_store_data_t *data,
                                          uint32_t disk_generation,
                                          uint8_t data_slot)
 {
-    FILE *file = fopen(contacts_store.store_path, "r+b");
+    const bool migrate = contacts_store.legacy_format;
+    const char *path = migrate ? contacts_store.staging_path : contacts_store.store_path;
+    FILE *file = fopen(path, migrate ? "w+b" : "r+b");
     if (file == NULL) {
-        file = fopen(contacts_store.store_path, "w+b");
+        file = fopen(path, "w+b");
     }
     if (file == NULL) {
         return ESP_FAIL;
@@ -647,7 +763,7 @@ static esp_err_t contacts_write_snapshot(const contacts_store_data_t *data,
         data_slot * sizeof(*data));
     esp_err_t error = ESP_OK;
     if (fseek(file, data_offset, SEEK_SET) != 0 ||
-        fwrite(data, sizeof(*data), 1U, file) != 1U ||
+        !contacts_write_data(file, data, sizeof(*data)) ||
         contacts_sync_file(file) != ESP_OK) {
         error = ESP_FAIL;
     }
@@ -677,6 +793,11 @@ static esp_err_t contacts_write_snapshot(const contacts_store_data_t *data,
 
     if (fclose(file) != 0 && error == ESP_OK) {
         error = ESP_FAIL;
+    }
+    if (migrate && error == ESP_OK) {
+        error = solar_os_storage_replace_file(contacts_store.staging_path,
+            contacts_store.store_path, contacts_store.backup_path);
+        if (error == ESP_OK) contacts_store.legacy_format = false;
     }
     return error;
 }
@@ -987,7 +1108,7 @@ static void contacts_default_name(solar_os_messaging_provider_id_t provider,
     }
 }
 
-esp_err_t solar_os_contacts_upsert_discovered(
+static esp_err_t contacts_upsert_discovered(
     solar_os_messaging_provider_id_t provider,
     const uint8_t *address,
     size_t address_len,
@@ -997,7 +1118,9 @@ esp_err_t solar_os_contacts_upsert_discovered(
     const void *provider_metadata,
     size_t provider_metadata_len,
     solar_os_contact_id_t *contact_id,
-    solar_os_endpoint_id_t *endpoint_id)
+    solar_os_endpoint_id_t *endpoint_id,
+    bool persist,
+    bool allow_eviction)
 {
     if (!contacts_provider_valid(provider) ||
         address == NULL ||
@@ -1044,7 +1167,7 @@ esp_err_t solar_os_contacts_upsert_discovered(
         result_endpoint = endpoint->record.id;
         contacts_changed_locked();
         contacts_unlock();
-        (void)contacts_persist_current();
+        if (persist) (void)contacts_persist_current();
         if (contact_id != NULL) {
             *contact_id = result_contact;
         }
@@ -1055,7 +1178,7 @@ esp_err_t solar_os_contacts_upsert_discovered(
     }
 
     int contact_index = contacts_free_contact_slot_locked();
-    if (contact_index < 0 && contacts_evict_oldest_locked()) {
+    if (contact_index < 0 && allow_eviction && contacts_evict_oldest_locked()) {
         contact_index = contacts_free_contact_slot_locked();
     }
     endpoint_index = contacts_free_endpoint_slot_locked();
@@ -1115,7 +1238,7 @@ esp_err_t solar_os_contacts_upsert_discovered(
     contacts_store.endpoint_count++;
     contacts_changed_locked();
     contacts_unlock();
-    (void)contacts_persist_current();
+    if (persist) (void)contacts_persist_current();
 
     if (contact_id != NULL) {
         *contact_id = result_contact;
@@ -1124,6 +1247,36 @@ esp_err_t solar_os_contacts_upsert_discovered(
         *endpoint_id = result_endpoint;
     }
     return ESP_OK;
+}
+
+esp_err_t solar_os_contacts_upsert_discovered(
+    solar_os_messaging_provider_id_t provider,
+    const uint8_t *address, size_t address_len, const char *display_name,
+    uint32_t capabilities, uint64_t last_seen_ms,
+    const void *provider_metadata, size_t provider_metadata_len,
+    solar_os_contact_id_t *contact_id, solar_os_endpoint_id_t *endpoint_id)
+{
+    return contacts_upsert_discovered(provider, address, address_len, display_name,
+        capabilities, last_seen_ms, provider_metadata, provider_metadata_len,
+        contact_id, endpoint_id, true, true);
+}
+
+esp_err_t solar_os_contacts_import_discovered(
+    solar_os_messaging_provider_id_t provider,
+    const uint8_t *address, size_t address_len, const char *display_name,
+    uint32_t capabilities, uint64_t last_seen_ms,
+    const void *provider_metadata, size_t provider_metadata_len,
+    solar_os_contact_id_t *contact_id, solar_os_endpoint_id_t *endpoint_id)
+{
+    return contacts_upsert_discovered(provider, address, address_len, display_name,
+        capabilities, last_seen_ms, provider_metadata, provider_metadata_len,
+        contact_id, endpoint_id, false, false);
+}
+
+esp_err_t solar_os_contacts_flush(void)
+{
+    esp_err_t error = solar_os_contacts_init();
+    return error == ESP_OK ? contacts_persist_current() : error;
 }
 
 esp_err_t solar_os_contacts_rename(solar_os_contact_id_t id,

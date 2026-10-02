@@ -28,6 +28,10 @@ Blocked direct endpoints are always rejected; discovered endpoints require the
 optional boolean for that one send. `solaros.contacts` returns only contact
 summaries and endpoint IDs, never credentials or endpoint secret material.
 
+Conversation summaries include the raw `title`, a display `label` that identifies
+MeshCore group transports, and `history_only`. History-only conversations are
+readable but reject sends.
+
 ## Quick reference
 
 Use `solaros.contacts`, `solaros.messages` for contacts and messages.

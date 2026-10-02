@@ -23,6 +23,22 @@ TARGETS += rtspd_completion_test
 TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
 TARGETS += media_lua_bindings_test
+TARGETS += messaging_service_test
+
+messaging_service_test: messaging_service_test.c $(ROOT)/src/services/solar_os_contacts.c \
+        $(ROOT)/src/services/solar_os_messaging.c $(ROOT)/src/services/solar_os_messaging_types.c \
+        $(ROOT)/src/services/solar_os_contacts.h $(ROOT)/src/services/solar_os_messaging.h \
+        $(ROOT)/src/services/solar_os_messaging_types.h messaging_stubs/freertos/semphr.h \
+        $(ROOT)/src/services/solar_os_storage.c $(ROOT)/src/services/solar_os_storage.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DpdTICKS_TO_MS\(ticks\)=\(ticks\) -include compat.h \
+		-ffunction-sections -fdata-sections \
+		-Imessaging_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(ROOT)/src/board -I$(ROOT)/src/drivers \
+		messaging_service_test.c $(ROOT)/src/services/solar_os_messaging_types.c \
+		$(ROOT)/src/services/solar_os_storage.c -Wl,--gc-sections \
+		-Wl,--wrap=solar_os_storage_is_mounted,--wrap=solar_os_storage_sd_is_mounted \
+		-Wl,--wrap=solar_os_storage_default_path,--wrap=solar_os_storage_mkdir \
+		-Wl,--wrap=solar_os_storage_remove,--wrap=solar_os_storage_get_usage,--wrap=rename -o $@
 
 raster_image_test: raster_image_test.c $(ROOT)/src/services/solar_os_raster_image.c
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -I. -I$(ROOT)/src -I$(ROOT)/src/services \
@@ -591,6 +607,7 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 		rtc_pcf85063_test.c $(ROOT)/src/drivers/rtc_pcf85063.c -o $@
 
 test: $(TARGETS)
+	./messaging_service_test
 	./ble_service_test
 	./ble_multi_peer_test
 	./ble_nimble_test

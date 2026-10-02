@@ -2,6 +2,14 @@
 
 ## 4.x
 
+- **4.15.16** — 2026-10-02 — MeshCore group conversations identify radio
+  and companion transports; unavailable channels remain readable as history
+  and reject new sends. Chat follows actual delivery updates, and messages
+  interrupted by a restart are restored as failed instead of queued. Contacts
+  now retain up to 512 contacts and 576 endpoints, with migration of existing
+  contact IDs and trust settings. Companion imports preserve retained contacts,
+  batch their storage writes, and report imported, skipped, and supported
+  contact counts. An online MeshCore BLE companion displays the radio icon.
 - **4.15.15** — 2026-10-01 — Updated to ESP-IDF 5.5.5 and pinned the
   pioarduino platform to release `55.03.312-1` for reproducible builds.
   PlatformIO Core 6.2.0 or newer is required. The NimBLE overlay retains

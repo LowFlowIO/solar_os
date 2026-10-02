@@ -7826,6 +7826,12 @@ static void solua_push_conversation(
     lua_setfield(L, -2, "kind");
     lua_pushstring(L, conversation->title);
     lua_setfield(L, -2, "title");
+    char label[SOLAR_OS_MESSAGING_TITLE_MAX];
+    solar_os_messaging_conversation_label(conversation, label, sizeof(label));
+    lua_pushstring(L, label);
+    lua_setfield(L, -2, "label");
+    lua_pushboolean(L, conversation->history_only);
+    lua_setfield(L, -2, "history_only");
     lua_pushinteger(L, conversation->contact_id);
     lua_setfield(L, -2, "contact_id");
     lua_pushinteger(L, conversation->endpoint_id);

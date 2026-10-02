@@ -7164,6 +7164,10 @@ static mp_obj_t python_conversation_to_dict(
         "kind",
         solar_os_conversation_kind_name(conversation->kind));
     python_dict_store_cstr(dict, "title", conversation->title);
+    char label[SOLAR_OS_MESSAGING_TITLE_MAX];
+    solar_os_messaging_conversation_label(conversation, label, sizeof(label));
+    python_dict_store_cstr(dict, "label", label);
+    python_dict_store_bool(dict, "history_only", conversation->history_only);
     python_dict_store_uint(dict, "contact_id", conversation->contact_id);
     python_dict_store_uint(dict, "endpoint_id", conversation->endpoint_id);
     python_dict_store_uint(dict, "group_ref", conversation->group_ref);

@@ -50,6 +50,9 @@
 #include "solar_os_port_shell.h"
 #include "solar_os_power.h"
 #include "solar_os_radio.h"
+#if SOLAR_OS_PACKAGE_SERVICE_MESHCORE_BLE
+#include "solar_os_meshcore_ble.h"
+#endif
 #include "solar_os_rtc.h"
 #include "solar_os_schedule.h"
 #include "solar_os_sessions.h"
@@ -1643,6 +1646,13 @@ static void update_status(void)
 
 #if SOLAR_OS_PACKAGE_SERVICE_RADIO
     status.radio_attached = solar_os_radio_count() > 0U;
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_MESHCORE_BLE
+    solar_os_meshcore_ble_status_t companion;
+    if (solar_os_meshcore_ble_get_status(&companion) == ESP_OK) {
+        status.radio_attached |= companion.running && companion.connected &&
+            companion.state == SOLAR_OS_MESHCORE_BLE_ONLINE;
+    }
 #endif
 
 #if SOLAR_OS_PACKAGE_JOB_RADIO_LINK || SOLAR_OS_PACKAGE_JOB_ESPNOW_LINK
