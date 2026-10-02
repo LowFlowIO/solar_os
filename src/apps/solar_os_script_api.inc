@@ -62,6 +62,7 @@ SOLAR_OS_SCRIPT_API_FUNCTION(storage, stat, stat);
 SOLAR_OS_SCRIPT_API_FUNCTION(storage, exists, exists);
 SOLAR_OS_SCRIPT_API_FUNCTION(storage, scandir, scandir);
 SOLAR_OS_SCRIPT_API_FUNCTION(storage, read_file, read_file);
+SOLAR_OS_SCRIPT_API_FUNCTION(storage, write_file, write_file);
 SOLAR_OS_SCRIPT_API_FUNCTION(storage, rescan, rescan);
 SOLAR_OS_SCRIPT_API_FUNCTION(storage, blocks, blocks);
 SOLAR_OS_SCRIPT_API_FUNCTION(storage, block_count, block_count);

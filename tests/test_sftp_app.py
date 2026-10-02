@@ -1,3 +1,4 @@
+import tomllib
 import unittest
 from pathlib import Path
 
@@ -56,7 +57,9 @@ class SftpAppTest(unittest.TestCase):
         app = PACKAGES.split("[packages.app_sftp]", 1)[1].split("\n[", 1)[0]
         self.assertIn('depends = ["service_ssh"]', service)
         self.assertIn('sources = ["services/solar_os_sftp.c"]', service)
-        self.assertIn('depends = ["service_sftp"]', app)
+        dependencies = tomllib.loads(PACKAGES)["packages"]["app_sftp"]["depends"]
+        self.assertIn("service_sftp", dependencies)
+        self.assertIn("service_text_search", dependencies)
         self.assertIn('sources = ["apps/solar_os_sftp_app.c"]', app)
         self.assertIn('APP_ENTRY("sftp"', APPS)
 

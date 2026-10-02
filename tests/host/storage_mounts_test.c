@@ -12,6 +12,45 @@
 #include "solar_os_ramfs.h"
 #include "solar_os_storage.h"
 
+static bool fail_write;
+static bool fail_sync;
+static bool fail_close;
+static size_t open_closes;
+
+size_t __real_fwrite(const void *data, size_t size, size_t count, FILE *file);
+int __real_fsync(int fd);
+int __real_fclose(FILE *file);
+
+size_t __wrap_fwrite(const void *data, size_t size, size_t count, FILE *file)
+{
+    if (fail_write) {
+        const size_t written = __real_fwrite(data, size, count / 2U, file);
+        errno = ENOSPC;
+        return written;
+    }
+    return __real_fwrite(data, size, count, file);
+}
+
+int __wrap_fsync(int fd)
+{
+    if (fail_sync) {
+        errno = EIO;
+        return -1;
+    }
+    return __real_fsync(fd);
+}
+
+int __wrap_fclose(FILE *file)
+{
+    open_closes++;
+    const int result = __real_fclose(file);
+    if (fail_close) {
+        errno = EBADF;
+        return EOF;
+    }
+    return result;
+}
+
 size_t strlcpy(char *dst, const char *src, size_t size)
 {
     const size_t len = strlen(src);
@@ -253,6 +292,89 @@ static void assert_replace_file(void)
         active, ".too-long", staged, 4U) == ESP_ERR_INVALID_SIZE);
 }
 
+static void assert_write_file(void)
+{
+    char root[] = "/tmp/solaros-storage-write-XXXXXX";
+    assert(mkdtemp(root) != NULL);
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    assert(snprintf(path, sizeof(path), "%s/data.bin", root) > 0);
+
+    // Empty creation, binary round trip, truncation, and append all share the
+    // service used by both interpreters.
+    assert(solar_os_storage_write_file(path, NULL, 0U, false) == ESP_OK);
+    solar_os_storage_metadata_t metadata;
+    assert(solar_os_storage_stat(path, &metadata) == ESP_OK);
+    assert(metadata.type == SOLAR_OS_STORAGE_ENTRY_FILE && metadata.size_bytes == 0U);
+    const uint8_t binary[] = {0U, 1U, 255U, 0U};
+    assert(solar_os_storage_write_file(path, binary, sizeof(binary), false) == ESP_OK);
+    uint8_t actual[16];
+    size_t length = 99U;
+    assert(solar_os_storage_read_file(path, actual, sizeof(actual), &length) == ESP_OK);
+    assert(length == sizeof(binary) && memcmp(actual, binary, length) == 0);
+    assert(solar_os_storage_write_file(path, "ok", 2U, false) == ESP_OK);
+    assert(solar_os_storage_write_file(path, binary, sizeof(binary), true) == ESP_OK);
+    assert(solar_os_storage_write_file(path, NULL, 0U, true) == ESP_OK);
+    assert(solar_os_storage_read_file(path, actual, sizeof(actual), &length) == ESP_OK);
+    assert(length == 2U + sizeof(binary) && memcmp(actual, "ok", 2U) == 0);
+    assert(memcmp(actual + 2U, binary, sizeof(binary)) == 0);
+
+    // Invalid data and oversized requests must not truncate an existing file.
+    assert(solar_os_storage_write_file(path, NULL, 1U, false) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_storage_write_file(path, binary,
+        SOLAR_OS_STORAGE_WRITE_MAX_BYTES + 1U, false) == ESP_ERR_INVALID_SIZE);
+    assert(solar_os_storage_stat(path, &metadata) == ESP_OK);
+    assert(metadata.size_bytes == 2U + sizeof(binary));
+    assert(solar_os_storage_write_file(root, binary, sizeof(binary), false) ==
+           ESP_ERR_INVALID_ARG);
+    assert(errno == EISDIR);
+    assert(solar_os_storage_write_file(NULL, binary, sizeof(binary), false) ==
+           ESP_ERR_INVALID_ARG);
+    assert(solar_os_storage_write_file("", binary, sizeof(binary), false) ==
+           ESP_ERR_INVALID_ARG);
+
+    // Disk-full, sync, and close failures are reported, and close is still
+    // attempted after an earlier failure without replacing its errno.
+    size_t closes_before = open_closes;
+    fail_write = true;
+    fail_close = true;
+    assert(solar_os_storage_write_file(path, binary, sizeof(binary), false) == ESP_FAIL);
+    assert(errno == ENOSPC && open_closes == closes_before + 1U);
+    fail_write = false;
+    fail_close = false;
+    closes_before = open_closes;
+    fail_sync = true;
+    assert(solar_os_storage_write_file(path, binary, sizeof(binary), false) == ESP_FAIL);
+    assert(errno == EIO && open_closes == closes_before + 1U);
+    fail_sync = false;
+    fail_close = true;
+    assert(solar_os_storage_write_file(path, binary, sizeof(binary), false) == ESP_FAIL);
+    assert(errno == EBADF);
+    fail_close = false;
+
+    uint8_t *large = malloc(SOLAR_OS_STORAGE_WRITE_MAX_BYTES);
+    assert(large != NULL);
+    memset(large, 0xA5, SOLAR_OS_STORAGE_WRITE_MAX_BYTES);
+    assert(solar_os_storage_write_file(path, large,
+        SOLAR_OS_STORAGE_WRITE_MAX_BYTES, false) == ESP_OK);
+    memset(large, 0, SOLAR_OS_STORAGE_WRITE_MAX_BYTES);
+    assert(solar_os_storage_read_file(path, large,
+        SOLAR_OS_STORAGE_WRITE_MAX_BYTES, &length) == ESP_OK);
+    assert(length == SOLAR_OS_STORAGE_WRITE_MAX_BYTES);
+    for (size_t i = 0; i < length; i++) {
+        assert(large[i] == 0xA5);
+    }
+    free(large);
+    assert(solar_os_storage_write_file(path, "", 0U, false) == ESP_OK);
+    assert(solar_os_storage_stat(path, &metadata) == ESP_OK && metadata.size_bytes == 0U);
+    assert(remove(path) == 0);
+    assert(solar_os_storage_write_file(path, "appended", 8U, true) == ESP_OK);
+    assert_file_text(path, "appended");
+    assert(remove(path) == 0);
+    assert(rmdir(root) == 0);
+    assert(solar_os_storage_write_file(path, binary, sizeof(binary), false) ==
+           ESP_ERR_NOT_FOUND);
+}
+
 static void assert_storage_discovery(void)
 {
     char root[] = "/tmp/solaros-storage-scan-XXXXXX";
@@ -369,6 +491,7 @@ int main(void)
     assert_copy_progress();
     assert_copy_cancel();
     assert_replace_file();
+    assert_write_file();
     assert_storage_discovery();
 
     puts("storage mount tests: ok");

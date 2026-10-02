@@ -1508,6 +1508,33 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_storage_read_file_obj,
                                     2,
                                     solaros_storage_read_file);
 
+static mp_obj_t solaros_storage_write_file(size_t n_args, const mp_obj_t *args)
+{
+    const void *data;
+    size_t data_len;
+    if (mp_obj_is_str(args[1])) {
+        data = mp_obj_str_get_data(args[1], &data_len);
+    } else {
+        mp_buffer_info_t buffer;
+        mp_get_buffer_raise(args[1], &buffer, MP_BUFFER_READ);
+        data = buffer.buf;
+        data_len = buffer.len;
+    }
+    if (data_len > SOLAR_OS_STORAGE_WRITE_MAX_BYTES) {
+        mp_raise_ValueError(MP_ERROR_TEXT("data exceeds 65536 bytes"));
+    }
+
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    python_resolve_path_obj(args[0], path, sizeof(path));
+    const bool append = n_args > 2 && mp_obj_is_true(args[2]);
+    python_check_esp(solar_os_storage_write_file(path, data, data_len, append));
+    return mp_obj_new_int_from_uint(data_len);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_storage_write_file_obj,
+                                    2,
+                                    3,
+                                    solaros_storage_write_file);
+
 static mp_obj_t solaros_storage_rescan(void)
 {
     python_check_esp(solar_os_storage_rescan());

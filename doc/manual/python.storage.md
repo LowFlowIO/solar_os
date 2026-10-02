@@ -72,6 +72,14 @@ Storage functions expose SD mount and filesystem service operations.
   plus the `stat()` metadata fields. `next_cursor` is `None` at the end.
 - `read_file(path[, max_bytes])`: return up to `max_bytes` bytes from a regular
   file. The default is 4096 and the maximum is 65536.
+- `write_file(path, data[, append])`: create or overwrite a regular file and
+  return the byte count written. `data` accepts a string (stored as UTF-8),
+  bytes, or another readable buffer, up to 65536 bytes per call. `append`
+  defaults to `False`; pass `True` to add data to the end. Empty data creates
+  an empty file, or truncates an existing file when `append` is `False`.
+  The file is flushed, synced, and closed before success. Parent directories
+  must exist; use `makedirs()` to create them. A failed write can leave partial
+  data; overwriting is not atomic.
 - `rescan()`: rescan SD block devices and partitions.
 - `blocks()`: return a list of block device and partition dictionaries.
 - `block_count()`: return the number of known blocks.
@@ -97,6 +105,9 @@ if not solaros.storage.is_mounted():
     solaros.storage.mount()
 
 print(solaros.storage.usage("/"))
+solaros.storage.makedirs("/notes")
+solaros.storage.write_file("/notes/example.txt", "hello from Python\n")
+solaros.storage.write_file("/notes/example.txt", "another line\n", True)
 print(solaros.storage.read_file("/notes/example.txt", 512))
 for block in solaros.storage.blocks():
     print(block["name"], block["type"], block["mounted"], block["mount_point"])
@@ -114,6 +125,9 @@ while True:
 Directory cursors are numeric offsets into the current enumeration. If files
 are added or removed between calls, restart at `None` to obtain a coherent
 view.
+
+`read_file()` returns bytes and can truncate its result at `max_bytes`. Use
+`.decode("utf-8")` to load saved text, or `open()` to read larger files.
 
 ## Quick reference
 
