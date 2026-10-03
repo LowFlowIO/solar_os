@@ -22,7 +22,6 @@ def load_module(name, path):
     return module
 
 
-BUILDER = load_module("bundle_builder", ROOT / "scripts/espdl/build_bundle.py")
 with patch.dict(sys.modules, solaros=types.SimpleNamespace()):
     RUNNER = load_module("bundle_runner", ROOT / "examples/python/infer.py")
 
@@ -32,7 +31,7 @@ class BundleTest(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.folder = Path(self.tmp.name)
-        self.manifest = json.loads((ROOT / "examples/model_bundles/arithmetic/bundle.json").read_text())
+        self.manifest = json.loads((ROOT / "tests/fixtures/model_bundle/raw.json").read_text())
         self.binary = b"test-model"
         self.manifest["model"]["sha256"] = hashlib.sha256(self.binary).hexdigest()
         (self.folder / self.manifest["model"]["file"]).write_bytes(self.binary)
@@ -175,9 +174,9 @@ class BundleTest(unittest.TestCase):
             RUNNER.files(bundle,'inputs.json',1)
 
     def test_reference_manifests_and_image_semantics(self):
-        for path in (ROOT / "examples/model_bundles").glob("*/bundle.json"):
+        for path in (ROOT / "tests/fixtures/model_bundle").glob("*.json"):
             B.validate_manifest(json.loads(path.read_text()), str(path.parent))
-        image = json.loads((ROOT / "examples/model_bundles/imagenet_mobilenetv2/bundle.json").read_text())
+        image = json.loads((ROOT / "tests/fixtures/model_bundle/classification.json").read_text())
         for key, value in (("layout", "NCHW"), ("std", [0]), ("mean", [float("nan")]),
                            ("pad", [256]), ("resize", "bilinear"), ("mean", [1,2])):
             changed = copy.deepcopy(image)
@@ -211,18 +210,6 @@ class BundleTest(unittest.TestCase):
         self.assertTrue(result["truncated"])
         output["score"]["data"] = bytes([0]*4)
         self.assertEqual(B.pico_detection(None,output,{"img":transform},options)["detections"],[])
-
-    def test_host_builder_checks_hashes_and_does_not_overwrite(self):
-        destination = self.folder / "output"
-        self.assertEqual(BUILDER.build(self.path,self.folder,destination),self.manifest["id"])
-        self.assertEqual((destination/self.manifest["model"]["file"]).read_bytes(),self.binary)
-        with self.assertRaises(FileExistsError):
-            BUILDER.build(self.path,self.folder,destination)
-        (self.folder/self.manifest["model"]["file"]).write_bytes(b"corrupt")
-        with self.assertRaises(ValueError):
-            BUILDER.build(self.path,self.folder,self.folder/"failed")
-        self.assertFalse((self.folder/"failed").exists())
-
 
 class StreamOwnershipTest(unittest.TestCase):
     def setUp(self):

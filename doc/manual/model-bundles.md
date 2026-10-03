@@ -208,17 +208,14 @@ timings exclude image decoding and do not establish camera FPS. Raw CLI results 
 bytes, otherwise SHA-256 and metadata; the library retains the actual bytes.
 The runner does not publish MQTT/OSC or produce annotated video.
 
-## Host builder
+## Installing a bundle directory
 
-Collect the exact model and declared assets under one directory:
+Copy the complete bundle directory, including its model and declared assets,
+to a mounted storage volume. Load its `bundle.json` with `model bundle`,
+`solaros.inference.load_bundle`, or the native inference service table. Installing
+files does not load the model. A loaded model remains resident until explicitly
+unloaded or the device reboots.
 
-```sh
-python3 scripts/espdl/build_bundle.py examples/model_bundles/imagenet_mobilenetv2/bundle.json \
-  --assets /path/to/model-assets --output /tmp/imagenet-bundle
-```
-
-The builder shares semantic validation, checks hashes, preserves nested paths,
-and creates the destination after staging the bundle. Existing destinations are
-rejected. Copy the directory to device storage. Reference manifests cover
-MobileNetV2 ImageNet, PICO pedestrian detection, and an original two-input
-arithmetic model. Their binaries are not embedded or vendored by the manifests.
+Model definitions, zoo metadata, publishing tools, validation results, and
+their documentation are maintained in the separate `solar_os_zoo` repository.
+SolarOS owns the runtime bundle specification and its native/interpreter APIs.

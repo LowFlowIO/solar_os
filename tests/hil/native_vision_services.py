@@ -25,7 +25,7 @@ def main():
     parser.add_argument('--ftp-port', type=int, default=2121)
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
-    bundle = json.loads((ROOT/'examples/model_bundles/arithmetic/bundle.json').read_text())
+    bundle = json.loads((ROOT/'tests/fixtures/model_bundle/raw.json').read_text())
     bundle['model']['file'] = '.native-model.espdl'
     files = {
         '.native-vision.elf': args.module.read_bytes(),

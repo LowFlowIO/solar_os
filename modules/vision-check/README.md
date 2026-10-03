@@ -19,7 +19,7 @@ load /dl/vision-check.elf /sdcard/dl/scene.png /sdcard/dl/qr.png /sdcard/dl/arit
 
 Use the synthetic scene from `tests/hil/imlib_subset.py`,
 `tests/fixtures/vision/multiple.png`, `tests/fixtures/inference/arithmetic_int8.espdl`
-and `examples/model_bundles/arithmetic/bundle.json`. Paths passed to services
+and `tests/fixtures/model_bundle/raw.json`. Paths passed to services
 are resolved storage paths, unlike the shell's `load` argument.
 
 An optional final argument is a camera stream ID such as `camera0` or a JPEG
