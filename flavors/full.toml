@@ -134,3 +134,4 @@ sx1262 = true
 rotary_encoder = true
 bq27220 = true
 max17048 = true
+cw2017 = true

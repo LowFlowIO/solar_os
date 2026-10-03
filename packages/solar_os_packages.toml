@@ -704,6 +704,11 @@ label = "MAX17048 fuel gauge"
 category = "Expansion hardware"
 members = ["max17048"]
 
+[groups.cw2017]
+label = "CW2017 fuel gauge"
+category = "Expansion hardware"
+members = ["cw2017"]
+
 [packages.core_runtime]
 label = "bootstrap.runtime"
 depends = ["service_schedule", "service_streams"]
@@ -1710,6 +1715,18 @@ sources = [
   "services/solar_os_max17048_driver.c",
 ]
 requires = ["esp_driver_i2c"]
+capabilities = ["i2c"]
+
+[packages.cw2017]
+label = "expansion.cw2017"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_cw2017_expansion_driver"]
+depends = ["service_battery", "service_expansion", "service_i2c"]
+sources = [
+  "drivers/cw2017.c",
+  "services/solar_os_cw2017.c",
+  "services/solar_os_cw2017_driver.c",
+]
 capabilities = ["i2c"]
 
 [packages.sim7670]

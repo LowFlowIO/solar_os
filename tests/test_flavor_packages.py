@@ -65,6 +65,19 @@ class FlavorPackagesTest(unittest.TestCase):
                 self.catalog, packages, "unknown"
             )
 
+    def test_cw2017_expansion_only_requires_i2c_hardware(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["cw2017"])
+        self.assertTrue(packages["cw2017"])
+        _, supported = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"i2c"}
+        )
+        self.assertTrue(supported["cw2017"])
+        _, unavailable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, set()
+        )
+        self.assertFalse(unavailable["cw2017"])
+
     def test_gesture_listener_job_is_part_of_the_core_runtime(self):
         for flavor in ("core", "full", "netrunner", "rover", "writerdeck"):
             _, _, _, packages = self.resolve(flavor)

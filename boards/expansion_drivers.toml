@@ -1664,6 +1664,28 @@ hint = "0x36"
 required = true
 allowed = [0x36]
 
+[drivers.cw2017]
+summary = "CW2017 fuel gauge"
+package = "cw2017"
+targets = ["esp32", "esp32s3"]
+capabilities = ["i2c"]
+board_capabilities = ["battery"]
+board_driver = "battery_expansion"
+default_name = "battery0"
+
+[[drivers.cw2017.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+
+[[drivers.cw2017.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x63"
+required = true
+allowed = [0x63]
+
 [drivers.sim7670]
 summary = "SIM7670 LTE modem and GNSS receiver"
 package = "sim7670"
