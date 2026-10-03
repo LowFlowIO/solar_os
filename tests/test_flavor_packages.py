@@ -78,6 +78,21 @@ class FlavorPackagesTest(unittest.TestCase):
         )
         self.assertFalse(unavailable["cw2017"])
 
+    def test_pcf8563_expansion_only_requires_i2c_hardware(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["pcf8563"])
+        self.assertTrue(packages["driver_pcf8563"])
+        _, supported = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"i2c"}
+        )
+        for target in ("esp32", "esp32s3"):
+            pruned = generate_flavor_config.apply_target_pruning(self.catalog, supported, target)
+            self.assertTrue(pruned["driver_pcf8563"], target)
+        _, unavailable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, set()
+        )
+        self.assertFalse(unavailable["driver_pcf8563"])
+
     def test_gesture_listener_job_is_part_of_the_core_runtime(self):
         for flavor in ("core", "full", "netrunner", "rover", "writerdeck"):
             _, _, _, packages = self.resolve(flavor)

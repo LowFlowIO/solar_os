@@ -25,3 +25,4 @@ tests/host/ble_nimble_test
 tests/host/ble_multi_peer_test
 tests/host/ble_hid_test
 tests/host/cw2017_test
+tests/host/rtc_pcf8563_test

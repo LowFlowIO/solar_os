@@ -27,6 +27,14 @@ TARGETS += raster_image_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
 TARGETS += cw2017_test
+TARGETS += rtc_pcf8563_test
+
+rtc_pcf8563_test: rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c \
+        $(ROOT)/src/drivers/rtc_pcf8563.h $(ROOT)/src/services/solar_os_pcf8563.c \
+        $(ROOT)/src/services/solar_os_pcf8563.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iexpansion_stubs -I. \
+		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c $(ROOT)/src/services/solar_os_pcf8563.c -o $@
 
 cw2017_test: cw2017_test.c $(ROOT)/src/drivers/cw2017.c $(ROOT)/src/drivers/cw2017.h \
         $(ROOT)/src/services/solar_os_cw2017.c $(ROOT)/src/services/solar_os_cw2017.h
@@ -640,6 +648,7 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 
 test: $(TARGETS)
 	./cw2017_test
+	./rtc_pcf8563_test
 	./axp2101_service_test
 	./messaging_service_test
 	./ble_service_test
