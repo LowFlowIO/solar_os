@@ -65,6 +65,20 @@ class FlavorPackagesTest(unittest.TestCase):
                 self.catalog, packages, "unknown"
             )
 
+    def test_uc8179_expansion_profile_and_package(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["uc8179"])
+        self.assertTrue(packages["expansion_uc8179"])
+        self.assertTrue(packages["driver_epd_ultrachip"])
+        _, supported = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"gfx", "spi", "expansion_spi", "expansion_gpio"}
+        )
+        self.assertTrue(supported["expansion_uc8179"])
+        _, unavailable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"gfx", "spi", "expansion_spi"}
+        )
+        self.assertFalse(unavailable["expansion_uc8179"])
+
     def test_cw2017_expansion_only_requires_i2c_hardware(self):
         _, _, groups, packages = self.resolve("full")
         self.assertTrue(groups["cw2017"])
@@ -308,6 +322,7 @@ class FlavorPackagesTest(unittest.TestCase):
             "driver_display_ili9341",
             "driver_display_st7796",
             "expansion_ssd1683",
+            "expansion_uc8179",
         )
 
         classic = generate_flavor_config.apply_target_pruning(

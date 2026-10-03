@@ -10,6 +10,7 @@ typedef void *spi_device_handle_t;
 #define SPI3_HOST 2
 #define SPI_DMA_CH_AUTO 3
 #define SPI_TRANS_USE_TXDATA 1
+#define SPI_TRANS_CS_KEEP_ACTIVE 2
 
 typedef struct {
     int clock_speed_hz, mode, spics_io_num, queue_size;
@@ -30,3 +31,6 @@ esp_err_t spi_bus_initialize(spi_host_device_t host, const spi_bus_config_t *con
 esp_err_t spi_bus_add_device(spi_host_device_t host, const spi_device_interface_config_t *config, spi_device_handle_t *device);
 esp_err_t spi_bus_remove_device(spi_device_handle_t device);
 esp_err_t spi_bus_free(spi_host_device_t host);
+
+esp_err_t spi_device_acquire_bus(spi_device_handle_t device, unsigned wait);
+void spi_device_release_bus(spi_device_handle_t device);

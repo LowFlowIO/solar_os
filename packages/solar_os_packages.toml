@@ -2699,3 +2699,30 @@ label = "job.meshcore-ble"
 depends = ["service_meshcore_ble"]
 sources = ["jobs/solar_os_meshcore_ble_job.c"]
 capabilities = ["ble", "psram"]
+
+[groups.uc8179]
+label = "UC8179 e-paper expansion"
+description = "800x480 UltraChip UC8179 panels"
+members = ["expansion_uc8179"]
+
+[packages.driver_epd_ultrachip]
+label = "driver.epd_ultrachip"
+targets = ["esp32", "esp32s3"]
+sources = ["drivers/epd_ultrachip.c"]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
+depends = ["service_spi"]
+capabilities = ["gfx"]
+
+[packages.expansion_uc8179]
+label = "expansion.uc8179"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_uc8179_expansion_driver"]
+depends = ["driver_epd_ultrachip", "service_expansion", "service_spi"]
+sources = [
+  "board/solar_os_board_display_expansion.c",
+  "drivers/epd_uc8179.c",
+  "services/solar_os_uc8179.c",
+  "services/solar_os_uc8179_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
+capabilities = ["gfx", "expansion_gpio"]
