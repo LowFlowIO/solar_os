@@ -42,7 +42,7 @@ int main(void)
     luaL_requiref(L, LUA_STRLIBNAME, luaopen_string, 1); lua_pop(L, 1);
     luaL_Reg api[] = {{"load", solua_inference_load}, {"info", solua_inference_info_api},
         {"inputs", solua_inference_inputs}, {"outputs", solua_inference_outputs},
-        {"run", solua_inference_run}, {"reset", solua_inference_reset},
+        {"run", solua_inference_run}, {"reset", solua_inference_reset}, {"set_mode", solua_inference_set_mode},
         {"close", solua_inference_close}, {"close_all", solua_inference_close_all}, {NULL, NULL}};
     luaL_newlib(L, api); lua_setglobal(L, "infer");
     run(L, "h = infer.load('/model.espdl'); "
@@ -50,6 +50,11 @@ int main(void)
         "b = string.pack('bbbbbbbb',2,3,-4,1,6,-2,0,4); "
         "assert(infer.info(h).backend == 'espdl'); assert(infer.inputs(h).a.bytes == 8); "
         "assert(infer.outputs(h).sum.dtype == 'int8'); "
+        "assert(infer.info(h).mode == 'single'); infer.set_mode(h,'dual'); "
+        "assert(infer.info(h).mode == 'dual'); infer.set_mode(h,'auto'); "
+        "assert(infer.info(h).mode == 'auto'); infer.set_mode(h,'single'); "
+        "assert(not pcall(infer.set_mode,h,'bad')); "
+        "assert(not pcall(infer.set_mode,h,'dual' .. string.char(0) .. 'suffix')); "
         "typed = {data=a,dtype='int8',shape={2,4},bytes=8,exponents={0}}; "
         "r = infer.run(h,{a=typed,b=b}); assert(string.byte(r.outputs.sum.data,1) == 3); "
         "typed.dtype='uint8'; assert(not pcall(infer.run,h,{a=typed,b=b})); typed.dtype='int8'; "

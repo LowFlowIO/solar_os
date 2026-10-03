@@ -31,6 +31,23 @@ typedef struct {
 
 static bool inference_busy;
 static uint32_t next_id;
+const char *solar_os_inference_mode_name(solar_os_inference_mode_t mode)
+{
+    switch (mode) {
+    case SOLAR_OS_INFERENCE_SINGLE: return "single";
+    case SOLAR_OS_INFERENCE_AUTO: return "auto";
+    case SOLAR_OS_INFERENCE_DUAL: return "dual";
+    default: return "unknown";
+    }
+}
+esp_err_t solar_os_inference_mode_parse(const char *name, solar_os_inference_mode_t *mode)
+{
+    if (!name || !mode) return ESP_ERR_INVALID_ARG;
+    for (unsigned i = 0; i <= SOLAR_OS_INFERENCE_DUAL; ++i) {
+        if (!strcmp(name, solar_os_inference_mode_name(i))) { *mode = i; return ESP_OK; }
+    }
+    return ESP_ERR_INVALID_ARG;
+}
 static const char *dtype_names[] = {
     "int8", "uint8", "int16", "uint16", "int32", "uint32", "int64", "uint64",
     "float32", "float64", "float16", "bool",
@@ -238,6 +255,17 @@ esp_err_t solar_os_inference_reset(solar_os_inference_t *s, uint32_t id)
     if (!m) return ESP_ERR_NOT_FOUND;
     if (!admit()) return ESP_ERR_INVALID_STATE;
     solar_os_inference_backend_reset(m->backend); leave(); return ESP_OK;
+}
+esp_err_t solar_os_inference_set_mode(solar_os_inference_t *s, uint32_t id,
+                                    solar_os_inference_mode_t mode)
+{
+    if ((unsigned)mode > SOLAR_OS_INFERENCE_DUAL) return ESP_ERR_INVALID_ARG;
+    inference_model_t *m = find(s, id);
+    if (!m) return ESP_ERR_NOT_FOUND;
+    if (!admit()) return ESP_ERR_INVALID_STATE;
+    solar_os_inference_backend_set_mode(m->backend, mode);
+    m->info.mode = mode;
+    leave(); return ESP_OK;
 }
 esp_err_t solar_os_inference_close(solar_os_inference_t *s, uint32_t id)
 {

@@ -12,6 +12,7 @@ python /dl/classify.py /dl/cat.bmp
 python /dl/classify.py /pictures/photo.bmp --repeat 5 --warmup 1
 python /dl/classify.py /pictures/first.bmp /pictures/second.bmp --top 3
 python /dl/classify.py /pictures/photo.bmp --json
+python /dl/classify.py /pictures/photo.png --mode dual --repeat 5
 ```
 
 On firmware with `solaros.image.to_rgb`, JPEG, PNG, GIF, and WebP pictures work
@@ -33,6 +34,11 @@ The model loads once per script invocation, stays resident across all pictures
 and repeats, and closes in `finally`, including errors. Use multiple picture
 arguments to amortize model loading. `--model PATH` and `--labels PATH` override
 the files; the script checks the expected tensor contract and label count.
+
+`--mode single|auto|dual` selects execution mode on firmware that provides
+`inference.set_mode`; the default is `single`. `auto` uses ESP-DL's operator
+heuristics, while `dual` splits supported operators between both cores. Mode
+selection affects native inference, leaving Python preprocessing unchanged.
 
 Statistics report model-load wall time, observed resident SRAM/PSRAM deltas,
 picture read/decode/resize time, normalization/quantization time, inference-call

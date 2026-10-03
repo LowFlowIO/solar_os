@@ -53,6 +53,7 @@ Python and Lua expose the same module functions:
 | `outputs(handle)` | Map of output names to tensor descriptors |
 | `run(handle, inputs[, timeout_ms])` | Owned output tensors and native timing statistics |
 | `reset(handle)` | Reset stateful operators while keeping the model resident |
+| `set_mode(handle, mode)` | Select `"single"`, `"auto"`, or `"dual"` execution for subsequent runs |
 | `close(handle)` | Release one model |
 | `close_all()` | Release all models owned by the current interpreter |
 
@@ -60,6 +61,20 @@ Python and Lua expose the same module functions:
 `internal_bytes`, `external_bytes`, `inputs`, and `outputs`. Memory figures
 are the observed free-heap difference across loading, not peak requirements;
 other activity and shared operator registration can affect them.
+
+`mode` reports the selected execution mode, initially `"single"`. `"auto"`
+lets ESP-DL choose parallel execution for suitable operators; `"dual"` requests
+splitting supported operators between both cores. Operators that cannot split
+still execute on one core. SIMD acceleration is available in all modes.
+For example, call `solaros.inference.set_mode(model, "auto")` before `run`.
+Both worker results are joined before the next operator and before cancellation
+returns. Mode changes do not reload or reset a model.
+
+Dual-core worker storage is allocated on first parallel dispatch and reused
+across runs and resident models. It is released when the last resident model
+closes, including interpreter teardown. Load-time memory estimates exclude
+this later allocation. ESP32-S3 SIMD kernels execute from cached firmware
+flash; model tensors and workspace use PSRAM.
 
 Every tensor descriptor contains:
 

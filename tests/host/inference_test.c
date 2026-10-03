@@ -101,6 +101,10 @@ esp_err_t solar_os_inference_backend_run(solar_os_inference_backend_t *backend,
     r->elapsed_us = 123; return ESP_OK;
 }
 void solar_os_inference_backend_reset(solar_os_inference_backend_t *b) { if (b) ++b->resets; }
+void solar_os_inference_backend_set_mode(solar_os_inference_backend_t *b, solar_os_inference_mode_t mode)
+{
+    (void)b; assert((unsigned)mode <= SOLAR_OS_INFERENCE_DUAL);
+}
 void solar_os_inference_backend_close(solar_os_inference_backend_t *b) { solar_os_memory_free(b); }
 static bool cancelled(void *user) { return atomic_load((atomic_int *)user); }
 static const int8_t a[] = {1, -2, 3, 4, -5, 6, 7, -8}, b[] = {2, 3, -4, 1, 6, -2, 0, 4};
@@ -134,6 +138,15 @@ int main(void)
     const solar_os_inference_model_info_t *info;
     assert(solar_os_inference_info(other, id, &info) == ESP_ERR_NOT_FOUND);
     assert(solar_os_inference_info(s, id, &info) == ESP_OK && info->input_count == 2);
+    assert(info->mode == SOLAR_OS_INFERENCE_SINGLE);
+    assert(solar_os_inference_set_mode(s, id, SOLAR_OS_INFERENCE_DUAL) == ESP_OK);
+    assert(info->mode == SOLAR_OS_INFERENCE_DUAL);
+    assert(solar_os_inference_set_mode(s, id, 99) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_inference_set_mode(other, id, SOLAR_OS_INFERENCE_AUTO) == ESP_ERR_NOT_FOUND);
+    solar_os_inference_mode_t mode;
+    assert(solar_os_inference_mode_parse("auto", &mode) == ESP_OK && mode == SOLAR_OS_INFERENCE_AUTO);
+    assert(solar_os_inference_mode_parse("bad", &mode) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_inference_set_mode(s, id, SOLAR_OS_INFERENCE_SINGLE) == ESP_OK);
     solar_os_inference_result_t *r = NULL;
     for (int failure = 0; failure < 9; ++failure) {
         failures = failure;
@@ -157,6 +170,7 @@ int main(void)
     while (!atomic_load(&backend_entered)) vTaskDelay(1);
     uint32_t next; assert(solar_os_inference_load(other, "/model.espdl", 1000, &next) == ESP_ERR_INVALID_STATE);
     assert(solar_os_inference_close(s, id) == ESP_ERR_INVALID_STATE);
+    assert(solar_os_inference_set_mode(s, id, SOLAR_OS_INFERENCE_DUAL) == ESP_ERR_INVALID_STATE);
     cancellation = 1; assert(!pthread_join(thread, NULL));
     assert(c.status == ESP_ERR_TIMEOUT && !workers && allocations == baseline);
     cancellation = 0;

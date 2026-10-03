@@ -14,15 +14,20 @@ extern "C" {
 #include <memory>
 #include <new>
 
+/* All backend operations, including destruction, use service admission. */
+static size_t resident_backends;
 struct solar_os_inference_backend {
+    solar_os_inference_backend() { ++resident_backends; }
     void *allocation = nullptr;
     uint8_t *buffer = nullptr;
     std::unique_ptr<fbs::FbsModel> fbs;
     std::unique_ptr<dl::Model> model;
     size_t layers = 0;
+    dl::runtime_mode_t mode = dl::RUNTIME_MODE_SINGLE_CORE;
     ~solar_os_inference_backend()
     {
         model.reset(); fbs.reset(); solar_os_memory_free(allocation);
+        if (--resident_backends == 0) dl::module::module_workers_release();
     }
 };
 static esp_err_t dtype(dl::dtype_t type, solar_os_tensor_dtype_t &out)
@@ -162,7 +167,7 @@ extern "C" esp_err_t solar_os_inference_backend_run(solar_os_inference_backend_t
         const int64_t run_start = esp_timer_get_time();
         for (size_t i = 0; i < b->layers; ++i) {
             if (cancel(user)) return ESP_ERR_TIMEOUT;
-            b->model->run(b->layers, i, dl::RUNTIME_MODE_SINGLE_CORE);
+            b->model->run(b->layers, i, b->mode);
             vTaskDelay(1);
         }
         r->inference_us = esp_timer_get_time() - run_start;
@@ -187,6 +192,15 @@ extern "C" esp_err_t solar_os_inference_backend_run(solar_os_inference_backend_t
 extern "C" void solar_os_inference_backend_reset(solar_os_inference_backend_t *b)
 {
     if (b) b->model->reset();
+}
+extern "C" void solar_os_inference_backend_set_mode(solar_os_inference_backend_t *b,
+    solar_os_inference_mode_t mode)
+{
+    switch (mode) {
+    case SOLAR_OS_INFERENCE_AUTO: b->mode = dl::RUNTIME_MODE_AUTO; break;
+    case SOLAR_OS_INFERENCE_DUAL: b->mode = dl::RUNTIME_MODE_MULTI_CORE; break;
+    default: b->mode = dl::RUNTIME_MODE_SINGLE_CORE; break;
+    }
 }
 extern "C" void solar_os_inference_backend_close(solar_os_inference_backend_t *b)
 {

@@ -19,6 +19,22 @@ length, nearest-neighbor resize coordinates, invalid arguments, allocation
 failure and retry, and copy lifetime after closing the native image. A passing
 run prints `RGB_PYTHON_OK`. The script releases its image in `finally`.
 
+## Inference execution modes
+
+Upload `inference_modes.py`, a validated integer `.espdl` model with one input,
+and its prepared binary input tensor. Run:
+
+```text
+python /inference_modes.py /model.espdl /input.bin 3 5
+```
+
+Each cycle loads once, compares single/auto/dual execution with one warm-up and
+five measured calls per mode, checks identical output hashes, tests deadline
+recovery and stale handles, then releases the model. Timings exclude input
+preparation, checksums and explicit garbage collection. Observe native `mem`
+and `top` before and after interpreter exit to check worker and model release.
+Successful completion prints `INFERENCE_MODES_OK`.
+
 ## Native viewer and audio-publisher soak
 
 Requires no-auth Telnet, an idle display shell in session 0, FFmpeg and MediaMTX.

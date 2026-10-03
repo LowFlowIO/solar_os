@@ -83,6 +83,7 @@ static mp_obj_t solaros_inference_info(mp_obj_t handle)
     mp_obj_t d = mp_obj_new_dict(0);
     python_dict_store_cstr(d, "backend", "espdl");
     python_dict_store_cstr(d, "target", "esp32s3");
+    python_dict_store_cstr(d, "mode", solar_os_inference_mode_name(i->mode));
     python_dict_store_uint(d, "model_bytes", i->model_bytes);
     python_dict_store_uint(d, "internal_bytes", i->internal_bytes);
     python_dict_store_uint(d, "external_bytes", i->external_bytes);
@@ -188,6 +189,15 @@ static mp_obj_t solaros_inference_reset(mp_obj_t handle)
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_inference_reset_obj, solaros_inference_reset);
+static mp_obj_t solaros_inference_set_mode(mp_obj_t handle, mp_obj_t value)
+{
+    solar_os_inference_mode_t mode;
+    python_check_esp(solar_os_inference_mode_parse(python_inference_name(value), &mode));
+    python_check_esp(solar_os_inference_set_mode(python_inference_session,
+        python_u32_from_obj(handle), mode));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_2(solaros_inference_set_mode_obj, solaros_inference_set_mode);
 static mp_obj_t solaros_inference_close_all(void)
 {
     python_inference_destroy(); return mp_const_none;

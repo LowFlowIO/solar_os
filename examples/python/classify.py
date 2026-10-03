@@ -196,7 +196,7 @@ def main(argv):
     folder = argv[0].rsplit("/", 1)[0] if "/" in argv[0] else "."
     options = {"--model": folder + "/imagenet_cls_mobilenetv2_s8_v1.espdl",
                "--labels": folder + "/labels.txt", "--repeat": 1,
-               "--warmup": 0, "--top": 5, "--timeout": 10000}
+               "--warmup": 0, "--top": 5, "--timeout": 10000, "--mode": "single"}
     images, as_json, index = [], False, 1
     while index < len(argv):
         arg = argv[index]
@@ -206,7 +206,7 @@ def main(argv):
             index += 1
             if index == len(argv):
                 raise ValueError("missing value for " + arg)
-            options[arg] = argv[index] if arg in ("--model", "--labels") else int(argv[index])
+            options[arg] = argv[index] if arg in ("--model", "--labels", "--mode") else int(argv[index])
         elif arg.startswith("--"):
             raise ValueError("unknown option " + arg)
         else:
@@ -214,12 +214,14 @@ def main(argv):
         index += 1
     if not images:
         print("Usage: python " + argv[0] + " PICTURE [PICTURE ...] [--repeat N] "
-              "[--warmup N] [--top N] [--json]")
+              "[--warmup N] [--top N] [--mode single|auto|dual] [--json]")
         return
     if not 1 <= options["--repeat"] <= 100 or not 0 <= options["--warmup"] <= 10:
         raise ValueError("repeat must be 1..100 and warmup 0..10")
     if not 1 <= options["--top"] <= 1000 or not 1 <= options["--timeout"] <= 60000:
         raise ValueError("top must be 1..1000 and timeout 1..60000 ms")
+    if options["--mode"] not in ("single", "auto", "dual"):
+        raise ValueError("mode must be single, auto or dual")
     with open(options["--labels"]) as source:
         labels = [line.strip() for line in source if line.strip()]
     if len(labels) != 1000:
@@ -229,6 +231,10 @@ def main(argv):
     model = solaros.inference.load(options["--model"], options["--timeout"])
     load_ms = solaros.time.uptime_ms() - begin
     try:
+        if hasattr(solaros.inference, "set_mode"):
+            solaros.inference.set_mode(model, options["--mode"])
+        elif options["--mode"] != "single":
+            raise ValueError("this firmware does not support execution mode selection")
         info = solaros.inference.info(model)
         if len(info["inputs"]) != 1 or len(info["outputs"]) != 1:
             raise ValueError("expected one image input and one classifier output")
@@ -247,6 +253,7 @@ def main(argv):
             report = classify(model, info, labels, tables, path, options["--repeat"],
                               options["--warmup"], options["--top"], options["--timeout"])
             report["model_load_ms"] = load_ms
+            report["mode"] = options["--mode"]
             report["model_bytes"] = info["model_bytes"]
             report["resident_internal_bytes"] = info["internal_bytes"]
             report["resident_external_bytes"] = info["external_bytes"]

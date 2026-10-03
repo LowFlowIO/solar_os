@@ -26,6 +26,7 @@ TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
 TARGETS += vision_test
 TARGETS += inference_test inference_lua_bindings_test inference_schema_test
+TARGETS += espdl_workers_test espdl_workers_single_test
 TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
@@ -132,6 +133,10 @@ LUA_DIR := $(ROOT)/components/lua/lua/src
 LUA_TEST_SOURCES := $(filter-out $(LUA_DIR)/lua.c $(LUA_DIR)/luac.c \
 	$(LUA_DIR)/linit.c $(LUA_DIR)/liolib.c $(LUA_DIR)/loadlib.c $(LUA_DIR)/loslib.c, \
 	$(wildcard $(LUA_DIR)/*.c))
+
+espdl_workers_test espdl_workers_single_test: espdl_workers_test.cpp $(ROOT)/scripts/espdl/worker_runtime.inc
+	$(CXX) -std=c++17 -O2 -Wall -Wextra -Werror -pthread \
+		$(if $(filter espdl_workers_single_test,$@),-DCONFIG_FREERTOS_NUMBER_OF_CORES=1,) $< -o $@
 
 inference_test: inference_test.c $(ROOT)/src/services/solar_os_inference.c $(ROOT)/src/services/solar_os_inference.h
 	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread \
@@ -722,6 +727,8 @@ test: $(TARGETS)
 	./raster_image_test
 	./vision_test
 	./inference_test
+	./espdl_workers_test
+	./espdl_workers_single_test
 	./inference_lua_bindings_test
 	./inference_schema_test
 	./vision_lua_bindings_test

@@ -20,6 +20,9 @@ extern "C" {
 typedef struct solar_os_inference solar_os_inference_t;
 typedef bool (*solar_os_inference_cancel_fn)(void *user);
 typedef enum {
+    SOLAR_OS_INFERENCE_SINGLE, SOLAR_OS_INFERENCE_AUTO, SOLAR_OS_INFERENCE_DUAL,
+} solar_os_inference_mode_t;
+typedef enum {
     SOLAR_OS_TENSOR_INT8, SOLAR_OS_TENSOR_UINT8,
     SOLAR_OS_TENSOR_INT16, SOLAR_OS_TENSOR_UINT16,
     SOLAR_OS_TENSOR_INT32, SOLAR_OS_TENSOR_UINT32,
@@ -43,6 +46,7 @@ typedef struct {
 
 typedef struct {
     size_t input_count, output_count, model_bytes, internal_bytes, external_bytes;
+    solar_os_inference_mode_t mode;
     solar_os_inference_tensor_t inputs[SOLAR_OS_INFERENCE_PORTS_MAX];
     solar_os_inference_tensor_t outputs[SOLAR_OS_INFERENCE_PORTS_MAX];
 } solar_os_inference_model_info_t;
@@ -68,6 +72,8 @@ typedef struct {
 const char *solar_os_tensor_dtype_name(solar_os_tensor_dtype_t dtype);
 esp_err_t solar_os_tensor_dtype_parse(const char *name, solar_os_tensor_dtype_t *dtype);
 size_t solar_os_tensor_dtype_bytes(solar_os_tensor_dtype_t dtype);
+const char *solar_os_inference_mode_name(solar_os_inference_mode_t mode);
+esp_err_t solar_os_inference_mode_parse(const char *name, solar_os_inference_mode_t *mode);
 
 /* A session owns resident models. Handles never recycle, including across
  * sessions. One native operation globally at a time; competing work is busy.
@@ -86,6 +92,9 @@ esp_err_t solar_os_inference_run(solar_os_inference_t *session, uint32_t handle,
     const solar_os_inference_input_t *inputs, size_t count, uint32_t timeout_ms,
     solar_os_inference_result_t **result);
 esp_err_t solar_os_inference_reset(solar_os_inference_t *session, uint32_t handle);
+/* Select execution mode without reloading the model. Default is single. */
+esp_err_t solar_os_inference_set_mode(solar_os_inference_t *session, uint32_t handle,
+                                    solar_os_inference_mode_t mode);
 esp_err_t solar_os_inference_close(solar_os_inference_t *session, uint32_t handle);
 void solar_os_inference_result_free(solar_os_inference_result_t *result);
 

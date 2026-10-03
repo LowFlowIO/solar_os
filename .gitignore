@@ -29,3 +29,5 @@ tests/host/vision_lua_bindings_test
 tests/host/inference_test
 tests/host/inference_lua_bindings_test
 tests/host/inference_schema_test
+tests/host/espdl_workers_test
+tests/host/espdl_workers_single_test

@@ -89,6 +89,7 @@ static int solua_inference_info_api(lua_State *L)
     const solar_os_inference_model_info_t *i = solua_inference_info(L);
     lua_newtable(L);
     solua_set_str(L, -1, "backend", "espdl"); solua_set_str(L, -1, "target", "esp32s3");
+    solua_set_str(L, -1, "mode", solar_os_inference_mode_name(i->mode));
     solua_set_int(L, -1, "model_bytes", i->model_bytes);
     solua_set_int(L, -1, "internal_bytes", i->internal_bytes);
     solua_set_int(L, -1, "external_bytes", i->external_bytes);
@@ -189,6 +190,13 @@ static int solua_inference_reset(lua_State *L)
 static int solua_inference_close(lua_State *L)
 {
     return solua_check_esp(L, solar_os_inference_close(solua_inference_session, solua_inference_uint(L, 1)));
+}
+static int solua_inference_set_mode(lua_State *L)
+{
+    solar_os_inference_mode_t mode;
+    (void)solua_check_esp(L, solar_os_inference_mode_parse(solua_inference_name(L, 2), &mode));
+    return solua_check_esp(L, solar_os_inference_set_mode(solua_inference_session,
+        solua_inference_uint(L, 1), mode));
 }
 static int solua_inference_close_all(lua_State *L)
 {
