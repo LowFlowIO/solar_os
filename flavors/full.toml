@@ -96,6 +96,7 @@ rfm95 = true
 pcd8544 = true
 ssd1683 = true
 uc8179 = true
+uc8279 = true
 ssd1306 = true
 cardkb = true
 ublox_mia_m10q = true

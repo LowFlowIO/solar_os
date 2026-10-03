@@ -29,3 +29,6 @@ tests/host/rtc_pcf8563_test
 
 /tests/host/epd_uc8179_test
 /tests/host/uc8179_expansion_test
+
+/tests/host/epd_uc8279_test
+/tests/host/uc8279_expansion_test

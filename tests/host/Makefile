@@ -12,7 +12,7 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
-TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test
+TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
 TARGETS += axp2101_service_test
 TARGETS += camera_service_test camera_expansion_test media_test mjpeg_test
 TARGETS += http_server_test
@@ -48,6 +48,25 @@ axp2101_service_test: axp2101_service_test.c $(ROOT)/src/services/solar_os_axp21
 		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
 		axp2101_service_test.c $(ROOT)/src/services/solar_os_axp2101.c \
 		$(ROOT)/src/drivers/axp2101.c -o $@
+
+uc8279_expansion_test: uc8279_expansion_test.c $(ROOT)/src/services/solar_os_uc8279.c \
+        $(ROOT)/src/services/solar_os_uc8279_driver.c $(ROOT)/src/drivers/epd_ultrachip.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h \
+		-Iepd_stubs -Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src \
+		-I$(ROOT)/src/services -I$(ROOT)/src/drivers -I$(ROOT)/src/board \
+		-I$(ROOT)/components/u8g2/src/clib uc8279_expansion_test.c -o $@
+
+EPD_U8G2_TEST_SOURCES := $(addprefix $(ROOT)/components/u8g2/src/clib/, \
+        u8g2_setup.c u8g2_buffer.c u8g2_font.c u8g2_ll_hvline.c u8g2_hvline.c \
+        u8g2_intersection.c u8x8_setup.c u8x8_display.c)
+
+epd_uc8279_test: epd_uc8279_test.c $(ROOT)/src/drivers/epd_ultrachip.c $(ROOT)/src/drivers/epd_ultrachip.h \
+        $(ROOT)/src/drivers/epd_uc8279.c $(ROOT)/src/drivers/epd_uc8279.h \
+        $(EPD_U8G2_TEST_SOURCES) \
+        $(wildcard epd_stubs/*.h epd_stubs/driver/*.h epd_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -Wno-unused-parameter -ffunction-sections -fdata-sections \
+		-Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib \
+		epd_uc8279_test.c $(EPD_U8G2_TEST_SOURCES) -Wl,--gc-sections -o $@
 
 uc8179_expansion_test: uc8179_expansion_test.c $(ROOT)/src/services/solar_os_uc8179.c \
         $(ROOT)/src/services/solar_os_uc8179_driver.c $(ROOT)/src/drivers/epd_ultrachip.h
@@ -758,6 +777,8 @@ test: $(TARGETS)
 	./epd_ssd1677_test
 	./epd_uc8179_test
 	./uc8179_expansion_test
+	./epd_uc8279_test
+	./uc8279_expansion_test
 	./max17048_test
 	./mgc3130_test
 	./sim7670_test

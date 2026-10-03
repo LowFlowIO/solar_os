@@ -1,4 +1,4 @@
-Panel initialization and monochrome refresh sequences in epd_uc8179.c
+Panel initialization and monochrome refresh sequences in epd_uc8179.c and epd_uc8279.c
 are adapted from FreeInk SDK's FreeInkDisplay driver implementations:
 https://github.com/Free-Ink/freeink-sdk
 
