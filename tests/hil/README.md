@@ -106,6 +106,30 @@ buffer ownership after image closure, and release the model. The Python test
 also checks crop/letterbox geometry and reports a tensor hash and preprocessing
 time. Success prints `IMAGE_TENSOR_PYTHON_OK` or `IMAGE_TENSOR_LUA_OK`.
 
+## Loadable native vision services
+
+Build `modules/vision-check`. Requires SolarTerm firmware with the native-module,
+image, QR, imlib, inference, script-media and RTSP-client packages, no-auth
+Telnet, an existing `/dl` folder, a stopped device FTP job, FFmpeg and MediaMTX.
+Host ports 18754/18200/18201 must be free. Pass the host's LAN address.
+
+```sh
+python3 tests/hil/native_vision_services.py \
+  --telnet 192.168.1.113 --host-address 192.168.1.192 \
+  --mediamtx /path/to/mediamtx \
+  --module /path/to/solaros_native_vision_check.app.elf \
+  --output /tmp/native-vision-services
+```
+
+The output directory must not exist. The harness refuses to overwrite its
+fixture names and loads the ELF three times. It verifies native image/imlib/QR
+results, cancellation, image-to-tensor preparation, raw and bundle inference,
+resident handle reuse after ELF unload, and three received RTSP frames per run.
+It records memory/tasks, checks worker removal and explicitly unloads its own
+models before removing its own files and stopping its FTP job and host feed.
+Camera capture is covered by host fake-backend tests, not this RTSP device run.
+Success prints `NATIVE_VISION_SERVICES_OK`.
+
 ## Native imlib subset
 
 Requires no-auth Telnet, FTP, Python, Lua and `service.imlib`. The device's

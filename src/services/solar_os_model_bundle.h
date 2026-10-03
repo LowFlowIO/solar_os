@@ -6,13 +6,6 @@
 extern "C" {
 #endif
 typedef struct solar_os_model_bundle solar_os_model_bundle_t;
-/* Native bundle requests borrow inputs only until completion. An image view must
- * remain immutable/alive throughout the call. Raw tensors retain native axis meaning. */
-typedef struct {
-    solar_os_inference_input_t tensor;
-    const solar_os_raster_image_pixels_t *image;
-} solar_os_inference_value_t;
-
 esp_err_t solar_os_inference_load_bundle(solar_os_inference_t *client,
     const char *resolved_manifest, uint32_t timeout_ms, uint32_t *handle);
 esp_err_t solar_os_inference_run_bundle(solar_os_inference_t *client, uint32_t handle,

@@ -319,10 +319,11 @@ point with the supplied arguments.
 
 Native modules import the single versioned `solar_os_native_host_v1` symbol.
 The returned function table reports the ABI version, target, firmware version,
-and provides UTF-8 output through the shell that invoked `load`. Arbitrary
-SolarOS or ESP-IDF internals are not exported. The first ABI is intentionally
-small so later operations can be added after their ownership and lifetime
-rules are defined. Native ELF code is not sandboxed; `load` is for trusted,
+and provides UTF-8 output through the shell that invoked `load`. Its optional
+`get_service` extension discovers versioned image, video, vision and inference
+interfaces; see [Native media and inference](native-media.md). Existing modules
+using the original output-only prefix remain compatible. Arbitrary SolarOS
+internals are not exported through this interface. Native ELF code is not sandboxed; `load` is for trusted,
 maintainer-produced modules only.
 
 The `load` runner is for short-lived command-style modules. A module must stop

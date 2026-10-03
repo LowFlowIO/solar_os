@@ -86,6 +86,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [ota command](commands.md) — Show running and configured OTA state.
 - [outbox command](commands.md) — List pending outbound messages. Sent and failed messages remain in conversation history, not Outbox.
 - [ping command](commands.md) — Send ICMP echo requests. Without count, ping runs until Esc, Ctrl+C, or app-exit.
+- [pipeline command](commands.md) — List OS-owned native image pipelines.
 - [pkg command](commands.md) — Open the native-module package manager.
 - [pocsag command](commands.md) — Show POCSAG receiver configuration, counters, correction statistics, and RSSI.
 - [port command](commands.md) — List byte-stream ports.
@@ -230,6 +231,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 ## Scripting APIs
 
 - [Compatibility I/O modules](compatibility.io.md) — Use the legacy single-bus I2C, SPI, UART, and OneWire APIs
+- [Computer vision](vision.md) — Native QR decoding, statistics, segmentation, filtering, morphology, image difference, and blobs
 - [Digital signal processing](dsp.md) — Portable fixed-point DSP operations, streaming contexts, and script APIs
 - [Lua API overview](lua.md) — Runtime basics, conventions, and service API topic index
 - [Lua apps, jobs, and identity API](lua.system.md) — Apps, jobs, and identity: identity, jobs, sessions, apps
@@ -247,8 +249,9 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Lua time and scheduling API](lua.time.md) — Time and scheduling: time, rtc, schedule
 - [Model bundles and pipelines](model-bundles.md) — Checked model manifests, reusable adapters, and resident file or stream inference
 - [Model inference](inference.md) — Load resident ESP-DL models from storage and execute named tensor inputs and outputs
-- [Native image pipelines](pipelines.md) — OS-owned QR and model processing jobs with bounded latest results and frame timings
 - [Named runtime buses](buses.md) — Create and use resource-owned I2C, SPI, UART, MIDI, OneWire, and PS/2 buses
+- [Native image pipelines](pipelines.md) — OS-owned QR and model processing jobs with bounded latest results and frame timings
+- [Native media and inference](native-media.md) — Versioned image, camera/RTSP, QR, imlib and resident-model interfaces for ELF modules
 - [Python API overview](python.md) — Runtime basics, conventions, and service API topic index
 - [Python apps, jobs, and identity API](python.system.md) — Apps, jobs, and identity: identity, jobs, sessions, apps
 - [Python audio and control API](python.audio.md) — Audio and control: audio, synth, dsp, controls, parameters, midi, osc
@@ -263,7 +266,6 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Python storage and files API](python.storage.md) — Storage and files: storage
 - [Python text user-interface API](python.tui.md) — Build terminal applications from MicroPython
 - [Python time and scheduling API](python.time.md) — Time and scheduling: time, rtc, schedule
-- [Computer vision](vision.md) — Native QR decoding, image statistics, segmentation, filtering, morphology, difference, and blobs
 
 ## System services
 
