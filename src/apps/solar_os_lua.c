@@ -7686,6 +7686,8 @@ static int solua_image_size(lua_State *L)
     return 2;
 }
 
+#include "solar_os_lua_image_rgb.inc"
+
 static int solua_image_draw(lua_State *L)
 {
     const int count = lua_gettop(L);

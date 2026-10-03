@@ -913,6 +913,7 @@ SOLAR_OS_SCRIPT_API_FUNCTION(image, load, open);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, decode, decode);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, from_frame, from_frame);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, size, size);
+SOLAR_OS_SCRIPT_API_FUNCTION(image, to_rgb, to_rgb);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, draw, draw);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, present, present);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, close, close);

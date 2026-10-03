@@ -1,7 +1,23 @@
-# RTSP hardware checks
+# Hardware checks
 
 These tests use live hardware. They do not flash or change persistent settings.
-Run only with permission to occupy the publisher/viewer and receiver slots.
+Run with permission to use the relevant hardware resources. RTSP tests occupy
+the publisher/viewer and receiver slots.
+
+## Python RGB export
+
+Upload `image_rgb.py` and a small picture such as
+`tests/fixtures/vision/blank.png` to mounted device storage, then run:
+
+```text
+python /image_rgb.py /blank.png
+```
+
+Requires the image and Python packages. The full RGB picture must fit the
+512 KiB Python heap. Checks the actual MicroPython buffer constructor, RGB
+length, nearest-neighbor resize coordinates, invalid arguments, allocation
+failure and retry, and copy lifetime after closing the native image. A passing
+run prints `RGB_PYTHON_OK`. The script releases its image in `finally`.
 
 ## Native viewer and audio-publisher soak
 

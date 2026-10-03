@@ -153,10 +153,11 @@ generated/vision/solar_os_lua_vision.inc: $(WRITER_DIR)/solar_os_lua_media.inc
 	python3 -c 'from pathlib import Path; s = Path("$<").read_text(); Path("$@").write_text(s[s.index("#if SOLAR_OS_PACKAGE_SERVICE_VISION"):])'
 
 vision_lua_bindings_test: vision_lua_bindings_test.c vision_test.c \
+		$(ROOT)/src/apps/solar_os_lua_image_rgb.inc \
 		$(ROOT)/src/services/solar_os_vision.c $(ROOT)/src/services/solar_os_raster_image.c \
 		generated/vision/solar_os_lua_vision.inc $(QUIRC_HOST_OBJECTS) $(LUA_TEST_SOURCES)
 	$(CC) $(CFLAGS) -Wno-unused-function -D_POSIX_C_SOURCE=200809L -pthread \
-		-Igenerated/vision -I$(ROOT)/src -Irtsp_stubs -I. -I$(ROOT)/src/services -I$(QUIRC_DIR) -I$(LUA_DIR) \
+		-Igenerated/vision -I$(ROOT)/src -I$(ROOT)/src/apps -Irtsp_stubs -I. -I$(ROOT)/src/services -I$(QUIRC_DIR) -I$(LUA_DIR) \
 		-I$(ROOT)/components/stb_image/include -I$(ROOT)/components/webp_decoder/include \
 		$(filter-out vision_test.c %.inc,$^) -lm -o $@
 

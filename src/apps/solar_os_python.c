@@ -8594,6 +8594,8 @@ static mp_obj_t solaros_image_size(mp_obj_t handle_obj)
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_image_size_obj, solaros_image_size);
 
+#include "solar_os_python_image_rgb.inc"
+
 static mp_obj_t solaros_image_draw(size_t n_args, const mp_obj_t *args)
 {
     if (n_args == 4U) {

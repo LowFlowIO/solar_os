@@ -97,6 +97,10 @@ When `media.image` is compiled:
 - `from_frame(frame)`: decode a leased camera or RTSP JPEG without copying its
   compressed bytes into the interpreter heap. The resulting image is independent
   of the frame and remains valid after frame release.
+- `to_rgb(image[, width, height])`: return an owned packed RGB888 `bytearray`,
+  optionally resized with nearest-neighbor sampling. Supply both dimensions;
+  the copy remains valid after image closure and must fit the interpreter heap.
+  This provides pixel buffers for model-specific normalization and quantization.
 - `draw(image, x, y[, width, height])`: existing clipped canvas drawing.
 - `present(image, x, y[, width, height])`: queue a native presentation.
   On RGB565-capable color displays this bypasses indexed palette conversion;
