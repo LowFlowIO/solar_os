@@ -16,6 +16,7 @@ extern "C" {
 #define SOLAR_OS_INFERENCE_TENSOR_MAX (4U * 1024U * 1024U)
 #define SOLAR_OS_INFERENCE_FILE_MAX (16U * 1024U * 1024U)
 #define SOLAR_OS_INFERENCE_TIMEOUT_MAX_MS 60000U
+#define SOLAR_OS_INFERENCE_BACKEND_VERSION "3.3.13"
 
 typedef struct solar_os_inference solar_os_inference_t;
 typedef bool (*solar_os_inference_cancel_fn)(void *user);

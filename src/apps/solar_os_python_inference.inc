@@ -82,6 +82,7 @@ static mp_obj_t solaros_inference_info(mp_obj_t handle)
     const solar_os_inference_model_info_t *i = python_inference_info(handle);
     mp_obj_t d = mp_obj_new_dict(0);
     python_dict_store_cstr(d, "backend", "espdl");
+    python_dict_store_cstr(d, "backend_version", SOLAR_OS_INFERENCE_BACKEND_VERSION);
     python_dict_store_cstr(d, "target", "esp32s3");
     python_dict_store_cstr(d, "mode", solar_os_inference_mode_name(i->mode));
     python_dict_store_uint(d, "model_bytes", i->model_bytes);
@@ -189,6 +190,7 @@ static mp_obj_t solaros_inference_reset(mp_obj_t handle)
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_inference_reset_obj, solaros_inference_reset);
+#include "solar_os_python_tensor_image.inc"
 static mp_obj_t solaros_inference_set_mode(mp_obj_t handle, mp_obj_t value)
 {
     solar_os_inference_mode_t mode;

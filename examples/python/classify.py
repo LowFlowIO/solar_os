@@ -150,11 +150,26 @@ def classify(model, info, labels, tables, path, repeat, warmup, top, timeout):
     gc.collect()
     heap_before = gc.mem_free()
     started = clock()
-    data, size = picture_rgb(path)
-    after_decode = clock()
-    quantize_in_place(data, tables)
-    after_quantize = clock()
     input_name = next(iter(info["inputs"]))
+    native_preprocess_ms = None
+    if (hasattr(solaros.inference, "prepare_image") and hasattr(solaros, "image") and
+            not path.lower().endswith(".bmp") and not path.lower().endswith(".ppm")):
+        image = solaros.image.open(path)
+        try:
+            size = solaros.image.size(image)
+            after_decode = clock()
+            prepared = solaros.inference.prepare_image(model, input_name, image,
+                {"layout": "NHWC", "color": "RGB", "resize": "stretch", "mean": MEAN, "std": STD})
+            data = prepared["data"]
+            native_preprocess_ms = prepared["preprocess_us"] / 1000
+            after_quantize = clock()
+        finally:
+            solaros.image.close(image)
+    else:
+        data, size = picture_rgb(path)
+        after_decode = clock()
+        quantize_in_place(data, tables)
+        after_quantize = clock()
     output_name = next(iter(info["outputs"]))
     output_exponent = info["outputs"][output_name]["exponents"][0]
     durations = {"call_ms": [], "native_ms": [], "input_copy_ms": [],
@@ -186,6 +201,8 @@ def classify(model, info, labels, tables, path, repeat, warmup, top, timeout):
               "repeat": repeat, "warmup": warmup,
               "timings": {key: timing_summary(v) for key, v in durations.items()},
               "python_heap_free_before": heap_before}
+    report["preprocess_backend"] = "native" if native_preprocess_ms is not None else "python"
+    report["native_preprocess_ms"] = native_preprocess_ms
     del data, result
     gc.collect()
     report["python_heap_free_after"] = gc.mem_free()
@@ -265,8 +282,9 @@ def main(argv):
                 for rank, item in enumerate(report["top"]):
                     print("%d. %6.2f%%  %s [class %d]" %
                           (rank + 1, item["score"] * 100, item["label"], item["id"]))
-                print("Decode/resize: %d ms; normalize/quantize: %d ms; softmax/top-k: %d ms" %
-                      (report["decode_resize_ms"], report["normalize_quantize_ms"], report["postprocess_ms"]))
+                print("Image read/decode%s: %d ms; tensor preparation: %d ms; softmax/top-k: %d ms" %
+                      ("" if report["preprocess_backend"] == "native" else "/resize",
+                       report["decode_resize_ms"], report["normalize_quantize_ms"], report["postprocess_ms"]))
                 print("First picture call (excluding model load and softmax): %d ms; batch: %d ms" %
                       (report["first_picture_call_ms"], report["total_batch_ms"]))
                 for key in ("call_ms", "native_ms", "input_copy_ms", "output_copy_ms", "native_elapsed_ms"):

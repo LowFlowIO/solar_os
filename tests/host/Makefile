@@ -27,6 +27,8 @@ TARGETS += raster_image_test
 TARGETS += vision_test
 TARGETS += inference_test inference_lua_bindings_test inference_schema_test
 TARGETS += espdl_workers_test espdl_workers_single_test
+TARGETS += tensor_image_test
+TARGETS += tensor_image_lua_test
 TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
@@ -62,6 +64,9 @@ messaging_service_test: messaging_service_test.c $(ROOT)/src/services/solar_os_c
 raster_image_test: raster_image_test.c $(ROOT)/src/services/solar_os_raster_image.c
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -I. -I$(ROOT)/src -I$(ROOT)/src/services \
 		-I$(ROOT)/components/stb_image/include -I$(ROOT)/components/webp_decoder/include $^ -o $@
+
+tensor_image_test: tensor_image_test.c $(ROOT)/src/services/solar_os_tensor_image.c
+	$(CC) $(CFLAGS) -Iinference_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services $^ -lm -o $@
 
 QUIRC_DIR := $(ROOT)/components/quirc/lib
 QUIRC_HOST_OBJECTS := $(addprefix generated/vision/,$(notdir $(patsubst %.c,%.o,$(wildcard $(QUIRC_DIR)/*.c))))
@@ -137,6 +142,11 @@ LUA_TEST_SOURCES := $(filter-out $(LUA_DIR)/lua.c $(LUA_DIR)/luac.c \
 espdl_workers_test espdl_workers_single_test: espdl_workers_test.cpp $(ROOT)/scripts/espdl/worker_runtime.inc
 	$(CXX) -std=c++17 -O2 -Wall -Wextra -Werror -pthread \
 		$(if $(filter espdl_workers_single_test,$@),-DCONFIG_FREERTOS_NUMBER_OF_CORES=1,) $< -o $@
+
+tensor_image_lua_test: tensor_image_lua_test.c tensor_image_test.c \
+        $(ROOT)/src/apps/solar_os_lua_tensor_image.inc $(ROOT)/src/services/solar_os_tensor_image.c $(LUA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -Iinference_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(ROOT)/src/apps -I$(LUA_DIR) $(filter-out tensor_image_test.c %.inc,$^) -lm -o $@
 
 inference_test: inference_test.c $(ROOT)/src/services/solar_os_inference.c $(ROOT)/src/services/solar_os_inference.h
 	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread \
@@ -729,6 +739,8 @@ test: $(TARGETS)
 	./inference_test
 	./espdl_workers_test
 	./espdl_workers_single_test
+	./tensor_image_test
+	./tensor_image_lua_test
 	./inference_lua_bindings_test
 	./inference_schema_test
 	./vision_lua_bindings_test

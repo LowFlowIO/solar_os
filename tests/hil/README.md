@@ -35,6 +35,45 @@ preparation, checksums and explicit garbage collection. Observe native `mem`
 and `top` before and after interpreter exit to check worker and model release.
 Successful completion prints `INFERENCE_MODES_OK`.
 
+## Native image-to-tensor preparation
+
+Upload `image_tensor.py`, `image_tensor.lua`, the reference MobileNetV2 model,
+and the classifier's 300×300 `cat.png` sample. Requires image and inference plus
+the relevant interpreter. Run:
+
+```text
+python /dl/image_tensor.py /dl/models/imagenet/imagenet_cls_mobilenetv2_s8_v1.espdl /dl/cat.png
+lua /dl/image_tensor.lua
+```
+
+The Lua test uses those model/picture paths directly. Both tests compare every
+prepared byte against the interpreter reference, check invalid options and
+buffer ownership after image closure, and release the model. The Python test
+also checks crop/letterbox geometry and reports a tensor hash and preprocessing
+time. Success prints `IMAGE_TENSOR_PYTHON_OK` or `IMAGE_TENSOR_LUA_OK`.
+
+## Resident model-bundle RTSP loop
+
+Install `examples/python/model_bundle.py`, `examples/python/infer.py`, and a
+checked image-model bundle on the device. Requires no-auth Telnet, FFmpeg,
+MediaMTX, and free host ports 18654/18100/18101. Give the host's LAN address.
+
+```sh
+python3 tests/hil/model_bundle_stream.py \
+  --telnet 192.168.1.113 --host-address 192.168.1.192 \
+  --mediamtx /path/to/mediamtx \
+  --bundle /dl/models/pedestrian/bundle.json \
+  --output /tmp/model-bundle-stream --count 12 --interrupt
+```
+
+The output directory must not exist. The harness starts and stops its own
+server and synthetic 160×120 JPEG publisher, verifies the finite result count,
+source dimensions and increasing frame timestamps, then optionally cancels
+active continuous inference. It records JSON results, device memory/task
+snapshots, and process logs; success prints `MODEL_BUNDLE_STREAM_OK`. It checks
+worker removal after release. This proves received-stream inference and cleanup;
+the synthetic feed does not validate detector accuracy or local camera capture.
+
 ## Native viewer and audio-publisher soak
 
 Requires no-auth Telnet, an idle display shell in session 0, FFmpeg and MediaMTX.

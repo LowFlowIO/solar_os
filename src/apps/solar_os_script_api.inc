@@ -936,6 +936,9 @@ SOLAR_OS_SCRIPT_API_FUNCTION(inference, outputs, outputs);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, run, run);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, reset, reset);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, set_mode, set_mode);
+#if SOLAR_OS_PACKAGE_SERVICE_IMAGE
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, prepare_image, prepare_image);
+#endif
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, close, close);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, close_all, close_all);
 SOLAR_OS_SCRIPT_API_MODULE_END(inference);

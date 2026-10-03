@@ -89,6 +89,7 @@ static int solua_inference_info_api(lua_State *L)
     const solar_os_inference_model_info_t *i = solua_inference_info(L);
     lua_newtable(L);
     solua_set_str(L, -1, "backend", "espdl"); solua_set_str(L, -1, "target", "esp32s3");
+    solua_set_str(L, -1, "backend_version", SOLAR_OS_INFERENCE_BACKEND_VERSION);
     solua_set_str(L, -1, "mode", solar_os_inference_mode_name(i->mode));
     solua_set_int(L, -1, "model_bytes", i->model_bytes);
     solua_set_int(L, -1, "internal_bytes", i->internal_bytes);
@@ -202,6 +203,7 @@ static int solua_inference_close_all(lua_State *L)
 {
     (void)L; solua_inference_destroy(); return 0;
 }
+#include "solar_os_lua_tensor_image.inc"
 #else
 static bool solua_inference_active(void) { return false; }
 static void solua_inference_destroy(void) {}

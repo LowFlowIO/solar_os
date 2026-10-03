@@ -26,8 +26,10 @@ The script resizes to 224×224 with nearest-neighbor sampling, preserving the
 upstream adapter's coordinate mapping. It uses RGB means
 `[123.675, 116.28, 103.53]` and standard deviations
 `[58.395, 57.12, 57.375]`, then quantizes with the exported input exponent,
-half-up rounding, saturation, and zero point zero. The RGB bytearray is
-quantized in place. Output uses the exported exponent and stable softmax over
+half-up rounding, saturation, and zero point zero. Firmware with
+`inference.prepare_image` fuses resize, normalization, and quantization natively
+for native decoded images. BMP/PPM and older firmware use the portable Python
+path, quantizing the RGB bytearray in place. Output uses the exported exponent and stable softmax over
 all 1,000 classes, followed by ranked labels. Scores are model softmax scores.
 
 The model loads once per script invocation, stays resident across all pictures
@@ -38,7 +40,7 @@ the files; the script checks the expected tensor contract and label count.
 `--mode single|auto|dual` selects execution mode on firmware that provides
 `inference.set_mode`; the default is `single`. `auto` uses ESP-DL's operator
 heuristics, while `dual` splits supported operators between both cores. Mode
-selection affects native inference, leaving Python preprocessing unchanged.
+selection affects model execution independently of preprocessing.
 
 Statistics report model-load wall time, observed resident SRAM/PSRAM deltas,
 picture read/decode/resize time, normalization/quantization time, inference-call
@@ -48,6 +50,9 @@ execution includes cooperative operator yields. Repeated inference statistics
 exclude warm-ups, explicit pre-run garbage collection, and preprocessing.
 Batch wall time includes warm-ups, repeats, and garbage collection. Console
 printing is outside these measurements. Heap deltas are not peak requirements.
+`preprocess_backend` identifies the native/Python path and `native_preprocess_ms`
+reports the fused native time when available. Legacy `decode_resize_ms` contains
+read/decode time on the fused path; `normalize_quantize_ms` includes its resize.
 
 Pictures are limited to 2 million pixels and must fit available native memory
 alongside the resident model. RGB exports and script objects must also fit the

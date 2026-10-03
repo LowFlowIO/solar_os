@@ -57,7 +57,7 @@ Python and Lua expose the same module functions:
 | `close(handle)` | Release one model |
 | `close_all()` | Release all models owned by the current interpreter |
 
-`info` contains `backend="espdl"`, `target="esp32s3"`, `model_bytes`,
+`info` contains `backend="espdl"`, `backend_version`, `target="esp32s3"`, `model_bytes`,
 `internal_bytes`, `external_bytes`, `inputs`, and `outputs`. Memory figures
 are the observed free-heap difference across loading, not peak requirements;
 other activity and shared operator registration can affect them.
@@ -95,6 +95,11 @@ point zero. A single exponent applies to the whole tensor. Per-channel
 exponents are exposed as exported; use the model's contract for their axis.
 The runtime performs no normalization, quantization, layout conversion,
 classification, or detection postprocessing.
+
+The optional image adapter `prepare_image(handle, input_name, image[, options])`
+performs native preprocessing when `media.image` is also enabled. It is separate
+from raw `run`; see [Model bundles and pipelines](model-bundles.md) for options,
+contracts, result adapters, and resident file/stream execution.
 
 ## Named inputs and owned outputs
 
