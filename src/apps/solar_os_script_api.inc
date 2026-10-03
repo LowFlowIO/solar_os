@@ -921,9 +921,27 @@ SOLAR_OS_SCRIPT_API_FUNCTION(image, close_all, close_all);
 SOLAR_OS_SCRIPT_API_MODULE_END(image);
 #endif
 
-#if SOLAR_OS_PACKAGE_SERVICE_VISION
+#if SOLAR_OS_PACKAGE_SERVICE_VISION || SOLAR_OS_PACKAGE_SERVICE_IMLIB
 SOLAR_OS_SCRIPT_API_MODULE_BEGIN(vision);
+#if SOLAR_OS_PACKAGE_SERVICE_VISION
 SOLAR_OS_SCRIPT_API_FUNCTION(vision, qrcodes, qrcodes);
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_IMLIB
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, process, process);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, histogram, histogram);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, statistics, statistics);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, binary, binary);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, invert, invert);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, mean, mean);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, gaussian, gaussian);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, median, median);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, erode, erode);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, dilate, dilate);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, opening, opening);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, closing, closing);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, difference, difference);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, blobs, blobs);
+#endif
 SOLAR_OS_SCRIPT_API_MODULE_END(vision);
 #endif
 

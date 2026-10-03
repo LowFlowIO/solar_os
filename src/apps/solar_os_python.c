@@ -8667,6 +8667,7 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_gfx_text_obj, 3, 3, solaros_gfx_text
 #endif
 
 #include "solar_os_python_media.inc"
+#include "solar_os_python_imlib.inc"
 #include "solar_os_python_inference.inc"
 #include "solar_os_python_pipeline.inc"
 
@@ -9679,7 +9680,7 @@ static void python_stop(solar_os_context_t *ctx)
              * worker. Never delete that owner task mid-call.
              * Interpreter cancellation remains active while we wait. */
             while ((__atomic_load_n(&python_media_session, __ATOMIC_ACQUIRE) != NULL ||
-                    python_inference_active()) &&
+                    python_inference_active() || python_imlib_active()) &&
                    !python_task_stopped(NULL)) {
                 (void)solar_os_script_wait_for_stop(python_task_stopped, NULL,
                     PYTHON_STOP_WAIT_MS, 20U);

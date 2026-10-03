@@ -39,3 +39,5 @@ examples/python/__pycache__/
 /tests/host/pipeline_test
 /tests/host/pipeline_lua_test
 /tests/host/jobs_admission_test
+tests/host/imlib_test
+tests/host/imlib_lua_test

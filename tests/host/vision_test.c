@@ -93,7 +93,8 @@ BaseType_t solar_os_task_create_pinned_external(TaskFunction_t run, const char *
     BaseType_t core, solar_os_task_role_t role)
 {
     (void)name; (void)priority; (void)core;
-    assert(stack >= 20U * 1024U && role == SOLAR_OS_TASK_ROLE_FOREGROUND);
+    assert(stack >= (!strcmp(name, "vision-imlib") ? 12U : 20U) * 1024U &&
+        role == SOLAR_OS_TASK_ROLE_FOREGROUND);
     ++attempts;
     if (deny_worker) return 0;
     struct test_task *task = malloc(sizeof(*task)); assert(task);

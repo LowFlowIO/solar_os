@@ -7754,6 +7754,7 @@ static int solua_gfx_text(lua_State *L)
 }
 
 #include "solar_os_lua_media.inc"
+#include "solar_os_lua_imlib.inc"
 #include "solar_os_lua_inference.inc"
 #include "solar_os_lua_pipeline.inc"
 
@@ -8765,7 +8766,7 @@ static void solua_stop(solar_os_context_t *ctx)
              * worker. Never delete that owner task mid-call.
              * Interpreter cancellation remains active while we wait. */
             while ((__atomic_load_n(&solua_media_session, __ATOMIC_ACQUIRE) != NULL ||
-                    solua_inference_active()) &&
+                    solua_inference_active() || solua_imlib_active()) &&
                    !solua_task_stopped(NULL)) {
                 (void)solar_os_script_wait_for_stop(solua_task_stopped, NULL,
                     SOLUA_STOP_WAIT_MS, 20U);

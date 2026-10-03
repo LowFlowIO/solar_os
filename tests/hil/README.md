@@ -106,6 +106,25 @@ buffer ownership after image closure, and release the model. The Python test
 also checks crop/letterbox geometry and reports a tensor hash and preprocessing
 time. Success prints `IMAGE_TENSOR_PYTHON_OK` or `IMAGE_TENSOR_LUA_OK`.
 
+## Native imlib subset
+
+Requires no-auth Telnet, FTP, Python, Lua and `service.imlib`. The device's
+`/dl` folder must exist and its FTP job must be stopped. No camera or model is
+required.
+
+```sh
+python3 tests/hil/imlib_subset.py \
+  --telnet 192.168.1.113 --output /tmp/imlib-subset
+```
+
+The output directory must not exist. The harness uploads synthetic PNG images
+and its Python/Lua clients, refusing to overwrite existing fixture names. It
+checks statistics/histograms, thresholds/inversion, filters, morphology,
+difference and grayscale/color blobs, including crop/resize coordinates and
+input image ownership. It repeats processing, interrupts an active worker and
+checks its removal, then records memory/task snapshots. It removes its own
+files and stops its temporary FTP job. Success prints `IMLIB_SUBSET_OK`.
+
 ## Resident model-bundle RTSP loop
 
 Install `examples/python/model_bundle.py`, `examples/python/infer.py`, and a

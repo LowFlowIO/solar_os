@@ -159,8 +159,15 @@ Interpreters are never called from network/audio tasks.
 handle. Release a camera/RTSP frame after `image.from_frame` and before detection.
 Results contain binary `bytes` payloads and original-image corner coordinates;
 they remain valid after the image is closed. Processing is limited to 640 by
-480 and eight decoded codes. See [QR vision](vision.md) for crop/resize options,
+480 and eight decoded codes. See [Computer vision](vision.md) for crop/resize options,
 result fields, cancellation, and examples.
+
+## Image processing
+
+`service.imlib` adds native histogram/statistics, binary thresholding/inversion,
+mean/Gaussian/median filters, erosion/dilation/opening/closing, image difference,
+and grayscale/LAB blobs under `solaros.vision`. Transformations return new image
+handles; source pixels stay unchanged. See [Computer vision](vision.md).
 
 ## Cleanup
 

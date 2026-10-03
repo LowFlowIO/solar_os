@@ -99,6 +99,25 @@ model_bundle_test: model_bundle_test.c inference_test.c $(ROOT)/src/services/sol
 		$(filter-out inference_test.c,$^) $(CJSON_DIR)/cJSON.c -lcrypto -lm -o $@
 
 QUIRC_DIR := $(ROOT)/components/quirc/lib
+IMLIB_DIR := $(ROOT)/components/solaros_imlib
+IMLIB_SOURCES := $(wildcard $(IMLIB_DIR)/upstream/*.c)
+IMLIB_FLAGS := -DCMSIS_MCU_H=\"cmsis_compiler.h\" -I$(IMLIB_DIR)/include -I$(IMLIB_DIR)/upstream \
+    -ffunction-sections -fdata-sections -fno-strict-aliasing -Wno-error -Wno-sign-compare -Wno-unused-parameter
+TARGETS += imlib_test
+TARGETS += imlib_lua_test
+imlib_test: imlib_test.c vision_test.c $(ROOT)/src/services/solar_os_imlib.c \
+        $(ROOT)/src/services/solar_os_raster_image.c $(ROOT)/src/services/solar_os_vision.c $(IMLIB_SOURCES) $(QUIRC_HOST_OBJECTS)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -pthread $(IMLIB_FLAGS) -I$(ROOT)/src -Irtsp_stubs -I. -I$(ROOT)/src/services \
+		-I$(ROOT)/components/stb_image/include -I$(ROOT)/components/webp_decoder/include -I$(QUIRC_DIR) \
+		$(filter-out vision_test.c,$^) -Wl,--gc-sections -lm -o $@
+
+imlib_lua_test: imlib_lua_test.c imlib_test.c vision_test.c $(ROOT)/src/apps/solar_os_lua_imlib.inc \
+        $(ROOT)/src/services/solar_os_imlib.c $(ROOT)/src/services/solar_os_raster_image.c \
+        $(ROOT)/src/services/solar_os_vision.c $(IMLIB_SOURCES) $(LUA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -pthread $(IMLIB_FLAGS) -I$(ROOT)/src -Irtsp_stubs -I. -I$(ROOT)/src/services \
+		-I$(ROOT)/src/apps -I$(LUA_DIR) -I$(ROOT)/components/stb_image/include \
+		-I$(ROOT)/components/webp_decoder/include -I$(QUIRC_DIR) \
+		$(filter-out imlib_test.c vision_test.c %.inc,$^) -Wl,--gc-sections -lm -ldl -o $@
 QUIRC_HOST_OBJECTS := $(addprefix generated/vision/,$(notdir $(patsubst %.c,%.o,$(wildcard $(QUIRC_DIR)/*.c))))
 generated/vision/%.o: $(QUIRC_DIR)/%.c $(QUIRC_DIR)/quirc.h $(QUIRC_DIR)/quirc_internal.h
 	@mkdir -p generated/vision
@@ -769,6 +788,8 @@ test: $(TARGETS)
 	./script_media_rtsp_test
 	./raster_image_test
 	./vision_test
+	./imlib_test
+	./imlib_lua_test
 	./inference_test
 	./espdl_workers_test
 	./espdl_workers_single_test

@@ -38,6 +38,11 @@ esp_err_t solar_os_raster_image_open(const char *path,
  * survives this call. Suitable for leased camera/RTSP frames and HTTP bodies. */
 esp_err_t solar_os_raster_image_decode(const uint8_t *data, size_t length,
                                        solar_os_raster_image_t **out_image);
+/* Copy native pixels into a new immutable RGB888 image. The input may use
+ * GRAY8, little-endian RGB565, or RGB888; stride zero means packed rows. */
+esp_err_t solar_os_raster_image_from_pixels(const uint8_t *data, size_t length,
+    uint32_t width, uint32_t height, solar_os_raster_image_format_t format,
+    size_t stride, solar_os_raster_image_t **out_image);
 
 /* References permit a script to close a handle while its draw is queued. */
 void solar_os_raster_image_retain(solar_os_raster_image_t *image);

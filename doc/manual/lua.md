@@ -43,7 +43,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Text user interfaces](lua.tui.md) | `solaros.tui` |
 | [Graphics and raster images](lua.gfx.md) | `solaros.gfx`, `solaros.image` |
 | [Camera, streams, and RTSP](lua.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
-| [QR vision](vision.md) | `solaros.vision` |
+| [Computer vision](vision.md) | `solaros.vision` |
 | [Model inference](inference.md) | `solaros.inference` |
 | [Native image pipelines](pipelines.md) | `solaros.pipeline` |
 
@@ -71,7 +71,9 @@ Lua mirrors the Python `solaros` module structure:
 `solaros.rtsp` are present only when their native services are compiled; see
 [Camera, streams, and RTSP](lua.media.md). Image decode and native presentation
 remain gated by `media.image`.
-`solaros.vision` requires `service.vision`; see [QR vision](vision.md).
+`solaros.vision.qrcodes` requires `service.vision`. Statistics, segmentation,
+filters, morphology, difference, and blobs require `service.imlib`.
+See [Computer vision](vision.md).
 `solaros.inference` requires `service.inference`; see [Model inference](inference.md).
 `solaros.pipeline` requires `service.pipeline`; see [Native image pipelines](pipelines.md).
 

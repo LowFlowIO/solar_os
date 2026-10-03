@@ -19,6 +19,7 @@
 typedef enum {
     RASTER_IMAGE_PIXELS_STB,
     RASTER_IMAGE_PIXELS_WEBP,
+    RASTER_IMAGE_PIXELS_NATIVE,
 } raster_image_pixels_owner_t;
 
 struct solar_os_raster_image {
@@ -151,6 +152,50 @@ void solar_os_raster_image_retain(solar_os_raster_image_t *image)
     }
 }
 
+esp_err_t solar_os_raster_image_from_pixels(const uint8_t *data, size_t length,
+    uint32_t width, uint32_t height, solar_os_raster_image_format_t format,
+    size_t stride, solar_os_raster_image_t **out)
+{
+    if (!out) return ESP_ERR_INVALID_ARG;
+    *out = NULL;
+    if (!data || !width || !height ||
+        (uint64_t)width * height > RASTER_IMAGE_MAX_PIXELS)
+        return ESP_ERR_INVALID_SIZE;
+    const size_t channels = format == SOLAR_OS_RASTER_IMAGE_GRAY8 ? 1 :
+        format == SOLAR_OS_RASTER_IMAGE_RGB565_LE ? 2 :
+        format == SOLAR_OS_RASTER_IMAGE_RGB888 ? 3 : 0;
+    if (!channels) return ESP_ERR_INVALID_ARG;
+    const size_t row = (size_t)width * channels;
+    if (!stride) stride = row;
+    if (stride < row || (height > 1 && stride > (SIZE_MAX - row) / (height - 1)) ||
+        length < stride * (height - 1) + row) return ESP_ERR_INVALID_SIZE;
+    solar_os_raster_image_t *image = solar_os_memory_calloc(1, sizeof(*image),
+        SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "raster.image");
+    if (!image) return ESP_ERR_NO_MEM;
+    image->pixels = solar_os_memory_alloc((size_t)width * height * 3,
+        SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "raster.pixels");
+    if (!image->pixels) { solar_os_memory_free(image); return ESP_ERR_NO_MEM; }
+    image->width = width; image->height = height; image->references = 1;
+    image->pixels_owner = RASTER_IMAGE_PIXELS_NATIVE;
+    for (uint32_t y = 0; y < height; ++y) {
+        const uint8_t *src = data + y * stride;
+        uint8_t *dst = image->pixels + (size_t)y * width * 3;
+        if (channels == 3) { memcpy(dst, src, row); continue; }
+        for (uint32_t x = 0; x < width; ++x) {
+            if (channels == 1) dst[x*3] = dst[x*3+1] = dst[x*3+2] = src[x];
+            else {
+                uint16_t p = src[x*2] | ((uint16_t)src[x*2+1] << 8);
+                unsigned r = (p >> 11) & 31, g = (p >> 5) & 63, b = p & 31;
+                dst[x*3] = (r << 3) | (r >> 2);
+                dst[x*3+1] = (g << 2) | (g >> 4);
+                dst[x*3+2] = (b << 3) | (b >> 2);
+            }
+        }
+    }
+    *out = image;
+    return ESP_OK;
+}
+
 void solar_os_raster_image_release(solar_os_raster_image_t *image)
 {
     if (image == NULL ||
@@ -158,7 +203,9 @@ void solar_os_raster_image_release(solar_os_raster_image_t *image)
         return;
     }
 
-    if (image->pixels_owner == RASTER_IMAGE_PIXELS_WEBP) {
+    if (image->pixels_owner == RASTER_IMAGE_PIXELS_NATIVE) {
+        solar_os_memory_free(image->pixels);
+    } else if (image->pixels_owner == RASTER_IMAGE_PIXELS_WEBP) {
         solar_os_webp_free(image->pixels);
     } else {
         solar_os_stb_image_free(image->pixels);
