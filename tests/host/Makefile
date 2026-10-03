@@ -13,6 +13,9 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
 TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
+TARGETS += frontlight_pwm_test epd_xteink_identify_test x4pro_expansion_test
+TARGETS += gt911_test
+TARGETS += sdmmc_expansion_test
 TARGETS += axp2101_service_test
 TARGETS += camera_service_test camera_expansion_test media_test mjpeg_test
 TARGETS += http_server_test
@@ -55,6 +58,25 @@ uc8279_expansion_test: uc8279_expansion_test.c $(ROOT)/src/services/solar_os_uc8
 		-Iepd_stubs -Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src \
 		-I$(ROOT)/src/services -I$(ROOT)/src/drivers -I$(ROOT)/src/board \
 		-I$(ROOT)/components/u8g2/src/clib uc8279_expansion_test.c -o $@
+
+sdmmc_expansion_test: sdmmc_expansion_test.c $(ROOT)/src/services/solar_os_sdmmc.c $(ROOT)/src/services/solar_os_sdmmc_driver.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h \
+		-Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers sdmmc_expansion_test.c -o $@
+
+gt911_test: gt911_test.c $(ROOT)/src/drivers/gt911.c $(ROOT)/src/drivers/gt911.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iepd_stubs -I. gt911_test.c -o $@
+
+frontlight_pwm_test: frontlight_pwm_test.c $(ROOT)/src/drivers/frontlight_pwm.c $(ROOT)/src/drivers/frontlight_pwm.h
+	$(CC) $(CFLAGS) -Ix4pro_stubs -Iepd_stubs -I. frontlight_pwm_test.c -o $@
+
+epd_xteink_identify_test: epd_xteink_identify_test.c $(ROOT)/src/drivers/epd_xteink_identify.c $(ROOT)/src/drivers/epd_xteink_identify.h
+	$(CC) $(CFLAGS) -Iepd_stubs -I. epd_xteink_identify_test.c -o $@
+
+x4pro_expansion_test: x4pro_expansion_test.c $(ROOT)/src/services/solar_os_x4pro.c $(ROOT)/src/services/solar_os_x4pro_driver.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h \
+		-Iepd_stubs -Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src \
+		-I$(ROOT)/src/services -I$(ROOT)/src/drivers -I$(ROOT)/src/board \
+		-I$(ROOT)/components/u8g2/src/clib x4pro_expansion_test.c -o $@
 
 EPD_U8G2_TEST_SOURCES := $(addprefix $(ROOT)/components/u8g2/src/clib/, \
         u8g2_setup.c u8g2_buffer.c u8g2_font.c u8g2_ll_hvline.c u8g2_hvline.c \
@@ -775,6 +797,11 @@ test: $(TARGETS)
 	./bq25896_test
 	./axp2101_test
 	./epd_ssd1677_test
+	./frontlight_pwm_test
+	./epd_xteink_identify_test
+	./x4pro_expansion_test
+	./gt911_test
+	./sdmmc_expansion_test
 	./epd_uc8179_test
 	./uc8179_expansion_test
 	./epd_uc8279_test

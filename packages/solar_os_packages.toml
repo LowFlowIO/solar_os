@@ -2745,3 +2745,26 @@ sources = [
 ]
 requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
 capabilities = ["gfx", "expansion_gpio"]
+
+[groups.x4pro]
+label = "Xteink X4 Pro display"
+description = "Cached display-controller identification and frontlight brightness"
+members = ["expansion_x4pro"]
+
+[packages.expansion_x4pro]
+label = "expansion.x4pro"
+targets = ["esp32s3"]
+expansion_drivers = ["solar_os_x4pro_expansion_driver"]
+depends = ["driver_epd_ultrachip", "service_expansion", "service_spi"]
+sources = [
+  "board/solar_os_board_display_expansion.c",
+  "drivers/epd_ssd1677.c",
+  "drivers/epd_uc8179.c",
+  "drivers/epd_uc8279.c",
+  "drivers/epd_xteink_identify.c",
+  "drivers/frontlight_pwm.c",
+  "services/solar_os_x4pro.c",
+  "services/solar_os_x4pro_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_driver_ledc", "esp_timer", "nvs_flash", "u8g2"]
+capabilities = ["gfx", "expansion_gpio"]

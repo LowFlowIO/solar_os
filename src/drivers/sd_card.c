@@ -17,6 +17,9 @@
 #endif
 #if SOLAR_OS_PACKAGE_EXPANSION_SDMMC
 #include "driver/sdmmc_host.h"
+#include "driver/gpio.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
 #endif
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -77,6 +80,7 @@ static int sdspi_runtime_cs = -1;
 #endif
 #if SOLAR_OS_PACKAGE_EXPANSION_SDMMC
 static int sdmmc_pins[6] = {-1, -1, -1, -1, -1, -1};
+static int sdmmc_power_pin = -1, sdmmc_power_active_level = 1;
 #endif
 #if SOLAR_OS_BOARD_STORAGE_SDSPI
 static sd_card_transport_t transport = SD_CARD_TRANSPORT_SDSPI_BOARD;
@@ -403,6 +407,27 @@ esp_err_t sd_card_configure_sdmmc(int clk_pin,
 #endif
 }
 
+esp_err_t sd_card_configure_sdmmc_power(int power_pin, int active_level)
+{
+#if SOLAR_OS_PACKAGE_EXPANSION_SDMMC && !SOLAR_OS_BOARD_STORAGE_SDSPI
+    if (transport != SD_CARD_TRANSPORT_SDMMC || card_ready) return ESP_ERR_INVALID_STATE;
+    if (!GPIO_IS_VALID_OUTPUT_GPIO(power_pin) || (active_level != 0 && active_level != 1))
+        return ESP_ERR_INVALID_ARG;
+    for (size_t i = 0; i < 6; ++i)
+        if (sdmmc_pins[i] == power_pin) return ESP_ERR_INVALID_ARG;
+    const gpio_config_t config = {.pin_bit_mask = 1ULL << power_pin, .mode = GPIO_MODE_OUTPUT};
+    esp_err_t err = gpio_config(&config);
+    if (err == ESP_OK) err = gpio_set_level(power_pin, !active_level);
+    if (err != ESP_OK) return err;
+    sdmmc_power_pin = power_pin;
+    sdmmc_power_active_level = active_level;
+    return ESP_OK;
+#else
+    (void)power_pin; (void)active_level;
+    return ESP_ERR_NOT_SUPPORTED;
+#endif
+}
+
 esp_err_t sd_card_clear_sdmmc_config(void)
 {
 #if SOLAR_OS_PACKAGE_EXPANSION_SDMMC && !SOLAR_OS_BOARD_STORAGE_SDSPI
@@ -414,6 +439,10 @@ esp_err_t sd_card_clear_sdmmc_config(void)
     }
     for (size_t i = 0; i < 6; i++) {
         sdmmc_pins[i] = -1;
+    }
+    if (sdmmc_power_pin >= 0) {
+        (void)gpio_set_level(sdmmc_power_pin, !sdmmc_power_active_level);
+        sdmmc_power_pin = -1;
     }
     transport = SD_CARD_TRANSPORT_NONE;
     return ESP_OK;
@@ -843,6 +872,17 @@ static esp_err_t ensure_card_ready(void)
 #endif
 #if SOLAR_OS_PACKAGE_EXPANSION_SDMMC
     if (transport == SD_CARD_TRANSPORT_SDMMC) {
+        if (sdmmc_power_pin >= 0) {
+            ret = gpio_set_level(sdmmc_power_pin, !sdmmc_power_active_level);
+            vTaskDelay(pdMS_TO_TICKS(80));
+            if (ret == ESP_OK) ret = gpio_set_level(sdmmc_power_pin, sdmmc_power_active_level);
+            vTaskDelay(pdMS_TO_TICKS(120));
+            if (ret != ESP_OK) {
+                diagnostics_init_error = ret;
+                set_mount_error_status(ret);
+                return ret;
+            }
+        }
         host = (sdmmc_host_t)SDMMC_HOST_DEFAULT();
         sdmmc_slot_config_t slot_config;
         sd_card_make_slot_config(&slot_config);

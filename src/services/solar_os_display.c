@@ -1022,8 +1022,13 @@ esp_err_t solar_os_display_suspend_primary(void)
         return ESP_OK;
     }
 
-    u8g2_SetPowerSave(display_handle->u8g2, 1);
-    return ESP_OK;
+    const esp_err_t err = solar_os_board_display_set_power_save(display_handle, true);
+    if (err != ESP_OK) {
+        portENTER_CRITICAL(&display_targets_lock);
+        display_primary_suspended = false;
+        portEXIT_CRITICAL(&display_targets_lock);
+    }
+    return err;
 #endif
 }
 
@@ -1042,7 +1047,8 @@ esp_err_t solar_os_display_resume_primary(void)
         return ESP_OK;
     }
 
-    u8g2_SetPowerSave(display_handle->u8g2, 0);
+    const esp_err_t err = solar_os_board_display_set_power_save(display_handle, false);
+    if (err != ESP_OK) return err;
     portENTER_CRITICAL(&display_targets_lock);
     display_primary_suspended = false;
     portEXIT_CRITICAL(&display_targets_lock);

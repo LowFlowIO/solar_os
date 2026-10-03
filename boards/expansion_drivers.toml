@@ -598,6 +598,17 @@ key = "d3"
 kind = "gpio"
 hint = "gpio"
 
+[[drivers.sdmmc.bindings]]
+key = "power"
+kind = "gpio"
+hint = "gpio"
+[[drivers.sdmmc.bindings]]
+key = "active"
+kind = "parameter"
+hint = "0|1"
+min = 0
+max = 1
+
 [drivers.ssd1306]
 summary = "128x64 I2C OLED"
 package = "expansion_ssd1306"
@@ -990,6 +1001,27 @@ hint = "0..3"
 required = true
 min = 0
 max = 3
+
+[[drivers.gt911.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+[[drivers.gt911.bindings]]
+key = "power"
+kind = "gpio"
+hint = "gpio"
+[[drivers.gt911.bindings]]
+key = "active"
+kind = "parameter"
+hint = "0|1"
+min = 0
+max = 1
+[[drivers.gt911.bindings]]
+key = "home_key"
+kind = "parameter"
+hint = "key"
+min = 0
+max = 255
 
 [drivers.pcf85063]
 summary = "I2C real-time clock"
@@ -1807,6 +1839,64 @@ hint = "1: Xteink 800x480"
 role = "panel"
 required = true
 allowed = [1]
+
+[drivers.x4pro]
+summary = "Xteink X4 Pro display and frontlight"
+package = "expansion_x4pro"
+targets = ["esp32s3"]
+capabilities = ["gfx", "expansion_spi", "expansion_gpio"]
+board_capabilities = ["display", "display_brightness"]
+board_driver = "display_x4pro"
+early = true
+default_name = "display0"
+
+[[drivers.x4pro.bindings]]
+key = "spi"
+kind = "spi_bus"
+hint = "bus"
+required = true
+
+[[drivers.x4pro.bindings]]
+key = "cs"
+kind = "spi_cs"
+hint = "gpio"
+required = true
+
+[[drivers.x4pro.bindings]]
+key = "dc"
+kind = "gpio"
+hint = "gpio"
+required = true
+
+[[drivers.x4pro.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+required = true
+
+[[drivers.x4pro.bindings]]
+key = "busy"
+kind = "gpio"
+hint = "gpio"
+required = true
+
+[[drivers.x4pro.bindings]]
+key = "latch"
+kind = "gpio"
+hint = "gpio"
+required = true
+
+[[drivers.x4pro.bindings]]
+key = "cool"
+kind = "gpio"
+hint = "gpio"
+required = true
+
+[[drivers.x4pro.bindings]]
+key = "warm"
+kind = "gpio"
+hint = "gpio"
+required = true
 
 [drivers.uc8279]
 summary = "UC8279 800x480 e-paper"

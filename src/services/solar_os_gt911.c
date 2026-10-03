@@ -17,12 +17,15 @@
 
 typedef struct {
     bool active, pressed;
+    bool home_pressed;
     volatile bool stop_requested;
     volatile bool worker_done;
     char name[SOLAR_OS_EXPANSION_DEVICE_NAME_MAX];
     char bus[SOLAR_OS_EXPANSION_TARGET_MAX];
     uint8_t address, alternate_address, rotation, pointer_id;
     int irq_pin;
+    int reset_pin, power_pin, power_active_level;
+    uint8_t home_key;
     uint16_t width, height;
     int16_t x, y;
     solar_os_input_source_t source;
@@ -40,6 +43,9 @@ static esp_err_t parse(const solar_os_expansion_binding_t *bindings, size_t coun
     bool bus=false, addr=false, alternate_addr=false, irq=false, rotation=false;
     if (!bindings || !device) return ESP_ERR_INVALID_ARG;
     device->irq_pin = -1;
+    device->reset_pin = device->power_pin = -1;
+    device->power_active_level = 1;
+    bool reset=false, power=false, active=false, home=false;
     for (size_t i=0; i<count; ++i) {
         const solar_os_expansion_binding_t *b=&bindings[i];
         if (b->kind == SOLAR_OS_EXPANSION_BINDING_I2C_BUS && !bus) {
@@ -57,12 +63,24 @@ static esp_err_t parse(const solar_os_expansion_binding_t *bindings, size_t coun
         } else if (b->kind == SOLAR_OS_EXPANSION_BINDING_GPIO && !irq &&
                    strcmp(b->role, "irq") == 0) {
             device->irq_pin=b->value; irq=true;
+        } else if (b->kind == SOLAR_OS_EXPANSION_BINDING_GPIO && !reset &&
+                   strcmp(b->role, "reset") == 0) {
+            device->reset_pin=b->value; reset=true;
+        } else if (b->kind == SOLAR_OS_EXPANSION_BINDING_GPIO && !power &&
+                   strcmp(b->role, "power") == 0) {
+            device->power_pin=b->value; power=true;
+        } else if (b->kind == SOLAR_OS_EXPANSION_BINDING_PARAMETER && !active &&
+                   strcmp(b->role, "active") == 0 && b->value >= 0 && b->value <= 1) {
+            device->power_active_level=b->value; active=true;
+        } else if (b->kind == SOLAR_OS_EXPANSION_BINDING_PARAMETER && !home &&
+                   strcmp(b->role, "home_key") == 0 && b->value >= 0 && b->value <= 255) {
+            device->home_key=(uint8_t)b->value; home=true;
         } else if (b->kind == SOLAR_OS_EXPANSION_BINDING_PARAMETER && !rotation &&
                    strcmp(b->role, "rotation") == 0 && b->value >= 0 && b->value <= 3) {
             device->rotation=(uint8_t)b->value; rotation=true;
         } else return ESP_ERR_INVALID_ARG;
     }
-    return bus && addr && irq && rotation &&
+    return bus && addr && irq && rotation && (!active || power) &&
         (!alternate_addr || device->alternate_address != device->address)
         ? ESP_OK : ESP_ERR_INVALID_ARG;
 }
@@ -86,13 +104,16 @@ esp_err_t solar_os_gt911_attach(const char *name,
     if (!solar_os_display_find_target(SOLAR_OS_DISPLAY_PRIMARY_TARGET, &target) ||
         !target.width || !target.height) return ESP_ERR_NOT_FOUND;
     candidate.width=target.width; candidate.height=target.height;
-    ESP_RETURN_ON_ERROR(gt911_init(candidate.bus,
+    esp_err_t err = gt911_init_with_reset(candidate.bus,
                                    candidate.address,
                                    candidate.alternate_address,
-                                   candidate.irq_pin),
-                        TAG, "controller init failed");
+                                   candidate.irq_pin, candidate.reset_pin,
+                                   candidate.power_pin, candidate.power_active_level);
+    if (err != ESP_OK) { gt911_deinit(); return err; }
     strlcpy(candidate.name, name, sizeof(candidate.name));
-    esp_err_t err=solar_os_input_touch_source_open(candidate.name, &candidate.source);
+    err=solar_os_input_source_open_typed(candidate.name, SOLAR_OS_INPUT_SOURCE_TOUCH,
+        SOLAR_OS_INPUT_CAP_POINTER_ABSOLUTE | SOLAR_OS_INPUT_CAP_POINTER_BUTTONS |
+        (candidate.home_key ? SOLAR_OS_INPUT_CAP_KEY_EVENTS : 0), true, &candidate.source);
     if (err != ESP_OK) { gt911_deinit(); return err; }
     candidate.active=true;
     touch=candidate;
@@ -122,6 +143,10 @@ static void poll_device(gt911_device_t *device)
     if (device == NULL || !device->active) return;
     gt911_sample_t raw;
     if (gt911_read(&raw) != ESP_OK) return;
+    if (!raw.valid) return;
+    if (device->home_key && device->home_pressed && !raw.home)
+        (void)solar_os_input_write_key_tap(device->source, 1, 0, device->home_key, 0);
+    device->home_pressed = raw.home;
     uint16_t x=0,y=0;
     if (raw.touched) {
         const uint16_t nw=(device->rotation&1U)?device->height:device->width;

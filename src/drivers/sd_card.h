@@ -78,6 +78,7 @@ esp_err_t sd_card_configure_sdmmc(int clk_pin,
                                   int d2_pin,
                                   int d3_pin);
 esp_err_t sd_card_clear_sdmmc_config(void);
+esp_err_t sd_card_configure_sdmmc_power(int power_pin, int active_level);
 bool sd_card_configured(void);
 esp_err_t sd_card_unmount(void);
 esp_err_t sd_card_mount_volume(const char *name, const char *mount_point);

@@ -32,3 +32,8 @@ tests/host/rtc_pcf8563_test
 
 /tests/host/epd_uc8279_test
 /tests/host/uc8279_expansion_test
+/tests/host/frontlight_pwm_test
+/tests/host/epd_xteink_identify_test
+/tests/host/x4pro_expansion_test
+/tests/host/gt911_test
+/tests/host/sdmmc_expansion_test

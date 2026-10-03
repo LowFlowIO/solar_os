@@ -3,6 +3,7 @@ name = "full"
 description = "Default SolarOS build with all built-in packages enabled."
 
 [groups]
+x4pro = true
 hardware_shell = true
 filesystem = true
 wifi = true
