@@ -1,5 +1,6 @@
 #if SOLAR_OS_PACKAGE_SERVICE_INFERENCE
 #include "solar_os_inference.h"
+#include "solar_os_model_bundle.h"
 static solar_os_inference_t *solua_inference_session;
 static bool solua_inference_active(void)
 {
@@ -62,7 +63,7 @@ static void solua_inference_ports(lua_State *L, const solar_os_inference_tensor_
 static const solar_os_inference_model_info_t *solua_inference_info(lua_State *L)
 {
     const solar_os_inference_model_info_t *info = NULL;
-    (void)solua_check_esp(L, solar_os_inference_info(solua_inference_session, solua_inference_uint(L, 1), &info));
+    (void)solua_check_esp(L, solar_os_inference_info(solua_inference_get(L), solua_inference_uint(L, 1), &info));
     return info;
 }
 static int solua_inference_load(lua_State *L)
@@ -71,6 +72,14 @@ static int solua_inference_load(lua_State *L)
     solua_resolve_path(L, 1, path, sizeof(path));
     uint32_t handle = 0;
     (void)solua_check_esp(L, solar_os_inference_load(solua_inference_get(L), path,
+        solua_inference_timeout(L, 2), &handle));
+    lua_pushinteger(L, handle); return 1;
+}
+static int solua_inference_load_bundle(lua_State *L)
+{
+    char path[SOLAR_OS_STORAGE_PATH_MAX]; solua_resolve_path(L, 1, path, sizeof(path));
+    uint32_t handle;
+    (void)solua_check_esp(L, solar_os_inference_load_bundle(solua_inference_get(L), path,
         solua_inference_timeout(L, 2), &handle));
     lua_pushinteger(L, handle); return 1;
 }
@@ -91,6 +100,14 @@ static int solua_inference_info_api(lua_State *L)
     solua_set_str(L, -1, "backend", "espdl"); solua_set_str(L, -1, "target", "esp32s3");
     solua_set_str(L, -1, "backend_version", SOLAR_OS_INFERENCE_BACKEND_VERSION);
     solua_set_str(L, -1, "mode", solar_os_inference_mode_name(i->mode));
+    solua_set_int(L, -1, "references", i->references);
+    solua_set_str(L, -1, "path", i->path);
+    solua_set_str(L, -1, "bundle_id", i->bundle_id);
+    solua_set_str(L, -1, "bundle_version", i->bundle_version);
+    lua_pushboolean(L, i->bundle); lua_setfield(L, -2, "bundle");
+    lua_newtable(L);
+    for (size_t k = 0; k < i->input_count; ++k) { lua_pushboolean(L, i->image_inputs[k]); lua_setfield(L, -2, i->inputs[k].name); }
+    lua_setfield(L, -2, "image_inputs");
     solua_set_int(L, -1, "model_bytes", i->model_bytes);
     solua_set_int(L, -1, "internal_bytes", i->internal_bytes);
     solua_set_int(L, -1, "external_bytes", i->external_bytes);
@@ -98,6 +115,32 @@ static int solua_inference_info_api(lua_State *L)
     solua_inference_ports(L, i->outputs, i->output_count); lua_setfield(L, -2, "outputs");
     return 1;
 }
+#if SOLAR_OS_PACKAGE_SERVICE_JSON
+#include "cJSON.h"
+static void solua_inference_json_value(lua_State *L, const cJSON *value)
+{
+    if (cJSON_IsObject(value) || cJSON_IsArray(value)) {
+        lua_newtable(L); unsigned index = 1;
+        for (const cJSON *item = value->child; item; item = item->next) {
+            solua_inference_json_value(L, item);
+            if (cJSON_IsArray(value)) lua_rawseti(L, -2, index++); else lua_setfield(L, -2, item->string);
+        }
+    } else if (cJSON_IsString(value)) lua_pushstring(L, value->valuestring);
+    else if (cJSON_IsNumber(value)) lua_pushnumber(L, value->valuedouble);
+    else if (cJSON_IsBool(value)) lua_pushboolean(L, cJSON_IsTrue(value));
+    else lua_pushnil(L);
+}
+static int solua_inference_json_callback(lua_State *L)
+{ solua_inference_json_value(L, lua_touserdata(L, 1)); return 1; }
+static void solua_inference_json(lua_State *L, const char *json)
+{
+    cJSON *value = cJSON_Parse(json);
+    if (!value) luaL_error(L, "bundle result JSON allocation failed");
+    lua_pushcfunction(L, solua_inference_json_callback); lua_pushlightuserdata(L, value);
+    int status = lua_pcall(L, 1, 1, 0); cJSON_Delete(value);
+    if (status != LUA_OK) lua_error(L);
+}
+#endif
 static int solua_inference_result(lua_State *L)
 {
     const solar_os_inference_result_t *r = lua_touserdata(L, 1);
@@ -112,9 +155,23 @@ static int solua_inference_result(lua_State *L)
         lua_pushlstring(L, r->outputs[i].data, r->outputs[i].tensor.bytes);
         lua_setfield(L, -2, "data"); lua_setfield(L, -2, r->outputs[i].tensor.name);
     }
-    lua_setfield(L, -2, "outputs"); return 1;
+    lua_setfield(L, -2, "outputs");
+#if SOLAR_OS_PACKAGE_SERVICE_JSON
+    if (r->result_json) {
+        int result = lua_gettop(L); solua_inference_json(L, r->result_json);
+        if (!strcmp(r->result_json, "{\"kind\":\"raw\"}")) {
+            lua_getfield(L, result, "outputs"); lua_setfield(L, -2, "tensors");
+        }
+        lua_setfield(L, result, "result");
+        solua_inference_json(L, r->transforms_json); lua_setfield(L, result, "transforms");
+        solua_set_int(L, result, "preprocess_us", r->preprocess_us);
+        solua_set_int(L, result, "postprocess_us", r->postprocess_us);
+        solua_set_int(L, result, "postprocess_ms", r->postprocess_us / 1000);
+    }
+#endif
+    return 1;
 }
-static int solua_inference_run(lua_State *L)
+static int solua_inference_run_impl(lua_State *L, bool adapted)
 {
     const solar_os_inference_model_info_t *info = solua_inference_info(L);
     uint32_t handle = solua_inference_uint(L, 1), timeout = solua_inference_timeout(L, 3);
@@ -122,6 +179,11 @@ static int solua_inference_run(lua_State *L)
     solar_os_inference_input_t *inputs = lua_newuserdatauv(L, info->input_count * sizeof(*inputs), 0);
     solar_os_inference_tensor_t *typed = lua_newuserdatauv(L, info->input_count * sizeof(*typed), 0);
     memset(inputs, 0, info->input_count * sizeof(*inputs));
+    solar_os_inference_value_t *values = adapted ? lua_newuserdatauv(L, info->input_count * sizeof(*values), 0) : NULL;
+    if (values) memset(values, 0, info->input_count * sizeof(*values));
+#if SOLAR_OS_PACKAGE_SERVICE_IMAGE
+    solar_os_raster_image_pixels_t *images = adapted ? lua_newuserdatauv(L, info->input_count * sizeof(*images), 0) : NULL;
+#endif
     size_t count = 0;
     lua_pushnil(L);
     while (lua_next(L, 2)) {
@@ -131,6 +193,14 @@ static int solua_inference_run(lua_State *L)
         size_t port = 0;
         while (port < info->input_count && strcmp(inputs[count].name, info->inputs[port].name)) ++port;
         if (port == info->input_count) return luaL_error(L, "unknown input name");
+        if (adapted && info->image_inputs[port]) {
+#if SOLAR_OS_PACKAGE_SERVICE_IMAGE
+            (void)solua_check_esp(L, solar_os_raster_image_pixels(solua.images[solua_image_slot(L, -1)], &images[count]));
+            values[count].tensor.name = inputs[count].name; values[count].image = &images[count]; ++count; lua_pop(L, 1); continue;
+#else
+            return luaL_error(L, "image package is required");
+#endif
+        }
         if (lua_istable(L, -1)) {
             int record = lua_absindex(L, -1);
             lua_pushnil(L);
@@ -175,33 +245,53 @@ static int solua_inference_run(lua_State *L)
             luaL_checktype(L, -1, LUA_TSTRING);
             inputs[count].data = lua_tolstring(L, -1, &inputs[count].bytes);
         }
+        if (adapted) values[count].tensor = inputs[count];
         ++count; lua_pop(L, 1);
     }
     solar_os_inference_result_t *result = NULL;
-    (void)solua_check_esp(L, solar_os_inference_run(solua_inference_session, handle, inputs, count, timeout, &result));
+    esp_err_t error = adapted ? solar_os_inference_run_bundle(solua_inference_get(L), handle, values, count, timeout, &result) :
+        solar_os_inference_run(solua_inference_get(L), handle, inputs, count, timeout, &result);
+    (void)solua_check_esp(L, error);
     lua_pushcfunction(L, solua_inference_result); lua_pushlightuserdata(L, result);
     int status = lua_pcall(L, 1, 1, 0);
     solar_os_inference_result_free(result);
     return status == LUA_OK ? 1 : lua_error(L);
 }
+static int solua_inference_run(lua_State *L) { return solua_inference_run_impl(L, false); }
+static int solua_inference_run_bundle(lua_State *L) { return solua_inference_run_impl(L, true); }
 static int solua_inference_reset(lua_State *L)
 {
-    return solua_check_esp(L, solar_os_inference_reset(solua_inference_session, solua_inference_uint(L, 1)));
+    return solua_check_esp(L, solar_os_inference_reset(solua_inference_get(L), solua_inference_uint(L, 1)));
 }
 static int solua_inference_close(lua_State *L)
 {
-    return solua_check_esp(L, solar_os_inference_close(solua_inference_session, solua_inference_uint(L, 1)));
+    return solua_check_esp(L, solar_os_inference_close(solua_inference_get(L), solua_inference_uint(L, 1)));
 }
 static int solua_inference_set_mode(lua_State *L)
 {
     solar_os_inference_mode_t mode;
     (void)solua_check_esp(L, solar_os_inference_mode_parse(solua_inference_name(L, 2), &mode));
-    return solua_check_esp(L, solar_os_inference_set_mode(solua_inference_session,
+    return solua_check_esp(L, solar_os_inference_set_mode(solua_inference_get(L),
         solua_inference_uint(L, 1), mode));
 }
 static int solua_inference_close_all(lua_State *L)
 {
-    (void)L; solua_inference_destroy(); return 0;
+    return solua_check_esp(L, solar_os_inference_close_all(solua_inference_get(L)));
+}
+static int solua_inference_list(lua_State *L)
+{
+    uint32_t handles[SOLAR_OS_INFERENCE_MODELS_MAX]; size_t count;
+    (void)solua_check_esp(L, solar_os_inference_list(handles, SOLAR_OS_INFERENCE_MODELS_MAX, &count));
+    lua_newtable(L);
+    for (size_t i = 0; i < count; ++i) { lua_pushinteger(L, handles[i]); lua_rawseti(L, -2, i + 1); }
+    return 1;
+}
+static int solua_inference_find(lua_State *L)
+{
+    char path[SOLAR_OS_STORAGE_PATH_MAX]; solua_resolve_path(L, 1, path, sizeof(path));
+    uint32_t handle; esp_err_t error = solar_os_inference_find(path, &handle);
+    if (error == ESP_ERR_NOT_FOUND) { lua_pushnil(L); return 1; }
+    (void)solua_check_esp(L, error); lua_pushinteger(L, handle); return 1;
 }
 #include "solar_os_lua_tensor_image.inc"
 #else

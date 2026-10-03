@@ -15,6 +15,7 @@ def fails(fn, *args):
         return
     raise AssertionError("expected error")
 
+assert not inference.list(), "run this fixture with no pre-existing resident models"
 print("PYTHON_INFERENCE_START")
 fails(inference.load, "/inference-hil/arithmetic_oversized.espdl")
 print("OVERSIZED_LOAD_REJECTED")
@@ -73,4 +74,5 @@ for name, dtype, fmt, width in [("arithmetic_int8", "int8", "<8b", 4),
     print("PYTHON_MODEL_OK", name)
 for _ in range(4):
     inference.load("/inference-hil/arithmetic_int8.espdl")
-print("PYTHON_INFERENCE_OK")  # Interpreter teardown releases these resident models.
+print("RESIDENT_HANDLES", inference.list())
+print("PYTHON_INFERENCE_OK")  # These four models remain resident; explicitly unload them before another fixture run.

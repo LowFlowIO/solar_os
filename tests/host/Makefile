@@ -68,6 +68,15 @@ raster_image_test: raster_image_test.c $(ROOT)/src/services/solar_os_raster_imag
 tensor_image_test: tensor_image_test.c $(ROOT)/src/services/solar_os_tensor_image.c
 	$(CC) $(CFLAGS) -Iinference_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services $^ -lm -o $@
 
+# Uses the same cJSON source as ESP-IDF and OpenSSL only as a host SHA-256 adapter.
+# Override CJSON_DIR when the SDK is installed elsewhere.
+CJSON_DIR ?= $(firstword $(wildcard $(HOME)/.platformio/packages/framework-espidf*/components/json/cJSON))
+model_bundle_test: model_bundle_test.c inference_test.c $(ROOT)/src/services/solar_os_inference.c \
+        $(ROOT)/src/services/solar_os_model_bundle.c $(ROOT)/src/services/solar_os_tensor_image.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -pthread -Imodel_bundle_stubs -Iinference_stubs -Irtsp_stubs \
+		-I. -I$(ROOT)/src -I$(ROOT)/src/services -I$(CJSON_DIR) \
+		$(filter-out inference_test.c,$^) $(CJSON_DIR)/cJSON.c -lcrypto -lm -o $@
+
 QUIRC_DIR := $(ROOT)/components/quirc/lib
 QUIRC_HOST_OBJECTS := $(addprefix generated/vision/,$(notdir $(patsubst %.c,%.o,$(wildcard $(QUIRC_DIR)/*.c))))
 generated/vision/%.o: $(QUIRC_DIR)/%.c $(QUIRC_DIR)/quirc.h $(QUIRC_DIR)/quirc_internal.h
@@ -147,6 +156,13 @@ tensor_image_lua_test: tensor_image_lua_test.c tensor_image_test.c \
         $(ROOT)/src/apps/solar_os_lua_tensor_image.inc $(ROOT)/src/services/solar_os_tensor_image.c $(LUA_TEST_SOURCES)
 	$(CC) $(CFLAGS) -Iinference_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
 		-I$(ROOT)/src/apps -I$(LUA_DIR) $(filter-out tensor_image_test.c %.inc,$^) -lm -o $@
+
+inference_lua_json_test: inference_lua_bindings_test.c inference_test.c \
+        $(ROOT)/src/apps/solar_os_lua_inference.inc $(ROOT)/src/services/solar_os_inference.c $(LUA_TEST_SOURCES)
+	$(CC) $(CFLAGS) -Wno-unused-function -D_POSIX_C_SOURCE=200809L -pthread -DSOLAR_OS_PACKAGE_SERVICE_JSON=1 \
+		-Iinference_stubs -Irtsp_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(ROOT)/src/apps -I$(LUA_DIR) -I$(CJSON_DIR) \
+		$(filter-out inference_test.c %.inc,$^) $(CJSON_DIR)/cJSON.c -lm -o $@
 
 inference_test: inference_test.c $(ROOT)/src/services/solar_os_inference.c $(ROOT)/src/services/solar_os_inference.h
 	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread \
@@ -801,5 +817,5 @@ test: $(TARGETS)
 	./nfc_service_test
 
 clean:
-	$(RM) $(TARGETS)
+	$(RM) $(TARGETS) model_bundle_test inference_lua_json_test
 	$(RM) -r generated

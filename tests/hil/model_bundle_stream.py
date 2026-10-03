@@ -84,6 +84,7 @@ def main():
         'paths:\n  all_others:\n    source: publisher\n' % (args.port,args.rtp_port,args.rtp_port+1))
     server = publisher = console = None
     running = False
+    handle = None
     with (args.output/'server.log').open('w') as server_log, (args.output/'publisher.log').open('w') as publisher_log:
         try:
             server = subprocess.Popen([args.mediamtx,str(config)],stdout=server_log,stderr=subprocess.STDOUT)
@@ -100,7 +101,13 @@ def main():
                 raise RuntimeError('publisher startup failed')
             console = Console(args.telnet)
             url = 'rtsp://%s:%d/bundle-test'%(args.host_address,args.port)
-            command = 'python %s %s %s'%(args.runner,args.bundle,url)
+            loaded = console.command('model bundle '+args.bundle,90)
+            (args.output/'load.log').write_text(loaded)
+            match = re.search(r'Resident model (\d+)',loaded)
+            if not match:
+                raise RuntimeError('bundle load failed; inspect load.log')
+            handle = int(match.group(1))
+            command = 'python %s %d %s'%(args.runner,handle,url)
             (args.output/'before.log').write_text(console.command('mem')+console.command('top'))
             running = True
             output = console.command(command+' --count '+str(args.count),120)
@@ -111,6 +118,7 @@ def main():
             running = False
             for index, value in enumerate(found):
                 assert value['sequence']==index
+                assert value['model_handle']==handle
                 assert value['frame']['network']
                 assert value['transforms'][next(iter(value['transforms']))]['source_width']==160
                 assert value['transforms'][next(iter(value['transforms']))]['source_height']==120
@@ -126,11 +134,19 @@ def main():
                 assert len(records(output)) >= 3, 'interruption did not exercise active inference'
                 assert re.search(r'\w+@[^\r\n]+:/[^\r\n]* ',output), 'no shell prompt after cancellation'
                 running = False
-            after = console.command('mem')+console.command('top')
+            info = console.command('model info '+str(handle))
+            assert 'handle=%d '%handle in info, 'model disappeared after script exit'
+            after = info+console.command('mem')+console.command('top')
             (args.output/'after.log').write_text(after)
             assert not re.search(r'^(?:inference|rtsp_client|rtsp_rx|dl_mc[01])\s',after,re.M)
             (args.output/'records.json').write_text(json.dumps(found,indent=2)+'\n')
-            print('MODEL_BUNDLE_STREAM_OK',len(found),'results; finite release and cancellation passed' if args.interrupt else 'results')
+            released = console.command('model unload '+str(handle))
+            assert 'model:' not in released, 'explicit unload failed'
+            stale = console.command('model info '+str(handle))
+            assert 'not found' in stale, 'unloaded handle remains valid'
+            handle = None
+            (args.output/'released.log').write_text(released+stale+console.command('mem')+console.command('top'))
+            print('MODEL_BUNDLE_STREAM_OK',len(found),'results; residency, explicit unload and cancellation passed' if args.interrupt else 'results; residency and explicit unload passed')
         finally:
             if console is not None:
                 if running:
@@ -138,6 +154,11 @@ def main():
                         console.socket.sendall(b'\x1d')
                         console.read(15,True)
                     except OSError:
+                        pass
+                if handle is not None:
+                    try:
+                        console.command('model unload '+str(handle),30)
+                    except (OSError,RuntimeError):
                         pass
                 console.socket.close()
             stop(publisher)

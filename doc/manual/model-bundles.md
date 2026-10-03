@@ -15,11 +15,12 @@ agent_reference_sections = true
 
 - Bundles contain `bundle.json`, one `.espdl` file, and declared assets.
 - Contract: `schemas/solaros-model-bundle.schema.json`, version one.
-- Reference loader: `examples/python/model_bundle.py`. Copy it alongside your
-  calling script; it is not a built-in module. Native inference is independent.
+- Native Python/Lua API: `solaros.inference.load_bundle` and `run_bundle`.
+- Python client helper: `examples/python/model_bundle.py`. Copy it alongside
+  your calling script; it is not a built-in module.
 - Runner: `examples/python/infer.py`, copied beside `model_bundle.py`.
 - Hashes and runtime/port compatibility are checked once when opening a bundle.
-- Models stay resident until explicit closure or interpreter teardown.
+- Models belong to the OS and stay resident until explicit unload or reboot.
 
 ## Contract and validation
 
@@ -46,9 +47,11 @@ directly, and `image`, accepting caller-owned native image handles. The tensor
 adapter has no options; image options are described below. Multi-input and
 non-image models use the same resident loader.
 
-JSON Schema validates structure. The shared loader/builder validator checks
-adapter semantics, sizes, channel axes, detector geometry, output references,
-and assets. Loading verifies hashes and compares the actual model interfaces.
+JSON Schema validates structure. The host builder checks adapter semantics,
+sizes, channel axes, detector geometry, output references, and assets. The
+native loader independently validates built-in contracts, verifies hashes,
+and compares actual model interfaces. It rejects duplicate keys, embedded NUL,
+trailing non-whitespace data, and JSON nesting beyond 32 levels.
 Numerical validation remains model-specific.
 
 ## Native image preparation
@@ -129,11 +132,24 @@ with ModelBundle("/dl/models/imagenet/bundle.json") as model:
 
 `run` requires all named inputs and returns owned native `outputs`, native
 timings, interpreted `result`, per-input `transforms`, `preprocess_us`,
-`call_ms`, and `postprocess_ms`. Caller image handles are not closed by adapters.
-`reset()` resets the resident model. `close()` is idempotent; context exit calls
-it. Compatibility failure closes the loaded handle. Execution errors leave the
-handle available for reset/reuse or closure.
+`postprocess_us`, and `postprocess_ms`. The helper adds `call_ms`, covering
+preparation, inference, postprocessing, and binding overhead. Caller image
+handles are not closed by adapters. Built-in preparation and result decoding
+run natively; prepared tensors and adapter workspace use PSRAM.
 
+`ModelBundle(path)` reuses an existing bundle at that resolved path, or loads
+one when absent. `ModelBundle(handle)` attaches to an existing bundle.
+`reset()` resets the shared resident model. `close()` explicitly unloads it
+and is idempotent for that helper. `detach()` and context exit drop the client
+handle without unloading. Script exit and execution errors leave the model
+available to other clients; use `model list` to discover it and `model unload`
+to release it. Failed native bundle validation never publishes a handle. The helper allows
+60000 ms for loading, including hash checks, and 10000 ms for execution by
+default; override `load_timeout` and `timeout` separately.
+
+For custom Python adapters, select `ModelBundle(path, native=False)`. This
+uses the reference interpreter loader over the same OS-owned raw runtime.
+The native loader supports only the built-in adapter types listed above.
 Trusted applications can register functions in `INPUT_ADAPTERS` and
 `RESULT_ADAPTERS` before loading. Input functions receive
 `(bundle,name,value,options)` and return `(buffer,transform_or_none,preprocess_us)`.
@@ -149,7 +165,13 @@ python /dl/infer.py /dl/models/pedestrian/bundle.json /pictures/example.png --co
 python /dl/infer.py /dl/models/pedestrian/bundle.json stream:camera0 --count 20
 python /dl/infer.py /dl/models/pedestrian/bundle.json rtsp://host:8554/camera --count 20
 python /dl/infer.py /dl/models/arithmetic/bundle.json /inputs.json
+model list
+python /dl/infer.py 1 /pictures/example.png
+model unload 1
 ```
+
+The first argument is a bundle path or an existing bundle handle. The runner
+leaves the model resident after completion or cancellation.
 
 Single-image models accept a picture path. For non-image or multi-input models,
 an input JSON map names every file, such as `{"a":"a.bin","b":"b.bin"}`.
@@ -166,17 +188,18 @@ Streams open once and lease at most one compressed frame. Stale frames are
 discarded before decoding. Compressed leases return before preprocessing and
 inference; independent decoded images close after each result. There is no
 growing frame queue. Up to four consecutive invalid JPEGs are skipped; the fifth
-fails and closes the source/model. Local cameras remain exclusive, so a direct
+fails and closes the source while keeping the model resident. Local cameras remain exclusive, so a direct
 stream cannot open a camera already owned by `rtspd`/`cam-webd`. Received RTSP
 video is a separate source.
 
-Stdout contains JSON records with `schema=1`, `event="inference"`, model identity,
+Stdout contains JSON records with `schema=1`, `event="inference"`, `model_handle`, model identity,
 source, sequence, frame metadata, result, transforms, timings, and cumulative
 stale/decode-error counts. File records have no frame timestamp. Camera timestamps
 are capture time; RTSP timestamps are arrival time, with native RTP metadata
 retained. `source_latency_ms` measures time since that timestamp, rather than
-sender-to-result RTSP latency. Native timings exclude decoding and postprocessing
-and do not establish camera FPS. Raw CLI results contain hex data up to 4096
+sender-to-result RTSP latency. `inference_us` measures model execution;
+`preprocess_us` and `postprocess_us` measure native adapters separately. These
+timings exclude image decoding and do not establish camera FPS. Raw CLI results contain hex data up to 4096
 bytes, otherwise SHA-256 and metadata; the library retains the actual bytes.
 The runner does not publish MQTT/OSC or produce annotated video.
 

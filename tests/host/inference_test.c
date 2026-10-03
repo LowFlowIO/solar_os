@@ -6,6 +6,7 @@
 #include <string.h>
 #include <time.h>
 #include "solar_os_inference_backend.h"
+#include "solar_os_model_bundle.h"
 #include "solar_os_memory.h"
 #include "solar_os_task.h"
 
@@ -106,6 +107,18 @@ void solar_os_inference_backend_set_mode(solar_os_inference_backend_t *b, solar_
     (void)b; assert((unsigned)mode <= SOLAR_OS_INFERENCE_DUAL);
 }
 void solar_os_inference_backend_close(solar_os_inference_backend_t *b) { solar_os_memory_free(b); }
+#ifndef INFERENCE_NATIVE_BUNDLE_TEST
+void solar_os_model_bundle_free(solar_os_model_bundle_t *bundle) { assert(!bundle); }
+esp_err_t solar_os_model_bundle_load(const char *path, solar_os_inference_cancel_fn cancel,
+    void *user, solar_os_model_bundle_t **bundle, solar_os_inference_backend_t **backend,
+    solar_os_inference_model_info_t *info)
+{ (void)path; (void)cancel; (void)user; (void)bundle; (void)backend; (void)info; return ESP_ERR_NOT_SUPPORTED; }
+esp_err_t solar_os_model_bundle_run(const solar_os_model_bundle_t *bundle,
+    const solar_os_inference_model_info_t *info, solar_os_inference_backend_t *backend,
+    const solar_os_inference_value_t *values, size_t count, solar_os_inference_cancel_fn cancel,
+    void *user, solar_os_inference_result_t *result)
+{ (void)bundle; (void)info; (void)backend; (void)values; (void)count; (void)cancel; (void)user; (void)result; return ESP_ERR_NOT_SUPPORTED; }
+#endif
 static bool cancelled(void *user) { return atomic_load((atomic_int *)user); }
 static const int8_t a[] = {1, -2, 3, 4, -5, 6, 7, -8}, b[] = {2, 3, -4, 1, 6, -2, 0, 4};
 static solar_os_inference_input_t inputs[] = {{"b", b, sizeof(b), NULL}, {"a", a, sizeof(a), NULL}};
@@ -136,17 +149,20 @@ int main(void)
     assert(solar_os_inference_load(s, "/model.espdl", 1000, &id) == ESP_OK);
     baseline = allocations;
     const solar_os_inference_model_info_t *info;
-    assert(solar_os_inference_info(other, id, &info) == ESP_ERR_NOT_FOUND);
+    assert(solar_os_inference_info(other, id, &info) == ESP_OK);
     assert(solar_os_inference_info(s, id, &info) == ESP_OK && info->input_count == 2);
     assert(info->mode == SOLAR_OS_INFERENCE_SINGLE);
     assert(solar_os_inference_set_mode(s, id, SOLAR_OS_INFERENCE_DUAL) == ESP_OK);
+    assert(info->mode == SOLAR_OS_INFERENCE_SINGLE); /* Snapshot is immutable. */
+    assert(solar_os_inference_info(s, id, &info) == ESP_OK);
     assert(info->mode == SOLAR_OS_INFERENCE_DUAL);
     assert(solar_os_inference_set_mode(s, id, 99) == ESP_ERR_INVALID_ARG);
-    assert(solar_os_inference_set_mode(other, id, SOLAR_OS_INFERENCE_AUTO) == ESP_ERR_NOT_FOUND);
+    assert(solar_os_inference_set_mode(other, id, SOLAR_OS_INFERENCE_AUTO) == ESP_OK);
     solar_os_inference_mode_t mode;
     assert(solar_os_inference_mode_parse("auto", &mode) == ESP_OK && mode == SOLAR_OS_INFERENCE_AUTO);
     assert(solar_os_inference_mode_parse("bad", &mode) == ESP_ERR_INVALID_ARG);
     assert(solar_os_inference_set_mode(s, id, SOLAR_OS_INFERENCE_SINGLE) == ESP_OK);
+    baseline = allocations;
     solar_os_inference_result_t *r = NULL;
     for (int failure = 0; failure < 9; ++failure) {
         failures = failure;
@@ -196,7 +212,23 @@ int main(void)
     assert(solar_os_inference_run(s, id, inputs, 2, 1000, &r) == ESP_ERR_NOT_FOUND);
     assert(solar_os_inference_load(s, "/model.espdl", 1000, &next) == ESP_OK && next != id);
     assert(solar_os_inference_reset(s, next) == ESP_OK);
-    solar_os_inference_destroy(s); solar_os_inference_destroy(other);
+    assert(solar_os_inference_retain(next) == ESP_OK);
+    assert(solar_os_inference_close(other, next) == ESP_ERR_INVALID_STATE);
+    assert(solar_os_inference_close_all(other) == ESP_ERR_INVALID_STATE);
+    assert(solar_os_inference_info(other, next, &info) == ESP_OK && info->references == 1);
+    solar_os_inference_destroy(s); /* Loading client disappears, model remains. */
+    uint32_t handles[4], found; size_t count;
+    assert(solar_os_inference_list(handles, 4, &count) == ESP_OK && count == 1 && handles[0] == next);
+    assert(solar_os_inference_find("/model.espdl", &found) == ESP_OK && found == next);
+    assert(solar_os_inference_run(other, next, inputs, 2, 1000, &r) == ESP_OK);
+    solar_os_inference_result_free(r);
+    assert(solar_os_inference_release(next) == ESP_OK);
+    assert(solar_os_inference_release(next) == ESP_ERR_INVALID_STATE);
+    assert(solar_os_inference_close_all(other) == ESP_OK);
+    assert(info->inputs[0].exponents[0] == 0); /* Snapshot survives unload. */
+    assert(solar_os_inference_info(other, next, &info) == ESP_ERR_NOT_FOUND);
+    assert(solar_os_inference_list(handles, 4, &count) == ESP_OK && count == 0);
+    solar_os_inference_destroy(other);
     assert(!allocations && !workers);
     puts("inference ownership, named tensors, typed validation, busy, cancellation, OOM and repeated execution passed");
     return 0;

@@ -33,4 +33,6 @@ tests/host/espdl_workers_test
 tests/host/espdl_workers_single_test
 tests/host/tensor_image_test
 tests/host/tensor_image_lua_test
+tests/host/model_bundle_test
 examples/python/__pycache__/
+/tests/host/inference_lua_json_test

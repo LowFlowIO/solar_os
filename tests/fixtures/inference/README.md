@@ -30,5 +30,8 @@ and `lua /inference-hil/device.lua`. The full suite can exceed the agent script
 runner's fixed 30-second deadline. Each program checks all three numerical models
 across 75 calls, descriptor/input validation, load failures, timeout recovery,
 explicit release, stale handles, the four-model limit, and interpreter teardown
-with resident models. The success markers are
+with resident models. Start each fixture with an empty OS model registry; the
+fixture checks this before loading or calling global `close_all`. It prints
+the four remaining handles; explicitly unload them before the other interpreter
+fixture or another run. The success markers are
 `PYTHON_INFERENCE_OK` and `LUA_INFERENCE_OK`.

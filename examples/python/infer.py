@@ -5,7 +5,7 @@ import hashlib
 import json
 import sys
 import solaros
-from model_bundle import ModelBundle, MANIFEST_MAX, TENSOR_MAX, require
+from model_bundle import ModelBundle, MANIFEST_MAX, require
 
 
 def json_input_file(path):
@@ -40,11 +40,12 @@ def raw_json(payload):
 def record(bundle, source, sequence, result, frame, decode_ms, dropped=0, errors=0):
     timing = {key: result[key] for key in ("input_us", "inference_us", "output_us", "elapsed_us",
                                          "call_ms", "preprocess_us", "postprocess_ms")}
+    timing["postprocess_us"] = result.get("postprocess_us", result["postprocess_ms"] * 1000)
     timing["decode_ms"] = decode_ms
     if frame:
         timing["source_latency_ms"] = max(0, solaros.time.uptime_ms() - frame["timestamp_us"] // 1000)
     return {"schema": 1, "event": "inference", "model_id": bundle.manifest["id"],
-            "model_version": bundle.manifest["version"], "source": source, "sequence": sequence,
+            "model_version": bundle.manifest["version"], "model_handle": bundle.handle, "source": source, "sequence": sequence,
             "frame": frame, "result": raw_json(result["result"]), "timings": timing,
             "transforms": result["transforms"], "stale_frames_dropped": dropped, "decode_errors": errors}
 
@@ -145,7 +146,7 @@ def stream(bundle, source, count, max_age):
 
 def main(argv):
     if len(argv) < 3:
-        print("Usage: python " + argv[0] + " BUNDLE SOURCE [--count N] [--mode single|auto|dual] [--max-age MS]")
+        print("Usage: python " + argv[0] + " BUNDLE_OR_HANDLE SOURCE [--count N] [--mode single|auto|dual] [--max-age MS]")
         return
     count, mode, max_age = None, "single", 250
     index = 3

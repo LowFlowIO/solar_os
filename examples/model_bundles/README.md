@@ -50,6 +50,12 @@ For the arithmetic bundle, provide an input map such as
 paths resolve beside the map. The same runner supports non-image models and
 multiple named inputs.
 
+Built-in adapters run in the native inference service. The runner reuses a
+bundle already loaded from the same path and leaves it resident on exit. Use
+`model list` to discover its handle, pass that handle instead of a bundle path
+to reuse it, and call `model unload <handle>` to release it explicitly. Python
+and Lua can share a handle across script lifetimes.
+
 See [Model bundles and pipelines](../../doc/manual/model-bundles.md) for the
 contract, native preprocessing, adapter extension points, execution modes,
 RTSP input, frame ownership, and JSON output fields.

@@ -7,6 +7,7 @@
 #include "lualib.h"
 #include "solar_os_storage.h"
 static bool fail_lua, fail_result;
+static int fail_lua_after = -1;
 static bool solua_should_cancel(void *user) { (void)user; return false; }
 static int solua_check_esp(lua_State *L, esp_err_t err)
 {
@@ -26,6 +27,8 @@ static void *lua_alloc(void *user, void *ptr, size_t old, size_t size)
 {
     (void)user; (void)old;
     if (!size) { free(ptr); return NULL; }
+    if (fail_lua_after == 0) return NULL;
+    if (fail_lua_after > 0) --fail_lua_after;
     return fail_lua ? NULL : realloc(ptr, size);
 }
 static void run(lua_State *L, const char *script)
@@ -34,6 +37,37 @@ static void run(lua_State *L, const char *script)
     if (status) fprintf(stderr, "Lua: %s\n", lua_tostring(L, -1));
     assert(status == LUA_OK); lua_settop(L, 0);
 }
+#if SOLAR_OS_PACKAGE_SERVICE_JSON
+static void *json_alloc(size_t size)
+{ return solar_os_memory_alloc(size, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "test.json"); }
+static void json_results(lua_State *L)
+{
+    cJSON_Hooks hooks = {json_alloc, solar_os_memory_free}; cJSON_InitHooks(&hooks);
+    const char *payload = "{\"kind\":\"classification\",\"classes\":[{\"id\":281,\"label\":\"tabby\",\"score\":0.5}]}";
+    const char *transforms = "{\"pixels\":{\"source_width\":300,\"source_height\":200}}";
+    for (int failure = -1; failure < 80; ++failure) {
+        lua_gc(L, LUA_GCCOLLECT); int baseline = allocations;
+        solar_os_inference_result_t *result = solar_os_memory_calloc(1,sizeof(*result),SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"test.result");
+        assert(result);
+        result->result_json = solar_os_memory_alloc(strlen(payload)+1,SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"test.result_json");
+        result->transforms_json = solar_os_memory_alloc(strlen(transforms)+1,SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,"test.transforms");
+        assert(result->result_json && result->transforms_json);
+        strcpy(result->result_json,payload); strcpy(result->transforms_json,transforms);
+        result->preprocess_us = 12; result->postprocess_us = 1500;
+        lua_pushcfunction(L,solua_inference_result); lua_pushlightuserdata(L,result);
+        fail_lua_after = failure;
+        int status = lua_pcall(L,1,1,0); fail_lua_after = -1;
+        if (status == LUA_OK) {
+            lua_setglobal(L,"bundle_result");
+            run(L,"assert(bundle_result.result.classes[1].label=='tabby'); "
+                "assert(bundle_result.result.classes[1].id==281); "
+                "assert(bundle_result.transforms.pixels.source_width==300); "
+                "assert(bundle_result.postprocess_us==1500 and bundle_result.preprocess_us==12)");
+        } else { assert(status==LUA_ERRMEM); lua_settop(L,0); }
+        solar_os_inference_result_free(result); assert(allocations==baseline);
+    }
+}
+#endif
 int main(void)
 {
     assert(native_inference_suite() == 0);
@@ -43,7 +77,7 @@ int main(void)
     luaL_Reg api[] = {{"load", solua_inference_load}, {"info", solua_inference_info_api},
         {"inputs", solua_inference_inputs}, {"outputs", solua_inference_outputs},
         {"run", solua_inference_run}, {"reset", solua_inference_reset}, {"set_mode", solua_inference_set_mode},
-        {"close", solua_inference_close}, {"close_all", solua_inference_close_all}, {NULL, NULL}};
+        {"list", solua_inference_list}, {"find", solua_inference_find}, {"close", solua_inference_close}, {"close_all", solua_inference_close_all}, {NULL, NULL}};
     luaL_newlib(L, api); lua_setglobal(L, "infer");
     run(L, "h = infer.load('/model.espdl'); "
         "a = string.pack('bbbbbbbb',1,-2,3,4,-5,6,7,-8); "
@@ -83,8 +117,14 @@ int main(void)
         "assert(h ~= old); infer.close_all(); assert(not pcall(infer.info,h)); "
         "h=infer.load('/model.espdl')");
     assert(solua_inference_active());
+    solua_inference_destroy(); assert(!workers && !solua_inference_active());
+    run(L, "assert(infer.find('/model.espdl') == h); assert(#infer.list() == 1); "
+        "assert(infer.run(h,{a=a,b=b}).outputs.sum.data == retained); infer.close_all()");
     solua_inference_destroy(); assert(!allocations && !workers && !solua_inference_active());
+#if SOLAR_OS_PACKAGE_SERVICE_JSON
+    json_results(L); assert(!allocations);
+#endif
     lua_close(L);
-    puts("actual Lua inference metadata, typed buffers, result-OOM and session cleanup passed");
+    puts("actual Lua inference metadata, typed buffers, result-OOM, client teardown and resident model ownership passed");
     return 0;
 }

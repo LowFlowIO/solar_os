@@ -3,6 +3,7 @@ local inference = solaros.inference
 local a = {1,-2,3,4,-5,6,7,-8}
 local b = {2,3,-4,1,6,-2,0,4}
 local function fails(fn, ...) assert(not pcall(fn, ...)) end
+assert(#inference.list()==0,"run this fixture with no pre-existing resident models")
 print("LUA_INFERENCE_START")
 fails(inference.load,"/inference-hil/arithmetic_oversized.espdl")
 print("OVERSIZED_LOAD_REJECTED")
@@ -56,4 +57,5 @@ for _, model in ipairs({{"arithmetic_int8","int8","bbbbbbbb",4},
     print("LUA_MODEL_OK",name)
 end
 for i=1,4 do inference.load("/inference-hil/arithmetic_int8.espdl") end
-print("LUA_INFERENCE_OK") -- Interpreter teardown releases these resident models.
+print("RESIDENT_HANDLES",table.unpack(inference.list()))
+print("LUA_INFERENCE_OK") -- These four models remain resident; explicitly unload them before another fixture run.

@@ -35,6 +35,38 @@ preparation, checksums and explicit garbage collection. Observe native `mem`
 and `top` before and after interpreter exit to check worker and model release.
 Successful completion prints `INFERENCE_MODES_OK`.
 
+## OS-owned inference residency
+
+Install the arithmetic bundle and upload `inference_residency.py` and
+`inference_residency.lua` into `/dl`. Run each command separately:
+
+```text
+python /dl/inference_residency.py load
+model list
+python /dl/inference_residency.py run
+lua /dl/inference_residency.lua
+model list
+python /dl/inference_residency.py run
+python /dl/inference_residency.py unload
+model list
+```
+
+The fixture must not already be resident. These checks prove model survival
+across interpreter teardown, shared Python/Lua handles and modes, numerical
+arithmetic output, explicit unload, and handle discovery. The last Python
+command releases only the fixture model. Observe memory/tasks after unloading.
+
+## Native bundle host checks
+
+`make -C tests/host model_bundle_test` builds the real native parser, image
+preparation, and result adapters against a fake numerical backend. It requires
+OpenSSL development files and the SDK's cJSON source. Override `CJSON_DIR` when
+ESP-IDF is installed outside PlatformIO. Run `tests/host/model_bundle_test` to
+check hashes, port contracts, allocation-failure rollback, and classifier/PICO
+results. `make -C tests/host inference_lua_json_test` uses the same cJSON
+source to check actual Lua result conversion and interpreter allocation failures;
+run `tests/host/inference_lua_json_test` afterward. These checks do not validate a model's real ESP-DL execution.
+
 ## Native image-to-tensor preparation
 
 Upload `image_tensor.py`, `image_tensor.lua`, the reference MobileNetV2 model,
@@ -71,7 +103,9 @@ server and synthetic 160×120 JPEG publisher, verifies the finite result count,
 source dimensions and increasing frame timestamps, then optionally cancels
 active continuous inference. It records JSON results, device memory/task
 snapshots, and process logs; success prints `MODEL_BUNDLE_STREAM_OK`. It checks
-worker removal after release. This proves received-stream inference and cleanup;
+request/stream worker removal after script exit, checks that the model remains
+resident after finite and interrupted runs, and explicitly unloads only its own
+model before recording the released snapshot. This proves received-stream inference and cleanup;
 the synthetic feed does not validate detector accuracy or local camera capture.
 
 ## Native viewer and audio-publisher soak

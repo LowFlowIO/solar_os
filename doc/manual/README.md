@@ -71,6 +71,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [messages command](commands.md) — Show bounded-store, persistence, drop, and live provider state.
 - [midi command](commands.md) — Show MIDI worker, traffic, parser, and queue status.
 - [mkdir command](commands.md) — Create directories.
+- [model command](commands.md) — Inspect OS-owned resident inference models and their interfaces, memory, mode, and references.
 - [modem command](commands.md) — Open the modem status and settings TUI.
 - [mqtt command](commands.md) — Show broker, authentication, connection, traffic, queue, and error status without revealing the password.
 - [mv command](commands.md) — Rename or move a file or matched set.

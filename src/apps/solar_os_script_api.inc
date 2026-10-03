@@ -930,10 +930,14 @@ SOLAR_OS_SCRIPT_API_MODULE_END(vision);
 #if SOLAR_OS_PACKAGE_SERVICE_INFERENCE
 SOLAR_OS_SCRIPT_API_MODULE_BEGIN(inference);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, load, load);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, load_bundle, load_bundle);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, list, list);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, find, find);
 SOLAR_OS_SCRIPT_API_FUNCTION_NAMED(inference, info, solaros_inference_info_obj, solua_inference_info_api);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, inputs, inputs);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, outputs, outputs);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, run, run);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, run_bundle, run_bundle);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, reset, reset);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, set_mode, set_mode);
 #if SOLAR_OS_PACKAGE_SERVICE_IMAGE
@@ -941,6 +945,8 @@ SOLAR_OS_SCRIPT_API_FUNCTION(inference, prepare_image, prepare_image);
 #endif
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, close, close);
 SOLAR_OS_SCRIPT_API_FUNCTION(inference, close_all, close_all);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, unload, close);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, unload_all, close_all);
 SOLAR_OS_SCRIPT_API_MODULE_END(inference);
 #endif
 

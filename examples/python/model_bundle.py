@@ -348,10 +348,30 @@ RESULT_ADAPTERS.update({"raw": raw_result, "classification": classification, "pi
 
 
 class ModelBundle:
-    def __init__(self, path, mode="single", timeout=10000):
+    def __init__(self, path, mode="single", timeout=10000, native=True, load_timeout=60000):
         self.handle, self.labels = None, []
+        self.native = native and hasattr(solaros.inference, "load_bundle")
         self.timeout = timeout
         require(mode in ("single", "auto", "dual"), "invalid execution mode")
+        if self.native:
+            # The service owns validation, preparation, decoding and model lifetime.
+            if type(path) is int or (isinstance(path, str) and path and all(c in "0123456789" for c in path)):
+                self.handle = int(path)
+            else:
+                self.handle = solaros.inference.find(path)
+                if self.handle is None:
+                    self.handle = solaros.inference.load_bundle(path, load_timeout)
+            self.info = solaros.inference.info(self.handle)
+            require(self.info["bundle"], "handle is not a model bundle")
+            self.manifest = {"id": self.info["bundle_id"], "version": self.info["bundle_version"],
+                             "inputs": {}, "outputs": self.info["outputs"]}
+            for name, port in self.info["inputs"].items():
+                contract = dict(port)
+                contract["adapter"] = {"type": "image" if self.info["image_inputs"][name] else "tensor"}
+                self.manifest["inputs"][name] = contract
+            solaros.inference.set_mode(self.handle, mode)
+            return
+
         folder = path.rsplit("/", 1)[0] if "/" in path else "."
         with open(path) as source:
             text = source.read(MANIFEST_MAX + 1)
@@ -390,8 +410,14 @@ class ModelBundle:
             raise
 
     def run(self, inputs):
-        require(self.handle is not None, "bundle is closed")
+        require(self.handle is not None, "bundle is detached")
+        if self.native:
+            started = solaros.time.uptime_ms()
+            result = solaros.inference.run_bundle(self.handle, inputs, self.timeout)
+            result["call_ms"] = solaros.time.uptime_ms() - started
+            return result
         require(isinstance(inputs, dict) and set(inputs) == set(self.manifest["inputs"]), "all named inputs required")
+        started = solaros.time.uptime_ms()
         prepared, transforms, preprocess_us = {}, {}, 0
         for name, value in inputs.items():
             adapter = self.manifest["inputs"][name]["adapter"]
@@ -400,15 +426,14 @@ class ModelBundle:
             if transform is not None:
                 transforms[name] = transform
             preprocess_us += elapsed
-        started = solaros.time.uptime_ms()
         result = solaros.inference.run(self.handle, prepared, self.timeout)
-        result["call_ms"] = solaros.time.uptime_ms() - started
         del prepared
         adapter = self.manifest["result"]
         begin = solaros.time.uptime_ms()
         result["result"] = RESULT_ADAPTERS[adapter["type"]](self, result["outputs"], transforms, adapter.get("options", {}))
         result["postprocess_ms"] = solaros.time.uptime_ms() - begin
         result["preprocess_us"], result["transforms"] = preprocess_us, transforms
+        result["call_ms"] = solaros.time.uptime_ms() - started
         return result
 
     def reset(self):
@@ -420,8 +445,12 @@ class ModelBundle:
             solaros.inference.close(self.handle)
             self.handle = None
 
+    def detach(self):
+        """Drop this client reference; the OS model remains resident."""
+        self.handle = None
+
     def __enter__(self):
         return self
 
     def __exit__(self, *args):
-        self.close()
+        self.detach()

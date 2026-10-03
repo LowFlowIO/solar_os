@@ -61,6 +61,44 @@ class BundleTest(unittest.TestCase):
                                      "bytes": 8, "data": bytes([3,1,255,5,1,4,7,252])}},
                 "input_us": 1, "inference_us": 2, "output_us": 3, "elapsed_us": 6}
 
+    def native_client(self, existing=None):
+        self.info.update(bundle=True, bundle_id="test", bundle_version="1", image_inputs={"a":False,"b":False})
+        self.fake.inference.find = lambda path: self.calls.append(("find",path)) or existing
+        self.fake.inference.load_bundle = lambda path,timeout: self.calls.append(("load_bundle",path,timeout)) or 7
+        self.fake.inference.run_bundle = lambda *args: dict(self.run_native(*args), result={"kind":"raw"}, transforms={}, preprocess_us=0, postprocess_us=1)
+
+    def test_native_client_loads_without_reading_manifest_and_keeps_resident(self):
+        self.native_client()
+        with patch("builtins.open",side_effect=AssertionError("client must not parse manifest")):
+            with B.ModelBundle("/model/bundle.json") as bundle:
+                self.assertEqual(bundle.run({"a":b"a"*8,"b":b"b"*8})["result"]["kind"],"raw")
+            self.assertIsNone(bundle.handle)
+        self.assertIn(("load_bundle","/model/bundle.json",60000),self.calls)
+        self.assertFalse(self.closed)
+
+    def test_native_client_reuses_path_or_attaches_handle_and_explicitly_unloads(self):
+        self.native_client(existing=7)
+        for value in ("/model/bundle.json",7,"7"):
+            with self.subTest(value=value):
+                self.calls.clear()
+                bundle=B.ModelBundle(value,"dual")
+                self.assertEqual(bundle.handle,7)
+                self.assertFalse(any(call[0]=="load_bundle" for call in self.calls))
+                bundle.close(); bundle.close()
+        self.assertEqual(self.closed,[7,7,7])
+
+    def test_native_failure_and_context_exception_preserve_shared_model(self):
+        self.native_client(existing=7)
+        with patch.object(self.fake.inference,"run_bundle",side_effect=OSError("deadline")), self.assertRaises(OSError):
+            with B.ModelBundle(7) as bundle:
+                bundle.run({"a":b"a"*8,"b":b"b"*8})
+        self.assertFalse(self.closed)
+        self.assertIsNone(bundle.handle)
+        self.info["bundle"]=False
+        with self.assertRaisesRegex(ValueError,"not a model bundle"):
+            B.ModelBundle(7)
+        self.assertFalse(self.closed)
+
     def test_nonimage_named_inputs_residency_and_explicit_close(self):
         with B.ModelBundle(str(self.path), "auto") as bundle:
             for _ in range(3):
@@ -70,9 +108,13 @@ class BundleTest(unittest.TestCase):
                 self.assertEqual(result["transforms"], {})
             bundle.reset()
             self.assertEqual(self.closed, [])
-        self.assertEqual(self.closed, [7])
+            handle = bundle.handle
+        self.assertEqual(self.closed, [])
+        self.assertIsNone(bundle.handle)
         self.assertEqual(result["outputs"]["sum"]["data"][0], 3)
         bundle.close()
+        self.assertEqual(self.closed, [])
+        self.fake.inference.close(handle)
         self.assertEqual(self.closed, [7])
         with self.assertRaises(ValueError):
             bundle.run({"a": b"", "b": b""})
@@ -187,7 +229,7 @@ class StreamOwnershipTest(unittest.TestCase):
         self.events = []
         self.clock = 1000
         self.frames = [1,2,3]
-        self.bundle = types.SimpleNamespace(manifest={"id":"test","version":"1", "inputs":{
+        self.bundle = types.SimpleNamespace(handle=7, manifest={"id":"test","version":"1", "inputs":{
             "img":{"adapter":{"type":"image"}}}},run=self.infer)
         self.fake = types.SimpleNamespace(
             time=types.SimpleNamespace(uptime_ms=lambda:self.clock,sleep_ms=lambda _:None),
