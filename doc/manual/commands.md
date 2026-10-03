@@ -730,6 +730,13 @@ unzip -l /books/archive.zip
 | `model` | `model load <file.espdl> [timeout_ms]`; `model bundle <bundle.json> [timeout_ms]` | Load a resident raw model or a checked model bundle from storage. |
 | `model` | `model mode <handle> <single\|auto\|dual>` | Select execution mode without reloading the model. |
 | `model` | `model unload <handle\|all>` | Explicitly unload models; active operations and retained model references report busy. |
+| `pipeline` | `pipeline list` | List OS-owned native image pipelines. |
+| `pipeline` | `pipeline start qr <source> [limit] [interval_ms]` | Decode QR codes from an image file, video stream ID, or JPEG RTSP URL in a native background job. |
+| `pipeline` | `pipeline start model <source> <model> [limit] [interval_ms]` | Run a resident bundle with one image input. The job retains the model until processing ends or is stopped. |
+| `pipeline` | `pipeline status <id>` | Show job state, frame counts, last error, and the latest frame timings. |
+| `pipeline` | `pipeline result <id>` | Print the latest result as JSON. |
+| `pipeline` | `pipeline stop <id>` | Cancel and join native workers, release the source and model reference, and keep the latest result. |
+| `pipeline` | `pipeline destroy <id>` | Stop and remove the job, configuration, and latest result. |
 | `daq` | `daq help` | Print DAQ usage. |
 | `daq` | `daq status` | Show DAQ job status. |
 | `daq` | `daq streams` | List stream IDs. |

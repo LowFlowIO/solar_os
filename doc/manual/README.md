@@ -247,6 +247,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Lua time and scheduling API](lua.time.md) — Time and scheduling: time, rtc, schedule
 - [Model bundles and pipelines](model-bundles.md) — Checked model manifests, reusable adapters, and resident file or stream inference
 - [Model inference](inference.md) — Load resident ESP-DL models from storage and execute named tensor inputs and outputs
+- [Native image pipelines](pipelines.md) — OS-owned QR and model processing jobs with bounded latest results and frame timings
 - [Named runtime buses](buses.md) — Create and use resource-owned I2C, SPI, UART, MIDI, OneWire, and PS/2 buses
 - [Python API overview](python.md) — Runtime basics, conventions, and service API topic index
 - [Python apps, jobs, and identity API](python.system.md) — Apps, jobs, and identity: identity, jobs, sessions, apps

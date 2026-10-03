@@ -11,6 +11,11 @@ agent_reference_sections = true
 
 [Model inference](inference.md) · [Python media](python.media.md)
 
+For OS-owned background processing with one image input, see
+[Native image pipelines](pipelines.md). A pipeline keeps running after its
+configuring script exits and exposes a bounded latest result through the shell,
+Python, and Lua.
+
 ## Quick reference
 
 - Bundles contain `bundle.json`, one `.espdl` file, and declared assets.

@@ -61,6 +61,11 @@ label = "Model inference"
 category = "Media"
 members = ["service_inference"]
 
+[groups.pipelines]
+label = "Native image pipelines"
+category = "Media"
+members = ["service_pipeline"]
+
 [groups.control_bindings]
 label = "Control bindings"
 category = "System"
@@ -1114,6 +1119,13 @@ sources = ["services/solar_os_inference.c", "services/solar_os_inference_espdl.c
 requires = ["esp-dl", "espdl_schema", "esp_timer"]
 capabilities = ["psram"]
 targets = ["esp32s3"]
+
+[packages.service_pipeline]
+label = "service.pipeline"
+depends = ["service_image", "service_json", "service_script_media"]
+sources = ["services/solar_os_processor.c", "services/solar_os_pipeline.c", "shell/solar_os_shell_pipeline.c"]
+requires = ["esp_timer"]
+capabilities = ["psram"]
 
 [packages.service_document]
 label = "media.document"

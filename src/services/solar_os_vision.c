@@ -158,11 +158,12 @@ esp_err_t solar_os_vision_qrcodes(solar_os_raster_image_t *image,
         VISION_WORKER_STACK, work, tskIDLE_PRIORITY + 1, &task,
         tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_FOREGROUND) == pdPASS) {
         bool cancelled = false;
-        while (!solar_os_task_wait_done(task, &work->done, SOLAR_OS_TASK_STOP_POLL_MS)) {
+        while (!__atomic_load_n(&work->done, __ATOMIC_ACQUIRE)) {
             if ((cancel && cancel(user)) || esp_timer_get_time() >= work->deadline_us) {
                 cancelled = true;
                 __atomic_store_n(&work->cancel, true, __ATOMIC_RELEASE);
             }
+            vTaskDelay(1);
         }
         solar_os_task_delete_external(task);
         if ((cancel && cancel(user)) || esp_timer_get_time() >= work->deadline_us)

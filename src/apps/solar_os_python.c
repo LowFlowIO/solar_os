@@ -8668,6 +8668,7 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_gfx_text_obj, 3, 3, solaros_gfx_text
 
 #include "solar_os_python_media.inc"
 #include "solar_os_python_inference.inc"
+#include "solar_os_python_pipeline.inc"
 
 static void python_module_store(mp_obj_t module, const char *name, mp_obj_t value)
 {

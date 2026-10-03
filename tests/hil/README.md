@@ -4,6 +4,28 @@ These tests use live hardware. They do not flash or change persistent settings.
 Run with permission to use the relevant hardware resources. RTSP tests occupy
 the publisher/viewer and receiver slots.
 
+## Native image pipelines
+
+`pipeline_client.py` starts jobs and reads them from separate Python sessions;
+`pipeline_client.lua` inspects the same records from Lua. `native_pipeline.py`
+automates binary QR, cat classification, positive pedestrian detection, and
+continuous synthetic JPEG RTSP processing after interpreter exit. It checks
+monotonic latest-result sequences/timestamps, retained-model unload rejection,
+explicit stop, worker release, and explicit model unload. It removes its
+temporary device fixtures and stops its private host processes.
+
+Requires Telnet, a temporary FTP job on port 2121, installed model bundles and
+the cat/pedestrian sample images described in the harness docstring. It stops
+FTP during inference and restarts it only to remove its fixtures.
+
+```sh
+python3 tests/hil/native_pipeline.py --telnet DEVICE_IP --host-address HOST_IP \
+  --mediamtx /path/to/mediamtx --output /tmp/native-pipeline-evidence
+```
+
+SolarTerm validates file and RTSP sources; a local-camera pipeline still needs
+a camera-equipped board. Request timing is not an end-to-end camera FPS claim.
+
 ## Python RGB export
 
 Upload `image_rgb.py` and a small picture such as

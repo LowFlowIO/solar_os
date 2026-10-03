@@ -559,6 +559,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_INFERENCE
     {"model", "manage resident inference models", solar_os_shell_cmd_model},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_PIPELINE
+    {"pipeline", "manage native image pipelines", solar_os_shell_cmd_pipeline},
+#endif
 #if SOLAR_OS_PACKAGE_JOB_DAQ
     {"daq", "capture data streams", solar_os_shell_cmd_daq},
 #endif
@@ -2502,6 +2505,12 @@ static const char * const path_model_bundle[] = {"model", "bundle"};
 static const char * const path_model_mode_handle[] = {"model", "mode", SHELL_COMPLETION_ANY};
 static const char * const path_model_unload[] = {"model", "unload"};
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_PIPELINE
+static const char * const pipeline_subcommands[] = {"list", "start", "status", "result", "stop", "destroy"};
+static const char * const pipeline_processors[] = {"qr", "model"};
+static const char * const path_pipeline[] = {"pipeline"};
+static const char * const path_pipeline_start[] = {"pipeline", "start"};
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_CAMERA
 static const char * const path_camera[] = {"camera"};
 static const char * const path_camera_capture[] = {"camera", "capture"};
@@ -3178,6 +3187,10 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_PATH(path_model_bundle, false),
     SHELL_COMPLETION_STATIC(path_model_mode_handle, model_modes),
     SHELL_COMPLETION_STATIC(path_model_unload, model_unload_values),
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_PIPELINE
+    SHELL_COMPLETION_STATIC(path_pipeline, pipeline_subcommands),
+    SHELL_COMPLETION_STATIC(path_pipeline_start, pipeline_processors),
 #endif
     SHELL_COMPLETION_STATIC(path_mem, mem_subcommands),
     SHELL_COMPLETION_STATIC(path_pkg, pkg_subcommands),

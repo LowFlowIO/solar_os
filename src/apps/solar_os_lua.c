@@ -7755,6 +7755,7 @@ static int solua_gfx_text(lua_State *L)
 
 #include "solar_os_lua_media.inc"
 #include "solar_os_lua_inference.inc"
+#include "solar_os_lua_pipeline.inc"
 
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 static void solua_push_contact(lua_State *L,
