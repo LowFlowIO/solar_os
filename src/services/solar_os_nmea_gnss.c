@@ -18,8 +18,9 @@
 /*
  * Generic NMEA 0183 GNSS receiver on a UART bus. The receiver streams RMC
  * and GGA unprompted, so the driver only listens and never configures it.
- * Power-on detection tries both common factory baud rates (9600 and 115200)
- * and both enable-rail polarities.
+ * Power-on detection tries both common factory baud rates (9600 and 115200).
+ * A switched receiver's enable polarity is the board's to state with
+ * `active`; guessing it could leave a receiver powered that reads as off.
  *
  * While the receiver is powered, a reader task drains the stream and keeps
  * the latest sentences with their arrival times, and fix requests are
@@ -295,46 +296,37 @@ static esp_err_t set_power(void *ctx, bool enabled)
         return ESP_ERR_INVALID_STATE;
     }
     xSemaphoreTake(device->mutex, portMAX_DELAY);
-    if (device->powered == enabled) {
+    /* On counts as on only while its reader runs; otherwise power-on is
+     * done again in full. */
+    if (device->powered == enabled && (!enabled || device->reader_run)) {
         xSemaphoreGive(device->mutex);
         return ESP_OK;
     }
+    esp_err_t ret;
     if (!enabled) {
-        reader_stop(device);
+        /* The reader stops only once the receiver is really off, so a
+         * failed write leaves a powered receiver still being read. */
+        ret = write_power_level(device, false);
+        if (ret == ESP_OK) {
+            reader_stop(device);
+            device->powered = false;
+        }
+        xSemaphoreGive(device->mutex);
+        return ret;
     }
-    esp_err_t ret = write_power_level(device, enabled);
-    if (ret == ESP_OK && enabled) {
+    ret = write_power_level(device, true);
+    if (ret == ESP_OK) {
         vTaskDelay(pdMS_TO_TICKS(NMEA_GNSS_POWER_ON_SETTLE_MS));
         drain_rx(device);
         ret = detect_stream(device, NMEA_GNSS_DETECT_TIMEOUT_MS);
-        if (ret != ESP_OK) {
-            /* Retry with the opposite enable polarity, and keep whichever
-             * works. */
-            if (write_power_level(device, !enabled) == ESP_OK) {
-                vTaskDelay(pdMS_TO_TICKS(NMEA_GNSS_POWER_ON_SETTLE_MS));
-                drain_rx(device);
-                ret = detect_stream(device, NMEA_GNSS_DETECT_TIMEOUT_MS);
-            }
-            if (ret == ESP_OK) {
-                device->power_active_high = !device->power_active_high;
-                ESP_LOGW(TAG,
-                         "%s power enable is active-%s on this board revision",
-                         device->name,
-                         device->power_active_high ? "high" : "low");
-            } else {
-                (void)write_power_level(device, false);
-            }
-        }
         if (ret == ESP_OK) {
             ret = reader_start(device);
-            if (ret != ESP_OK) {
-                (void)write_power_level(device, false);
-            }
+        }
+        if (ret != ESP_OK) {
+            (void)write_power_level(device, false);
         }
     }
-    if (ret == ESP_OK) {
-        device->powered = enabled;
-    }
+    device->powered = ret == ESP_OK;
     xSemaphoreGive(device->mutex);
     return ret;
 }
@@ -358,6 +350,7 @@ static esp_err_t parse_bindings(const solar_os_expansion_binding_t *bindings,
                                 uint32_t *alternate_baud)
 {
     bool have_uart = false;
+    bool have_active = false;
     *power_control = false;
     *power_active_high = true;
     *alternate_baud = 0U;
@@ -376,12 +369,17 @@ static esp_err_t parse_bindings(const solar_os_expansion_binding_t *bindings,
         } else if (binding->kind == SOLAR_OS_EXPANSION_BINDING_PARAMETER &&
                    strcmp(binding->role, "active") == 0) {
             *power_active_high = binding->value != 0;
+            have_active = true;
         } else if (binding->kind == SOLAR_OS_EXPANSION_BINDING_PARAMETER &&
                    strcmp(binding->role, "alt_baud") == 0) {
             *alternate_baud = (uint32_t)binding->value;
         } else {
             return ESP_ERR_INVALID_ARG;
         }
+    }
+    /* A switched receiver needs its enable polarity stated. */
+    if (*power_control && !have_active) {
+        return ESP_ERR_INVALID_ARG;
     }
     return have_uart && solar_os_expansion_find_uart_port(uart_bus, NULL, NULL)
         ? ESP_OK : ESP_ERR_INVALID_ARG;
