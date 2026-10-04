@@ -53,6 +53,20 @@ static void test_gga_quality_satellites_and_altitude(void)
     assert(state.altitude_msl_mm == 545400);
 }
 
+/* A GGA too old to trust takes its altitude, satellites and HDOP with it;
+ * the position from RMC stays. */
+static void test_stale_gga_is_dropped(void)
+{
+    reset();
+    assert(feed("$GPRMC,225446,A,4916.45,N,12311.12,W,000.5,054.7,191194,020.3,E*68\r\n"));
+    assert(feed("$GNGGA,225446.00,4916.45,N,12311.12,W,1,08,0.94,545.4,M,46.9,M,,*55\r\n"));
+    nmea_fix_state_drop_gga(&state);
+    assert(!state.altitude_valid && state.altitude_msl_mm == 0);
+    assert(state.satellites == 0 && state.hdop_e2 == 0 && state.quality == 0);
+    assert(state.valid);
+    assert(state.latitude_deg_e7 == 492741667);
+}
+
 static void test_bad_checksum_is_rejected(void)
 {
     reset();
@@ -108,6 +122,7 @@ int main(void)
 {
     test_rmc_position_time_and_motion();
     test_gga_quality_satellites_and_altitude();
+    test_stale_gga_is_dropped();
     test_bad_checksum_is_rejected();
     test_void_fix_keeps_time();
     test_noise_and_other_sentences_are_ignored();

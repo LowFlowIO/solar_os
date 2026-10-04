@@ -264,6 +264,9 @@ static esp_err_t read_fix(void *ctx,
         vTaskDelay(pdMS_TO_TICKS(20));
     }
     xSemaphoreGive(device->mutex);
+    if (!gga_fresh) {
+        nmea_fix_state_drop_gga(&state);
+    }
     *fix = (solar_os_gnss_fix_t) {
         .valid = state.valid,
         .time_valid = state.date_valid,
@@ -275,7 +278,7 @@ static esp_err_t read_fix(void *ctx,
         .minute = state.minute,
         .second = state.second,
         .fix_type = state.valid ? (state.altitude_valid ? 3U : 2U) : 0U,
-        .satellites = gga_fresh ? state.satellites : 0U,
+        .satellites = state.satellites,
         .latitude_deg_e7 = state.latitude_deg_e7,
         .longitude_deg_e7 = state.longitude_deg_e7,
         .height_msl_mm = state.altitude_msl_mm,

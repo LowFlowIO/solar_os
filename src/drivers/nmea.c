@@ -14,6 +14,15 @@ void nmea_fix_state_reset(nmea_fix_state_t *state)
     memset(state, 0, sizeof(*state));
 }
 
+void nmea_fix_state_drop_gga(nmea_fix_state_t *state)
+{
+    state->quality = 0U;
+    state->satellites = 0U;
+    state->hdop_e2 = 0U;
+    state->altitude_valid = false;
+    state->altitude_msl_mm = 0;
+}
+
 static bool hex_value(char c, uint8_t *value)
 {
     if (c >= '0' && c <= '9') {

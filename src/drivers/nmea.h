@@ -46,6 +46,10 @@ typedef struct {
 void nmea_parser_reset(nmea_parser_t *parser);
 void nmea_fix_state_reset(nmea_fix_state_t *state);
 
+/* Forgets what only GGA supplies (quality, satellites, HDOP, altitude), for
+ * a state whose last GGA is too old to stand behind. RMC fields stay. */
+void nmea_fix_state_drop_gga(nmea_fix_state_t *state);
+
 /* Feeds one byte. Returns true when the byte completed a checksum-valid RMC
  * or GGA sentence and the fix state was updated. */
 bool nmea_parser_feed(nmea_parser_t *parser,
