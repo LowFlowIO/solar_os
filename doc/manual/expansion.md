@@ -286,8 +286,16 @@ The `sdspi` attach command prints the card probe result to the invoking shell.
 The report includes the card identity, type, negotiated speed, capacity, CSD/SSR
 details, mount point, and any underlying block-I/O or FatFs mount error.
 
-An SDMMC adapter uses direct clock, command, and data bindings. On ESP32-S3 the
-signals can use the GPIO matrix. Classic ESP32 accepts only the native slot-1
+GT911 attachments can additionally bind `reset=gpioN`, `power=gpioN`, and
+`active=0|1` for reset/address selection and touch-rail control. The default
+power active level is high. Optional `home_key=<numeric-key>` maps the
+capacitive Home pad to a SolarOS key tap on release; zero disables it. Touch
+state is retained until the controller provides a fresh frame.
+
+An SDMMC adapter uses direct clock, command, and data bindings. Optional
+`power=gpioN active=0|1` bindings control a slot rail, with an 80 ms off / 120 ms
+on cycle before each card initialization. The default active level is high.
+On ESP32-S3 the signals can use the GPIO matrix. Classic ESP32 accepts only the native slot-1
 pinout: CLK GPIO14, CMD GPIO15, D0 GPIO2, and optionally D1 GPIO4, D2 GPIO12,
 D3 GPIO13.
 

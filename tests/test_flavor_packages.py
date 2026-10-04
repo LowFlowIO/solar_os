@@ -65,6 +65,62 @@ class FlavorPackagesTest(unittest.TestCase):
                 self.catalog, packages, "unknown"
             )
 
+    def test_uc8279_expansion_profile_and_package(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["uc8279"])
+        self.assertTrue(packages["expansion_uc8279"])
+        self.assertTrue(packages["driver_epd_ultrachip"])
+        _, supported = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"gfx", "spi", "expansion_spi", "expansion_gpio"}
+        )
+        self.assertTrue(supported["expansion_uc8279"])
+        _, unavailable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"gfx", "spi", "expansion_spi"}
+        )
+        self.assertFalse(unavailable["expansion_uc8279"])
+
+    def test_uc8179_expansion_profile_and_package(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["uc8179"])
+        self.assertTrue(packages["expansion_uc8179"])
+        self.assertTrue(packages["driver_epd_ultrachip"])
+        _, supported = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"gfx", "spi", "expansion_spi", "expansion_gpio"}
+        )
+        self.assertTrue(supported["expansion_uc8179"])
+        _, unavailable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"gfx", "spi", "expansion_spi"}
+        )
+        self.assertFalse(unavailable["expansion_uc8179"])
+
+    def test_cw2017_expansion_only_requires_i2c_hardware(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["cw2017"])
+        self.assertTrue(packages["cw2017"])
+        _, supported = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"i2c"}
+        )
+        self.assertTrue(supported["cw2017"])
+        _, unavailable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, set()
+        )
+        self.assertFalse(unavailable["cw2017"])
+
+    def test_pcf8563_expansion_only_requires_i2c_hardware(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["pcf8563"])
+        self.assertTrue(packages["driver_pcf8563"])
+        _, supported = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"i2c"}
+        )
+        for target in ("esp32", "esp32s3"):
+            pruned = generate_flavor_config.apply_target_pruning(self.catalog, supported, target)
+            self.assertTrue(pruned["driver_pcf8563"], target)
+        _, unavailable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, set()
+        )
+        self.assertFalse(unavailable["driver_pcf8563"])
+
     def test_gesture_listener_job_is_part_of_the_core_runtime(self):
         for flavor in ("core", "full", "netrunner", "rover", "writerdeck"):
             _, _, _, packages = self.resolve(flavor)
@@ -280,6 +336,8 @@ class FlavorPackagesTest(unittest.TestCase):
             "driver_display_ili9341",
             "driver_display_st7796",
             "expansion_ssd1683",
+            "expansion_uc8179",
+            "expansion_uc8279",
         )
 
         classic = generate_flavor_config.apply_target_pruning(

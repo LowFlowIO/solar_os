@@ -208,6 +208,7 @@ The current tree includes these board targets:
 | `elecrow_crowpanel_esp32_s3_4_2_epaper` | `elecrow_crowpanel_esp32_s3_4_2_epaper` | Elecrow CrowPanel ESP32-S3 4.2-inch E-paper | ESP32-S3-WROOM-1-N8R8 target with a 400x300 SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
 | `elecrow_crowpanel_esp32_s3_5_79_epaper` | `elecrow_crowpanel_esp32_s3_5_79_epaper` | [Elecrow CrowPanel ESP32-S3 5.79-inch E-paper](https://www.elecrow.com/wiki/CrowPanel_ESP32_E-paper_5.79-inch_HMI_Display.html) | ESP32-S3-WROOM-1-N8R8 target with a 792x272 dual-SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
 | `waveshare_esp32_s3_epaper_3_97` | `waveshare_esp32_s3_epaper_3_97` | [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97) | ESP32-S3-WROOM-1-N16R8 target with an SSD1677 e-paper display that defaults to 800x480 landscape, AXP2101 battery/charger monitoring, QMI8658 six-axis IMU, four-bit SDMMC, native USB CDC, UART, PCF85063 RTC, SHTC3 temperature/humidity sensor, ES8311 speaker/microphone audio, rotary navigation, Wi-Fi, BLE, and expansion I2C/UART. |
+| `xteink_x4_pro` | `xteink_x4_pro` | Xteink X4 Pro | ESP32-S3 target with 16 MB flash, 8 MB OPI PSRAM, an 800x480 landscape e-paper display with cached SSD1677/UC8179/UC8279 identification, fixed-mix frontlight brightness, GT911 touch and Home pad, one-bit SDMMC, BM8563-compatible RTC, CW2017 gauge, native USB CDC, UART0, navigation buttons, Wi-Fi, and BLE. |
 | `cl_32` | `cl_32` | CL-32 | ESP32-S3-WROOM-1-N16R8 target with a 384x168 ST7305 reflective LCD, an ATmega808-backed keyboard and battery monitor, native USB CDC, UART, microSD over SDSPI, PCF85063 RTC, onboard PWM buzzer, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S. |
 | `odroid_go` | `odroid_go` | Hardkernel ODROID-GO | Classic ESP32 target with ILI9341 display, SD over VSPI/SDSPI, battery ADC, ESP32 DAC speaker, buttons, ADC D-pad, status LED, display brightness, expansion SPI/UART/GPIO/PWM, and runtime GPIO4/GPIO15. |
 | `freenove_esp32_wrover_v3` | `freenove_esp32_wrover_v3` | Freenove ESP32-WROVER v3.0 (FNK0060) | Classic ESP32 target with 8 MB PSRAM, CH340/UART console, one-bit SDMMC, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, and a 384x288 monochrome PAL composite display on GPIO25. |
@@ -972,6 +973,51 @@ Build the target with:
 
 ```sh
 pio run -e waveshare_esp32_s3_epaper_3_97
+```
+
+## Xteink X4 Pro
+
+The `xteink_x4_pro` target uses an ESP32-S3, 16 MB QIO flash at 80 MHz, and
+8 MB OPI PSRAM. Its 800x480 e-paper display defaults to native landscape
+orientation. One firmware image covers SSD1677, UC8179, and UC8279 units.
+When SolarOS has no cached controller ID, it reads the UltraChip version/status
+registers twice over the bidirectional MOSI line. Recognized UltraChip responses
+select UC8179 or UC8279; repeatable floating-high responses select the board's
+SSD1677 alternative. Ambiguous responses leave the display unavailable and are
+not saved. After controller initialization, SolarOS stores its own controller ID
+in NVS namespace `x4pro`, key `controller`, and reuses it on subsequent boots.
+These IDs are independent of the stock firmware's calibration values.
+To repeat identification, use `nvs erase x4pro controller`; a successful erase
+reboots the unit. An invalid cached ID is reported instead of silently selecting
+a different controller.
+
+The frontlight uses two active-high PWM outputs: cool on GPIO8 and warm on
+GPIO9, at 25 kHz with 10-bit resolution. `setterm brightness 0..100` controls
+their combined brightness at a fixed 50/50 mix. Zero turns both off; display
+suspend also turns both off and resume restores the selected brightness.
+Brightness uses the existing SolarOS persistence setting. Color-temperature
+adjustment is not exposed.
+
+The shared 400 kHz `i2c0` bus uses SDA39/SCL38 and carries GT911 touch
+(`touch0`, 0x5d with 0x14 fallback), BM8563-compatible RTC (`rtc0`, 0x51),
+and CW2017 battery gauge (`battery0`, 0x63). Touch uses reset GPIO4, interrupt
+GPIO10, active-low power GPIO2, and a portrait-to-landscape coordinate transform.
+The capacitive Home pad sends app exit on release. The left/right buttons
+(GPIO0/GPIO7) send Up/Down. GPIO3 is the system key: a short press sends app exit
+and a long press uses the configured power-key action. Holding GPIO0 during
+reset selects the ESP32 bootloader.
+
+The one-bit SDMMC slot (`storage0`) uses CLK41/CMD42/DAT0=40. Its active-low
+GPIO5 rail is power-cycled before card initialization. GPIO1 holds the shared
+peripheral rail on. The charger STAT signal on GPIO21 is reserved; USB/VBUS
+presence is not advertised. Native USB CDC and UART0 provide console access;
+the profile does not declare an external expansion connector.
+
+Hardware mapping follows the [FreeInk X4 Pro hardware profile](https://github.com/Free-Ink/freeink-sdk/blob/699370183fa3a0e33c9cb83a36f701bbb6022095/libs/hardware/BoardConfig/src/BoardConfig.h)
+and its [controller-identification implementation](https://github.com/Free-Ink/freeink-sdk/blob/699370183fa3a0e33c9cb83a36f701bbb6022095/libs/hardware/XteinkDetect/src/XteinkDetect.cpp).
+
+```sh
+pio run -e xteink_x4_pro
 ```
 
 ## Headless Boards

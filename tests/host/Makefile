@@ -12,7 +12,10 @@ MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
 
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
 TARGETS += input_action_match_test gesture_completion_test
-TARGETS += epd_ssd1677_test
+TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
+TARGETS += frontlight_pwm_test epd_xteink_identify_test x4pro_expansion_test
+TARGETS += gt911_test
+TARGETS += sdmmc_expansion_test
 TARGETS += axp2101_service_test
 TARGETS += camera_service_test camera_expansion_test media_test mjpeg_test
 TARGETS += http_server_test
@@ -26,6 +29,21 @@ TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
+TARGETS += cw2017_test
+TARGETS += rtc_pcf8563_test
+
+rtc_pcf8563_test: rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c \
+        $(ROOT)/src/drivers/rtc_pcf8563.h $(ROOT)/src/services/solar_os_pcf8563.c \
+        $(ROOT)/src/services/solar_os_pcf8563.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iexpansion_stubs -I. \
+		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c $(ROOT)/src/services/solar_os_pcf8563.c -o $@
+
+cw2017_test: cw2017_test.c $(ROOT)/src/drivers/cw2017.c $(ROOT)/src/drivers/cw2017.h \
+        $(ROOT)/src/services/solar_os_cw2017.c $(ROOT)/src/services/solar_os_cw2017.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iexpansion_stubs -I. \
+		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		cw2017_test.c $(ROOT)/src/drivers/cw2017.c $(ROOT)/src/services/solar_os_cw2017.c -o $@
 
 axp2101_service_test: axp2101_service_test.c $(ROOT)/src/services/solar_os_axp2101.c \
 	$(ROOT)/src/services/solar_os_axp2101.h $(ROOT)/src/drivers/axp2101.c
@@ -33,6 +51,58 @@ axp2101_service_test: axp2101_service_test.c $(ROOT)/src/services/solar_os_axp21
 		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
 		axp2101_service_test.c $(ROOT)/src/services/solar_os_axp2101.c \
 		$(ROOT)/src/drivers/axp2101.c -o $@
+
+uc8279_expansion_test: uc8279_expansion_test.c $(ROOT)/src/services/solar_os_uc8279.c \
+        $(ROOT)/src/services/solar_os_uc8279_driver.c $(ROOT)/src/drivers/epd_ultrachip.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h \
+		-Iepd_stubs -Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src \
+		-I$(ROOT)/src/services -I$(ROOT)/src/drivers -I$(ROOT)/src/board \
+		-I$(ROOT)/components/u8g2/src/clib uc8279_expansion_test.c -o $@
+
+sdmmc_expansion_test: sdmmc_expansion_test.c $(ROOT)/src/services/solar_os_sdmmc.c $(ROOT)/src/services/solar_os_sdmmc_driver.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h \
+		-Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers sdmmc_expansion_test.c -o $@
+
+gt911_test: gt911_test.c $(ROOT)/src/drivers/gt911.c $(ROOT)/src/drivers/gt911.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iepd_stubs -I. gt911_test.c -o $@
+
+frontlight_pwm_test: frontlight_pwm_test.c $(ROOT)/src/drivers/frontlight_pwm.c $(ROOT)/src/drivers/frontlight_pwm.h
+	$(CC) $(CFLAGS) -Ix4pro_stubs -Iepd_stubs -I. frontlight_pwm_test.c -o $@
+
+epd_xteink_identify_test: epd_xteink_identify_test.c $(ROOT)/src/drivers/epd_xteink_identify.c $(ROOT)/src/drivers/epd_xteink_identify.h
+	$(CC) $(CFLAGS) -Iepd_stubs -I. epd_xteink_identify_test.c -o $@
+
+x4pro_expansion_test: x4pro_expansion_test.c $(ROOT)/src/services/solar_os_x4pro.c $(ROOT)/src/services/solar_os_x4pro_driver.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h \
+		-Iepd_stubs -Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src \
+		-I$(ROOT)/src/services -I$(ROOT)/src/drivers -I$(ROOT)/src/board \
+		-I$(ROOT)/components/u8g2/src/clib x4pro_expansion_test.c -o $@
+
+EPD_U8G2_TEST_SOURCES := $(addprefix $(ROOT)/components/u8g2/src/clib/, \
+        u8g2_setup.c u8g2_buffer.c u8g2_font.c u8g2_ll_hvline.c u8g2_hvline.c \
+        u8g2_intersection.c u8x8_setup.c u8x8_display.c)
+
+epd_uc8279_test: epd_uc8279_test.c $(ROOT)/src/drivers/epd_ultrachip.c $(ROOT)/src/drivers/epd_ultrachip.h \
+        $(ROOT)/src/drivers/epd_uc8279.c $(ROOT)/src/drivers/epd_uc8279.h \
+        $(EPD_U8G2_TEST_SOURCES) \
+        $(wildcard epd_stubs/*.h epd_stubs/driver/*.h epd_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -Wno-unused-parameter -ffunction-sections -fdata-sections \
+		-Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib \
+		epd_uc8279_test.c $(EPD_U8G2_TEST_SOURCES) -Wl,--gc-sections -o $@
+
+uc8179_expansion_test: uc8179_expansion_test.c $(ROOT)/src/services/solar_os_uc8179.c \
+        $(ROOT)/src/services/solar_os_uc8179_driver.c $(ROOT)/src/drivers/epd_ultrachip.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h \
+		-Iepd_stubs -Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src \
+		-I$(ROOT)/src/services -I$(ROOT)/src/drivers -I$(ROOT)/src/board \
+		-I$(ROOT)/components/u8g2/src/clib uc8179_expansion_test.c -o $@
+
+epd_uc8179_test: epd_uc8179_test.c $(ROOT)/src/drivers/epd_ultrachip.c $(ROOT)/src/drivers/epd_ultrachip.h \
+        $(ROOT)/src/drivers/epd_uc8179.c $(ROOT)/src/drivers/epd_uc8179.h \
+        $(wildcard epd_stubs/*.h epd_stubs/driver/*.h epd_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections \
+		-Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib \
+		epd_uc8179_test.c -Wl,--gc-sections -o $@
 
 epd_ssd1677_test: epd_ssd1677_test.c $(ROOT)/src/drivers/epd_ssd1677.c $(ROOT)/src/drivers/epd_ssd1677.h \
 	$(wildcard epd_stubs/*.h epd_stubs/driver/*.h epd_stubs/freertos/*.h)
@@ -632,6 +702,8 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 		rtc_pcf85063_test.c $(ROOT)/src/drivers/rtc_pcf85063.c -o $@
 
 test: $(TARGETS)
+	./cw2017_test
+	./rtc_pcf8563_test
 	./axp2101_service_test
 	./messaging_service_test
 	./ble_service_test
@@ -725,6 +797,15 @@ test: $(TARGETS)
 	./bq25896_test
 	./axp2101_test
 	./epd_ssd1677_test
+	./frontlight_pwm_test
+	./epd_xteink_identify_test
+	./x4pro_expansion_test
+	./gt911_test
+	./sdmmc_expansion_test
+	./epd_uc8179_test
+	./uc8179_expansion_test
+	./epd_uc8279_test
+	./uc8279_expansion_test
 	./max17048_test
 	./mgc3130_test
 	./sim7670_test

@@ -74,6 +74,17 @@ void solar_os_board_display_deinit(solar_os_board_display_t *display)
     }
 }
 
+esp_err_t solar_os_board_display_set_power_save(solar_os_board_display_t *display,
+                                               bool enabled)
+{
+    if (display == NULL || display->u8g2 == NULL || display->ops == NULL)
+        return ESP_ERR_INVALID_STATE;
+    if (display->ops->set_power_save != NULL)
+        return display->ops->set_power_save(display, enabled);
+    u8g2_SetPowerSave(display->u8g2, enabled ? 1 : 0);
+    return ESP_OK;
+}
+
 u8g2_t *solar_os_board_display_u8g2(solar_os_board_display_t *display)
 {
     return display != NULL ? display->u8g2 : NULL;
