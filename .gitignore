@@ -34,6 +34,7 @@ tests/host/espdl_workers_single_test
 tests/host/tensor_image_test
 tests/host/tensor_image_lua_test
 tests/host/model_bundle_test
+tests/host/zoo_test
 examples/python/__pycache__/
 /tests/host/inference_lua_json_test
 /tests/host/pipeline_test

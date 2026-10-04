@@ -59,6 +59,20 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertFalse(classic["service_inference"])
         self.assertNotIn("service_inference", self.catalog.package_defs["service_pipeline"].depends)
 
+    def test_zoo_works_on_headless_s3_and_is_pruned_without_platform_requirements(self):
+        _, _, groups, packages = self.resolve("full")
+        _, headless = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"psram", "wifi"})
+        self.assertTrue(headless["app_zoo"])
+        self.assertTrue(headless["service_zoo"])
+        self.assertTrue(headless["service_inference"])
+        classic = generate_flavor_config.apply_target_pruning(self.catalog, packages, "esp32")
+        self.assertFalse(classic["app_zoo"])
+        self.assertFalse(classic["service_zoo"])
+        for caps in ({"wifi"}, {"psram"}, set()):
+            _, pruned = generate_flavor_config.apply_board_capability_pruning(self.catalog, groups, packages, caps)
+            self.assertFalse(pruned["app_zoo"])
+
     def test_update_layout_adds_ota_without_exposing_it_in_flavor(self):
         _, _, _, packages = self.resolve("core")
         single = generate_flavor_config.apply_update_layout(

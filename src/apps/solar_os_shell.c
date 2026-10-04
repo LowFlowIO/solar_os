@@ -1660,6 +1660,11 @@ static const char * const playground_source_values[] = {"reset"};
 static const char * const playground_target_values[] = {"auto", "flash", "sd"};
 static const char * const playground_storage_values[] = {"flash", "sd"};
 #endif
+#if SOLAR_OS_PACKAGE_APP_ZOO
+static const char * const zoo_subcommands[] = {"refresh", "source", "storage", "install"};
+static const char * const zoo_source_values[] = {"reset"};
+static const char * const zoo_storage_values[] = {"sd", "flash"};
+#endif
 #if SOLAR_OS_PACKAGE_MEDIA
 static const char * const view_options[] = {"-fit", "-actual"};
 #endif
@@ -1768,6 +1773,11 @@ static const char * const path_playground_install_target[] = {
 };
 #endif
 static const char * const path_zip[] = {"zip"};
+#if SOLAR_OS_PACKAGE_APP_ZOO
+static const char * const path_zoo[] = {"zoo"};
+static const char * const path_zoo_source[] = {"zoo", "source"};
+static const char * const path_zoo_storage[] = {"zoo", "storage"};
+#endif
 static const char * const path_zip_after_archive[] = {"zip", SHELL_COMPLETION_ANY};
 static const char * const path_zip_after_option[] = {"zip", SHELL_COMPLETION_ANY, SHELL_COMPLETION_ANY};
 static const char * const path_unzip[] = {"unzip"};
@@ -3074,6 +3084,11 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_playground_install_target, playground_target_values),
 #endif
     SHELL_COMPLETION_OPTIONS(path_zip, zip_options),
+#if SOLAR_OS_PACKAGE_APP_ZOO
+    SHELL_COMPLETION_STATIC(path_zoo, zoo_subcommands),
+    SHELL_COMPLETION_STATIC(path_zoo_source, zoo_source_values),
+    SHELL_COMPLETION_STATIC(path_zoo_storage, zoo_storage_values),
+#endif
     SHELL_COMPLETION_PATH(path_zip_after_archive, false),
     SHELL_COMPLETION_PATH(path_zip_after_option, false),
     SHELL_COMPLETION_OPTIONS(path_unzip, unzip_options),

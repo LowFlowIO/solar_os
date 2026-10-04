@@ -61,6 +61,11 @@ label = "Model inference"
 category = "Media"
 members = ["service_inference"]
 
+[groups.zoo]
+label = "Model zoo"
+category = "Media"
+members = ["app_zoo"]
+
 [groups.pipelines]
 label = "Native image pipelines"
 category = "Media"
@@ -2377,6 +2382,21 @@ label = "app.playground"
 depends = ["service_playground"]
 sources = ["apps/solar_os_playground_app.c"]
 capabilities = ["psram", "wifi"]
+
+[packages.service_zoo]
+label = "service.zoo"
+depends = ["service_inference", "service_http_client", "service_zip", "service_json", "service_crypto"]
+sources = ["services/solar_os_zoo.c"]
+requires = ["nvs_flash"]
+capabilities = ["psram", "wifi"]
+targets = ["esp32s3"]
+
+[packages.app_zoo]
+label = "app.zoo"
+depends = ["service_zoo"]
+sources = ["apps/solar_os_zoo_app.c"]
+capabilities = ["psram", "wifi"]
+targets = ["esp32s3"]
 
 [packages.app_clock]
 label = "app.clock"

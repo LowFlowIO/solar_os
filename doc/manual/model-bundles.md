@@ -11,6 +11,10 @@ agent_reference_sections = true
 
 [Model inference](inference.md) · [Python media](python.media.md)
 
+Use [`zoo`](apps.md#zoo) to browse the hosted catalog and install complete bundles
+on SD or flash. Installation verifies the release files; loading and model
+residency remain explicit operations through the model service.
+
 For OS-owned background processing with one image input, see
 [Native image pipelines](pipelines.md). A pipeline keeps running after its
 configuring script exits and exposes a bounded latest result through the shell,
