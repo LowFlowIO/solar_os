@@ -18,7 +18,8 @@
 /*
  * Generic NMEA 0183 GNSS receiver on a UART bus. The receiver streams RMC
  * and GGA unprompted, so the driver only listens and never configures it.
- * Power-on detection tries both common factory baud rates (9600 and 115200).
+ * Power-on detection listens at the UART's configured rate, then at
+ * `alt_baud` when one is given: modules ship at 9600 or 115200.
  * A switched receiver's enable polarity is the board's to state with
  * `active`; guessing it could leave a receiver powered that reads as off.
  *
@@ -45,6 +46,8 @@ typedef struct {
     bool powered;
     bool power_active_high;
     uint32_t alternate_baud;
+    /* The rate the board configured the bus at, and the one in use. */
+    uint32_t configured_baud;
     uint32_t current_baud;
     solar_os_gpio_line_ref_t power_line;
     SemaphoreHandle_t mutex;
@@ -106,18 +109,19 @@ static void drain_rx(nmea_gnss_device_t *device)
     }
 }
 
-/* Waits for a sentence at the current baud rate, then at the other one.
- * Leaves the working rate applied, or the starting rate on failure. */
+/* Waits for a sentence at the rate in use, then at the other of the
+ * configured and alternate rates. Leaves the working rate applied, or the
+ * configured rate when neither is heard. */
 static esp_err_t detect_stream(nmea_gnss_device_t *device, uint32_t timeout_ms)
 {
     esp_err_t ret = await_sentence(device, timeout_ms);
-    if (ret == ESP_OK || device->alternate_baud == 0U) {
+    if (ret == ESP_OK || device->alternate_baud == 0U ||
+        device->alternate_baud == device->configured_baud) {
         return ret;
     }
-    const uint32_t start_baud = device->current_baud;
-    const uint32_t other_baud = start_baud == device->alternate_baud
-        ? SOLAR_OS_BUS_UART_DEFAULT_BAUD_RATE
-        : device->alternate_baud;
+    const uint32_t other_baud = device->current_baud == device->configured_baud
+        ? device->alternate_baud
+        : device->configured_baud;
     ESP_RETURN_ON_ERROR(solar_os_bus_uart_set_baud_rate(device->uart_bus,
                                                         other_baud,
                                                         device->name),
@@ -131,8 +135,11 @@ static esp_err_t detect_stream(nmea_gnss_device_t *device, uint32_t timeout_ms)
                  (unsigned long)other_baud);
         return ESP_OK;
     }
-    if (solar_os_bus_uart_set_baud_rate(device->uart_bus, start_baud, device->name) == ESP_OK) {
-        device->current_baud = start_baud;
+    if (device->current_baud != device->configured_baud &&
+        solar_os_bus_uart_set_baud_rate(device->uart_bus,
+                                        device->configured_baud,
+                                        device->name) == ESP_OK) {
+        device->current_baud = device->configured_baud;
     }
     return ESP_ERR_TIMEOUT;
 }
@@ -429,7 +436,15 @@ esp_err_t solar_os_nmea_gnss_attach(const char *name,
     device->power_control = power_control;
     device->power_active_high = power_active_high;
     device->alternate_baud = alternate_baud;
-    device->current_baud = SOLAR_OS_BUS_UART_DEFAULT_BAUD_RATE;
+    /* Whatever the board set the bus to, not an assumed default. */
+    solar_os_bus_info_t bus = {0};
+    if (!solar_os_bus_find(uart_bus, SOLAR_OS_BUS_PROTOCOL_UART, &bus) ||
+        bus.config.uart.baud_rate == 0U) {
+        memset(device, 0, sizeof(*device));
+        return ESP_ERR_INVALID_STATE;
+    }
+    device->configured_baud = bus.config.uart.baud_rate;
+    device->current_baud = device->configured_baud;
     device->power_line = power_line;
     portMUX_INITIALIZE(&device->snapshot_lock);
     device->mutex = xSemaphoreCreateMutexStatic(&device->mutex_storage);
