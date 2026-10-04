@@ -191,8 +191,10 @@ selected topic in `reader`; text shells use `less`, both through the same
 terminal-width-aware progress while downloading one `manual.zip` published for
 the exact running firmware version. The catalog signature authenticates the
 archive hash; after extraction every Markdown page is checked by size and
-SHA-256 before activation. `help reset` returns immediately to the embedded
-manual.
+SHA-256 before activation. Firmware carries a setup and recovery guide and a
+searchable topic directory; full guides and scripting API references require
+the downloaded manual. `help reset` returns immediately to the setup and
+recovery guide.
 
 User aliases are stored in `/.shell/alias`, one per line:
 

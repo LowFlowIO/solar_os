@@ -109,7 +109,6 @@ Once SolarOS boots, these commands give a quick view of the installed system:
 
 ```text
 help
-help
 apps
 jobs
 sessions
@@ -126,6 +125,13 @@ device is authoritative: `help`, `apps`, `jobs`, `board`, and `pkg` show what
 was compiled and which hardware is exposed.
 
 ## Finding documentation
+
+Firmware includes a small setup and recovery guide and a searchable topic
+directory. Full guides and scripting API references require the signed
+downloadable manual. On devices with Wi-Fi, PSRAM, and SD storage, connect
+Wi-Fi, mount the SD card, and run `help update`. Use `man help` for setup
+instructions. The downloaded manual works offline while the SD card is mounted;
+the full manual is also available at [solar-os.eu](https://solar-os.eu/).
 
 Optional topics appear only when their package is part of the firmware. Open
 `help` for the foldable manual tree, or search by task:

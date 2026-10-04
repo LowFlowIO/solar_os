@@ -2,6 +2,22 @@
 
 ## 4.x
 
+- **4.15.19** — 2026-10-04 — Added Xteink X4 Pro support with an
+  800x480 e-paper display, GT911 touch and Home pad, fixed-mix warm/cool
+  frontlight brightness, one-bit SDMMC storage, BM8563-compatible RTC,
+  CW2017 battery gauge, navigation buttons, USB/UART consoles, Wi-Fi, and BLE.
+  One image identifies SSD1677, UC8179, or UC8279 displays on first use and
+  caches the controller only after successful initialization. Added reusable
+  UC8179 and UC8279 e-paper, PCF8563/BM8563 RTC, and CW2017 fuel-gauge
+  expansion drivers, plus optional GT911 reset, power, and Home-key bindings
+  and SDMMC rail power cycling.
+- **4.15.18** — 2026-10-02 — Reduced firmware-resident documentation to
+  a searchable topic directory and a small setup and recovery guide. Full
+  guides and scripting API references remain in the signed downloadable
+  manual and on the website. Run `help update` on devices with Wi-Fi, PSRAM,
+  and SD storage to install the exact-version manual; it remains readable
+  offline while its storage is mounted. The agent uses downloaded Quick
+  references or setup instructions when the manual is unavailable.
 - **4.15.17** — 2026-10-02 — Python and Lua gain
   `solaros.storage.write_file()` for creating, saving, and appending text or
   binary files through the storage service. Writes support up to 64 KiB per

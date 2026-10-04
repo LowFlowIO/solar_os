@@ -991,6 +991,13 @@ To repeat identification, use `nvs erase x4pro controller`; a successful erase
 reboots the unit. An invalid cached ID is reported instead of silently selecting
 a different controller.
 
+Use `display list` to inspect display readiness and brightness support.
+The display supports
+`display mode display0 refresh=auto`, `refresh=partial`, and `refresh=full`.
+Automatic mode skips unchanged frames; UltraChip controllers perform a full
+cleanup every 20 changed frames. Partial mode uses a full refresh to establish
+the first frame after initialization or resume.
+
 The frontlight uses two active-high PWM outputs: cool on GPIO8 and warm on
 GPIO9, at 25 kHz with 10-bit resolution. `setterm brightness 0..100` controls
 their combined brightness at a fixed 50/50 mix. Zero turns both off; display

@@ -18,6 +18,12 @@ It contains the complete command, application, job, board, expansion, Python,
 Lua, package, and workflow documentation. Edit the topic in `doc/manual/`;
 do not maintain a separate device or website copy.
 
+Firmware includes a searchable topic directory and a small setup and recovery
+guide. On devices with Wi-Fi, PSRAM, and SD storage, run `help update` to install
+the signed full manual for the running version. Its guides and scripting API
+references remain available offline while the SD card is mounted. See
+[Browsing and refreshing documentation](doc/manual/help.md) for setup.
+
 ## Build
 
 SolarOS requires PlatformIO Core 6.2.0 or newer and uses ESP-IDF 5.5.5 through

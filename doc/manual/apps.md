@@ -754,10 +754,12 @@ applications retain ownership of their audio streams.
 ## help
 
 Foreground browser for the package-aware SolarOS manual. The foldable tree
-groups the topics compiled for the current firmware and shows whether it is
-using the embedded copy or a verified downloaded revision. All groups start
-folded. The selection, scroll position, and fold state remain unchanged after a
-topic closes.
+groups the topics available in the current firmware and shows whether it is
+using the setup and recovery guide or a verified downloaded revision. Full
+guides and scripting API references require the downloaded manual; use
+`help update` to install it on devices with Wi-Fi, PSRAM, and SD storage.
+All groups start folded. The selection, scroll position, and fold state remain
+unchanged after a topic closes.
 
 Usage:
 
