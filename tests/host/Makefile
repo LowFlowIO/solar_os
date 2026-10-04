@@ -31,6 +31,7 @@ TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
+TARGETS += i2c_buses_test
 
 rtc_pcf8563_test: rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c \
         $(ROOT)/src/drivers/rtc_pcf8563.h $(ROOT)/src/services/solar_os_pcf8563.c \
@@ -38,6 +39,19 @@ rtc_pcf8563_test: rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c \
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iexpansion_stubs -I. \
 		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
 		rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c $(ROOT)/src/services/solar_os_pcf8563.c -o $@
+
+i2c_buses_test: i2c_buses_test.c $(ROOT)/src/drivers/i2c_bus.c \
+        $(ROOT)/src/drivers/i2c_bus.h $(ROOT)/src/services/solar_os_buses.c \
+        $(ROOT)/src/services/solar_os_buses.h $(ROOT)/src/services/solar_os_resources.c \
+        $(ROOT)/include/solar_os_bus_types.h $(wildcard i2c_stubs/*.h) \
+        $(wildcard i2c_stubs/driver/*.h) $(wildcard i2c_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include i2c_stubs/compat.h \
+		-Wno-unused-parameter -ffunction-sections -fdata-sections \
+		-Ii2c_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		i2c_buses_test.c $(ROOT)/src/drivers/i2c_bus.c \
+		$(ROOT)/src/services/solar_os_buses.c $(ROOT)/src/services/solar_os_resources.c \
+		-Wl,--gc-sections -o $@
 
 cw2017_test: cw2017_test.c $(ROOT)/src/drivers/cw2017.c $(ROOT)/src/drivers/cw2017.h \
         $(ROOT)/src/services/solar_os_cw2017.c $(ROOT)/src/services/solar_os_cw2017.h
@@ -702,6 +716,7 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 		rtc_pcf85063_test.c $(ROOT)/src/drivers/rtc_pcf85063.c -o $@
 
 test: $(TARGETS)
+	./i2c_buses_test
 	./cw2017_test
 	./rtc_pcf8563_test
 	./axp2101_service_test
