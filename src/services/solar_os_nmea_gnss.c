@@ -332,8 +332,12 @@ static esp_err_t set_power(void *ctx, bool enabled)
         if (ret == ESP_OK) {
             ret = reader_start(device);
         }
-        if (ret != ESP_OK) {
-            (void)write_power_level(device, false);
+        if (ret != ESP_OK && write_power_level(device, false) != ESP_OK) {
+            /* Still switched on, so it is marked on: a later power-off
+             * has to write the pin rather than find nothing to do. */
+            device->powered = true;
+            xSemaphoreGive(device->mutex);
+            return ret;
         }
     }
     device->powered = ret == ESP_OK;
