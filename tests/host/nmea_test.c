@@ -67,12 +67,14 @@ static void test_stale_gga_is_dropped(void)
     assert(state.latitude_deg_e7 == 492741667);
 }
 
-/* With fix quality 0 there is no fix, so its altitude field is not one. */
+/* With fix quality 0 there is no fix, so its HDOP and altitude fields are
+ * not readings. */
 static void test_gga_without_a_fix_has_no_altitude(void)
 {
     reset();
     assert(feed("$GNGGA,225446.00,4916.45,N,12311.12,W,0,00,99.99,545.4,M,46.9,M,,*61\r\n"));
     assert(state.quality == 0);
+    assert(state.hdop_e2 == 0);
     assert(!state.altitude_valid && state.altitude_msl_mm == 0);
 }
 

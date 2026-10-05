@@ -226,10 +226,12 @@ static void parse_gga(char fields[][NMEA_FIELD_MAX],
     if (parse_scaled(fields[7], 0U, &value) && value <= 99) {
         state->satellites = (uint8_t)value;
     }
-    if (parse_scaled(fields[8], 2U, &value) && value <= 9999) {
+    /* Quality 0 is no fix, and an HDOP or altitude without one is not a
+     * reading. */
+    if (state->quality > 0U &&
+        parse_scaled(fields[8], 2U, &value) && value <= 9999) {
         state->hdop_e2 = (uint16_t)value;
     }
-    /* Quality 0 is no fix, and an altitude without one is not a reading. */
     const bool negative = fields[9][0] == '-';
     if (state->quality > 0U &&
         parse_scaled(negative ? fields[9] + 1 : fields[9], 3U, &value) &&
