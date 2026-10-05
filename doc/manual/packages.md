@@ -48,6 +48,21 @@ must release each borrowed frame before reconfiguration or another capture;
 the initial backend uses one JPEG framebuffer in PSRAM and supports QVGA and
 VGA stills only.
 
+The `vision` group selects `service.vision` for QR decoding and
+`service.imlib` for image statistics, segmentation, filters, morphology,
+differences, and blobs on PSRAM-equipped boards. Both use the native image
+service and expose Python and Lua bindings under `solaros.vision`.
+
+The `inference` group selects `service.inference` on ESP32-S3 with PSRAM.
+It owns shared resident ESP-DL models, named tensors, checked model bundles,
+image preparation, and built-in result adapters. The `zoo` group adds the
+networked model-bundle catalog and installer. The `pipelines` group adds
+OS-owned QR or model processing jobs through `service.pipeline`; select
+`vision` or `inference` for the processor being used. RTSP input also needs
+`service.rtsp-client`. The full flavor enables all four groups where supported.
+Installing Python or Lua alone does not enable these optional services.
+Neither a camera nor a display is required to process stored images.
+
 `service.http-server` owns the shared inbound HTTP listener, route registry,
 and access-code authentication. Long-lived handlers use asynchronous routes so
 the server task remains available to other endpoints. An asynchronous consumer

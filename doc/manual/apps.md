@@ -1970,6 +1970,49 @@ Controls:
   rendered page text, wrapping at the end.
 - `Esc` or app-exit key exits.
 
+## zoo
+
+Browse the hosted model zoo and install complete model bundles on mounted SD
+or flash storage. The text interface works on the display and VT100 port shells.
+It requires the Zoo package, ESP32-S3, PSRAM, and networking.
+
+```text
+zoo
+zoo refresh
+zoo source [HTTPS-CATALOG-URL|reset]
+zoo storage [sd|flash]
+zoo install ID VERSION
+```
+
+The default source is `https://solar-os.eu/zoo/catalog.json`. The first launch
+fetches it; later launches use the cached catalog. `r` refreshes the cache.
+Up/Down and Page Up/Page Down select entries, Enter opens details, Alt+S searches,
+and `d` downloads the selected version. Arrows and page keys scroll long details.
+`*` marks an installed bundle and `!`
+marks an incompatible entry. `c` or Esc cancels a running operation. `q` or Esc returns
+from details or exits the browser; the app-exit key exits from either view.
+
+Source and storage preferences persist. Without an explicit storage preference,
+Zoo uses mounted SD, then flash. Files are stored under `dl/zoo/` on that volume;
+each installed bundle is in `models/ID/VERSION/`. Downloads are streamed to storage,
+checked against archive, manifest, model, and asset hashes, and installed through
+a staged directory swap. Interrupted downloads preserve the previous installation.
+
+The browser shows task, modality, result adapter, license, validation status, and
+reported free-memory requirements. Runtime compatibility is not a
+device inference test, and unreported memory remains unknown. The device accepts
+catalogs up to 512 KiB and 256 entries; larger catalogs fail without replacing the
+cache. Installation also needs enough storage for the ZIP and extracted files.
+
+Installation does not load a model. Use the displayed `bundle.json` path with
+`model bundle PATH` or the native, Python, or Lua inference APIs. Loaded models
+remain resident until explicitly unloaded or the device reboots. See
+[Model bundles](model-bundles.md) for inputs, results, and execution, and
+[Native image pipelines](pipelines.md#install-a-model-and-process-the-local-camera)
+for a Zoo-to-camera workflow and a Python detection example. Catalog task
+names describe the model; check its result adapter before selecting a script.
+Raw tensor bundles need model-specific interpretation.
+
 ## Quick reference
 
 Use `apps` to list applications installed in the current firmware. Start an app

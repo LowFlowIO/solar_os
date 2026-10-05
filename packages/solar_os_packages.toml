@@ -51,6 +51,26 @@ label = "RTSP streaming"
 category = "Networking"
 members = ["job_rtspd", "app_rtsp"]
 
+[groups.vision]
+label = "Computer vision"
+category = "Media"
+members = ["service_vision", "service_imlib"]
+
+[groups.inference]
+label = "Model inference"
+category = "Media"
+members = ["service_inference"]
+
+[groups.zoo]
+label = "Model zoo"
+category = "Media"
+members = ["app_zoo"]
+
+[groups.pipelines]
+label = "Native image pipelines"
+category = "Media"
+members = ["service_pipeline"]
+
 [groups.control_bindings]
 label = "Control bindings"
 category = "System"
@@ -802,6 +822,7 @@ depends = [
 sources = [
   "services/solar_os_module_packages.c",
   "services/solar_os_native.c",
+  "services/solar_os_native_media.c",
   "services/solar_os_native_elf.c",
   "shell/solar_os_shell_native.c",
   "shell/solar_os_shell_pkg_tui.c",
@@ -1099,6 +1120,35 @@ sources = [
   "services/solar_os_rtp_jpeg.c",
   "services/solar_os_rtsp.c",
 ]
+
+[packages.service_vision]
+label = "service.vision"
+depends = ["service_image"]
+sources = ["services/solar_os_vision.c"]
+requires = ["quirc"]
+capabilities = ["psram"]
+
+[packages.service_inference]
+label = "service.inference"
+depends = ["service_json", "service_crypto"]
+sources = ["services/solar_os_inference.c", "services/solar_os_inference_espdl.cpp", "services/solar_os_tensor_image.c", "services/solar_os_model_bundle.c", "shell/solar_os_shell_model.c"]
+requires = ["esp-dl", "espdl_schema", "esp_timer"]
+capabilities = ["psram"]
+targets = ["esp32s3"]
+
+[packages.service_imlib]
+label = "service.imlib"
+depends = ["service_image"]
+sources = ["services/solar_os_imlib.c"]
+requires = ["solaros_imlib", "esp_timer"]
+capabilities = ["psram"]
+
+[packages.service_pipeline]
+label = "service.pipeline"
+depends = ["service_image", "service_json", "service_script_media"]
+sources = ["services/solar_os_processor.c", "services/solar_os_pipeline.c", "shell/solar_os_shell_pipeline.c"]
+requires = ["esp_timer"]
+capabilities = ["psram"]
 
 [packages.service_document]
 label = "media.document"
@@ -2366,6 +2416,21 @@ label = "app.playground"
 depends = ["service_playground"]
 sources = ["apps/solar_os_playground_app.c"]
 capabilities = ["psram", "wifi"]
+
+[packages.service_zoo]
+label = "service.zoo"
+depends = ["service_inference", "service_http_client", "service_zip", "service_json", "service_crypto"]
+sources = ["services/solar_os_zoo.c"]
+requires = ["nvs_flash"]
+capabilities = ["psram", "wifi"]
+targets = ["esp32s3"]
+
+[packages.app_zoo]
+label = "app.zoo"
+depends = ["service_zoo"]
+sources = ["apps/solar_os_zoo_app.c"]
+capabilities = ["psram", "wifi"]
+targets = ["esp32s3"]
 
 [packages.app_clock]
 label = "app.clock"

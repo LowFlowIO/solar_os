@@ -321,10 +321,11 @@ point with the supplied arguments.
 
 Native modules import the single versioned `solar_os_native_host_v1` symbol.
 The returned function table reports the ABI version, target, firmware version,
-and provides UTF-8 output through the shell that invoked `load`. Arbitrary
-SolarOS or ESP-IDF internals are not exported. The first ABI is intentionally
-small so later operations can be added after their ownership and lifetime
-rules are defined. Native ELF code is not sandboxed; `load` is for trusted,
+and provides UTF-8 output through the shell that invoked `load`. Its optional
+`get_service` extension discovers versioned image, video, vision and inference
+interfaces; see [Native media and inference](native-media.md). Existing modules
+using the original output-only prefix remain compatible. Arbitrary SolarOS
+internals are not exported through this interface. Native ELF code is not sandboxed; `load` is for trusted,
 maintainer-produced modules only.
 
 The `load` runner is for short-lived command-style modules. A module must stop
@@ -728,6 +729,17 @@ unzip -l /books/archive.zip
 | --- | --- | --- |
 | `stream` | `stream` or `stream list` | List dynamic typed stream endpoints. |
 | `stream` | `stream status <id>` | Show type, direction, provider, format, owner, and counters for one stream. |
+| `model` | `model list`; `model info <handle>` | Inspect OS-owned resident inference models and their interfaces, memory, mode, and references. |
+| `model` | `model load <file.espdl> [timeout_ms]`; `model bundle <bundle.json> [timeout_ms]` | Load a resident raw model or a checked model bundle from storage. |
+| `model` | `model mode <handle> <single\|auto\|dual>` | Select execution mode without reloading the model. |
+| `model` | `model unload <handle\|all>` | Explicitly unload models; active operations and retained model references report busy. |
+| `pipeline` | `pipeline list` | List OS-owned native image pipelines. |
+| `pipeline` | `pipeline start qr <source> [limit] [interval_ms]` | Decode QR codes from an image file, video stream ID, or JPEG RTSP URL in a native background job. |
+| `pipeline` | `pipeline start model <source> <model> [limit] [interval_ms]` | Run a resident bundle with one image input. The job retains the model until processing ends or is stopped. |
+| `pipeline` | `pipeline status <id>` | Show job state, frame counts, last error, and the latest frame timings. |
+| `pipeline` | `pipeline result <id>` | Print the latest result as JSON. |
+| `pipeline` | `pipeline stop <id>` | Cancel and join native workers, release the source and model reference, and keep the latest result. |
+| `pipeline` | `pipeline destroy <id>` | Stop and remove the job, configuration, and latest result. |
 | `daq` | `daq help` | Print DAQ usage. |
 | `daq` | `daq status` | Show DAQ job status. |
 | `daq` | `daq streams` | List stream IDs. |

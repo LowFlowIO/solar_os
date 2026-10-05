@@ -24,6 +24,27 @@ the signed full manual for the running version. Its guides and scripting API
 references remain available offline while the SD card is mounted. See
 [Browsing and refreshing documentation](doc/manual/help.md) for setup.
 
+## Scripted vision and model inference
+
+Python and Lua scripts can use native QR decoding, image processing, and
+resident model inference through SolarOS services. On ESP32-S3 boards with
+PSRAM, use [Zoo](doc/manual/apps.md#zoo) to browse and install model bundles,
+then load them with `model bundle PATH` or `solaros.inference.load_bundle`.
+Bundles provide checked input preparation and built-in classification or
+PICO detection results; other models can expose raw tensors.
+
+[Native image pipelines](doc/manual/pipelines.md) process stored pictures,
+camera streams, or JPEG RTSP feeds in background jobs. Scripts can read the
+latest results and implement their own display, logging, or application
+behavior. Models and pipelines can outlive the scripts that create them;
+stop or destroy pipelines and explicitly unload models when finished.
+Local cameras are exclusive, so stop another camera owner before opening one.
+
+See [Computer vision](doc/manual/vision.md),
+[Model inference](doc/manual/inference.md), and
+[Model bundles and pipelines](doc/manual/model-bundles.md) for Python/Lua
+examples, package requirements, and model compatibility.
+
 ## Build
 
 SolarOS requires PlatformIO Core 6.2.0 or newer and uses ESP-IDF 5.5.5 through
@@ -158,7 +179,11 @@ components remain applicable and must be preserved in redistributions.
 | [Lua 5.4.8](https://www.lua.org/ftp/lua-5.4.8.tar.gz) | Embedded Lua VM and selected standard libraries | MIT; copyright Lua.org, PUC-Rio. The upstream notice is retained in [`lua.h`](components/lua/lua/src/lua.h). |
 | [MicroPython `d901e98349`](https://github.com/micropython/micropython/commit/d901e98349) | Embedded Python runtime | MIT; Damien P. George and MicroPython contributors. Notices are retained in the vendored source files. |
 | [ESP-DSP 1.8.x](https://github.com/espressif/esp-dsp) | ESP32-S3 PIE-accelerated DSP kernels | Apache-2.0; Espressif Systems and contributors. The managed component includes the upstream `LICENSE` and notice metadata. |
+| [ESP-DL 3.3.13](https://github.com/espressif/esp-dl/tree/v3.3.13) | Generic resident model inference and ESP32-S3 SIMD kernels | MIT; Espressif Systems and contributors. The managed component retains upstream notices; the local schema copy retains [LICENSE](components/espdl_schema/LICENSE.esp-dl). Reviewed ownership/allocation fixes are applied by [the pinned overlay](scripts/patch_espdl.py). |
+| [FlatBuffers 2.0.8](https://github.com/google/flatbuffers/tree/v2.0.8) | Structural verification of ESP-DL model files | Apache-2.0; Google and contributors. See [provenance](components/espdl_schema/README.solaros.md) and [LICENSE](components/espdl_schema/LICENSE.flatbuffers). |
 | [esp32-camera 2.1.7 (`202df95`)](https://github.com/espressif/esp32-camera/commit/202df95d7b1dc72e9303ad78f47b8dc9f339e6a1) | ESP32-S3 DVP/SCCB camera capture and OV2640 sensor support | Apache-2.0; Espressif Systems and contributors. The managed component includes the upstream `LICENSE` and notice metadata. |
+| [quirc `927d680`](https://github.com/dlbeer/quirc/commit/927d680904dc95fdff4cd9d022eb374b438ff8f2) | Native QR recognition and decoding | ISC; Daniel Beer and contributors. See [provenance and port details](components/quirc/README.solaros.md) and the retained [LICENSE](components/quirc/LICENSE). |
+| [OpenMV imlib subset](components/solaros_imlib/README.solaros.md) | Native image statistics, filtering, morphology, differences, and blobs | MIT; OpenMV, LLC and Espressif Systems. The selected kernels and compatibility headers retain their upstream notices. |
 | [PicoTTS `bf1a8df`](https://github.com/DiUS/esp-picotts/commit/bf1a8df9d2be1e088a03a775d439ac66e18438dc) | Offline speech synthesis with [runtime-loaded voices](picotts_voices) | Apache-2.0; DiUS Computing, SVOX AG, and contributors. See the retained [`NOTICE`](components/picotts.NOTICE). |
 | [minimp3 `ca7c706`](https://github.com/lieff/minimp3/commit/ca7c706001331a5a8e3182ce3b3ce3b243589154) | MP3 decoding | CC0-1.0. The pinned header history credits lieff, Jörn Heusipp, Alibek Omarov, Chris Robinson, Darryl T. Agostinelli, David Reid, Martin Fiedler, and Matthijs van Duin. |
 | [stb_image 2.30 (`013ac3b`)](https://github.com/nothings/stb/commit/013ac3beddff3dbffafd5177e7972067cd2b5083) | PNG, JPEG, GIF, and other image decoding | MIT or public domain/Unlicense. The detailed upstream contributor and feature credits are retained in [`stb_image.h`](components/stb_image/include/stb_image.h). |

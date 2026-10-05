@@ -2,6 +2,19 @@
 
 ## 4.x
 
+- **4.16.0** — 2026-10-05 — Added reusable computer vision and resident
+  ESP-DL inference for Python, Lua, shell commands, and native modules.
+  Scripts can decode QR codes and use image statistics, histograms,
+  thresholding, filters, morphology, image differences, and blob detection.
+  On ESP32-S3 with PSRAM, `model` loads shared resident models and checked
+  bundles with native image preparation, classification, and PICO detection;
+  single, automatic, and dual-core execution modes are available. OS-owned
+  `pipeline` jobs process pictures, camera streams, or JPEG RTSP feeds and
+  expose bounded latest results after the configuring script exits. The
+  `zoo` browser searches the hosted catalog and installs hash-verified model
+  bundles on SD or flash through staged replacement. Models remain resident
+  until explicitly unloaded or rebooted; local cameras retain exclusive
+  ownership. The full flavor enables these services where supported.
 - **4.15.19** — 2026-10-04 — Added Xteink X4 Pro support with an
   800x480 e-paper display, GT911 touch and Home pad, fixed-mix warm/cool
   frontlight brightness, one-bit SDMMC storage, BM8563-compatible RTC,

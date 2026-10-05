@@ -913,11 +913,70 @@ SOLAR_OS_SCRIPT_API_FUNCTION(image, load, open);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, decode, decode);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, from_frame, from_frame);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, size, size);
+SOLAR_OS_SCRIPT_API_FUNCTION(image, to_rgb, to_rgb);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, draw, draw);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, present, present);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, close, close);
 SOLAR_OS_SCRIPT_API_FUNCTION(image, close_all, close_all);
 SOLAR_OS_SCRIPT_API_MODULE_END(image);
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_VISION || SOLAR_OS_PACKAGE_SERVICE_IMLIB
+SOLAR_OS_SCRIPT_API_MODULE_BEGIN(vision);
+#if SOLAR_OS_PACKAGE_SERVICE_VISION
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, qrcodes, qrcodes);
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_IMLIB
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, process, process);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, histogram, histogram);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, statistics, statistics);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, binary, binary);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, invert, invert);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, mean, mean);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, gaussian, gaussian);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, median, median);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, erode, erode);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, dilate, dilate);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, opening, opening);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, closing, closing);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, difference, difference);
+SOLAR_OS_SCRIPT_API_FUNCTION(vision, blobs, blobs);
+#endif
+SOLAR_OS_SCRIPT_API_MODULE_END(vision);
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_INFERENCE
+SOLAR_OS_SCRIPT_API_MODULE_BEGIN(inference);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, load, load);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, load_bundle, load_bundle);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, list, list);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, find, find);
+SOLAR_OS_SCRIPT_API_FUNCTION_NAMED(inference, info, solaros_inference_info_obj, solua_inference_info_api);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, inputs, inputs);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, outputs, outputs);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, run, run);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, run_bundle, run_bundle);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, reset, reset);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, set_mode, set_mode);
+#if SOLAR_OS_PACKAGE_SERVICE_IMAGE
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, prepare_image, prepare_image);
+#endif
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, close, close);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, close_all, close_all);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, unload, close);
+SOLAR_OS_SCRIPT_API_FUNCTION(inference, unload_all, close_all);
+SOLAR_OS_SCRIPT_API_MODULE_END(inference);
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_PIPELINE
+SOLAR_OS_SCRIPT_API_MODULE_BEGIN(pipeline);
+SOLAR_OS_SCRIPT_API_FUNCTION(pipeline, start, start);
+SOLAR_OS_SCRIPT_API_FUNCTION(pipeline, list, list);
+SOLAR_OS_SCRIPT_API_FUNCTION(pipeline, status, status);
+SOLAR_OS_SCRIPT_API_FUNCTION(pipeline, result, result);
+SOLAR_OS_SCRIPT_API_FUNCTION(pipeline, stop, stop);
+SOLAR_OS_SCRIPT_API_FUNCTION(pipeline, destroy, destroy);
+SOLAR_OS_SCRIPT_API_MODULE_END(pipeline);
 #endif
 
 SOLAR_OS_SCRIPT_API_MODULE_BEGIN(gfx);

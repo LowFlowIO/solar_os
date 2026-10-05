@@ -178,9 +178,9 @@ class RuntimeBoundaryTest(unittest.TestCase):
             ))
             if descriptor_count == 0:
                 continue
-            category_count = source.count(
-                ".category = SOLAR_OS_EXPANSION_CATEGORY_"
-            )
+            category_count = len(re.findall(
+                r"\.category\s*=\s*SOLAR_OS_EXPANSION_CATEGORY_", source
+            ))
             self.assertEqual(category_count, descriptor_count, path.name)
 
     def test_expansion_driver_command_orders_explicit_categories(self):

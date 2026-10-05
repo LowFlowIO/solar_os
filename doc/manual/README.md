@@ -71,6 +71,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [messages command](commands.md) — Show bounded-store, persistence, drop, and live provider state.
 - [midi command](commands.md) — Show MIDI worker, traffic, parser, and queue status.
 - [mkdir command](commands.md) — Create directories.
+- [model command](commands.md) — Inspect OS-owned resident inference models and their interfaces, memory, mode, and references.
 - [modem command](commands.md) — Open the modem status and settings TUI.
 - [mqtt command](commands.md) — Show broker, authentication, connection, traffic, queue, and error status without revealing the password.
 - [mv command](commands.md) — Rename or move a file or matched set.
@@ -85,6 +86,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [ota command](commands.md) — Show running and configured OTA state.
 - [outbox command](commands.md) — List pending outbound messages. Sent and failed messages remain in conversation history, not Outbox.
 - [ping command](commands.md) — Send ICMP echo requests. Without count, ping runs until Esc, Ctrl+C, or app-exit.
+- [pipeline command](commands.md) — List OS-owned native image pipelines.
 - [pkg command](commands.md) — Open the native-module package manager.
 - [pocsag command](commands.md) — Show POCSAG receiver configuration, counters, correction statistics, and RSSI.
 - [port command](commands.md) — List byte-stream ports.
@@ -175,6 +177,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [web application](apps.md#web) — Simple graphical web browser for lightweight HTML pages. It shares document and image rendering infrastructure with reader where possible. Embedded and direct PNG, JPEG, GIF, and WebP images retain color on indexed-color displays; one-bit displays keep the grayscale decode and dither path. Direct MJPEG URLs are shown as live video using the same JPEG renderer.
 - [webradio application](apps.md#webradio) — Stream a direct MP3 URL through the default registered audio output. On a graphical display shell, WebRadio opens a two-tab media-player GUI. On UART, USB CDC, Telnet, SSH, and other text shells, it opens a station-list TUI.
 - [writer application](apps.md#writer) — Resumable graphical Markdown editor for PSRAM display boards. Inactive blocks are formatted like reader; the block containing the cursor and every block touched by a selection show their exact Markdown source. edit remains the portable text editor for port shells and boards without graphics or PSRAM.
+- [zoo application](apps.md#zoo) — Browse the hosted model zoo and install complete model bundles on mounted SD or flash storage. The text interface works on the display and VT100 port shells. It requires the Zoo package, ESP32-S3, PSRAM, and networking.
 
 ## Background jobs
 
@@ -229,6 +232,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 ## Scripting APIs
 
 - [Compatibility I/O modules](compatibility.io.md) — Use the legacy single-bus I2C, SPI, UART, and OneWire APIs
+- [Computer vision](vision.md) — Native QR decoding, statistics, segmentation, filtering, morphology, image difference, and blobs
 - [Digital signal processing](dsp.md) — Portable fixed-point DSP operations, streaming contexts, and script APIs
 - [Lua API overview](lua.md) — Runtime basics, conventions, and service API topic index
 - [Lua apps, jobs, and identity API](lua.system.md) — Apps, jobs, and identity: identity, jobs, sessions, apps
@@ -244,7 +248,11 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Lua storage and files API](lua.storage.md) — Storage and files: storage
 - [Lua text user-interface API](lua.tui.md) — Build terminal applications from Lua
 - [Lua time and scheduling API](lua.time.md) — Time and scheduling: time, rtc, schedule
+- [Model bundles and pipelines](model-bundles.md) — Checked model manifests, reusable adapters, and resident file or stream inference
+- [Model inference](inference.md) — Load resident ESP-DL models from storage and execute named tensor inputs and outputs
 - [Named runtime buses](buses.md) — Create and use resource-owned I2C, SPI, UART, MIDI, OneWire, and PS/2 buses
+- [Native image pipelines](pipelines.md) — OS-owned QR and model processing jobs with bounded latest results and frame timings
+- [Native media and inference](native-media.md) — Versioned image, camera/RTSP, QR, imlib and resident-model interfaces for ELF modules
 - [Python API overview](python.md) — Runtime basics, conventions, and service API topic index
 - [Python apps, jobs, and identity API](python.system.md) — Apps, jobs, and identity: identity, jobs, sessions, apps
 - [Python audio and control API](python.audio.md) — Audio and control: audio, synth, dsp, controls, parameters, midi, osc

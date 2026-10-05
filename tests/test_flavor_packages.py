@@ -49,6 +49,30 @@ class FlavorPackagesTest(unittest.TestCase):
             self.assertEqual(packages["app_gameboy"], expected,
                              flavor)
 
+    def test_native_image_pipeline_does_not_require_espdl(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["pipelines"])
+        self.assertTrue(packages["service_pipeline"])
+        classic = generate_flavor_config.apply_target_pruning(self.catalog, packages, "esp32")
+        self.assertTrue(classic["service_pipeline"])
+        self.assertTrue(classic["service_vision"])
+        self.assertFalse(classic["service_inference"])
+        self.assertNotIn("service_inference", self.catalog.package_defs["service_pipeline"].depends)
+
+    def test_zoo_works_on_headless_s3_and_is_pruned_without_platform_requirements(self):
+        _, _, groups, packages = self.resolve("full")
+        _, headless = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"psram", "wifi"})
+        self.assertTrue(headless["app_zoo"])
+        self.assertTrue(headless["service_zoo"])
+        self.assertTrue(headless["service_inference"])
+        classic = generate_flavor_config.apply_target_pruning(self.catalog, packages, "esp32")
+        self.assertFalse(classic["app_zoo"])
+        self.assertFalse(classic["service_zoo"])
+        for caps in ({"wifi"}, {"psram"}, set()):
+            _, pruned = generate_flavor_config.apply_board_capability_pruning(self.catalog, groups, packages, caps)
+            self.assertFalse(pruned["app_zoo"])
+
     def test_update_layout_adds_ota_without_exposing_it_in_flavor(self):
         _, _, _, packages = self.resolve("core")
         single = generate_flavor_config.apply_update_layout(
@@ -601,6 +625,19 @@ class FlavorPackagesTest(unittest.TestCase):
             "playground",
             "audio_pwm",
             "pcm5102",
+            "web_browser",
+            "uart",
+            "bridge",
+            "daq",
+            "wireguard",
+            "espnow",
+            "contacts",
+            "inbox",
+            "chat",
+            "clock",
+            "calculator",
+            "plot",
+            "sheet",
         ):
             self.assertTrue(groups[group], group)
         self.assertFalse(groups["speech"])
@@ -625,24 +662,32 @@ class FlavorPackagesTest(unittest.TestCase):
             "app_view",
             "expansion_audio_pwm",
             "expansion_pcm5102",
+            "job_bridge",
+            "job_daq",
+            "service_wireguard",
+            "service_contacts",
+            "service_inbox",
+            "service_messaging",
+            "service_uart",
+            "job_espnow_link",
+            "app_com",
+            "app_web",
+            "app_clock",
+            "app_calc",
+            "app_plot",
+            "app_sheet",
         ):
             self.assertTrue(packages[package], package)
         self.assertTrue(packages["job_controls"])
         for group in (
             "device_flasher",
-            "web_browser",
             "player",
-            "uart",
             "logic_analyzer",
             "sump",
-            "bridge",
-            "daq",
-            "wireguard",
             "mqtt",
             "slip",
             "ppp",
             "osc",
-            "espnow",
             "pocsag",
             "radio_link",
             "meshcore",
@@ -653,32 +698,18 @@ class FlavorPackagesTest(unittest.TestCase):
         ):
             self.assertFalse(groups[group], group)
         for package in (
-            "job_bridge",
-            "job_daq",
             "job_sump",
-            "service_wireguard",
             "service_mqtt",
-            "service_contacts",
-            "service_inbox",
-            "service_messaging",
-            "service_uart",
             "job_slip",
             "job_pppd",
             "job_osc",
-            "job_espnow_link",
             "job_pocsag",
             "job_radio_link",
             "job_meshcore",
             "job_meshcore_ble",
             "app_lua",
-            "app_com",
-            "app_web",
             "app_player",
-            "app_clock",
-            "app_calc",
-            "app_plot",
             "app_logic",
-            "app_sheet",
         ):
             self.assertFalse(packages[package], package)
 

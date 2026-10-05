@@ -7686,6 +7686,8 @@ static int solua_image_size(lua_State *L)
     return 2;
 }
 
+#include "solar_os_lua_image_rgb.inc"
+
 static int solua_image_draw(lua_State *L)
 {
     const int count = lua_gettop(L);
@@ -7752,6 +7754,9 @@ static int solua_gfx_text(lua_State *L)
 }
 
 #include "solar_os_lua_media.inc"
+#include "solar_os_lua_imlib.inc"
+#include "solar_os_lua_inference.inc"
+#include "solar_os_lua_pipeline.inc"
 
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 static void solua_push_contact(lua_State *L,
@@ -8360,6 +8365,7 @@ esp_err_t solar_os_lua_run(const solar_os_script_run_request_t *request,
 #if SOLAR_OS_PACKAGE_SERVICE_NET
     solua_net_destroy();
 #endif
+    solua_inference_destroy();
     solua_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     solua_http_stream_destroy();
@@ -8466,6 +8472,7 @@ done:
 #if SOLAR_OS_PACKAGE_SERVICE_NET
         solua_net_destroy();
 #endif
+        solua_inference_destroy();
         solua_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
         solua_http_stream_destroy();
@@ -8755,10 +8762,11 @@ static void solua_stop(solar_os_context_t *ctx)
                                            NULL,
                                            SOLUA_STOP_WAIT_MS,
                                            20U)) {
-            /* A live media session can be inside a driver capture/release or
-             * joining its RTSP worker. Never delete that owner task mid-call.
+            /* Media or inference can be inside a driver or joining a native
+             * worker. Never delete that owner task mid-call.
              * Interpreter cancellation remains active while we wait. */
-            while (__atomic_load_n(&solua_media_session, __ATOMIC_ACQUIRE) != NULL &&
+            while ((__atomic_load_n(&solua_media_session, __ATOMIC_ACQUIRE) != NULL ||
+                    solua_inference_active() || solua_imlib_active()) &&
                    !solua_task_stopped(NULL)) {
                 (void)solar_os_script_wait_for_stop(solua_task_stopped, NULL,
                     SOLUA_STOP_WAIT_MS, 20U);
@@ -8812,6 +8820,7 @@ static void solua_stop(solar_os_context_t *ctx)
 #if SOLAR_OS_PACKAGE_SERVICE_NET
     solua_net_destroy();
 #endif
+    solua_inference_destroy();
     solua_media_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     solua_http_stream_destroy();
