@@ -125,6 +125,14 @@ static void test_out_of_range_fields_are_rejected(void)
     assert(feed("$GPRMC,120000,A,4500.00,N,01000.00,E,9999999999999999999,0.0,010126,,,A*60\r\n"));
     assert(state.valid);
     assert(state.ground_speed_mm_s == 0);
+    /* Large enough to overflow once scaled: left at zero, never wrapped. */
+    assert(feed("$GPRMC,120000,A,4500.00,N,01000.00,E,100000000000,0.0,010126,,,A*58\r\n"));
+    assert(state.valid && state.ground_speed_mm_s == 0);
+    assert(feed("$GPRMC,120000,A,4500.00,N,01000.00,E,4200000,0.0,010126,,,A*6F\r\n"));
+    assert(state.valid && state.ground_speed_mm_s == 0);
+    /* Just under the bound still converts. */
+    assert(feed("$GPRMC,120000,A,4500.00,N,01000.00,E,4100000,0.0,010126,,,A*6C\r\n"));
+    assert(state.ground_speed_mm_s == 2109220400);
 }
 
 int main(void)

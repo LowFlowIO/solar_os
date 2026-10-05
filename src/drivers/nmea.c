@@ -1,5 +1,6 @@
 #include "nmea.h"
 
+#include <stdint.h>
 #include <string.h>
 
 #define NMEA_FIELD_MAX 20U
@@ -189,9 +190,11 @@ static void parse_rmc(char fields[][NMEA_FIELD_MAX],
         } else {
             state->valid = false;
         }
+        /* One knot is 514.444 mm/s. A speed is bounded before it is
+         * scaled, so the product cannot overflow and the result fits. */
+        const int64_t max_knots_e3 = (int64_t)INT32_MAX * 1000000LL / 514444LL;
         int64_t knots_e3 = 0;
-        if (parse_scaled(fields[7], 3U, &knots_e3)) {
-            /* One knot is 514.444 mm/s. */
+        if (parse_scaled(fields[7], 3U, &knots_e3) && knots_e3 <= max_knots_e3) {
             state->ground_speed_mm_s =
                 (int32_t)((knots_e3 * 514444LL) / 1000000LL);
         }
