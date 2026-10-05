@@ -1,18 +1,42 @@
 # SolarOS
 
-SolarOS is a small ESP32 operating environment for pocket terminals,
-reflective displays, serial consoles, and low-power embedded tools. It provides
+SolarOS is an ESP32 operating environment that provides
 a shell, foreground applications, background jobs, storage, networking,
-hardware services, Python, and Lua.
+hardware services, and scripting surfaces.
+
+**Homage to a simpler life**
+
+SolarOS tries to bring back the spirit of the golden era of home computing: turn on a computer, arrive at a shell prompt, and start doing something. Explore, customize, write a program, make a tool, share it with someone.
+
+* Modern software accumulates layers of convenience that obscure how it works and what it costs to run. We become accustomed to using - and now generating - software without understanding it.
+
+* SolarOS encourages a more deliberate approach: understand the machine, question the complexity, and take responsibility for the resources your software uses. Scripting makes experimentation approachable; native services provide an efficient foundation. The constraints give us a reason to pay attention.
+
+* The scripting surfaces let users express their ideas, while native services handle demanding work, making efficient execution a shared foundation that users can build on.
+
+**Wastefulness for the sake of convenience is not sustainable.**
+
+It is a continuous exploration of how much useful, understandable, general-purpose computing can be built on deliberately constrained hardware. We already have an abundance of computing power; we can and should make better use of it.  
+
+**SolarOS is an argument made executable.**
+
+SolarOS argues that useful, general-purpose computing can be built on modest hardware - and that efficiency, understanding, and the ability to shape your own tools should guide its design.
+
+* The _Solar_ in the name reflects the goal of building an efficient operating environment that can run on solar power. Energy consumption is a design concern alongside memory, storage, and processing time.
+
+* That commitment also extends to the project’s infrastructure: all our servers _( website, HIL pipeline, local expert systems )_ are powered by 100% renewable energy.
+
 
 ## User manual
+
+**The user manual is automatically generated from human validated code by an expert system.**
 
 The [SolarOS User Manual](doc/manual/README.md) is the canonical source for:
 
 - the documentation browsed on GitHub;
 - the signed on-device `help` tree and `man`;
 - the native agent's SolarOS reference;
-- the generated documentation on solar-os.eu.
+- the generated documentation on **solar-os.eu**.
 
 It contains the complete command, application, job, board, expansion, Python,
 Lua, package, and workflow documentation. Edit the topic in `doc/manual/`;
@@ -26,7 +50,7 @@ references remain available offline while the SD card is mounted. See
 
 ## Scripted vision and model inference
 
-Python and Lua scripts can use native QR decoding, image processing, and
+Python and Lua scripts can use native image processing, and
 resident model inference through SolarOS services. On ESP32-S3 boards with
 PSRAM, use [Zoo](doc/manual/apps.md#zoo) to browse and install model bundles,
 then load them with `model bundle PATH` or `solaros.inference.load_bundle`.
@@ -83,7 +107,7 @@ pio device monitor -b 115200
 
 The default build uses the full firmware flavor, except the e-paper HMI targets,
 which default to `writerdeck`, and the 4 MB VGA32 target, which defaults to
-`rover`. For a smaller image or an explicit override:
+`vga32`. For a smaller image or an explicit override:
 
 ```sh
 SOLAR_OS_FLAVOR=core pio run -e solar_term
@@ -146,7 +170,7 @@ does not by itself make that feature a candidate for the upstream firmware.
   validation on the actual device.
 
 Keep each pull request focused on one feature and base it on the current
-upstream branch. Acceptance is decided case by case; contributors should discuss
+upstream **beta** branch. Acceptance is decided case by case; contributors should discuss
 large native applications, new boards, and expansion drivers before investing
 in a substantial implementation.
 
@@ -168,6 +192,7 @@ doc/            developer contracts and documentation-system design
 ```
 
 ## Third-party software
+SolarOS builds on open-source libraries and frameworks, and on the knowledge and work shared by their communities. It brings those foundations together into a system that people can study, adapt, and build on.
 
 SolarOS is licensed under the [Apache License 2.0](LICENSE.md). It also
 includes the third-party software below under each project's own license.
@@ -192,5 +217,4 @@ components remain applicable and must be preserved in redistributions.
 | [MeshCore `03b6ef4`](https://github.com/meshcore-dev/MeshCore/commit/03b6ef4b0de98fc70b49ef10a6d0d61f8381fb7a) | Mesh packet, identity, contact, channel, and chat protocol subset | Separate notices are retained for MeshCore, `rweather/Crypto`, and Ed25519. See the [provenance and notice index](src/vendor/meshcore/README.solaros.md). |
 | [Peanut-GB `8e65698`](https://github.com/deltabeard/Peanut-GB/commit/8e656982f08663785794b84823d3e27f856fdb7f) | Game Boy emulation and `minigb_apu` audio | MIT; Mahyar Koshkouei, Alex Baines, and contributors. See the retained [provenance and notices](src/vendor/peanut_gb/README.solaros.md). |
 
-The SolarOS ports and local adaptations of minimp3, stb_image, U8g2, and
-libwebp were integrated by nilseuropa.
+ _Third-party code is adapted and modified it where needed, and integrated it into a shared system designed for constrained hardware by the authors of SolarOS._
