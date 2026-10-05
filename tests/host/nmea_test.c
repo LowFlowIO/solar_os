@@ -67,6 +67,15 @@ static void test_stale_gga_is_dropped(void)
     assert(state.latitude_deg_e7 == 492741667);
 }
 
+/* With fix quality 0 there is no fix, so its altitude field is not one. */
+static void test_gga_without_a_fix_has_no_altitude(void)
+{
+    reset();
+    assert(feed("$GNGGA,225446.00,4916.45,N,12311.12,W,0,00,99.99,545.4,M,46.9,M,,*61\r\n"));
+    assert(state.quality == 0);
+    assert(!state.altitude_valid && state.altitude_msl_mm == 0);
+}
+
 static void test_bad_checksum_is_rejected(void)
 {
     reset();
@@ -123,6 +132,7 @@ int main(void)
     test_rmc_position_time_and_motion();
     test_gga_quality_satellites_and_altitude();
     test_stale_gga_is_dropped();
+    test_gga_without_a_fix_has_no_altitude();
     test_bad_checksum_is_rejected();
     test_void_fix_keeps_time();
     test_noise_and_other_sentences_are_ignored();

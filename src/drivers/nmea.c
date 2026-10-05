@@ -226,8 +226,10 @@ static void parse_gga(char fields[][NMEA_FIELD_MAX],
     if (parse_scaled(fields[8], 2U, &value) && value <= 9999) {
         state->hdop_e2 = (uint16_t)value;
     }
+    /* Quality 0 is no fix, and an altitude without one is not a reading. */
     const bool negative = fields[9][0] == '-';
-    if (parse_scaled(negative ? fields[9] + 1 : fields[9], 3U, &value) &&
+    if (state->quality > 0U &&
+        parse_scaled(negative ? fields[9] + 1 : fields[9], 3U, &value) &&
         value <= 100000000LL) {
         state->altitude_msl_mm = (int32_t)(negative ? -value : value);
         state->altitude_valid = true;
