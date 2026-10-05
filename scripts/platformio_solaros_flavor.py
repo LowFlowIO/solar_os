@@ -160,6 +160,7 @@ tracked_files = (
     project_dir / "packages" / "solar_os_packages.toml",
     project_dir / "scripts" / "generate_flavor_config.py",
     project_dir / "scripts" / "platformio_solaros_flavor.py",
+    project_dir / "scripts" / "cxx_sdkconfig.cmake",
     project_dir / "scripts" / "solaros_update_layout.py",
     project_dir / "scripts" / "solaros_build_lock.py",
     project_dir / "patches" / "nimble" / "required_config.txt",
