@@ -27,6 +27,7 @@ typedef struct solar_os_board_display_ops {
     esp_err_t (*runtime_ready)(solar_os_board_display_t *display);
     esp_err_t (*resume)(solar_os_board_display_t *display);
     void (*deinit)(solar_os_board_display_t *display);
+    esp_err_t (*set_power_save)(solar_os_board_display_t *display, bool enabled);
     bool (*brightness_supported)(const solar_os_board_display_t *display);
     esp_err_t (*get_brightness)(const solar_os_board_display_t *display,
                                 uint8_t *percent);
@@ -64,6 +65,8 @@ esp_err_t solar_os_board_display_init(solar_os_board_display_t *display);
 esp_err_t solar_os_board_display_runtime_ready(solar_os_board_display_t *display);
 esp_err_t solar_os_board_display_resume(solar_os_board_display_t *display);
 void solar_os_board_display_deinit(solar_os_board_display_t *display);
+esp_err_t solar_os_board_display_set_power_save(solar_os_board_display_t *display,
+                                               bool enabled);
 u8g2_t *solar_os_board_display_u8g2(solar_os_board_display_t *display);
 const char *solar_os_board_display_driver_name(const solar_os_board_display_t *display);
 const char *solar_os_board_display_controller(const solar_os_board_display_t *display);

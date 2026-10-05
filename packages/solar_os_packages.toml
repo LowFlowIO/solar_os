@@ -507,6 +507,11 @@ label = "T-Deck keyboard"
 category = "Expansion hardware"
 members = ["expansion_tdeck_keyboard"]
 
+[groups.stc8h_keyboard]
+label = "STC8H companion-MCU keypad"
+category = "Expansion hardware"
+members = ["expansion_stc8h_keyboard"]
+
 [groups.ublox_mia_m10q]
 label = "u-blox MIA-M10Q GNSS receiver"
 category = "Expansion hardware"
@@ -662,6 +667,11 @@ label = "PCF85063 real-time clock"
 category = "Expansion hardware"
 members = ["driver_pcf85063"]
 
+[groups.pcf8563]
+label = "PCF8563 / BM8563 real-time clock"
+category = "Expansion hardware"
+members = ["driver_pcf8563"]
+
 [groups.shtc3]
 label = "SHTC3 environmental sensor"
 category = "Expansion hardware"
@@ -708,6 +718,11 @@ members = ["bq27220"]
 label = "MAX17048 fuel gauge"
 category = "Expansion hardware"
 members = ["max17048"]
+
+[groups.cw2017]
+label = "CW2017 fuel gauge"
+category = "Expansion hardware"
+members = ["cw2017"]
 
 [packages.core_runtime]
 label = "bootstrap.runtime"
@@ -1551,6 +1566,19 @@ sources = [
 requires = ["esp_driver_i2c"]
 capabilities = ["expansion_i2c"]
 
+[packages.expansion_stc8h_keyboard]
+label = "expansion.stc8h-keyboard"
+targets = ["esp32s3"]
+expansion_drivers = ["solar_os_stc8h_keyboard_expansion_driver"]
+depends = ["service_expansion", "service_i2c", "service_pwm"]
+sources = [
+  "services/solar_os_cardkb_codec.c",
+  "services/solar_os_stc8h_keyboard.c",
+  "services/solar_os_stc8h_keyboard_driver.c",
+]
+requires = ["esp_driver_i2c", "esp_driver_gpio", "esp_timer"]
+capabilities = ["expansion_i2c", "pwm"]
+
 [packages.ublox_mia_m10q]
 label = "expansion.ublox-mia-m10q"
 targets = ["esp32", "esp32s3"]
@@ -1728,6 +1756,18 @@ sources = [
   "services/solar_os_max17048_driver.c",
 ]
 requires = ["esp_driver_i2c"]
+capabilities = ["i2c"]
+
+[packages.cw2017]
+label = "expansion.cw2017"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_cw2017_expansion_driver"]
+depends = ["service_battery", "service_expansion", "service_i2c"]
+sources = [
+  "drivers/cw2017.c",
+  "services/solar_os_cw2017.c",
+  "services/solar_os_cw2017_driver.c",
+]
 capabilities = ["i2c"]
 
 [packages.sim7670]
@@ -2038,6 +2078,18 @@ sources = [
   "drivers/rtc_pcf85063.c",
   "services/solar_os_pcf85063.c",
   "services/solar_os_pcf85063_driver.c",
+]
+capabilities = ["i2c"]
+
+[packages.driver_pcf8563]
+label = "driver.pcf8563"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_pcf8563_expansion_driver"]
+depends = ["service_expansion", "service_i2c", "service_rtc"]
+sources = [
+  "drivers/rtc_pcf8563.c",
+  "services/solar_os_pcf8563.c",
+  "services/solar_os_pcf8563_driver.c",
 ]
 capabilities = ["i2c"]
 
@@ -2683,3 +2735,72 @@ label = "job.meshcore-ble"
 depends = ["service_meshcore_ble"]
 sources = ["jobs/solar_os_meshcore_ble_job.c"]
 capabilities = ["ble", "psram"]
+
+[groups.uc8179]
+label = "UC8179 e-paper expansion"
+description = "800x480 UltraChip UC8179 panels"
+members = ["expansion_uc8179"]
+
+[packages.driver_epd_ultrachip]
+label = "driver.epd_ultrachip"
+targets = ["esp32", "esp32s3"]
+sources = ["drivers/epd_ultrachip.c"]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
+depends = ["service_spi"]
+capabilities = ["gfx"]
+
+[packages.expansion_uc8179]
+label = "expansion.uc8179"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_uc8179_expansion_driver"]
+depends = ["driver_epd_ultrachip", "service_expansion", "service_spi"]
+sources = [
+  "board/solar_os_board_display_expansion.c",
+  "drivers/epd_uc8179.c",
+  "services/solar_os_uc8179.c",
+  "services/solar_os_uc8179_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
+capabilities = ["gfx", "expansion_gpio"]
+
+[groups.uc8279]
+label = "UC8279 e-paper expansion"
+description = "800x480 UltraChip UC8279 panels"
+members = ["expansion_uc8279"]
+
+[packages.expansion_uc8279]
+label = "expansion.uc8279"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_uc8279_expansion_driver"]
+depends = ["driver_epd_ultrachip", "service_expansion", "service_spi"]
+sources = [
+  "board/solar_os_board_display_expansion.c",
+  "drivers/epd_uc8279.c",
+  "services/solar_os_uc8279.c",
+  "services/solar_os_uc8279_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
+capabilities = ["gfx", "expansion_gpio"]
+
+[groups.x4pro]
+label = "Xteink X4 Pro display"
+description = "Cached display-controller identification and frontlight brightness"
+members = ["expansion_x4pro"]
+
+[packages.expansion_x4pro]
+label = "expansion.x4pro"
+targets = ["esp32s3"]
+expansion_drivers = ["solar_os_x4pro_expansion_driver"]
+depends = ["driver_epd_ultrachip", "service_expansion", "service_spi"]
+sources = [
+  "board/solar_os_board_display_expansion.c",
+  "drivers/epd_ssd1677.c",
+  "drivers/epd_uc8179.c",
+  "drivers/epd_uc8279.c",
+  "drivers/epd_xteink_identify.c",
+  "drivers/frontlight_pwm.c",
+  "services/solar_os_x4pro.c",
+  "services/solar_os_x4pro_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_driver_ledc", "esp_timer", "nvs_flash", "u8g2"]
+capabilities = ["gfx", "expansion_gpio"]

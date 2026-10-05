@@ -82,6 +82,8 @@ Built-in targets include:
   with rotary controls and microSD.
 - `waveshare_esp32_s3_epaper_3_97`: SSD1677 e-paper HMI that defaults to 800x480
   landscape, with rotary controls, microSD, RTC, environmental sensor, and duplex audio.
+- `xteink_x4_pro`: 800x480 e-paper handheld with GT911 touch, fixed-mix
+  frontlight brightness, microSD, BM8563-compatible RTC, and CW2017 gauge.
 - `cl_32`: compact 384x168 reflective terminal with an integrated keyboard,
   microSD, RTC, battery monitor, and PWM audio.
 - `t_lora_pager`: 480x222 pager with keyboard, rotary input, LoRa, GNSS, NFC,

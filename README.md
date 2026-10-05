@@ -41,6 +41,7 @@ pio run -e t_lora_pager
 pio run -e t_deck_plus
 pio run -e waveshare_esp32_s3_sim7670g_4g
 pio run -e waveshare_esp32_s3_epaper_3_97
+pio run -e xteink_x4_pro
 pio run -e elecrow_crowpanel_esp32_s3_4_2_epaper
 pio run -e elecrow_crowpanel_esp32_s3_5_79_epaper
 pio run -e odroid_go

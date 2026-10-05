@@ -375,6 +375,44 @@ bindings = { gpio = 7 }
         with self.assertRaisesRegex(ManifestError, "more than 16 bindings"):
             validate_board(too_many_bindings, self.drivers)
 
+    def test_x4_pro_claims_fixed_peripherals_and_neutral_frontlight(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "xteink_x4_pro.toml", self.manifest_dir)
+        validate_board(board, self.drivers)
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(devices["display0"]["driver"], "x4pro")
+        self.assertEqual(devices["display0"]["bindings"], {
+            "spi": "spi0", "cs": 13, "dc": 18, "reset": 14, "busy": 6,
+            "latch": 1, "cool": 8, "warm": 9,
+        })
+        self.assertEqual(devices["storage0"]["bindings"], {
+            "clk": 41, "cmd": 42, "d0": 40, "power": 5, "active": 0,
+        })
+        self.assertEqual(devices["touch0"]["bindings"], {
+            "i2c": "i2c0", "addr": 0x5d, "alt_addr": 0x14, "irq": 10,
+            "reset": 4, "power": 2, "active": 0, "rotation": 1, "home_key": 0x92,
+        })
+        self.assertEqual(devices["rtc0"]["bindings"], {"i2c": "i2c0", "addr": 0x51})
+        self.assertEqual(devices["battery0"]["bindings"], {"i2c": "i2c0", "addr": 0x63})
+        buses = {bus["name"]: bus for bus in board["buses"]}
+        self.assertEqual((buses["spi0"]["sclk"], buses["spi0"]["mosi"]), (12, 11))
+        self.assertNotIn("miso", buses["spi0"])
+        self.assertEqual((buses["i2c0"]["sda"], buses["i2c0"]["scl"]), (39, 38))
+        self.assertEqual(board["defines"]["SOLAR_OS_BOARD_DISPLAY_DEFAULT_ORIENTATION"], "0")
+        self.assertIn("display_brightness", board["build"]["capabilities"])
+        self.assertTrue(all(pin["policy"] == "fixed" for pin in board["pins"]))
+        self.assertFalse(board.get("connectors"))
+        self.assertLessEqual({"expansion_x4pro", "cw2017", "driver_pcf8563",
+                              "driver_gt911", "expansion_sdmmc"},
+                             set(required_packages(board, self.drivers)))
+        header = generate_header(board, self.drivers)
+        self.assertLess(header.index('.driver = "x4pro"'), header.index('.driver = "sdmmc"'))
+        self.assertIn("set(SOLAR_OS_BOARD_HAS_DISPLAY_BRIGHTNESS ON)",
+                      generate_cmake(board, self.drivers))
+        memory = json.loads((ROOT / "boards/xteink_x4_pro.json").read_text())
+        self.assertEqual(memory["build"]["flash_mode"], "qio")
+        self.assertEqual(memory["build"]["psram_type"], "opi")
+        self.assertEqual(memory["upload"]["flash_size"], "16MB")
+
     def test_waveshare_397_uses_ssd1677_portrait_profile(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "waveshare_esp32_s3_epaper_3_97.toml",

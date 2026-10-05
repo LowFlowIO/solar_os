@@ -3,3 +3,6 @@
 #define GPIO_NUM_MAX 49
 #define GPIO_NUM_NC -1
 esp_err_t gpio_reset_pin(gpio_num_t pin);
+#define GPIO_PULLUP_ONLY 1
+#define GPIO_FLOATING 0
+esp_err_t gpio_set_pull_mode(gpio_num_t pin, int mode);
