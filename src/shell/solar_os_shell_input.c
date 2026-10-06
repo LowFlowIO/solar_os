@@ -13,15 +13,21 @@
 #include "solar_os_input_actions.h"
 #include "solar_os_shell_common.h"
 #include "solar_os_shell_io.h"
+#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+#include "solar_os_shell.h"
+#include "solar_os_memory.h"
+#include "solar_os_storage.h"
+#include "solar_os_tca8418.h"
+#endif
 
 static const char *const input_subcommands[] = {
-    "status", "test", "calibrate", "emit",
+    "status", "test", "calibrate", "emit", "keymap",
     "keyboard", "touch", "mouse", "joystick", "dpad", "buttons", "gesture",
 };
 
 static const char *const input_usage =
     "input [status|test <source>|calibrate <source> [set ...|reset]|emit <key>|"
-    "keyboard|touch|mouse|joystick|dpad|buttons|gesture]";
+    "keymap <source> [load <path>|reset]|keyboard|touch|mouse|joystick|dpad|buttons|gesture]";
 
 static const char *const gesture_subcommands[] = {
     "status", "bind", "bindings", "unbind",
@@ -685,6 +691,53 @@ static void gesture_unbind(solar_os_shell_io_t *io, int argc, char **argv)
     }
 }
 
+static void input_keymap(solar_os_context_t *ctx, solar_os_shell_io_t *io,
+                          int argc, char **argv)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+    esp_err_t err;
+    if (argc == 4 && strcmp(argv[3], "reset") == 0) {
+        err = solar_os_tca8418_reset_keymap(argv[2]);
+    } else if (argc == 5 && strcmp(argv[3], "load") == 0) {
+        char path[SOLAR_OS_STORAGE_PATH_MAX];
+        if (!solar_os_shell_resolve_path_for_command(ctx, io, "input keymap",
+                                                      argv[4], path, sizeof(path))) return;
+        err = solar_os_tca8418_load_keymap(argv[2], path);
+    } else if (argc == 3) {
+        solar_os_matrix_keyboard_map_t *map = solar_os_memory_alloc(sizeof(*map),
+            SOLAR_OS_MEMORY_TRANSIENT, "keyboard-map");
+        err = map == NULL ? ESP_ERR_NO_MEM : solar_os_tca8418_get_keymap(argv[2], false, map);
+        if (err == ESP_OK) {
+            solar_os_shell_io_printf(io, "%s: rows=%u cols=%u\nROW COL ID LAYER USAGE KEY SHIFT FLAGS\n",
+                                     argv[2], map->rows, map->cols);
+            for (unsigned layer = 0; layer < 2U; layer++)
+                for (unsigned row = 0; row < map->rows; row++)
+                    for (unsigned col = 0; col < map->cols; col++) {
+                        const unsigned id = 1U + row * 10U + col;
+                        const solar_os_matrix_key_t key = map->keys[layer][id];
+                        if (layer == 1U && key.usage == 0U && key.key == 0U &&
+                            key.shifted_key == 0U && key.flags == 0U) continue;
+                        solar_os_shell_io_printf(io, "%3u %3u %2u %5u 0x%02x %3u %5u %5u\n",
+                            row, col, id, layer, key.usage, key.key, key.shifted_key, key.flags);
+                    }
+        }
+        free(map);
+        if (err == ESP_OK) return;
+    } else {
+        solar_os_shell_diag_problem(io, "input keymap", "invalid argument count or action",
+            "input keymap <source> [load <path>|reset]", NULL);
+        return;
+    }
+    if (err != ESP_OK)
+        solar_os_shell_io_printf(io, "input keymap: %s\n", esp_err_to_name(err));
+    else
+        solar_os_shell_io_writeln(io, "keymap applied; release and press any held keys again");
+#else
+    (void)ctx; (void)argc; (void)argv;
+    solar_os_shell_io_writeln(io, "input keymap: TCA8418 support is not included");
+#endif
+}
+
 void solar_os_shell_cmd_input(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *io = solar_os_shell_command_io(ctx);
@@ -704,6 +757,10 @@ void solar_os_shell_cmd_input(solar_os_context_t *ctx, int argc, char **argv)
     }
     if (argc >= 2 && strcmp(argv[1], "emit") == 0) {
         input_emit_key(io, argc, argv);
+        return;
+    }
+    if (argc >= 2 && strcmp(argv[1], "keymap") == 0) {
+        input_keymap(ctx, io, argc, argv);
         return;
     }
     solar_os_input_source_class_t source_class;

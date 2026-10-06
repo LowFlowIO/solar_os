@@ -281,11 +281,23 @@ class FlavorPackagesTest(unittest.TestCase):
                               generate_flavor_config.collect_expansion_drivers(
                                   self.catalog, pruned))
 
+    def test_tca8418_profiles_share_backend_without_generic_pwm_dependency(self):
+        _, _, _, packages = self.resolve("full")
+        backend = self.catalog.package_defs["service_tca8418"]
+        self.assertNotIn("service_pwm", backend.depends)
+        for package in ("tca8418", "expansion_inputronic_keyboard", "expansion_lilygo_pager_keyboard"):
+            self.assertIn("service_tca8418", self.catalog.package_defs[package].depends)
+            for target in ("esp32", "esp32s3"):
+                pruned = generate_flavor_config.apply_target_pruning(self.catalog, packages, target)
+                self.assertTrue(pruned[package])
+                self.assertTrue(pruned["service_tca8418"])
+
     def test_full_exposes_reusable_t_lora_expansion_drivers(self):
         _, _, groups, packages = self.resolve("full")
         reusable = {
             "xl9555": "xl9555",
             "tca8418": "tca8418",
+            "lilygo_pager_keyboard": "expansion_lilygo_pager_keyboard",
             "sx1262": "sx1262",
             "rotary_encoder": "rotary_encoder",
             "bq27220": "bq27220",
@@ -314,6 +326,7 @@ class FlavorPackagesTest(unittest.TestCase):
         for symbol in (
             "solar_os_xl9555_expansion_driver",
             "solar_os_tca8418_expansion_driver",
+            "solar_os_lilygo_pager_keyboard_expansion_driver",
             "solar_os_sx1262_expansion_driver",
             "solar_os_rotary_encoder_expansion_driver",
             "solar_os_bq27220_expansion_driver",

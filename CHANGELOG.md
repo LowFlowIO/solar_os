@@ -2,6 +2,21 @@
 
 ## 4.x
 
+- **4.16.2** — 2026-10-06 — Added the reusable Soldered Inputronic
+  keyboard driver and enabled it on the custom Waveshare 4G/e-paper profile.
+  TCA8418 keyboards share one controller backend with separate generic,
+  Inputronic, and LilyGO Pager mapping profiles. The generic driver supports
+  configurable matrix geometry. All three support validated JSON keymaps,
+  inspection and reset through `input keymap`, and map loading and reset from
+  Python and Lua. The Pager profile retains its symbol layer and backlight;
+  custom Pager configurations should use `lilygo-pager-keyboard` in place of
+  `tca8418`.
+- **4.16.1** — 2026-10-06 — Camera expansion attachments can use a
+  named I2C bus for SCCB control, including the board-owned bus wired to the
+  CL32 camera connector, or explicit SIOD/SIOC pins. Shared bus devices remain
+  available when the camera stops; the camera retains its bus lease until
+  detach. Corrected C++ exception configuration for ESP-DL builds, including
+  existing SDK configuration files.
 - **4.16.0** — 2026-10-05 — Added reusable computer vision and resident
   ESP-DL inference for Python, Lua, shell commands, and native modules.
   Scripts can decode QR codes and use image statistics, histograms,

@@ -33,6 +33,9 @@
 #include "py/smallint.h"
 #include "solar_os_app_registry.h"
 #include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+#include "solar_os_tca8418.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 #include "solar_os_contacts.h"
 #endif
@@ -7733,6 +7736,24 @@ static mp_obj_t solaros_input_status(void)
     return dict;
 }
 MP_DEFINE_CONST_FUN_OBJ_0(solaros_input_status_obj, solaros_input_status);
+
+#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+static mp_obj_t solaros_input_load_keymap(mp_obj_t name_obj, mp_obj_t path_obj)
+{
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    python_resolve_path_obj(path_obj, path, sizeof(path));
+    python_check_esp(solar_os_tca8418_load_keymap(mp_obj_str_get_str(name_obj), path));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_2(solaros_input_load_keymap_obj, solaros_input_load_keymap);
+
+static mp_obj_t solaros_input_reset_keymap(mp_obj_t name_obj)
+{
+    python_check_esp(solar_os_tca8418_reset_keymap(mp_obj_str_get_str(name_obj)));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_input_reset_keymap_obj, solaros_input_reset_keymap);
+#endif
 
 static solar_os_terminal_t *python_current_terminal(void)
 {

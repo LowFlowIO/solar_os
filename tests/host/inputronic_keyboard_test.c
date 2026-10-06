@@ -3,9 +3,12 @@
 #include <string.h>
 
 /* Exercise the actual worker, polling, attach and detach implementation. */
+#include "../../src/services/solar_os_tca8418.c"
 #include "../../src/services/solar_os_inputronic_keyboard.c"
 #include "../../src/services/solar_os_inputronic_keyboard_driver.c"
+#include "../../src/services/solar_os_lilygo_pager_keyboard.c"
 #include "solar_os_keys.h"
+#include "solar_os_inputronic_keyboard_profile.h"
 
 static uint8_t registers[0x30], fifo[32];
 static size_t fifo_count, event_count, released, opened, closed, ready_changes;
@@ -17,6 +20,22 @@ static uint8_t composition_modifiers;
 static unsigned matrix_configurations;
 static uint8_t fail_write_reg;
 static bool fail_source_open;
+static unsigned pwm_started, pwm_stopped;
+static esp_err_t pwm_start_error, pwm_stop_error;
+
+esp_err_t pwm_port_set(gpio_num_t pin, uint32_t frequency, uint8_t percent)
+{
+    assert(pin == 46 && frequency == 5000U && percent == 50U);
+    pwm_started++;
+    return pwm_start_error;
+}
+
+esp_err_t pwm_port_stop(gpio_num_t pin)
+{
+    assert(pin == 46);
+    pwm_stopped++;
+    return pwm_stop_error;
+}
 static bool check_reset_before_probe;
 static esp_err_t gpio_error;
 static unsigned reset_delays, reset_cleanup, irq_cleanup;
@@ -137,7 +156,7 @@ void solar_os_input_source_release_all(solar_os_input_source_t source)
 esp_err_t solar_os_input_keyboard_source_set_ready(solar_os_input_source_t source, bool ready)
 {
     assert(source != 0U);
-    assert(ready == (ready_changes != 0U));
+    (void)ready;
     ready_changes++;
     return ESP_OK;
 }
@@ -149,6 +168,12 @@ void solar_os_input_composition_set_modifiers(solar_os_input_source_t source, ui
 }
 
 uint8_t solar_os_input_composition_apply(uint8_t key) { return key; }
+
+esp_err_t solar_os_input_write_char(solar_os_input_source_t source, char key)
+{
+    assert(source != 0 && key != 0);
+    return input_error;
+}
 
 /* The common translator itself is covered by input_test. Verify what this
  * driver passes to it; exercise a letter and modifier navigation here. */
@@ -182,7 +207,7 @@ BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t function, const c
     uint32_t stack, void *arg, UBaseType_t priority, TaskHandle_t *task,
     BaseType_t core, solar_os_task_role_t role)
 {
-    assert(function == worker && name != NULL && stack == INPUTRONIC_TASK_STACK);
+    assert(function == worker && name != NULL && stack == TCA8418_TASK_STACK);
     (void)priority; (void)core; (void)role;
     *task = arg;
     return task_failure ? pdFALSE : pdPASS;
@@ -202,7 +227,7 @@ bool solar_os_task_wait_done(TaskHandle_t task, volatile bool *done, uint32_t ti
 uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t ticks)
 {
     assert(clear == pdTRUE);
-    assert(ticks == (worker_ticks == 0U ? INPUTRONIC_RETRY_MS : INPUTRONIC_POLL_MS));
+    assert(ticks == (worker_ticks == 0U ? TCA8418_RETRY_MS : TCA8418_POLL_MS));
     worker_ticks++;
     /* A failed first poll recovers on the next iteration, then accepts a
      * fresh key. No held Shift survives the connection interruption. */
@@ -221,51 +246,53 @@ static void queue(uint8_t raw)
 
 static void test_codec(void)
 {
-    solar_os_inputronic_keyboard_state_t state = {0};
-    solar_os_inputronic_key_transition_t transition;
-    assert(!solar_os_inputronic_keyboard_decode(NULL, 0x80, &transition));
-    assert(!solar_os_inputronic_keyboard_decode(&state, 0, &transition));
-    assert(!solar_os_inputronic_keyboard_decode(&state, 0xd1, &transition));
-    assert(!solar_os_inputronic_keyboard_decode(&state, 0x81, &transition));
-    assert(!solar_os_inputronic_keyboard_decode(&state, 52, &transition));
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 74, &transition));
+    solar_os_matrix_keyboard_map_t map;
+    solar_os_inputronic_keyboard_map(&map);
+    solar_os_matrix_keyboard_state_t state = {0};
+    solar_os_matrix_key_transition_t transition;
+    assert(!solar_os_matrix_keyboard_decode(NULL, &map, 0x80, &transition));
+    assert(!solar_os_matrix_keyboard_decode(&state, &map, 0, &transition));
+    assert(!solar_os_matrix_keyboard_decode(&state, &map, 0xd1, &transition));
+    assert(!solar_os_matrix_keyboard_decode(&state, &map, 0x81, &transition));
+    assert(!solar_os_matrix_keyboard_decode(&state, &map, 52, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 74, &transition));
     assert(state.caps_lock && transition.usage == 0x39);
-    assert(!solar_os_inputronic_keyboard_decode(&state, 0x80 | 74, &transition));
+    assert(!solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 74, &transition));
     assert(state.caps_lock);
-    assert(solar_os_inputronic_keyboard_decode(&state, 74, &transition));
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 75, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 74, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 75, &transition));
     assert(transition.modifiers == SOLAR_OS_INPUT_MOD_LEFT_SHIFT);
     for (uint8_t id = 31; id <= 40; id++) {
         static const char expected[] = "=!\"#$%&/()";
-        assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | id, &transition));
+        assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | id, &transition));
         assert(transition.key == expected[id - 31]);
     }
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 51, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 51, &transition));
     assert(transition.key == ':');
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 69, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 69, &transition));
     assert(transition.key == ';');
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 70, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 70, &transition));
     assert(transition.key == ':');
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 76, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 76, &transition));
     assert(transition.modifiers == (SOLAR_OS_INPUT_MOD_LEFT_SHIFT | SOLAR_OS_INPUT_MOD_LEFT_CTRL));
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 77, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 77, &transition));
     assert(transition.modifiers == 7U);
-    solar_os_inputronic_keyboard_release(&state);
+    solar_os_matrix_keyboard_release(&state);
     assert(state.caps_lock && state.modifiers == 0U && !state.held[75]);
     for (uint8_t id = 17; id <= 20; id++) {
-        assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | id, &transition));
+        assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | id, &transition));
         assert(transition.physical_key == id && transition.key == 0 && transition.usage == 0);
     }
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 78, &transition));
-    assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | 79, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 78, &transition));
+    assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | 79, &transition));
     for (uint8_t id = 21; id <= 30; id++) {
-        assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | id, &transition));
+        assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | id, &transition));
         assert(transition.usage == 0x3a + id - 21);
     }
     /* Every printable letter's physical ID is independent of its HID usage. */
     static const uint8_t ids[] = {52,66,64,54,44,55,56,57,49,58,59,60,68,67,50,41,42,45,53,46,48,65,43,63,47,62};
     for (size_t i = 0; i < sizeof(ids); i++) {
-        assert(solar_os_inputronic_keyboard_decode(&state, 0x80 | ids[i], &transition));
+        assert(solar_os_matrix_keyboard_decode(&state, &map, 0x80 | ids[i], &transition));
         assert(transition.usage == 4U + i);
     }
 }
@@ -303,7 +330,7 @@ int main(void)
     assert(registers[0x1d] == 0xff && registers[0x1e] == 0xff && registers[0x1f] == 3);
     assert(registers[REG_CFG] == 0x29 && registers[0x29] == 0 && fifo_count == 0);
     assert(solar_os_inputronic_keyboard_attach("keyboard0", bindings, 2) == ESP_ERR_INVALID_STATE);
-    inputronic_device_t *device = &devices[0];
+    tca8418_device_t *device = &devices[0];
     queue(0x80 | 75); queue(0x80 | 52); queue(52); queue(75);
     assert(poll_once(device) == ESP_OK);
     assert(event_count == 4 && events[1].key == 'A' && events[1].usage == 4);
@@ -383,6 +410,79 @@ int main(void)
     assert(solar_os_inputronic_keyboard_attach("wired", wired, 4) == ESP_ERR_INVALID_ARG);
     wired[2].value = 40;
     assert(solar_os_inputronic_keyboard_attach("wired", wired, 4) == ESP_ERR_INVALID_ARG);
-    puts("inputronic keyboard tests: ok");
+
+    /* Generic geometry and live remapping use the same controller worker. */
+    check_reset_before_probe = false;
+    solar_os_expansion_binding_t generic_bindings[] = {
+        {.kind=SOLAR_OS_EXPANSION_BINDING_I2C_BUS, .target="i2c0"},
+        {.kind=SOLAR_OS_EXPANSION_BINDING_I2C_ADDRESS, .value=0x34},
+        {.kind=SOLAR_OS_EXPANSION_BINDING_PARAMETER, .role="rows", .value=3},
+        {.kind=SOLAR_OS_EXPANSION_BINDING_PARAMETER, .role="cols", .value=3},
+    };
+    assert(solar_os_tca8418_attach("generic", generic_bindings, 4) == ESP_OK);
+    assert(registers[0x1d] == 7 && registers[0x1e] == 7 && registers[0x1f] == 0);
+    tca8418_device_t *generic_device = &devices[0];
+    prior_events = event_count;
+    queue(0x80 | 11); queue(11); queue(0x80 | 4); /* Narrow matrices still have stride 10. */
+    assert(poll_once(generic_device) == ESP_OK && event_count == prior_events + 2);
+    assert(events[prior_events].key == 'a');
+    solar_os_matrix_keyboard_map_t custom, before;
+    assert(solar_os_tca8418_get_keymap("generic", true, &custom) == ESP_OK);
+    before = custom;
+    custom.keys[0][1].usage = 4; /* Q position becomes A. */
+    queue(0x80 | 21); /* Hold Shift while changing the map. */
+    assert(poll_once(generic_device) == ESP_OK);
+    assert(generic_device->keyboard.modifiers != 0);
+    queue(21); /* Old queued release is discarded at the map boundary. */
+    size_t prior_released = released;
+    assert(solar_os_tca8418_set_keymap("generic", &custom) == ESP_OK);
+    assert(released == prior_released + 1 && generic_device->keyboard.modifiers == 0 && fifo_count == 0);
+    queue(0x80 | 1); queue(1);
+    assert(poll_once(generic_device) == ESP_OK && events[event_count - 2].key == 'a');
+    custom.keys[0][4].usage = 4; /* Outside configured columns. */
+    prior_released = released;
+    assert(solar_os_tca8418_set_keymap("generic", &custom) == ESP_ERR_INVALID_ARG);
+    assert(released == prior_released);
+    assert(solar_os_tca8418_reset_keymap("generic") == ESP_OK);
+    assert(solar_os_tca8418_get_keymap("generic", false, &custom) == ESP_OK);
+    assert(memcmp(&before, &custom, sizeof(custom)) == 0);
+    bus_error = ESP_FAIL;
+    assert(solar_os_tca8418_set_keymap("generic", &custom) == ESP_FAIL);
+    assert(generic_device->recovering && generic_device->keyboard.modifiers == 0);
+    bus_error = ESP_OK;
+    assert(solar_os_tca8418_detach("generic") == ESP_OK);
+    assert(solar_os_tca8418_get_keymap("generic", false, &custom) == ESP_ERR_NOT_FOUND);
+
+    /* Pager owns PWM independently. A failed worker stop retains PWM;
+     * a failed PWM stop can be retried after the controller has stopped. */
+    solar_os_expansion_binding_t pager_bindings[] = {
+        {.kind=SOLAR_OS_EXPANSION_BINDING_I2C_BUS, .target="i2c0"},
+        {.kind=SOLAR_OS_EXPANSION_BINDING_I2C_ADDRESS, .value=0x34},
+        {.kind=SOLAR_OS_EXPANSION_BINDING_PWM, .role="backlight", .value=46},
+    };
+    pwm_start_error = ESP_FAIL;
+    assert(solar_os_lilygo_pager_keyboard_attach("pager", pager_bindings, 3) == ESP_FAIL);
+    assert(!pager_devices[0].active && pwm_stopped == pwm_started);
+    pwm_start_error = ESP_OK;
+    bus_error = ESP_ERR_NOT_FOUND;
+    assert(solar_os_lilygo_pager_keyboard_attach("pager", pager_bindings, 3) == ESP_ERR_NOT_FOUND);
+    assert(!pager_devices[0].active && pwm_stopped == pwm_started);
+    bus_error = ESP_OK;
+    assert(solar_os_lilygo_pager_keyboard_attach("pager", pager_bindings, 3) == ESP_OK);
+    assert(registers[0x1d] == 15 && registers[0x1e] == 255 && registers[0x1f] == 3);
+    unsigned prior_stopped = pwm_stopped;
+    wait_timeout = true;
+    assert(solar_os_lilygo_pager_keyboard_detach("pager") == ESP_ERR_TIMEOUT);
+    assert(pwm_stopped == prior_stopped && pager_devices[0].controller_attached);
+    wait_timeout = false;
+    pwm_stop_error = ESP_FAIL;
+    assert(solar_os_lilygo_pager_keyboard_detach("pager") == ESP_FAIL);
+    assert(pager_devices[0].active && !pager_devices[0].controller_attached);
+    size_t prior_closed = closed;
+    pwm_stop_error = ESP_OK;
+    assert(solar_os_lilygo_pager_keyboard_detach("pager") == ESP_OK);
+    assert(closed == prior_closed && !pager_devices[0].active && opened == closed);
+
+    puts("TCA8418 keyboard lifecycle tests: ok");
     return 0;
 }

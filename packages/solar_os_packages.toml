@@ -709,8 +709,13 @@ category = "Internal"
 hidden = true
 members = ["board_cl32_core"]
 
+[groups.lilygo_pager_keyboard]
+label = "LilyGO T-LoRa-Pager keyboard"
+category = "Expansion hardware"
+members = ["expansion_lilygo_pager_keyboard"]
+
 [groups.tca8418]
-label = "TCA8418 keyboard"
+label = "Generic TCA8418 keyboard"
 category = "Expansion hardware"
 members = ["tca8418"]
 
@@ -1603,10 +1608,10 @@ capabilities = ["expansion_i2c"]
 label = "expansion.inputronic-keyboard"
 targets = ["esp32", "esp32s3"]
 expansion_drivers = ["solar_os_inputronic_keyboard_expansion_driver"]
-depends = ["service_expansion", "service_i2c"]
+depends = ["service_tca8418"]
 sources = [
   "services/solar_os_inputronic_keyboard.c",
-  "services/solar_os_inputronic_keyboard_codec.c",
+  "services/solar_os_inputronic_keyboard_profile.c",
   "services/solar_os_inputronic_keyboard_driver.c",
 ]
 requires = ["esp_driver_i2c", "esp_driver_gpio"]
@@ -1729,17 +1734,38 @@ sources = [
 requires = ["esp_driver_i2c"]
 capabilities = ["i2c"]
 
-[packages.tca8418]
-label = "expansion.tca8418"
-targets = ["esp32s3"]
-expansion_drivers = ["solar_os_tca8418_expansion_driver"]
-depends = ["service_expansion", "service_i2c", "service_pwm"]
+[packages.service_tca8418]
+label = "service.tca8418"
+targets = ["esp32", "esp32s3"]
+depends = ["service_expansion", "service_i2c", "service_json"]
 sources = [
   "services/solar_os_tca8418.c",
-  "services/solar_os_tca8418_driver.c",
+  "services/solar_os_tca8418_keymap.c",
+  "services/solar_os_matrix_keyboard.c",
+  "services/solar_os_matrix_keyboard_json.c",
 ]
-requires = ["esp_driver_i2c", "esp_driver_gpio"]
-capabilities = ["i2c", "pwm"]
+requires = ["esp_driver_i2c", "esp_driver_gpio", "json"]
+capabilities = ["expansion_i2c"]
+
+[packages.tca8418]
+label = "expansion.tca8418"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_tca8418_expansion_driver"]
+depends = ["service_tca8418"]
+sources = ["services/solar_os_tca8418_driver.c"]
+capabilities = ["expansion_i2c"]
+
+[packages.expansion_lilygo_pager_keyboard]
+label = "expansion.lilygo-pager-keyboard"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_lilygo_pager_keyboard_expansion_driver"]
+depends = ["service_tca8418", "service_pwm"]
+sources = [
+  "services/solar_os_lilygo_pager_keyboard.c",
+  "services/solar_os_lilygo_pager_keyboard_driver.c",
+]
+requires = ["esp_driver_gpio"]
+capabilities = ["expansion_i2c"]
 
 [packages.sx1262]
 label = "expansion.sx1262"

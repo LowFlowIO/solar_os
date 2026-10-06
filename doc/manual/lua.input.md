@@ -21,6 +21,13 @@ agent_reference_sections = true
 
 ## `solaros.input`
 
+When a TCA8418-based keyboard driver is included,
+`solaros.input.load_keymap(name, path)` loads a validated JSON mapping file for
+the named attachment, and `solaros.input.reset_keymap(name)` restores its
+built-in map. Both return no values; failures raise an error. Applying a map
+releases held keys. Mappings last until detach or reboot; a startup script
+can reload a saved file. See [matrix keyboard mappings](expansion.reference.md#tca8418-matrix-keyboards-and-mappings).
+
 - `solaros.input`: `sources`, `read`, `clear`, `status` for foreground pointer, axis, and gesture events
 
 ## Generic pointer, axis, and gesture input

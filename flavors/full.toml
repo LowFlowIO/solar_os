@@ -138,6 +138,7 @@ pcf8563 = true
 shtc3 = true
 battery_adc = true
 tca8418 = true
+lilygo_pager_keyboard = true
 xl9555 = true
 sx1262 = true
 rotary_encoder = true

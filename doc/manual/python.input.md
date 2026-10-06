@@ -70,6 +70,13 @@ print(solaros.clipboard.get())
 
 ## `solaros.input`
 
+When a TCA8418-based keyboard driver is included,
+`solaros.input.load_keymap(name, path)` loads a validated JSON mapping file for
+the named attachment, and `solaros.input.reset_keymap(name)` restores its
+built-in map. Both return `None`; failures raise an exception. Applying a map
+releases held keys. Mappings last until detach or reboot; a startup script
+can reload a saved file. See [matrix keyboard mappings](expansion.reference.md#tca8418-matrix-keyboards-and-mappings).
+
 Foreground scripts can receive generic pointer, axis, and gesture events routed to
 their active session. `sources()` lists registered input sources with `source`,
 `name`, `source_class`, `source_class_name`, `capabilities`, and `ready`.

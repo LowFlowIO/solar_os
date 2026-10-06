@@ -73,10 +73,10 @@ required = true
 allowed = [0x55]
 
 [drivers.tca8418]
-summary = "4x10 matrix keyboard"
+summary = "Generic TCA8418 matrix keyboard"
 package = "tca8418"
-targets = ["esp32s3"]
-capabilities = ["i2c", "pwm"]
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2c"]
 default_name = "keyboard0"
 
 [[drivers.tca8418.bindings]]
@@ -84,23 +84,69 @@ key = "i2c"
 kind = "i2c_bus"
 hint = "bus"
 required = true
-
 [[drivers.tca8418.bindings]]
 key = "addr"
 kind = "i2c_address"
 hint = "0x34"
 required = true
 allowed = [0x34]
-
+[[drivers.tca8418.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+role = "reset"
 [[drivers.tca8418.bindings]]
 key = "irq"
 kind = "gpio"
 hint = "gpio"
-
+role = "irq"
 [[drivers.tca8418.bindings]]
+key = "rows"
+kind = "parameter"
+hint = "1..8"
+role = "rows"
+min = 1
+max = 8
+[[drivers.tca8418.bindings]]
+key = "cols"
+kind = "parameter"
+hint = "1..10"
+role = "cols"
+min = 1
+max = 10
+
+[drivers.lilygo-pager-keyboard]
+summary = "LilyGO T-LoRa-Pager 4x10 keyboard"
+package = "expansion_lilygo_pager_keyboard"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2c"]
+default_name = "keyboard0"
+[[drivers.lilygo-pager-keyboard.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+[[drivers.lilygo-pager-keyboard.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x34"
+required = true
+allowed = [0x34]
+[[drivers.lilygo-pager-keyboard.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+role = "reset"
+[[drivers.lilygo-pager-keyboard.bindings]]
+key = "irq"
+kind = "gpio"
+hint = "gpio"
+role = "irq"
+[[drivers.lilygo-pager-keyboard.bindings]]
 key = "backlight"
 kind = "pwm"
 hint = "gpio"
+role = "backlight"
 
 [drivers.cl32-core]
 summary = "CL-32 board controller"

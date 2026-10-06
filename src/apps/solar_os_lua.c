@@ -22,6 +22,9 @@
 #include "lualib.h"
 #include "solar_os_app_registry.h"
 #include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+#include "solar_os_tca8418.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 #include "solar_os_contacts.h"
 #endif
@@ -6923,6 +6926,23 @@ static int solua_input_status(lua_State *L)
     solua_set_int(L, -1, "dropped", dropped);
     return 1;
 }
+
+#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+static int solua_input_load_keymap(lua_State *L)
+{
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    const char *name = luaL_checkstring(L, 1);
+    solua_resolve_path(L, 2, path, sizeof(path));
+    (void)solua_check_esp(L, solar_os_tca8418_load_keymap(name, path));
+    return 0;
+}
+
+static int solua_input_reset_keymap(lua_State *L)
+{
+    (void)solua_check_esp(L, solar_os_tca8418_reset_keymap(luaL_checkstring(L, 1)));
+    return 0;
+}
+#endif
 
 static solar_os_shell_io_t *solua_current_io(void)
 {

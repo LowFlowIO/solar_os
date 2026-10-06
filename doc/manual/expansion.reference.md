@@ -275,7 +275,8 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `cardkb` | M5Stack Unit CardKB | `i2c=<bus> addr=0x5f` | Polls released keys into the shared input service for shells and foreground apps. |
 | `inputronic-keyboard` | Soldered Inputronic KEYBOARD (SKU 333360) | `i2c=<bus> addr=0x34 [reset=<gpio>] [irq=<gpio>]` | Polls the 8x10 matrix FIFO and publishes press/release events through the shared input service. Optional active-low reset and interrupt pins. |
 | `tdeck-keyboard` | LilyGO T-Deck raw-matrix keyboard | `i2c=<bus> addr=0x55` | Polls the raw matrix and publishes keys through the shared input service. The built-in T-Deck attachment uses its board keymap; other boards can attach the same controller to a named I2C bus. |
-| `tca8418` | TCA8418 4x10 matrix keyboard | `i2c=<bus> addr=0x34`; optional `irq=<pin> backlight=<pwm-pin>` | Polls the key-event FIFO and publishes keyboard input; the optional PWM binding controls keyboard backlight brightness. |
+| `tca8418` | Generic TCA8418 matrix keyboard | `i2c=<bus> addr=0x34 [rows=1..8] [cols=1..10] [reset=<pin>] [irq=<pin>]` | Defaults to an 8x10 reference map; supports user mappings through `input keymap`. |
+| `lilygo-pager-keyboard` | LilyGO T-LoRa-Pager keyboard | `i2c=<bus> addr=0x34 [reset=<pin>] [irq=<pin>] [backlight=<pwm-pin>]` | Fixed 4x10 Pager wiring and symbol layer, with optional PWM backlight. |
 | `cl32-core` | Integrated CL-32 ATmega808 controller | `i2c=<bus> addr=0x08` | Fixed CL-32-only `core0`; polls keyboard press/release events into `keyboard0` and provides `battery0` from the AVR voltage, USB-power, and charging state. It is not runtime-probeable or detachable. |
 | `gpio-keys` | Active-low pull-up buttons | One or more `key:<name>=<gpio>` bindings | Publishes press/release keyboard events and releases all GPIO claims on detach. |
 | `ps2-keyboard` | PS/2 scan-code set 2 keyboard | `ps2=<bus>` | Publishes canonical keyboard press/release events from an exclusive PS/2 bus. |
@@ -530,6 +531,99 @@ shared SolarOS input path. CardKB reports one value after release, so host-side
 key repeat is not available. Its values 128 through 175 are private Fn
 combinations and are ignored instead of being confused with SolarOS logical
 keys.
+
+### TCA8418 matrix keyboards and mappings
+
+`tca8418`, `inputronic-keyboard`, and `lilygo-pager-keyboard` share the
+same controller backend, FIFO recovery, and matrix-to-input mapper. Each
+attachment owns one controller and input source. The fixed controller address
+is `0x34`; multiple controllers require separate named I2C buses.
+RESET and INT bindings are optional. RESET is active low and is pulsed before
+the first probe. FIFO polling works with or without INT.
+
+The generic `tca8418` driver accepts `rows=1..8` and `cols=1..10`, defaulting
+to 8 rows and 10 columns. The branded drivers select their own fixed geometry
+and mapping. Generic TCA8418 has no PWM dependency; the Pager profile owns
+its optional backlight.
+
+```text
+expansion attach tca8418 keyboard1 i2c=i2c0 addr=0x34 rows=4 cols=10
+input keymap keyboard1
+input keymap keyboard1 load /sd/keymap.json
+input keymap keyboard1 reset
+```
+
+The generic default is a reference wiring map. These are the keys under the
+US keyboard layout; HID usages pass through the active SolarOS keyboard
+layout for translation.
+
+| Row | Columns 0 through 9 |
+| --- | --- |
+| 0 | Q W E R T Y U I O P |
+| 1 | A S D F G H J K L Enter |
+| 2 | Left Shift Z X C V B N M Backspace Left Control |
+| 3 | Space Tab Escape Caps Lock Left Alt Left Down Up Right Delete |
+| 4 | 1 2 3 4 5 6 7 8 9 0 |
+| 5 | F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 |
+| 6 | Minus Equals Left bracket Right bracket Backslash Semicolon Quote Grave Comma Period |
+| 7 | Left GUI Right Control Right Shift Right Alt Right GUI F11 F12 Insert Home End |
+
+Rows and columns are zero-based in mapping files. The physical event ID is
+`1 + row * 10 + col`, even when fewer than ten columns are enabled.
+The controller's matrix geometry is selected at attachment; mapping files
+cannot change it.
+
+Mapping files are JSON objects of at most 16 KiB. Every load starts from the
+attachment's built-in map and replaces the listed positions. For example,
+this changes the first position from Q to A and makes Space a symbol-layer
+selector when held; Space+A emits an exclamation mark:
+
+```json
+{
+  "schema": 1,
+  "keys": [
+    {"row": 0, "col": 0, "usage": 4},
+    {"row": 3, "col": 0, "usage": 44, "layer_tap": true}
+  ],
+  "symbols": [
+    {"row": 0, "col": 0, "key": 33}
+  ]
+}
+```
+
+`keys` defines the base layer; `symbols` defines overrides while the
+layer-selector key is held. Positions without a symbol mapping use the base layer.
+Each entry requires `row` and `col`. Optional fields are:
+
+- `usage`: canonical USB HID keyboard usage, expressed as a decimal integer.
+- `key` and `shift_key`: SolarOS logical key bytes, 0 through 255. A nonzero
+  value overrides character translation; Control/Alt chords use the HID usage.
+- `raw: true`: publish physical press/release events without a logical key.
+- `layer_tap: true`: hold to select symbols; an unused tap emits the specified
+  `usage` or `key` on release. Only one base-layer selector is allowed.
+- `alt_block: true`: suppress logical output when pressed with Alt. The
+  Pager profile uses this to retain its existing Alt+B reservation.
+
+An entry containing only `row` and `col` clears the entry in that layer. An
+empty symbol entry falls back to the base layer. Raw entries
+cannot also specify logical output. Duplicate positions, unknown fields,
+invalid usages, and positions outside the configured geometry are rejected.
+A rejected file leaves the current map unchanged. Applying or resetting a
+map releases held keys, clears queued controller events, and resets modifier
+and Caps state; release and press any still-held keys again.
+
+Mappings are runtime settings and revert to the built-in profile after detach
+or reboot. To reuse a mapping after startup, load it from a startup script.
+Python and Lua provide `solaros.input.load_keymap(name, path)` and
+`solaros.input.reset_keymap(name)` when a TCA8418-based driver is included.
+
+The Pager's built-in profile uses Space as a tap/hold symbol selector and its
+Caps-labelled key as a momentary Shift modifier. Unlabelled cells produce no
+logical input. The Pager board manifest initializes `lilygo-pager-keyboard`;
+scripts that previously selected `tca8418` for the Pager should use this name
+to retain its wiring, symbol layer, and backlight binding. The generic
+`tca8418` name now selects the reference map. Custom flavors can select the
+`lilygo_pager_keyboard` hardware group for the Pager profile.
 
 ### Soldered Inputronic KEYBOARD
 

@@ -8,7 +8,7 @@
 #include "solar_os_board_caps.h"
 #include "solar_os_expansion_types.h"
 
-#define SOLAR_OS_EXPANSION_DRIVER_NAME_MAX 20
+#define SOLAR_OS_EXPANSION_DRIVER_NAME_MAX 32
 #define SOLAR_OS_EXPANSION_DEVICE_NAME_MAX 20
 #define SOLAR_OS_EXPANSION_ROLE_MAX 16
 #define SOLAR_OS_EXPANSION_TARGET_MAX 16

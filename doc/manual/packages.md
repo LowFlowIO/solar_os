@@ -126,8 +126,14 @@ service used by shells and foreground apps.
 `expansion.inputronic-keyboard` polls the Soldered Inputronic KEYBOARD's
 TCA8418 8x10 matrix at `0x34` on a named I2C bus. It publishes physical
 press/release events, modifiers, and logical keys through the common input
-service, including key repeat. It needs no interrupt GPIO and is selectable
+service, including key repeat. It uses the shared TCA8418 backend and matrix
+mapper. It needs no interrupt GPIO and is selectable
 as the `inputronic_keyboard` expansion hardware group on ESP32 and ESP32-S3.
+`expansion.tca8418` provides a generic reference mapping with configurable
+matrix geometry; `expansion.lilygo-pager-keyboard` provides the Pager's fixed
+4x10 wiring, symbol layer, and optional PWM backlight. Their expansion hardware
+groups are `tca8418` and `lilygo_pager_keyboard`. All three drivers share
+`service.tca8418` and support runtime user mapping files through `input keymap`.
 `board.cl32-core` is required only by the CL-32 profile. Its fixed `core0`
 attachment polls the integrated ATmega808 keyboard FIFO and publishes
 press/release transitions through `keyboard0`. It also publishes the AVR's

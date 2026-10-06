@@ -62,6 +62,28 @@ class BoardManifestTest(unittest.TestCase):
                 with self.assertRaises(ManifestError):
                     validate_board(board, self.drivers)
 
+    def test_generic_tca8418_geometry_and_pager_profile(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_devkitc_v4_wrover.toml",
+                                    self.manifest_dir)
+        board.setdefault("devices", []).append({
+            "driver": "tca8418", "name": "keyboard1",
+            "bindings": {"i2c": "i2c0", "addr": 0x34, "rows": 3, "cols": 3},
+        })
+        validate_board(board, self.drivers)
+        self.assertIn("tca8418", required_packages(board, self.drivers))
+        for key, value in (("rows", 9), ("cols", 0)):
+            with self.subTest(key=key):
+                previous = board["devices"][-1]["bindings"][key]
+                board["devices"][-1]["bindings"][key] = value
+                with self.assertRaises(ManifestError):
+                    validate_board(board, self.drivers)
+                board["devices"][-1]["bindings"][key] = previous
+        pager = load_board_manifest(self.manifest_dir / "t_lora_pager.toml", self.manifest_dir)
+        keyboard = next(device for device in pager["devices"] if device["name"] == "keyboard0")
+        self.assertEqual(keyboard["driver"], "lilygo-pager-keyboard")
+        self.assertEqual(keyboard["bindings"]["backlight"], 46)
+        self.assertIn('.driver = "lilygo-pager-keyboard"', generate_header(pager, self.drivers))
+
     def test_4g_epaper_initializes_inputronic_on_board_bus(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "waveshare_esp32_s3_sim7670g_4g_epaper.toml",
@@ -637,7 +659,7 @@ bindings = { gpio = 7 }
         )
         packages = required_packages(board, self.drivers)
         self.assertIn("xl9555", packages)
-        self.assertIn("tca8418", packages)
+        self.assertIn("expansion_lilygo_pager_keyboard", packages)
         self.assertIn("ublox_mia_m10q", packages)
         self.assertIn("st25r3916", packages)
         self.assertIn("drv2605", packages)
