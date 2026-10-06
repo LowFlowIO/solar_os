@@ -303,7 +303,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `sdspi` | SPI microSD card adapter | `spi=<bus> cs=<pin>` | On boards without built-in SD, mounts removable FAT storage at `/sdcard`; run `disk umount` before detach. |
 | `neopixel` | WS2812/NeoPixel GRB strip | `data=<pin> count=<1..256>` | Claims the data GPIO and registers a named strip for the `neopixel` command and script API. |
 | `audio-pwm` | LEDC PWM mono audio output | `pwm=<pin>` | Claims the PWM GPIO and registers a 16 kHz mono playback device. One instance can be attached. |
-| `esp32-camera` | DVP JPEG camera | `d0=<pin>` through `d7=<pin>`, `siod=<pin> sioc=<pin> vsync=<pin> href=<pin> pclk=<pin> xclk=<pin>`; optional `pwdn=<pin> reset=<pin>` | ESP32-S3 with PSRAM; claims GPIOs and the single DVP capture peripheral. Registers the device name as an exclusive typed video source. Capture starts only on use. Busy owners or frames prevent detach. |
+| `esp32-camera` | DVP JPEG camera | `d0=<pin>` through `d7=<pin>`, `vsync=<pin> href=<pin> pclk=<pin> xclk=<pin>`; either `i2c=<bus>` or `siod=<pin> sioc=<pin>`; optional `pwdn=<pin> reset=<pin>` | ESP32-S3 with PSRAM; claims GPIOs and the single DVP capture peripheral. Named SCCB buses can be shared with other devices; direct-pin SCCB reserves the configured I2C controller. Registers the device name as an exclusive typed video source. Capture starts only on use. Busy owners or frames prevent detach. |
 | `pcm1808` | PCM1808 four-wire I2S ADC | `mclk=<pin> bck=<pin> ws=<pin> dout=<pin>` | Requires `expansion_i2s`, claims four GPIOs and a runtime I2S controller, then registers a 16 kHz stereo capture device and stream. One instance can be attached. |
 | `es7210` | ES7210 I2S microphone array | `i2c=<bus> i2s=<port> mclk=<pin> bck=<pin> ws=<pin> din=<pin>` | Requires I2C and `expansion_i2s`, claims its bindings, then registers a 16 kHz stereo capture device and stream with microphone-gain control. One instance can be attached. |
 | `pcm5102` | PCM5102A three-wire I2S DAC | `i2s=<port> bck=<pin> din=<pin> rck=<pin>` | Requires `expansion_i2s`, claims the selected runtime I2S controller and three GPIOs, then registers a 16 kHz stereo playback device and stream. One instance can be attached. |
@@ -320,6 +320,17 @@ expansion attach manual radio0 spi0 cs=gpio10 irq=gpio4 reset=gpio5
 expansion attach manual sensor0 i2c0 addr=0x40
 expansion detach radio0
 ```
+
+For camera SCCB control, use either an existing named I2C bus or both SIOD/SIOC
+GPIO bindings. Supplying both modes, only one SCCB pin, or neither mode is
+rejected. With `i2c=i2c0`, the bus supplies SDA/SCL wiring and retains its other
+devices when the camera stops. The camera keeps a bus lease until detach;
+`d0`..`d7`, `vsync`, `href`, `pclk`, and `xclk` remain GPIO bindings.
+On CL32, the expansion connector's camera control signals use the board-owned
+`i2c0`, so select `i2c=i2c0` alongside the camera's DVP pin assignments. After
+attachment, `camera status` initializes and probes the camera, and
+`camera capture <path>` captures a JPEG. The direct-pin mode retains
+`siod=<pin> sioc=<pin>` and reserves the SCCB controller selected by the firmware.
 
 Binding names may be explicit (`spi=spi0`, `i2c=i2c0`) or, where unambiguous,
 supplied as positional bus names. `ce=` aliases `cs=` and `rst=` aliases

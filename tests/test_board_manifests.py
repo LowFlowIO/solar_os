@@ -89,6 +89,31 @@ class BoardManifestTest(unittest.TestCase):
         self.assertIn('.driver = "esp32-camera", .name = "camera0"',
                       generate_header(board, self.drivers))
 
+    def test_camera_accepts_named_board_bus_and_rejects_mixed_control_bindings(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "goouuu_esp32_s3cam.toml",
+                                    self.manifest_dir)
+        board["buses"].append({"name": "i2c0", "protocol": "i2c", "sharing": "shared",
+                                "port": "I2C_NUM_0", "sda": 4, "scl": 5,
+                                "speed_hz": 100000})
+        camera = next(device for device in board["devices"] if device["name"] == "camera0")
+        camera["bindings"].pop("siod")
+        camera["bindings"].pop("sioc")
+        camera["bindings"]["i2c"] = "i2c0"
+        validate_board(board, self.drivers)
+        self.assertIn('.target = "i2c0"', generate_header(board, self.drivers))
+        for control in ({}, {"siod": 4}, {"sioc": 5},
+                        {"i2c": "i2c0", "siod": 4},
+                        {"i2c": "i2c0", "sioc": 5},
+                        {"i2c": "i2c0", "siod": 4, "sioc": 5}):
+            with self.subTest(control=control):
+                broken = deepcopy(board)
+                bindings = next(device["bindings"] for device in broken["devices"]
+                                if device["name"] == "camera0")
+                bindings.pop("i2c")
+                bindings.update(control)
+                with self.assertRaisesRegex(ManifestError, "either i2c or both siod and sioc"):
+                    validate_board(broken, self.drivers)
+
     def test_qdtech_es3n28p_uses_non_touch_fixed_hardware(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "qdtech_es3n28p.toml",
