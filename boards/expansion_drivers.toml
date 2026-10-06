@@ -1420,12 +1420,12 @@ required = true
 key = "siod"
 kind = "gpio"
 hint = "gpio"
-required = true
+required = false
 [[drivers.esp32-camera.bindings]]
 key = "sioc"
 kind = "gpio"
 hint = "gpio"
-required = true
+required = false
 [[drivers.esp32-camera.bindings]]
 key = "vsync"
 kind = "gpio"
@@ -1455,6 +1455,11 @@ required = false
 key = "reset"
 kind = "gpio"
 hint = "gpio"
+required = false
+[[drivers.esp32-camera.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
 required = false
 
 [drivers.esp32-dac]

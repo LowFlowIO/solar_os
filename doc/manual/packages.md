@@ -40,7 +40,8 @@ network sources can share the same decoder without owning an audio device.
 frame leases, capture status, and the `camera` shell command.
 `driver.camera-esp32` is the ESP32-S3
 DVP/SCCB expansion adapter backed by the pinned Espressif component. Explicit
-GPIO bindings make it reusable on PSRAM-equipped ESP32-S3 boards, without a
+GPIO bindings and optional named I2C control buses make it reusable on
+PSRAM-equipped ESP32-S3 boards, without a
 fitted-camera capability requirement. GOOUUU declares a fixed `camera0` board
 instance; runtime instances use the attached device name as their video stream
 ID. Detach fails while the camera or its stream is leased. Camera consumers

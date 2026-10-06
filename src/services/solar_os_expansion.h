@@ -100,6 +100,10 @@ typedef struct {
                                   const solar_os_expansion_binding_t *bindings,
                                   size_t binding_count);
     esp_err_t (*detach_with_user)(void *user, const char *name);
+    /* Optional cross-binding checks, shared by CLI, scripts and board defaults. */
+    esp_err_t (*validate_bindings)(const solar_os_expansion_binding_t *bindings,
+                                   size_t binding_count,
+                                   solar_os_expansion_binding_validation_t *validation);
 } solar_os_expansion_driver_t;
 
 typedef enum {
