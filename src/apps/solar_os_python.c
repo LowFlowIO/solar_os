@@ -33,8 +33,8 @@
 #include "py/smallint.h"
 #include "solar_os_app_registry.h"
 #include "solar_os_config.h"
-#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
-#include "solar_os_tca8418.h"
+#if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
+#include "solar_os_input_keymap.h"
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 #include "solar_os_contacts.h"
@@ -7737,19 +7737,40 @@ static mp_obj_t solaros_input_status(void)
 }
 MP_DEFINE_CONST_FUN_OBJ_0(solaros_input_status_obj, solaros_input_status);
 
-#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+#if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
+static mp_obj_t solaros_input_keymap_info(mp_obj_t name_obj)
+{
+    solar_os_input_keymap_info_t info;
+    python_check_esp(solar_os_input_keymap_info(mp_obj_str_get_str(name_obj), &info));
+    mp_obj_t dict = mp_obj_new_dict(12);
+    python_dict_store_uint(dict, "source", info.source);
+    python_dict_store_uint(dict, "capabilities", info.capabilities);
+    python_dict_store_uint(dict, "key_count", info.key_count);
+    python_dict_store_uint(dict, "rows", info.rows);
+    python_dict_store_uint(dict, "cols", info.cols);
+    python_dict_store_uint(dict, "first", info.first);
+    python_dict_store_uint(dict, "stride", info.stride);
+    python_dict_store_bool(dict, "supported", info.capabilities != 0U);
+    python_dict_store_bool(dict, "physical", (info.capabilities & SOLAR_OS_INPUT_KEYMAP_PHYSICAL) != 0U);
+    python_dict_store_bool(dict, "modifiers", (info.capabilities & SOLAR_OS_INPUT_KEYMAP_MODIFIERS) != 0U);
+    python_dict_store_bool(dict, "layers", (info.capabilities & SOLAR_OS_INPUT_KEYMAP_LAYERS) != 0U);
+    python_dict_store_bool(dict, "tap_hold", (info.capabilities & SOLAR_OS_INPUT_KEYMAP_TAP_HOLD) != 0U);
+    return dict;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_input_keymap_info_obj, solaros_input_keymap_info);
+
 static mp_obj_t solaros_input_load_keymap(mp_obj_t name_obj, mp_obj_t path_obj)
 {
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     python_resolve_path_obj(path_obj, path, sizeof(path));
-    python_check_esp(solar_os_tca8418_load_keymap(mp_obj_str_get_str(name_obj), path));
+    python_check_esp(solar_os_input_keymap_load(mp_obj_str_get_str(name_obj), path));
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(solaros_input_load_keymap_obj, solaros_input_load_keymap);
 
 static mp_obj_t solaros_input_reset_keymap(mp_obj_t name_obj)
 {
-    python_check_esp(solar_os_tca8418_reset_keymap(mp_obj_str_get_str(name_obj)));
+    python_check_esp(solar_os_input_keymap_reset(mp_obj_str_get_str(name_obj)));
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_input_reset_keymap_obj, solaros_input_reset_keymap);

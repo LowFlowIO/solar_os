@@ -1,6 +1,8 @@
-#include "solar_os_matrix_keyboard_json.h"
+#include "solar_os_input_keymap_json.h"
 
 #include <string.h>
+#include <stdlib.h>
+#include "solar_os_memory.h"
 #include "cJSON.h"
 
 static bool number(const cJSON *item, unsigned max, unsigned *value)
@@ -62,22 +64,27 @@ static bool optional_bool(const cJSON *object, const char *name, bool *value)
     return item == NULL || cJSON_IsBool(item);
 }
 
-static bool parse_layer(const cJSON *array, solar_os_matrix_keyboard_map_t *map,
+static bool parse_layer(const cJSON *array, solar_os_input_keymap_t *map,
                          unsigned layer)
 {
     if (array == NULL) return true;
-    if (!cJSON_IsArray(array) || cJSON_GetArraySize(array) > 80) return false;
-    bool seen[SOLAR_OS_MATRIX_KEY_COUNT + 1U] = {false};
+    if (!cJSON_IsArray(array) || cJSON_GetArraySize(array) > (int)SOLAR_OS_INPUT_KEYMAP_KEY_MAX) return false;
+    bool seen[SOLAR_OS_INPUT_KEYMAP_KEY_MAX + 1U] = {false};
     static const char *const fields[] = {
-        "row", "col", "usage", "key", "shift_key", "raw", "layer_tap", "alt_block",
+        "row", "col", "usage", "key", "shift_key", "raw", "layer_tap", "alt_block", "physical",
     };
     const cJSON *entry;
     cJSON_ArrayForEach(entry, array) {
-        unsigned row, col, usage, key, shift;
+        unsigned row = 0, col = 0, physical = 0, usage, key, shift;
+        const bool by_physical = cJSON_HasObjectItem(entry, "physical");
         bool raw, layer_tap, alt_block;
-        if (!cJSON_IsObject(entry) || !known_fields(entry, fields, 8U) ||
-            !number(cJSON_GetObjectItemCaseSensitive(entry, "row"), map->rows - 1U, &row) ||
-            !number(cJSON_GetObjectItemCaseSensitive(entry, "col"), map->cols - 1U, &col) ||
+        if (!cJSON_IsObject(entry) || !known_fields(entry, fields, 9U) ||
+            (by_physical ?
+                (cJSON_HasObjectItem(entry, "row") || cJSON_HasObjectItem(entry, "col") ||
+                 !number(cJSON_GetObjectItemCaseSensitive(entry, "physical"), UINT16_MAX, &physical)) :
+                (map->rows == 0U ||
+                 !number(cJSON_GetObjectItemCaseSensitive(entry, "row"), map->rows - 1U, &row) ||
+                 !number(cJSON_GetObjectItemCaseSensitive(entry, "col"), map->cols - 1U, &col))) ||
             !optional_number(entry, "usage", 0xe7U, &usage) ||
             !optional_number(entry, "key", 255U, &key) ||
             !optional_number(entry, "shift_key", 255U, &shift) ||
@@ -86,38 +93,42 @@ static bool parse_layer(const cJSON *array, solar_os_matrix_keyboard_map_t *map,
             !optional_bool(entry, "alt_block", &alt_block) ||
             (unsigned)raw + (unsigned)layer_tap + (unsigned)alt_block > 1U)
             return false;
-        unsigned id = 1U + row * 10U + col;
-        if (seen[id]) return false;
+        if (!by_physical) physical = map->first + row * map->stride + col;
+        unsigned id = solar_os_input_keymap_find_slot(map, (uint16_t)physical);
+        if (id == 0U || seen[id]) return false;
         seen[id] = true;
-        map->keys[layer][id] = (solar_os_matrix_key_t) {
+        map->keys[layer][id] = (solar_os_input_keymap_key_t) {
             .usage = (uint16_t)usage, .key = (uint8_t)key, .shifted_key = (uint8_t)shift,
-            .flags = raw ? SOLAR_OS_MATRIX_KEY_RAW :
-                     layer_tap ? SOLAR_OS_MATRIX_KEY_LAYER_TAP :
-                     alt_block ? SOLAR_OS_MATRIX_KEY_ALT_BLOCK : 0U,
+            .flags = raw ? SOLAR_OS_INPUT_KEYMAP_RAW :
+                     layer_tap ? SOLAR_OS_INPUT_KEYMAP_LAYER_TAP :
+                     alt_block ? SOLAR_OS_INPUT_KEYMAP_ALT_BLOCK : 0U,
         };
     }
     return true;
 }
 
-esp_err_t solar_os_matrix_keyboard_parse_map(const char *json,
-    const solar_os_matrix_keyboard_map_t *base, solar_os_matrix_keyboard_map_t *out)
+esp_err_t solar_os_input_keymap_parse(const char *json,
+    const solar_os_input_keymap_t *base, solar_os_input_keymap_t *out)
 {
     if (json == NULL || out == NULL ||
-        solar_os_matrix_keyboard_validate_map(base) != ESP_OK || !bounded_depth(json))
+        solar_os_input_keymap_validate(base) != ESP_OK || !bounded_depth(json))
         return ESP_ERR_INVALID_ARG;
     cJSON *root = cJSON_ParseWithOpts(json, NULL, true);
     if (root == NULL) return ESP_ERR_INVALID_ARG;
     static const char *const fields[] = {"schema", "keys", "symbols"};
     unsigned schema = 0;
-    solar_os_matrix_keyboard_map_t candidate = *base;
+    solar_os_input_keymap_t *candidate = solar_os_memory_alloc(sizeof(*candidate),
+        SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "keyboard-map");
+    if (candidate == NULL) { cJSON_Delete(root); return ESP_ERR_NO_MEM; }
+    *candidate = *base;
     bool valid = cJSON_IsObject(root) && known_fields(root, fields, 3U) &&
         number(cJSON_GetObjectItemCaseSensitive(root, "schema"), 1U, &schema) && schema == 1U &&
         (cJSON_HasObjectItem(root, "keys") || cJSON_HasObjectItem(root, "symbols")) &&
-        parse_layer(cJSON_GetObjectItemCaseSensitive(root, "keys"), &candidate, 0U) &&
-        parse_layer(cJSON_GetObjectItemCaseSensitive(root, "symbols"), &candidate, 1U) &&
-        solar_os_matrix_keyboard_validate_map(&candidate) == ESP_OK;
+        parse_layer(cJSON_GetObjectItemCaseSensitive(root, "keys"), candidate, 0U) &&
+        parse_layer(cJSON_GetObjectItemCaseSensitive(root, "symbols"), candidate, 1U) &&
+        solar_os_input_keymap_validate(candidate) == ESP_OK;
     cJSON_Delete(root);
-    if (!valid) return ESP_ERR_INVALID_ARG;
-    *out = candidate;
-    return ESP_OK;
+    if (valid) *out = *candidate;
+    free(candidate);
+    return valid ? ESP_OK : ESP_ERR_INVALID_ARG;
 }

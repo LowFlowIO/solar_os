@@ -818,7 +818,8 @@ SOLAR_OS_SCRIPT_API_FUNCTION(input, sources, sources);
 SOLAR_OS_SCRIPT_API_FUNCTION(input, read, read);
 SOLAR_OS_SCRIPT_API_FUNCTION(input, clear, clear);
 SOLAR_OS_SCRIPT_API_FUNCTION(input, status, status);
-#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+#if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
+SOLAR_OS_SCRIPT_API_FUNCTION(input, keymap_info, keymap_info);
 SOLAR_OS_SCRIPT_API_FUNCTION(input, load_keymap, load_keymap);
 SOLAR_OS_SCRIPT_API_FUNCTION(input, reset_keymap, reset_keymap);
 #endif

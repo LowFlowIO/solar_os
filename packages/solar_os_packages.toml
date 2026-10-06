@@ -71,6 +71,11 @@ label = "Native image pipelines"
 category = "Media"
 members = ["service_pipeline"]
 
+[groups.input_keymap]
+label = "Source keymaps"
+category = "Hardware support"
+members = ["service_input_keymap"]
+
 [groups.control_bindings]
 label = "Control bindings"
 category = "System"
@@ -1734,17 +1739,27 @@ sources = [
 requires = ["esp_driver_i2c"]
 capabilities = ["i2c"]
 
+[packages.service_input_keymap]
+label = "service.input-keymap"
+targets = ["esp32", "esp32s3"]
+depends = ["service_json"]
+sources = [
+  "services/solar_os_input_keymap.c",
+  "services/solar_os_input_keymap_mapper.c",
+  "services/solar_os_input_keymap_json.c",
+]
+requires = ["json"]
+
 [packages.service_tca8418]
 label = "service.tca8418"
 targets = ["esp32", "esp32s3"]
-depends = ["service_expansion", "service_i2c", "service_json"]
+depends = ["service_expansion", "service_i2c", "service_input_keymap"]
 sources = [
   "services/solar_os_tca8418.c",
   "services/solar_os_tca8418_keymap.c",
   "services/solar_os_matrix_keyboard.c",
-  "services/solar_os_matrix_keyboard_json.c",
 ]
-requires = ["esp_driver_i2c", "esp_driver_gpio", "json"]
+requires = ["esp_driver_i2c", "esp_driver_gpio"]
 capabilities = ["expansion_i2c"]
 
 [packages.tca8418]

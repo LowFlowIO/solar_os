@@ -22,8 +22,8 @@
 #include "lualib.h"
 #include "solar_os_app_registry.h"
 #include "solar_os_config.h"
-#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
-#include "solar_os_tca8418.h"
+#if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
+#include "solar_os_input_keymap.h"
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 #include "solar_os_contacts.h"
@@ -6927,19 +6927,39 @@ static int solua_input_status(lua_State *L)
     return 1;
 }
 
-#if SOLAR_OS_PACKAGE_SERVICE_TCA8418
+#if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
+static int solua_input_keymap_info(lua_State *L)
+{
+    solar_os_input_keymap_info_t info;
+    (void)solua_check_esp(L, solar_os_input_keymap_info(luaL_checkstring(L, 1), &info));
+    lua_newtable(L);
+    solua_set_int(L, -1, "source", info.source);
+    solua_set_int(L, -1, "capabilities", info.capabilities);
+    solua_set_int(L, -1, "key_count", info.key_count);
+    solua_set_int(L, -1, "rows", info.rows);
+    solua_set_int(L, -1, "cols", info.cols);
+    solua_set_int(L, -1, "first", info.first);
+    solua_set_int(L, -1, "stride", info.stride);
+    solua_set_bool(L, -1, "supported", info.capabilities != 0U);
+    solua_set_bool(L, -1, "physical", (info.capabilities & SOLAR_OS_INPUT_KEYMAP_PHYSICAL) != 0U);
+    solua_set_bool(L, -1, "modifiers", (info.capabilities & SOLAR_OS_INPUT_KEYMAP_MODIFIERS) != 0U);
+    solua_set_bool(L, -1, "layers", (info.capabilities & SOLAR_OS_INPUT_KEYMAP_LAYERS) != 0U);
+    solua_set_bool(L, -1, "tap_hold", (info.capabilities & SOLAR_OS_INPUT_KEYMAP_TAP_HOLD) != 0U);
+    return 1;
+}
+
 static int solua_input_load_keymap(lua_State *L)
 {
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     const char *name = luaL_checkstring(L, 1);
     solua_resolve_path(L, 2, path, sizeof(path));
-    (void)solua_check_esp(L, solar_os_tca8418_load_keymap(name, path));
+    (void)solua_check_esp(L, solar_os_input_keymap_load(name, path));
     return 0;
 }
 
 static int solua_input_reset_keymap(lua_State *L)
 {
-    (void)solua_check_esp(L, solar_os_tca8418_reset_keymap(luaL_checkstring(L, 1)));
+    (void)solua_check_esp(L, solar_os_input_keymap_reset(luaL_checkstring(L, 1)));
     return 0;
 }
 #endif

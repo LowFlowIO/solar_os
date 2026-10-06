@@ -1,6 +1,7 @@
 #include "solar_os_tca8418.h"
 
 #include <string.h>
+#include <stdlib.h>
 
 #include "driver/gpio.h"
 #include "esp_attr.h"
@@ -12,7 +13,8 @@
 #include "freertos/semphr.h"
 #include "solar_os_buses.h"
 #include "solar_os_input.h"
-#include "solar_os_input_composition.h"
+#include "solar_os_input_keymap.h"
+#include "solar_os_memory.h"
 #include "solar_os_task.h"
 
 #define TCA8418_DEVICE_MAX 4U
@@ -37,14 +39,14 @@ typedef struct {
     char bus[SOLAR_OS_EXPANSION_TARGET_MAX];
     solar_os_input_source_t source;
     TaskHandle_t task;
-    solar_os_matrix_keyboard_state_t keyboard;
+    solar_os_input_keymap_handle_t keymap;
+    uint8_t rows, cols;
     uint32_t transitions;
     uint32_t overflows;
     uint32_t errors;
     int reset_pin;
     int irq_pin;
     bool recovering;
-    solar_os_matrix_keyboard_map_t map, defaults;
 } tca8418_device_t;
 
 static const char *TAG = "tca8418";
@@ -122,9 +124,7 @@ static esp_err_t write_reg(tca8418_device_t *device, uint8_t reg, uint8_t value)
 
 static void release_keys(tca8418_device_t *device)
 {
-    solar_os_input_source_release_all(device->source);
-    solar_os_input_composition_set_modifiers(device->source, 0U);
-    solar_os_matrix_keyboard_release(&device->keyboard);
+    solar_os_input_keymap_release_all(device->keymap);
 }
 
 static esp_err_t discard_fifo(tca8418_device_t *device)
@@ -139,6 +139,32 @@ static esp_err_t discard_fifo(tca8418_device_t *device)
     return ESP_ERR_TIMEOUT;
 }
 
+static esp_err_t keymap_lock(void *context)
+{
+    if (!take_mutex()) return ESP_ERR_NO_MEM;
+    tca8418_device_t *device = context;
+    if (!device->active || device->stop_requested) {
+        xSemaphoreGive(controller_mutex);
+        return ESP_ERR_INVALID_STATE;
+    }
+    return ESP_OK;
+}
+static void keymap_unlock(void *context)
+{
+    (void)context;
+    xSemaphoreGive(controller_mutex);
+}
+static esp_err_t keymap_prepare(void *context)
+{
+    tca8418_device_t *device = context;
+    esp_err_t err = discard_fifo(device);
+    if (err != ESP_OK) {
+        device->recovering = true;
+        (void)solar_os_input_keyboard_source_set_ready(device->source, false);
+    }
+    return err;
+}
+
 static esp_err_t configure_matrix(tca8418_device_t *device)
 {
     /* TI TCA8418 SCPS215G: configure the requested rows and columns, enable debounce,
@@ -147,7 +173,7 @@ static esp_err_t configure_matrix(tca8418_device_t *device)
      * KE_IEN keeps key status available even though the INT pin is unused.
      * Auto-increment stays off: every transfer addresses a single register.
      */
-    const unsigned column_mask = (1U << device->map.cols) - 1U;
+    const unsigned column_mask = (1U << device->cols) - 1U;
     const uint8_t setup[][2] = {
         {REG_CFG, 0x00},
         {0x1d, 0x00}, {0x1e, 0x00}, {0x1f, 0x00},
@@ -157,7 +183,7 @@ static esp_err_t configure_matrix(tca8418_device_t *device)
         {0x29, 0x00}, {0x2a, 0x00}, {0x2b, 0x00},
         {0x2c, 0x00}, {0x2d, 0x00}, {0x2e, 0x00},
         {REG_KEY_COUNT, 0x00},
-        {0x1d, (uint8_t)((1U << device->map.rows) - 1U)},
+        {0x1d, (uint8_t)((1U << device->rows) - 1U)},
         {0x1e, (uint8_t)column_mask}, {0x1f, (uint8_t)(column_mask >> 8U)},
         {REG_CFG, 0x29},
     };
@@ -201,30 +227,10 @@ static esp_err_t poll_once(tca8418_device_t *device)
     if ((status & INT_OVERFLOW) != 0U) return recover_overflow(device);
 
     for (size_t i = 0; i < event_count; i++) {
-        solar_os_matrix_key_transition_t transition;
-        if (!solar_os_matrix_keyboard_decode(&device->keyboard, &device->map, events[i], &transition)) continue;
-        solar_os_input_composition_set_modifiers(device->source, transition.modifiers);
-        uint8_t key = transition.key;
-        if (key == 0U && transition.usage != 0U) {
-            key = solar_os_input_translate_hid_usage(transition.usage,
-                transition.modifiers, device->keyboard.caps_lock);
-        }
-        key = solar_os_input_composition_apply(key);
-        ESP_RETURN_ON_ERROR(solar_os_input_write_key(device->source,
-            transition.physical_key, transition.usage, key, transition.modifiers,
-            transition.pressed ? SOLAR_OS_INPUT_KEY_PRESS : SOLAR_OS_INPUT_KEY_RELEASE),
-            TAG, "input queue");
-
-        if (transition.tap_usage != 0U || transition.tap_key != 0U) {
-            uint8_t tap = transition.tap_key != 0U ? transition.tap_key :
-                solar_os_input_translate_hid_usage(transition.tap_usage,
-                    transition.modifiers, device->keyboard.caps_lock);
-            tap = solar_os_input_composition_apply(tap);
-            if (tap != 0U)
-                ESP_RETURN_ON_ERROR(solar_os_input_write_char(device->source, tap),
-                                    TAG, "tap input");
-        }
-        device->transitions++;
+        bool published = false;
+        ESP_RETURN_ON_ERROR(solar_os_input_keymap_process(device->keymap,
+            events[i] & 0x7fU, (events[i] & 0x80U) != 0U, &published), TAG, "mapped input");
+        if (published) device->transitions++;
     }
     return write_reg(device, REG_INT_STAT, INT_KEY);
 }
@@ -312,33 +318,50 @@ static esp_err_t attach_locked(
     device->irq_pin = irq_pin;
     strlcpy(device->name, name, sizeof(device->name));
     strlcpy(device->bus, bus, sizeof(device->bus));
-    esp_err_t err = profile == NULL ?
-        solar_os_matrix_keyboard_default_map(&device->map, rows, cols) :
-        solar_os_matrix_keyboard_validate_map(profile);
-    if (err != ESP_OK) return err;
-    if (profile != NULL) device->map = *profile;
-    device->defaults = device->map;
+    solar_os_matrix_keyboard_map_t *generic = NULL;
+    esp_err_t err = ESP_OK;
+    if (profile == NULL) {
+        generic = solar_os_memory_alloc(sizeof(*generic),
+            SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "keyboard-map");
+        err = generic == NULL ? ESP_ERR_NO_MEM : solar_os_matrix_keyboard_default_map(generic, rows, cols);
+        profile = generic;
+    }
+    if (err == ESP_OK) err = solar_os_input_keymap_validate(profile);
+    if (err == ESP_OK && (profile->rows < 1U || profile->rows > 8U ||
+        profile->cols < 1U || profile->cols > 10U || profile->first != 1U || profile->stride != 10U))
+        err = ESP_ERR_INVALID_ARG;
+    if (err != ESP_OK) { free(generic); return err; }
+    device->rows = profile->rows; device->cols = profile->cols;
     err = configure_pins(device);
     if (err == ESP_OK) err = solar_os_bus_i2c_probe(bus, SOLAR_OS_TCA8418_ADDRESS);
     if (err == ESP_OK) err = configure_matrix(device);
     if (err != ESP_OK) {
         release_pins(device);
+        free(generic);
         ESP_RETURN_ON_ERROR(err, TAG, "keyboard initialization");
     }
     err = solar_os_input_keyboard_source_open(name, true, &device->source);
-    if (err != ESP_OK) {
-        release_pins(device);
-        return err;
+    if (err == ESP_OK) {
+        const solar_os_input_keymap_ops_t ops = {
+            .lock = keymap_lock, .unlock = keymap_unlock,
+            .prepare = keymap_prepare, .context = device,
+        };
+        err = solar_os_input_keymap_register(device->source, profile, &ops, &device->keymap);
+        if (err != ESP_OK) solar_os_input_source_close(device->source);
     }
+    free(generic);
+    if (err != ESP_OK) { release_pins(device); return err; }
     device->active = true;
     if (solar_os_task_create_pinned_internal(worker, name, TCA8418_TASK_STACK,
             device, tskIDLE_PRIORITY + 1, &device->task, tskNO_AFFINITY,
             SOLAR_OS_TASK_ROLE_BACKGROUND) != pdPASS) {
+        (void)solar_os_input_keymap_unregister(device->keymap);
         solar_os_input_source_close(device->source);
         release_pins(device);
         memset(device, 0, sizeof(*device));
         return ESP_ERR_NO_MEM;
     }
+    (void)solar_os_input_keymap_activate(device->keymap);
     ESP_LOGI(TAG, "%s attached on %s address 0x34", name, bus);
     return ESP_OK;
 }
@@ -370,10 +393,12 @@ esp_err_t solar_os_tca8418_detach(const char *name)
         return ESP_ERR_NOT_FOUND;
     }
     device->stop_requested = true;
-    (void)xTaskNotifyGive(device->task);
+    if (!device->worker_done) (void)xTaskNotifyGive(device->task);
     xSemaphoreGive(controller_mutex);
-    if (!solar_os_task_wait_done(device->task, &device->worker_done,
+    if (!device->worker_done && !solar_os_task_wait_done(device->task, &device->worker_done,
                                  SOLAR_OS_TASK_STOP_WAIT_MS)) return ESP_ERR_TIMEOUT;
+    esp_err_t err = solar_os_input_keymap_unregister(device->keymap);
+    if (err != ESP_OK) return err;
     if (!take_mutex()) return ESP_ERR_NO_MEM;
     if (!device->active || strcmp(device->name, name) != 0) {
         xSemaphoreGive(controller_mutex);
@@ -389,55 +414,17 @@ esp_err_t solar_os_tca8418_detach(const char *name)
     return ESP_OK;
 }
 
+/* Compatibility entrypoints; public controls now use the input service. */
 esp_err_t solar_os_tca8418_get_keymap(const char *name, bool defaults,
-                                     solar_os_matrix_keyboard_map_t *map)
+    solar_os_matrix_keyboard_map_t *map)
 {
-    if (map == NULL) return ESP_ERR_INVALID_ARG;
-    if (!take_mutex()) return ESP_ERR_NO_MEM;
-    tca8418_device_t *device = find_device(name);
-    esp_err_t err = device == NULL ? ESP_ERR_NOT_FOUND :
-        device->stop_requested ? ESP_ERR_INVALID_STATE : ESP_OK;
-    if (err == ESP_OK) *map = defaults ? device->defaults : device->map;
-    xSemaphoreGive(controller_mutex);
-    return err;
+    return solar_os_input_keymap_get(name, defaults, map);
 }
-
-static esp_err_t apply_map_locked(tca8418_device_t *device,
-                                   const solar_os_matrix_keyboard_map_t *map)
+esp_err_t solar_os_tca8418_set_keymap(const char *name, const solar_os_matrix_keyboard_map_t *map)
 {
-    if (device->stop_requested) return ESP_ERR_INVALID_STATE;
-    if (map->rows != device->map.rows || map->cols != device->map.cols)
-        return ESP_ERR_INVALID_ARG;
-    release_keys(device);
-    esp_err_t err = discard_fifo(device);
-    if (err != ESP_OK) {
-        device->recovering = true;
-        (void)solar_os_input_keyboard_source_set_ready(device->source, false);
-        return err;
-    }
-    memset(&device->keyboard, 0, sizeof(device->keyboard));
-    device->map = *map;
-    return ESP_OK;
+    return solar_os_input_keymap_set(name, map);
 }
-
-esp_err_t solar_os_tca8418_set_keymap(const char *name,
-                                     const solar_os_matrix_keyboard_map_t *map)
-{
-    esp_err_t err = solar_os_matrix_keyboard_validate_map(map);
-    if (err != ESP_OK) return err;
-    if (!take_mutex()) return ESP_ERR_NO_MEM;
-    tca8418_device_t *device = find_device(name);
-    err = device == NULL ? ESP_ERR_NOT_FOUND : apply_map_locked(device, map);
-    xSemaphoreGive(controller_mutex);
-    return err;
-}
-
 esp_err_t solar_os_tca8418_reset_keymap(const char *name)
 {
-    if (!take_mutex()) return ESP_ERR_NO_MEM;
-    tca8418_device_t *device = find_device(name);
-    const esp_err_t err = device == NULL ? ESP_ERR_NOT_FOUND :
-        apply_map_locked(device, &device->defaults);
-    xSemaphoreGive(controller_mutex);
-    return err;
+    return solar_os_input_keymap_reset(name);
 }

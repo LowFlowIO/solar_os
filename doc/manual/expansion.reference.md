@@ -573,49 +573,12 @@ Rows and columns are zero-based in mapping files. The physical event ID is
 The controller's matrix geometry is selected at attachment; mapping files
 cannot change it.
 
-Mapping files are JSON objects of at most 16 KiB. Every load starts from the
-attachment's built-in map and replaces the listed positions. For example,
-this changes the first position from Q to A and makes Space a symbol-layer
-selector when held; Space+A emits an exclamation mark:
-
-```json
-{
-  "schema": 1,
-  "keys": [
-    {"row": 0, "col": 0, "usage": 4},
-    {"row": 3, "col": 0, "usage": 44, "layer_tap": true}
-  ],
-  "symbols": [
-    {"row": 0, "col": 0, "key": 33}
-  ]
-}
-```
-
-`keys` defines the base layer; `symbols` defines overrides while the
-layer-selector key is held. Positions without a symbol mapping use the base layer.
-Each entry requires `row` and `col`. Optional fields are:
-
-- `usage`: canonical USB HID keyboard usage, expressed as a decimal integer.
-- `key` and `shift_key`: SolarOS logical key bytes, 0 through 255. A nonzero
-  value overrides character translation; Control/Alt chords use the HID usage.
-- `raw: true`: publish physical press/release events without a logical key.
-- `layer_tap: true`: hold to select symbols; an unused tap emits the specified
-  `usage` or `key` on release. Only one base-layer selector is allowed.
-- `alt_block: true`: suppress logical output when pressed with Alt. The
-  Pager profile uses this to retain its existing Alt+B reservation.
-
-An entry containing only `row` and `col` clears the entry in that layer. An
-empty symbol entry falls back to the base layer. Raw entries
-cannot also specify logical output. Duplicate positions, unknown fields,
-invalid usages, and positions outside the configured geometry are rejected.
-A rejected file leaves the current map unchanged. Applying or resetting a
-map releases held keys, clears queued controller events, and resets modifier
-and Caps state; release and press any still-held keys again.
-
-Mappings are runtime settings and revert to the built-in profile after detach
-or reboot. To reuse a mapping after startup, load it from a startup script.
-Python and Lua provide `solaros.input.load_keymap(name, path)` and
-`solaros.input.reset_keymap(name)` when a TCA8418-based driver is included.
+The input service manages each source's mapping, modifier state, symbol layer,
+and tap/hold selector. `input keymap` lists mapping support; `input keymap
+keyboard1 show` inspects the active map. See [source keymaps](input.keymap.md)
+for physical-key selectors, compatible matrix selectors, JSON fields, and
+Python/Lua capability queries. The existing row/column mapping files remain
+valid for these three profiles.
 
 The Pager's built-in profile uses Space as a tap/hold symbol selector and its
 Caps-labelled key as a momentary Shift modifier. Unlabelled cells produce no

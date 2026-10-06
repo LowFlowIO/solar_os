@@ -29,9 +29,7 @@ static const uint8_t usages[SOLAR_OS_MATRIX_KEY_COUNT + 1U] = {
 
 void solar_os_inputronic_keyboard_map(solar_os_matrix_keyboard_map_t *map)
 {
-    memset(map, 0, sizeof(*map));
-    map->rows = 8U;
-    map->cols = 10U;
+    solar_os_matrix_keyboard_init_map(map, 8U, 10U);
     for (unsigned id = 1; id <= SOLAR_OS_MATRIX_KEY_COUNT; id++)
         map->keys[0][id].usage = usages[id];
     for (unsigned id = 17; id <= 20; id++) map->keys[0][id].flags = SOLAR_OS_MATRIX_KEY_RAW;

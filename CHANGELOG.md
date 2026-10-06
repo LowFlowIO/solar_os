@@ -8,7 +8,10 @@
   Inputronic, and LilyGO Pager mapping profiles. The generic driver supports
   configurable matrix geometry. All three support validated JSON keymaps,
   inspection and reset through `input keymap`, and map loading and reset from
-  Python and Lua. The Pager profile retains its symbol layer and backlight;
+  Python and Lua. Source mapping is owned by the reusable input-keymap
+  service, with source-local physical IDs, optional matrix selectors, and
+  capability discovery through the shell and both runtimes. The Pager profile
+  retains its symbol layer and backlight;
   custom Pager configurations should use `lilygo-pager-keyboard` in place of
   `tca8418`.
 - **4.16.1** — 2026-10-06 — Camera expansion attachments can use a

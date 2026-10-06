@@ -26,6 +26,7 @@ int main(void)
     assert(solar_os_matrix_keyboard_validate_map(&pager) == ESP_OK);
     assert(solar_os_matrix_keyboard_default_map(&generic, 0, 10) == ESP_ERR_INVALID_ARG);
     assert(solar_os_matrix_keyboard_default_map(&generic, 8, 11) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_matrix_keyboard_init_map(&generic, 255, 255) == ESP_ERR_INVALID_ARG);
     assert(solar_os_matrix_keyboard_default_map(&generic, 3, 3) == ESP_OK);
     solar_os_matrix_keyboard_state_t state = {0};
     solar_os_matrix_key_transition_t event;
@@ -109,6 +110,49 @@ int main(void)
     assert(solar_os_matrix_keyboard_parse_map(
         "{\"schema\":1,\"keys\":[{\"row\":0,\"col\":0,\"usage\":44,\"layer_tap\":true}]}",
         &pager, &parsed) == ESP_ERR_INVALID_ARG); /* Two layer selectors. */
+
+    /* The neutral mapper neither unpacks wire bytes nor assumes a matrix or
+     * a ten-column stride. IDs are 16-bit and slots are independent IDs. */
+    solar_os_input_keymap_t neutral = {.slot_count=2};
+    neutral.physical[1] = 50000; neutral.keys[0][1].usage = 4;
+    neutral.physical[2] = 32768; neutral.keys[0][2].usage = 0xe1;
+    assert(solar_os_input_keymap_validate(&neutral) == ESP_OK);
+    state = (solar_os_input_keymap_state_t){0};
+    assert(solar_os_input_keymap_decode(&state, &neutral, 32768, true, &event));
+    assert(solar_os_input_keymap_decode(&state, &neutral, 50000, true, &event));
+    assert(event.physical_key == 50000 && event.usage == 4 && event.modifiers == SOLAR_OS_INPUT_MOD_LEFT_SHIFT);
+    assert(solar_os_input_keymap_parse(
+        "{\"schema\":1,\"keys\":[{\"physical\":50000,\"usage\":5}]}", &neutral, &parsed) == ESP_OK);
+    assert(parsed.keys[0][1].usage == 5);
+    const char *bad_physical[] = {
+        "{\"schema\":1,\"keys\":[{\"row\":0,\"col\":0,\"usage\":4}]}",
+        "{\"schema\":1,\"keys\":[{\"physical\":65536,\"usage\":4}]}",
+        "{\"schema\":1,\"keys\":[{\"physical\":50000.5,\"usage\":4}]}",
+        "{\"schema\":1,\"keys\":[{\"physical\":0,\"usage\":4}]}",
+        "{\"schema\":1,\"keys\":[{\"physical\":50000,\"row\":0,\"col\":0,\"usage\":4}]}",
+        "{\"schema\":1,\"keys\":[{\"physical\":50000,\"usage\":4},{\"physical\":50000,\"usage\":5}]}",
+    };
+    for (unsigned i = 0; i < sizeof(bad_physical)/sizeof(bad_physical[0]); i++) {
+        solar_os_input_keymap_t before = parsed;
+        assert(solar_os_input_keymap_parse(bad_physical[i], &neutral, &parsed) == ESP_ERR_INVALID_ARG);
+        assert(memcmp(&before, &parsed, sizeof(parsed)) == 0);
+    }
+    neutral.physical[2] = 50000;
+    assert(solar_os_input_keymap_validate(&neutral) == ESP_ERR_INVALID_ARG);
+    neutral = (solar_os_input_keymap_t){.slot_count=9, .rows=3, .cols=3, .stride=3, .first=100};
+    for (unsigned i = 1; i <= 9; i++) { neutral.physical[i] = (uint16_t)(99U+i); neutral.keys[0][i].usage = 4; }
+    assert(solar_os_input_keymap_validate(&neutral) == ESP_OK);
+    assert(solar_os_input_keymap_parse(
+        "{\"schema\":1,\"keys\":[{\"row\":1,\"col\":0,\"usage\":5}]}", &neutral, &parsed) == ESP_OK);
+    assert(parsed.keys[0][4].usage == 5 && parsed.physical[4] == 103);
+    assert(solar_os_input_keymap_parse(
+        "{\"schema\":1,\"keys\":[{\"row\":1,\"col\":0},{\"physical\":103}]}",
+        &neutral, &parsed) == ESP_ERR_INVALID_ARG); /* Two selectors for one position. */
+    neutral = (solar_os_input_keymap_t){.slot_count=256};
+    for (unsigned i = 1; i <= 256; i++) { neutral.physical[i] = (uint16_t)(60000U+i); neutral.keys[0][i].usage = 4; }
+    assert(solar_os_input_keymap_validate(&neutral) == ESP_OK);
+    state = (solar_os_input_keymap_state_t){0};
+    assert(solar_os_input_keymap_decode(&state, &neutral, 60256, true, &event) && event.usage == 4);
     puts("matrix keyboard tests: ok");
     return 0;
 }

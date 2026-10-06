@@ -16,6 +16,7 @@ inference = true
 zoo = true
 pipelines = true
 rtsp = true
+input_keymap = true
 control_bindings = true
 signal_processing = true
 vector_math = true

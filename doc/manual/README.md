@@ -10,6 +10,8 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 
 ## Shell and storage
 
+- [Source keymaps](input.keymap.md) — Inspect mapping capabilities and customize registered input sources
+
 - [Shell command reference](commands.md) — Complete syntax, behavior, and examples for built-in shell commands
 - [Storage and shell paths](storage.md) — Use SolarOS volumes, files, directories, and shell-style paths
 

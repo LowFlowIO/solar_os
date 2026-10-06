@@ -6,6 +6,8 @@
 #include "freertos/semphr.h"
 #include "pwm_port.h"
 #include "solar_os_tca8418.h"
+#include "solar_os_memory.h"
+#include <stdlib.h>
 
 /* Matrix positions and printed symbol legends from the existing Pager
  * profile. Controller transactions and input state live in the shared core. */
@@ -23,8 +25,7 @@ void solar_os_lilygo_pager_keyboard_map(solar_os_matrix_keyboard_map_t *map)
         {0,'_','$',';','?','!',',','.',0,0},
         {0,0,0,0,0,0,0,0,0,0},
     };
-    memset(map, 0, sizeof(*map));
-    map->rows = 4U; map->cols = 10U;
+    solar_os_matrix_keyboard_init_map(map, 4U, 10U);
     for (unsigned id = 1; id <= 40; id++) {
         const unsigned row = (id - 1U) / 10U, col = (id - 1U) % 10U;
         map->keys[0][id].usage = usages[row][col];
@@ -87,12 +88,15 @@ static esp_err_t attach_pager_locked(const char *name,
             controller_bindings[controller_count++] = bindings[i];
         }
     }
-    solar_os_matrix_keyboard_map_t map;
-    solar_os_lilygo_pager_keyboard_map(&map);
+    solar_os_matrix_keyboard_map_t *map = solar_os_memory_alloc(sizeof(*map),
+        SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "keyboard-map");
+    if (map == NULL) return ESP_ERR_NO_MEM;
+    solar_os_lilygo_pager_keyboard_map(map);
     esp_err_t err = ESP_OK;
     if (backlight_pin >= 0) err = pwm_port_set(backlight_pin, 5000U, 50U);
     if (err == ESP_OK)
-        err = solar_os_tca8418_attach_profile(name, controller_bindings, controller_count, &map);
+        err = solar_os_tca8418_attach_profile(name, controller_bindings, controller_count, map);
+    free(map);
     if (err != ESP_OK) {
         if (backlight_pin >= 0) (void)pwm_port_stop(backlight_pin);
         return err;

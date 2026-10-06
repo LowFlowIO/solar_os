@@ -1,5 +1,7 @@
 #include <assert.h>
 #include <stdio.h>
+#include <stdlib.h>
+#include "solar_os_memory.h"
 #include <string.h>
 
 /* Exercise the actual worker, polling, attach and detach implementation. */
@@ -21,6 +23,35 @@ static unsigned matrix_configurations;
 static uint8_t fail_write_reg;
 static bool fail_source_open;
 static unsigned pwm_started, pwm_stopped;
+static unsigned task_notifications;
+static bool sources_alive[256];
+static char source_names[256][SOLAR_OS_INPUT_SOURCE_NAME_MAX];
+void *solar_os_memory_alloc(size_t bytes, solar_os_memory_class_t cls, const char *tag)
+{
+    (void)tag; assert(cls == SOLAR_OS_MEMORY_EXTERNAL_PREFERRED); return malloc(bytes);
+}
+static TickType_t test_clock;
+TickType_t xTaskGetTickCount(void) { return test_clock; }
+void vTaskDelay(TickType_t ticks) { test_clock += ticks; }
+esp_err_t solar_os_storage_read_file(const char *path, void *data, size_t len, size_t *read_len)
+{
+    (void)path; (void)data; (void)len; (void)read_len; return ESP_ERR_NOT_SUPPORTED;
+}
+bool solar_os_input_source_get_info(solar_os_input_source_t source, solar_os_input_source_info_t *info)
+{
+    if (!sources_alive[source]) return false;
+    memset(info, 0, sizeof(*info)); info->source = source;
+    info->capabilities = SOLAR_OS_INPUT_CAP_KEY_EVENTS;
+    strlcpy(info->name, source_names[source], sizeof(info->name));
+    return true;
+}
+bool solar_os_input_source_find(const char *name, solar_os_input_source_info_t *info)
+{
+    for (unsigned i = 1; i < 256; i++)
+        if (sources_alive[i] && strcmp(source_names[i], name) == 0)
+            return solar_os_input_source_get_info((solar_os_input_source_t)i, info);
+    return false;
+}
 static esp_err_t pwm_start_error, pwm_stop_error;
 
 esp_err_t pwm_port_set(gpio_num_t pin, uint32_t frequency, uint8_t percent)
@@ -138,12 +169,15 @@ esp_err_t solar_os_input_keyboard_source_open(const char *name, bool ready,
     assert(name != NULL && ready);
     if (fail_source_open) return ESP_ERR_NO_MEM;
     *source = (solar_os_input_source_t)++opened;
+    sources_alive[*source] = true;
+    strlcpy(source_names[*source], name, sizeof(source_names[*source]));
     return ESP_OK;
 }
 
 void solar_os_input_source_close(solar_os_input_source_t source)
 {
     assert(source != 0U);
+    sources_alive[source] = false;
     closed++;
 }
 
@@ -214,7 +248,7 @@ BaseType_t solar_os_task_create_pinned_internal(TaskFunction_t function, const c
 }
 
 void solar_os_task_delete_internal(TaskHandle_t task) { assert(task == NULL); }
-BaseType_t xTaskNotifyGive(TaskHandle_t task) { assert(task != NULL); return pdPASS; }
+BaseType_t xTaskNotifyGive(TaskHandle_t task) { assert(task != NULL); task_notifications++; return pdPASS; }
 
 bool solar_os_task_wait_done(TaskHandle_t task, volatile bool *done, uint32_t timeout)
 {
@@ -349,7 +383,7 @@ int main(void)
     queue(75); registers[REG_INT_STAT] |= INT_OVERFLOW;
     assert(poll_once(device) == ESP_OK && event_count == prior_events);
     assert(device->overflows == 1 && released == 1 && composition_modifiers == 0);
-    assert(device->keyboard.caps_lock && fifo_count == 0);
+    assert(fifo_count == 0);
     queue(0x80 | 52); overflow_during_read = true;
     assert(poll_once(device) == ESP_OK && event_count == prior_events);
     assert(device->overflows == 2 && released == 2);
@@ -370,12 +404,12 @@ int main(void)
     bus_error = ESP_FAIL; worker_limit = 3;
     worker(device);
     assert(ready_changes == 2 && matrix_configurations == prior_configurations + 1);
-    assert(device->keyboard.modifiers == 0 && composition_modifiers == 0);
+    assert(composition_modifiers == 0);
     assert(events[event_count - 1].key == 'A');
     /* Multiple independent instances on different named buses. */
     strlcpy(bindings[0].target, "i2c1", sizeof(bindings[0].target));
     assert(solar_os_inputronic_keyboard_attach("keyboard1", bindings, 2) == ESP_OK);
-    assert(!devices[1].keyboard.caps_lock && devices[1].source != device->source);
+    assert(devices[1].source != device->source);
     wait_timeout = true;
     assert(solar_os_inputronic_keyboard_detach("keyboard1") == ESP_ERR_TIMEOUT);
     assert(devices[1].active); /* Registry must retain the bus/address lease. */
@@ -432,11 +466,11 @@ int main(void)
     custom.keys[0][1].usage = 4; /* Q position becomes A. */
     queue(0x80 | 21); /* Hold Shift while changing the map. */
     assert(poll_once(generic_device) == ESP_OK);
-    assert(generic_device->keyboard.modifiers != 0);
+    assert(composition_modifiers != 0);
     queue(21); /* Old queued release is discarded at the map boundary. */
     size_t prior_released = released;
     assert(solar_os_tca8418_set_keymap("generic", &custom) == ESP_OK);
-    assert(released == prior_released + 1 && generic_device->keyboard.modifiers == 0 && fifo_count == 0);
+    assert(released == prior_released + 1 && composition_modifiers == 0 && fifo_count == 0);
     queue(0x80 | 1); queue(1);
     assert(poll_once(generic_device) == ESP_OK && events[event_count - 2].key == 'a');
     custom.keys[0][4].usage = 4; /* Outside configured columns. */
@@ -448,9 +482,13 @@ int main(void)
     assert(memcmp(&before, &custom, sizeof(custom)) == 0);
     bus_error = ESP_FAIL;
     assert(solar_os_tca8418_set_keymap("generic", &custom) == ESP_FAIL);
-    assert(generic_device->recovering && generic_device->keyboard.modifiers == 0);
+    assert(generic_device->recovering && composition_modifiers == 0);
     bus_error = ESP_OK;
+    generic_device->stop_requested = true;
+    worker(generic_device);
+    unsigned prior_notifications = task_notifications;
     assert(solar_os_tca8418_detach("generic") == ESP_OK);
+    assert(task_notifications == prior_notifications); /* A finished task must not be notified again. */
     assert(solar_os_tca8418_get_keymap("generic", false, &custom) == ESP_ERR_NOT_FOUND);
 
     /* Pager owns PWM independently. A failed worker stop retains PWM;

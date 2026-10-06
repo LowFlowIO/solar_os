@@ -292,6 +292,20 @@ class FlavorPackagesTest(unittest.TestCase):
                 self.assertTrue(pruned[package])
                 self.assertTrue(pruned["service_tca8418"])
 
+    def test_input_keymap_service_has_no_expansion_hardware_requirement(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["input_keymap"])
+        self.assertIn("service_input_keymap", self.catalog.package_defs["service_tca8418"].depends)
+        service = self.catalog.package_defs["service_input_keymap"]
+        self.assertEqual(service.capabilities, ())
+        self.assertEqual(service.depends, ("service_json",))
+        for target in ("esp32", "esp32s3"):
+            target_packages = generate_flavor_config.apply_target_pruning(self.catalog, packages, target)
+            _, no_hardware = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, target_packages, set())
+            self.assertTrue(no_hardware["service_input_keymap"])
+            self.assertFalse(no_hardware["service_tca8418"])
+
     def test_full_exposes_reusable_t_lora_expansion_drivers(self):
         _, _, groups, packages = self.resolve("full")
         reusable = {

@@ -9,3 +9,6 @@ typedef void (*TaskFunction_t)(void *);
 #define tskNO_AFFINITY (-1)
 uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t ticks);
 BaseType_t xTaskNotifyGive(TaskHandle_t task);
+
+TickType_t xTaskGetTickCount(void);
+void vTaskDelay(TickType_t ticks);

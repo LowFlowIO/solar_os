@@ -27,13 +27,13 @@ class ScriptInputBindingsTest(unittest.TestCase):
         self.assertIn("input read limited to 60000 ms", PYTHON_SOURCE)
         self.assertIn("input read limited to 60000 ms", LUA_SOURCE)
 
-    def test_matrix_keymap_controls_have_runtime_parity(self):
-        for function in ("load_keymap", "reset_keymap"):
+    def test_source_keymap_controls_have_runtime_parity(self):
+        for function in ("keymap_info", "load_keymap", "reset_keymap"):
             self.assertIn(f"SOLAR_OS_SCRIPT_API_FUNCTION(input, {function}, {function});", DESCRIPTOR)
             self.assertIn(f"solaros_input_{function}_obj", PYTHON_SOURCE)
             self.assertIn(f"solua_input_{function}", LUA_SOURCE)
         for source in (PYTHON_SOURCE, LUA_SOURCE, DESCRIPTOR):
-            self.assertIn("#if SOLAR_OS_PACKAGE_SERVICE_TCA8418", source)
+            self.assertIn("#if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP", source)
 
     def test_runtimes_opt_in_and_forward_pointer_axis_and_gesture_events(self):
         for source in (PYTHON_SOURCE, LUA_SOURCE):
