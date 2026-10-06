@@ -20,6 +20,38 @@ hint = "0x5f"
 required = true
 allowed = [0x5f]
 
+[drivers.inputronic-keyboard]
+summary = "Soldered Inputronic 8x10 keyboard"
+package = "expansion_inputronic_keyboard"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2c"]
+default_name = "keyboard0"
+
+[[drivers.inputronic-keyboard.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+
+[[drivers.inputronic-keyboard.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x34"
+required = true
+allowed = [0x34]
+
+[[drivers.inputronic-keyboard.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+role = "reset"
+
+[[drivers.inputronic-keyboard.bindings]]
+key = "irq"
+kind = "gpio"
+hint = "gpio"
+role = "irq"
+
 [drivers.tdeck-keyboard]
 summary = "LilyGO T-Deck raw-matrix keyboard"
 package = "expansion_tdeck_keyboard"

@@ -522,6 +522,11 @@ label = "CardKB keyboard"
 category = "Expansion hardware"
 members = ["expansion_cardkb"]
 
+[groups.inputronic_keyboard]
+label = "Soldered Inputronic keyboard"
+category = "Expansion hardware"
+members = ["expansion_inputronic_keyboard"]
+
 [groups.tdeck_keyboard]
 label = "T-Deck keyboard"
 category = "Expansion hardware"
@@ -1592,6 +1597,19 @@ sources = [
   "services/solar_os_cardkb_driver.c",
 ]
 requires = ["esp_driver_i2c"]
+capabilities = ["expansion_i2c"]
+
+[packages.expansion_inputronic_keyboard]
+label = "expansion.inputronic-keyboard"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_inputronic_keyboard_expansion_driver"]
+depends = ["service_expansion", "service_i2c"]
+sources = [
+  "services/solar_os_inputronic_keyboard.c",
+  "services/solar_os_inputronic_keyboard_codec.c",
+  "services/solar_os_inputronic_keyboard_driver.c",
+]
+requires = ["esp_driver_i2c", "esp_driver_gpio"]
 capabilities = ["expansion_i2c"]
 
 [packages.expansion_tdeck_keyboard]

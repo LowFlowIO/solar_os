@@ -45,6 +45,36 @@ class BoardManifestTest(unittest.TestCase):
                 board = load_board_manifest(path, self.manifest_dir)
                 validate_board(board, self.drivers)
 
+    def test_inputronic_keyboard_overlay_uses_named_bus(self) -> None:
+        for profile in ("esp32_s3_devkitc1_n16r8", "esp32_devkitc_v4_wrover", "cl_32"):
+            with self.subTest(profile=profile):
+                board = load_board_manifest(
+                    self.manifest_dir / f"{profile}.toml", self.manifest_dir)
+                board.setdefault("devices", []).append({
+                    "driver": "inputronic-keyboard", "name": "keyboard1",
+                    "bindings": {"i2c": "i2c0", "addr": 0x34},
+                })
+                validate_board(board, self.drivers)
+                self.assertIn("expansion_inputronic_keyboard", required_packages(board, self.drivers))
+                self.assertIn('.driver = "inputronic-keyboard", .name = "keyboard1"',
+                              generate_header(board, self.drivers))
+                board["devices"][-1]["bindings"]["addr"] = 0x35
+                with self.assertRaises(ManifestError):
+                    validate_board(board, self.drivers)
+
+    def test_4g_epaper_initializes_inputronic_on_board_bus(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "waveshare_esp32_s3_sim7670g_4g_epaper.toml",
+            self.manifest_dir)
+        keyboard = next(device for device in board["devices"]
+                        if device["name"] == "keyboard0")
+        self.assertEqual(keyboard["driver"], "inputronic-keyboard")
+        self.assertEqual(keyboard["bindings"],
+                         {"i2c": "i2c0", "addr": 0x34, "reset": 41, "irq": 40})
+        self.assertIn("expansion_inputronic_keyboard", required_packages(board, self.drivers))
+        self.assertNotIn("expansion_cardkb", required_packages(board, self.drivers))
+        validate_board(board, self.drivers)
+
     def test_display_manifests_define_logical_geometry(self) -> None:
         required = {
             "SOLAR_OS_BOARD_DISPLAY_CONTROLLER",

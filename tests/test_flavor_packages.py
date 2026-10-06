@@ -267,6 +267,20 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertTrue(s3["job_rtspd"])
         self.assertTrue(classic["job_rtspd"])
 
+    def test_inputronic_keyboard_is_reusable_on_both_targets(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["inputronic_keyboard"])
+        self.assertEqual(self.catalog.group_defs["inputronic_keyboard"].category,
+                         "Expansion hardware")
+        for target in ("esp32", "esp32s3"):
+            with self.subTest(target=target):
+                pruned = generate_flavor_config.apply_target_pruning(
+                    self.catalog, packages, target)
+                self.assertTrue(pruned["expansion_inputronic_keyboard"])
+                self.assertIn("solar_os_inputronic_keyboard_expansion_driver",
+                              generate_flavor_config.collect_expansion_drivers(
+                                  self.catalog, pruned))
+
     def test_full_exposes_reusable_t_lora_expansion_drivers(self):
         _, _, groups, packages = self.resolve("full")
         reusable = {

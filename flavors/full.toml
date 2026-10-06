@@ -104,6 +104,7 @@ uc8179 = true
 uc8279 = true
 ssd1306 = true
 cardkb = true
+inputronic_keyboard = true
 ublox_mia_m10q = true
 sim7670 = true
 st25r3916 = true

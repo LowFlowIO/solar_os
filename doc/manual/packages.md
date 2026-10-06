@@ -123,6 +123,11 @@ uses the board-device retry policy if the sensor is not ready at startup.
 `expansion.cardkb` polls the M5Stack Unit CardKB at its fixed I2C address and
 publishes its character taps and navigation keys through the shared input
 service used by shells and foreground apps.
+`expansion.inputronic-keyboard` polls the Soldered Inputronic KEYBOARD's
+TCA8418 8x10 matrix at `0x34` on a named I2C bus. It publishes physical
+press/release events, modifiers, and logical keys through the common input
+service, including key repeat. It needs no interrupt GPIO and is selectable
+as the `inputronic_keyboard` expansion hardware group on ESP32 and ESP32-S3.
 `board.cl32-core` is required only by the CL-32 profile. Its fixed `core0`
 attachment polls the integrated ATmega808 keyboard FIFO and publishes
 press/release transitions through `keyboard0`. It also publishes the AVR's

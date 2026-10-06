@@ -273,6 +273,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `cvbs-pal` | 384x288 or 320x200 monochrome PAL composite output | `i2s=i2s0 out=gpio25` | Classic ESP32 driver; ESP32-WROVER v3.0 registers it as fixed `display0`. |
 | `vga32` | Build-selected RGB222 VGA output | `r0=<pin> r1=<pin> g0=<pin> g1=<pin> b0=<pin> b1=<pin> hsync=<pin> vsync=<pin>` | Classic ESP32 driver; claims I2S1 and TTGO VGA32 registers it as fixed `display0`. |
 | `cardkb` | M5Stack Unit CardKB | `i2c=<bus> addr=0x5f` | Polls released keys into the shared input service for shells and foreground apps. |
+| `inputronic-keyboard` | Soldered Inputronic KEYBOARD (SKU 333360) | `i2c=<bus> addr=0x34 [reset=<gpio>] [irq=<gpio>]` | Polls the 8x10 matrix FIFO and publishes press/release events through the shared input service. Optional active-low reset and interrupt pins. |
 | `tdeck-keyboard` | LilyGO T-Deck raw-matrix keyboard | `i2c=<bus> addr=0x55` | Polls the raw matrix and publishes keys through the shared input service. The built-in T-Deck attachment uses its board keymap; other boards can attach the same controller to a named I2C bus. |
 | `tca8418` | TCA8418 4x10 matrix keyboard | `i2c=<bus> addr=0x34`; optional `irq=<pin> backlight=<pwm-pin>` | Polls the key-event FIFO and publishes keyboard input; the optional PWM binding controls keyboard backlight brightness. |
 | `cl32-core` | Integrated CL-32 ATmega808 controller | `i2c=<bus> addr=0x08` | Fixed CL-32-only `core0`; polls keyboard press/release events into `keyboard0` and provides `battery0` from the AVR voltage, USB-power, and charging state. It is not runtime-probeable or detachable. |
@@ -529,6 +530,44 @@ shared SolarOS input path. CardKB reports one value after release, so host-side
 key repeat is not available. Its values 128 through 175 are private Fn
 combinations and are ignored instead of being confused with SolarOS logical
 keys.
+
+### Soldered Inputronic KEYBOARD
+
+The standalone Inputronic KEYBOARD (SKU 333360) uses a TCA8418 at the fixed
+I2C address `0x34`. Connect its easyC/Qwiic connector to a 3.3 V supply,
+ground, and the SDA/SCL pins of a named I2C bus. Use `expansion bus` to
+identify the bus and its pins. A board-owned bus can be shared with other
+devices at different addresses. Enable the `inputronic_keyboard` hardware
+group in custom flavors; it is included in `full`.
+
+```text
+expansion attach inputronic-keyboard keyboard1 i2c=i2c0 addr=0x34
+input keyboard
+expansion detach keyboard1
+```
+
+If RESET is wired to a host GPIO, add `reset=<gpio>` to pulse the active-low
+reset and hold it high before probing the keyboard. Otherwise RESET must
+have a pull-up to the keyboard supply. If INT is wired, `irq=<gpio>` reserves
+that input with a pull-up; FIFO polling still runs without a host interrupt.
+The custom 4G/e-paper profile binds RESET to GPIO41 and INT to GPIO40.
+
+Letters use the active SolarOS keyboard layout. Caps Lock starts off and
+toggles on each Caps press; Shift reverses letter case. Number and punctuation
+keys retain the Inputronic symbol map: Shift+0 through Shift+9 produce
+`= ! " # $ % & / ( )`, and Shift+semicolon, Shift+comma, and Shift+period
+produce colon, semicolon, and colon. Control/Alt chords and modified arrows
+use the common keyboard translation. Enter, Escape, Tab, Backspace, Delete,
+arrows, Space, and F1 through F10 feed shells and foreground apps. Held keys
+use the shared input repeat settings.
+
+The six FN keys publish physical press/release events with logical key and
+HID usage zero for applications to interpret. Their physical IDs are
+FN1=78, FN2=79, FN3=17, FN4=18, FN5=19, and FN6=20. They do not emit text.
+FIFO overflow or I2C failure clears held keys and modifiers; after recovery,
+release and press any still-held key again. Detaching closes the keyboard
+source and releases the expansion's bus/address claims. Multiple keyboards
+can use separate named buses, each at `0x34`.
 
 ### RFM95W on ESP32-S3-DevKitC-1
 
