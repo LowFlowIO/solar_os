@@ -99,8 +99,19 @@ static bool parse_time(const char *text,
                        uint8_t *minute,
                        uint8_t *second)
 {
-    if (strlen(text) < 6U) {
+    const size_t length = strlen(text);
+    if (length < 6U) {
         return false;
+    }
+    if (length > 6U) {
+        if (text[6] != '.' || length == 7U) {
+            return false;
+        }
+        for (size_t i = 7U; i < length; i++) {
+            if (text[i] < '0' || text[i] > '9') {
+                return false;
+            }
+        }
     }
     return parse_u8_digits(text, 0, hour) &&
         parse_u8_digits(text, 2, minute) &&
@@ -124,7 +135,15 @@ static bool parse_date(const char *text,
         return false;
     }
     *year = (uint16_t)(2000U + short_year);
-    return true;
+    static const uint8_t days_per_month[] = {
+        31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+    };
+    uint8_t days = days_per_month[*month - 1U];
+    if (*month == 2U &&
+        ((*year % 4U == 0U && *year % 100U != 0U) || *year % 400U == 0U)) {
+        days = 29U;
+    }
+    return *day <= days;
 }
 
 /* "ddmm.mmmm" / "dddmm.mmmm" with a hemisphere letter, into degrees * 1e7.
@@ -277,6 +296,9 @@ static bool parse_sentence(const char *line,
             field_length = 0;
         } else if (field_length + 1U < NMEA_FIELD_MAX) {
             fields[field_count - 1U][field_length++] = line[i];
+        } else {
+            /* Truncation could hide an invalid suffix on a UTC field. */
+            return false;
         }
     }
 

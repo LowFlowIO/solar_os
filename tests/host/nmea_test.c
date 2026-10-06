@@ -24,6 +24,56 @@ static bool feed(const char *line)
     return accepted;
 }
 
+static bool feed_body(const char *body)
+{
+    uint8_t checksum = 0;
+    for (const char *p = body; *p != '\0'; p++) {
+        checksum ^= (uint8_t)*p;
+    }
+    char line[120];
+    snprintf(line, sizeof(line), "$%s*%02X\r\n", body, checksum);
+    return feed(line);
+}
+
+static void feed_rmc_time_date(const char *time, const char *date)
+{
+    char body[100];
+    snprintf(body, sizeof(body),
+             "GPRMC,%s,A,4500.00,N,01000.00,E,0,0,%s,,,A", time, date);
+    assert(feed_body(body));
+    assert(state.valid); /* Invalid UTC must not discard a valid position. */
+}
+
+static void test_utc_calendar_and_time_syntax(void)
+{
+    reset();
+    const char *valid_times[] = {"000000", "235959", "120000.0", "120000.123456", "235960"};
+    for (size_t i = 0; i < sizeof(valid_times) / sizeof(valid_times[0]); i++) {
+        feed_rmc_time_date(valid_times[i], "290224");
+        assert(state.date_valid && state.year == 2024 && state.month == 2 && state.day == 29);
+    }
+    const char *invalid_times[] = {
+        "", "12000", "120000junk", "120000.", "120000.12x", "1200000",
+        "240000", "126000", "120061",
+    };
+    for (size_t i = 0; i < sizeof(invalid_times) / sizeof(invalid_times[0]); i++) {
+        feed_rmc_time_date(invalid_times[i], "010126");
+        assert(!state.date_valid);
+    }
+    const char *invalid_dates[] = {"310226", "290226", "310426", "000126", "011326", "01012", "010126x"};
+    for (size_t i = 0; i < sizeof(invalid_dates) / sizeof(invalid_dates[0]); i++) {
+        feed_rmc_time_date("120000", invalid_dates[i]);
+        assert(!state.date_valid);
+    }
+    feed_rmc_time_date("120000", "290200");
+    assert(state.date_valid && state.year == 2000);
+    feed_rmc_time_date("120000", "300426");
+    assert(state.date_valid && state.month == 4 && state.day == 30);
+    const uint32_t before = state.rmc_count;
+    assert(!feed_body("GPRMC,120000.1234567890123junk,A,4500.00,N,01000.00,E,0,0,061026,,,A"));
+    assert(state.rmc_count == before); /* No truncated prefix becomes a fresh reading. */
+}
+
 static void test_rmc_position_time_and_motion(void)
 {
     /* The canonical example: 49 deg 16.45 min N, 123 deg 11.12 min W. */
@@ -139,6 +189,7 @@ static void test_out_of_range_fields_are_rejected(void)
 
 int main(void)
 {
+    test_utc_calendar_and_time_syntax();
     test_rmc_position_time_and_motion();
     test_gga_quality_satellites_and_altitude();
     test_stale_gga_is_dropped();

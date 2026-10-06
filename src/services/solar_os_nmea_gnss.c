@@ -289,12 +289,10 @@ static esp_err_t read_fix(void *ctx,
         .latitude_deg_e7 = state.latitude_deg_e7,
         .longitude_deg_e7 = state.longitude_deg_e7,
         .height_msl_mm = state.altitude_msl_mm,
-        /* RMC/GGA carry no accuracy estimate; approximate five meters of
-         * horizontal error per unit of HDOP. */
-        .horizontal_accuracy_mm = (uint32_t)state.hdop_e2 * 50U,
+        /* RMC/GGA provide neither accuracy estimates nor PDOP. GGA's
+         * HDOP cannot supply these fields; leave them unavailable (zero). */
         .ground_speed_mm_s = state.ground_speed_mm_s,
         .heading_deg_e5 = state.course_deg_e5,
-        .position_dop_e2 = state.hdop_e2,
     };
     return ESP_OK;
 }
@@ -325,22 +323,24 @@ static esp_err_t set_power(void *ctx, bool enabled)
         return ret;
     }
     ret = write_power_level(device, true);
-    if (ret == ESP_OK) {
-        vTaskDelay(pdMS_TO_TICKS(NMEA_GNSS_POWER_ON_SETTLE_MS));
-        drain_rx(device);
-        ret = detect_stream(device, NMEA_GNSS_DETECT_TIMEOUT_MS);
-        if (ret == ESP_OK) {
-            ret = reader_start(device);
-        }
-        if (ret != ESP_OK && write_power_level(device, false) != ESP_OK) {
-            /* Still switched on, so it is marked on: a later power-off
-             * has to write the pin rather than find nothing to do. */
-            device->powered = true;
-            xSemaphoreGive(device->mutex);
-            return ret;
-        }
+    if (ret != ESP_OK) {
+        xSemaphoreGive(device->mutex);
+        return ret;
     }
-    device->powered = ret == ESP_OK;
+    vTaskDelay(pdMS_TO_TICKS(NMEA_GNSS_POWER_ON_SETTLE_MS));
+    drain_rx(device);
+    ret = detect_stream(device, NMEA_GNSS_DETECT_TIMEOUT_MS);
+    if (ret == ESP_OK) {
+        ret = reader_start(device);
+    }
+    if (ret != ESP_OK) {
+        /* Keep both state copies true to the physical cleanup result even
+         * though power-on returns an error. Failed switch-off must retry. */
+        device->powered = write_power_level(device, false) != ESP_OK;
+        (void)solar_os_gnss_notify_power_state(device->name, device->powered);
+    } else {
+        device->powered = true;
+    }
     xSemaphoreGive(device->mutex);
     return ret;
 }
@@ -499,14 +499,27 @@ esp_err_t solar_os_nmea_gnss_detach(const char *name)
     }
     for (size_t i = 0; i < NMEA_GNSS_DEVICE_MAX; i++) {
         if (devices[i].active && strcmp(devices[i].name, name) == 0) {
-            ESP_RETURN_ON_ERROR(solar_os_gnss_unregister(name),
-                                TAG,
-                                "unregister failed");
-            reader_stop(&devices[i]);
-            if (devices[i].power_control) {
-                (void)write_power_level(&devices[i], false);
+            nmea_gnss_device_t *device = &devices[i];
+            xSemaphoreTake(device->mutex, portMAX_DELAY);
+            if (device->power_control) {
+                const esp_err_t ret = write_power_level(device, false);
+                if (ret != ESP_OK) {
+                    /* Keep the provider and reader available for a retry. */
+                    xSemaphoreGive(device->mutex);
+                    return ret;
+                }
+                reader_stop(device);
+                device->powered = false;
+                (void)solar_os_gnss_notify_power_state(name, false);
             }
-            memset(&devices[i], 0, sizeof(devices[i]));
+            const esp_err_t ret = solar_os_gnss_unregister(name);
+            if (ret != ESP_OK) {
+                xSemaphoreGive(device->mutex);
+                return ret;
+            }
+            reader_stop(device);
+            xSemaphoreGive(device->mutex);
+            memset(device, 0, sizeof(*device));
             return ESP_OK;
         }
     }
