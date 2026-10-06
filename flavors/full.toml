@@ -102,6 +102,7 @@ ssd1306 = true
 cardkb = true
 stc8h_keyboard = true
 ublox_mia_m10q = true
+nmea_gnss = true
 sim7670 = true
 st25r3916 = true
 bhi260ap = true

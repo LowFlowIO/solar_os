@@ -29,6 +29,7 @@ TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
+TARGETS += nmea_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
 TARGETS += i2c_buses_test
@@ -398,6 +399,10 @@ cardkb_codec_test: cardkb_codec_test.c $(ROOT)/src/services/solar_os_cardkb_code
 ubx_test: ubx_test.c $(ROOT)/src/drivers/ubx.c $(ROOT)/src/drivers/ubx.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/drivers \
 		ubx_test.c $(ROOT)/src/drivers/ubx.c -o $@
+
+nmea_test: nmea_test.c $(ROOT)/src/drivers/nmea.c $(ROOT)/src/drivers/nmea.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src/drivers \
+		nmea_test.c $(ROOT)/src/drivers/nmea.c -o $@
 
 gnss_service_test: gnss_service_test.c $(ROOT)/src/services/solar_os_gnss.c $(ROOT)/src/services/solar_os_gnss.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
@@ -803,6 +808,7 @@ test: $(TARGETS)
 	./rtc_service_test
 	./rtc_pcf85063_test
 	./ubx_test
+	./nmea_test
 	./gnss_service_test
 	./modem_service_test
 	./haptic_service_test
