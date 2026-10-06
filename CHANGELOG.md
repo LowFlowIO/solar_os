@@ -2,6 +2,12 @@
 
 ## 4.x
 
+- **4.16.1** — 2026-10-06 — Camera expansion attachments can use a
+  named I2C bus for SCCB control, including the board-owned bus wired to the
+  CL32 camera connector, or explicit SIOD/SIOC pins. Shared bus devices remain
+  available when the camera stops; the camera retains its bus lease until
+  detach. Corrected C++ exception configuration for ESP-DL builds, including
+  existing SDK configuration files.
 - **4.16.0** — 2026-10-05 — Added reusable computer vision and resident
   ESP-DL inference for Python, Lua, shell commands, and native modules.
   Scripts can decode QR codes and use image statistics, histograms,
