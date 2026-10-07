@@ -31,8 +31,9 @@ extern struct nimble_test_state {
     struct ble_store_value_cccd store_cccd_written;
     int random_calls, random_set_calls, scan_cancel_calls, nvs_error;
     bool scan_active, initiating;
-    uint8_t random_address[6], adv_own, adv_mode;
-    ble_addr_t adv_target;
+    uint8_t random_address[6], adv_own, adv_mode, adv_filter, adv_flags;
+    int whitelist_calls, whitelist_error;
+    ble_addr_t adv_target, whitelist_peer;
     uint8_t nvs_blob[256], nvs_pending[256];
     size_t nvs_length, nvs_pending_length;
     bool advertising, mbuf_fail, encrypted, bonded;

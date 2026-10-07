@@ -31,6 +31,7 @@ extern struct ble_hs_cfg_stub ble_hs_cfg;
 #define BLE_GAP_SUBSCRIBE_REASON_RESTORE 3
 #define BLE_OWN_ADDR_PUBLIC 0
 #define BLE_OWN_ADDR_RANDOM 1
+#define BLE_HCI_ADV_FILT_CONN 2
 #define BLE_ADDR_PUBLIC 0
 #define BLE_ADDR_RANDOM 1
 #define BLE_UUID_TYPE_16 16
@@ -156,7 +157,8 @@ struct ble_hs_adv_fields {
     uint16_t appearance; bool appearance_is_present;
     bool uuids16_is_complete;
 };
-struct ble_gap_adv_params { uint8_t conn_mode, disc_mode; uint16_t itvl_min, itvl_max; };
+struct ble_gap_adv_params { uint8_t conn_mode, disc_mode, filter_policy; uint16_t itvl_min, itvl_max; };
+int ble_gap_wl_set(const ble_addr_t *, uint8_t);
 int ble_gap_conn_active(void);
 int ble_gap_disc_active(void);
 int ble_gap_disc_cancel(void);

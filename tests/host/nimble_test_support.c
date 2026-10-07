@@ -199,15 +199,17 @@ int ble_uuid_cmp(const ble_uuid_t *a, const ble_uuid_t *b)
     return memcmp(((const ble_uuid128_t *)a)->value, ((const ble_uuid128_t *)b)->value, 16);
 }
 int ble_gap_adv_stop(void) { fake.advertising = false; return 0; }
+int ble_gap_wl_set(const ble_addr_t *peers, uint8_t count)
+{ assert(count==1); fake.whitelist_calls++; fake.whitelist_peer=*peers; return fake.whitelist_error; }
 int ble_svc_gap_device_name_set(const char *name)
 { assert(strlen(name) <= 26); strcpy(fake.device_name, name); return fake.submit_error; }
 int ble_gap_adv_set_fields(const struct ble_hs_adv_fields *fields)
-{ fake.appearance = fields->appearance_is_present ? fields->appearance : 0; return fake.submit_error; }
+{ fake.adv_flags=fields->flags; fake.appearance = fields->appearance_is_present ? fields->appearance : 0; return fake.submit_error; }
 int ble_gap_adv_rsp_set_fields(const struct ble_hs_adv_fields *fields) { assert(fields->name_len <= 26); return fake.submit_error; }
 int ble_gap_adv_start(uint8_t own, const ble_addr_t *addr, int32_t ms,
     const struct ble_gap_adv_params *params, ble_gap_event_fn *cb, void *arg)
 {
-    (void)ms; fake.adv_own=own; fake.adv_mode=params->conn_mode;
+    (void)ms; fake.adv_own=own; fake.adv_mode=params->conn_mode; fake.adv_filter=params->filter_policy;
     fake.adv_target=addr ? *addr : (ble_addr_t){0};
     fake.adv_calls++; fake.server_gap=cb; fake.server_gap_arg=arg;
     fake.advertising = !fake.submit_error; return fake.submit_error;

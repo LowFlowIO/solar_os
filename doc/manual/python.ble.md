@@ -73,11 +73,13 @@ while not solaros.should_exit():
   Lookup does not gate keyboard reports. Names live only for that connection;
   applications can cache them on mounted storage. `status()["host_name"]`
   exposes the same current name without rereading the saved host list.
-- `connect(address, addr_type=0)`: for a manual lease, advertise directly to
-  this saved host using its stored local identity. The host initiates the BLE
-  connection; SolarOS cannot dial a peripheral-to-host connection. Other saved
-  hosts cannot take this offer. Wake the host or select its Bluetooth entry if
-  it does not reconnect automatically.
+- `connect(address, addr_type=0)`: for a manual lease, advertise a connection
+  offer filtered to this saved host using the local identity stored during
+  pairing. Private host addresses are resolved using the bond. The host
+  initiates the BLE connection; SolarOS cannot dial a peripheral-to-host
+  connection. Other saved hosts cannot take this offer. Automatic reconnection
+  requires the host's Bluetooth to be enabled and its HID reconnect policy to
+  allow the connection.
 - `forget(address, addr_type=0)`: delete this HID host's pairing. If selected,
   stop its connection offer and disconnect it. Local input bonds stay intact.
 - `disconnect()`: cancel a manual lease's host offer and disconnect its host,

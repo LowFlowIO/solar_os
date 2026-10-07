@@ -392,9 +392,15 @@ static int server_advertise(void)
         }
         if (!peripheral->pairing) {
             target = &peripheral->selected_address;
-            params.conn_mode = BLE_GAP_CONN_MODE_DIR;
-            params.disc_mode = BLE_GAP_DISC_MODE_NON;
-            params.itvl_min = params.itvl_max = 160; /* Low-duty directed advertising. */
+            /* Advertise the exact local identity saved during pairing, using
+             * ordinary connectable packets so background HID scans can find
+             * it. Filter using the selected peer identity (including resolved
+             * private peers), preventing other hosts from racing this offer.
+             * Fresh pairing uses a new identity and accepts new hosts. */
+            rc = ble_gap_wl_set(target, 1);
+            if (rc) return rc;
+            params.filter_policy = BLE_HCI_ADV_FILT_CONN;
+            params.itvl_min = params.itvl_max = 160; /* 100 ms reconnect offer. */
         }
     }
     rc = ble_gap_adv_start(own_type, target, BLE_HS_FOREVER, &params,

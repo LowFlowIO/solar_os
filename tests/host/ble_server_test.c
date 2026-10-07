@@ -536,8 +536,17 @@ int main(void)
     assert(hid.hosts[0].bda[0]==previous_host.val[5] && hid.hosts[0].bda[5]==previous_host.val[0]);
     hid=(solar_os_ble_hid_request_t){.op=SOLAR_OS_BLE_HID_OP_CONNECT,.addr_type=previous_host.type};
     for (size_t i=0;i<6;i++) hid.bda[i]=previous_host.val[5-i];
-    assert(execute_hid(80,&hid)==ESP_OK && server_advertise()==0);
-    assert(fake.adv_own==BLE_OWN_ADDR_PUBLIC && fake.adv_mode==BLE_GAP_CONN_MODE_DIR);
+    assert(execute_hid(80,&hid)==ESP_OK);
+    /* Failure to configure the selected host filter must not expose an
+     * unfiltered reconnect offer. A later poll may retry a busy controller. */
+    fake.whitelist_error=BLE_HS_EBUSY;
+    assert(server_advertise()==BLE_HS_EBUSY && !peripheral->advertising);
+    assert(fake.adv_calls==adv_before_managed);
+    fake.whitelist_error=0;
+    assert(server_advertise()==0);
+    assert(fake.adv_own==BLE_OWN_ADDR_PUBLIC && fake.adv_mode==BLE_GAP_CONN_MODE_UND);
+    assert(fake.adv_filter==BLE_HCI_ADV_FILT_CONN && (fake.adv_flags & BLE_HS_ADV_F_DISC_GEN));
+    assert(!memcmp(&fake.whitelist_peer,&previous_host,sizeof(previous_host)));
     assert(!memcmp(&fake.adv_target,&previous_host,sizeof(previous_host)));
     /* A different host is retired without negotiating security. */
     fake.address=keyboard_bond;
@@ -561,6 +570,7 @@ int main(void)
     nimble_test_drain();
     assert(peripheral->advertising && fake.scan_cancel_calls==1);
     assert(fake.adv_own==BLE_OWN_ADDR_RANDOM && fake.adv_mode==BLE_GAP_CONN_MODE_UND);
+    assert(fake.adv_filter==0 && (fake.adv_flags & BLE_HS_ADV_F_DISC_GEN));
     assert((fake.random_address[5]&0xc0)==0xc0 && fake.store_delete_calls==deletes);
     assert(fake.store_bond_count[0]==2);
     const ble_addr_t first_identity=peripheral->local_identity;
@@ -585,14 +595,16 @@ int main(void)
     assert(server_hosts_load(&saved)==ESP_OK && saved.count==2);
     assert(server_same_address(&saved.records[1].local,&new_identity));
     solar_os_ble_backend_server_cancel(80); nimble_test_drain(); disconnect_peer(41);
-    /* Reopen and restore the stored local identity. Advertising is directed
+    /* Reopen and restore the stored local identity. Advertising is filtered
      * to the chosen host and other saved hosts cannot steal this connection. */
     hid=(solar_os_ble_hid_request_t){.op=SOLAR_OS_BLE_HID_OP_START,.name="Managed HID",.manual=true};
     assert(execute_hid(81,&hid)==ESP_OK && !peripheral->advertising);
     hid.op=SOLAR_OS_BLE_HID_OP_CONNECT; hid.addr_type=new_host.type;
     for(size_t i=0;i<6;i++) hid.bda[i]=new_host.val[5-i];
     assert(execute_hid(81,&hid)==ESP_OK && server_advertise()==0);
-    assert(fake.adv_own==BLE_OWN_ADDR_RANDOM && fake.adv_mode==BLE_GAP_CONN_MODE_DIR);
+    assert(fake.adv_own==BLE_OWN_ADDR_RANDOM && fake.adv_mode==BLE_GAP_CONN_MODE_UND);
+    assert(fake.adv_filter==BLE_HCI_ADV_FILT_CONN && (fake.adv_flags & BLE_HS_ADV_F_DISC_GEN));
+    assert(!memcmp(&fake.whitelist_peer,&new_host,sizeof(new_host)));
     assert(!memcmp(fake.random_address,new_identity.val,6));
     connect_peer(42); secured.enc_change.conn_handle=42;
     fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
@@ -615,6 +627,29 @@ int main(void)
     hid.op=SOLAR_OS_BLE_HID_OP_STATUS;
     assert(execute_hid(81,&hid)==ESP_OK && hid.info.manual && hid.info.host_selected && !hid.info.pairing);
     assert(!strcmp(hid.info.host_name,"Desktop"));
+    /* Repeated disconnect/select cycles retain the paired local identity and
+     * reapply the chosen peer filter without reopening fresh pairing. */
+    for (unsigned cycle=0; cycle<3; cycle++) {
+        solar_os_ble_hid_request_t reconnect={.op=SOLAR_OS_BLE_HID_OP_DISCONNECT};
+        assert(execute_hid(81,&reconnect)==ESP_OK && peripheral->peers->retiring);
+        disconnect_peer(42);
+        assert(!peripheral->advertising);
+        reconnect.op=SOLAR_OS_BLE_HID_OP_CONNECT;
+        reconnect.addr_type=new_host.type;
+        for(size_t i=0;i<6;i++) reconnect.bda[i]=new_host.val[5-i];
+        assert(execute_hid(81,&reconnect)==ESP_OK && server_advertise()==0);
+        assert(!peripheral->pairing && fake.adv_own==BLE_OWN_ADDR_RANDOM);
+        assert(fake.adv_mode==BLE_GAP_CONN_MODE_UND && fake.adv_filter==BLE_HCI_ADV_FILT_CONN);
+        assert(!memcmp(fake.random_address,new_identity.val,6));
+        assert(!memcmp(&fake.whitelist_peer,&new_host,sizeof(new_host)));
+        connect_peer(42);
+        fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
+        subscribe_handle(42,keyboard->handle);
+        reconnect.op=SOLAR_OS_BLE_HID_OP_STATUS;
+        assert(execute_hid(81,&reconnect)==ESP_OK);
+        assert(reconnect.info.connected && reconnect.info.encrypted && reconnect.info.bonded);
+        assert(server_hid_ready(keyboard->id));
+    }
     /* A late security event from a retiring peer cannot save the new pairing
      * identity against the old host or complete a cancelled pairing flow. */
     peripheral->peers->retiring=true;
