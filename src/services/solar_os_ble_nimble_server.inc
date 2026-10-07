@@ -48,6 +48,10 @@ typedef struct server_peer {
     uint32_t id;
     uint16_t conn, indication_handle;
     bool retiring, encrypted, bonded;
+    bool name_requested, name_complete;
+    uint16_t name_handle;
+    size_t name_length;
+    char name[SOLAR_OS_BLE_NAME_MAX];
     uint8_t subscriptions[]; /* Indexed by immutable local characteristic ID. */
 } server_peer_t;
 typedef struct {
@@ -190,6 +194,7 @@ static bool server_same_address(const ble_addr_t *left, const ble_addr_t *right)
     return left && right && left->type == right->type &&
         !memcmp(left->val, right->val, sizeof(left->val));
 }
+#include "solar_os_ble_hid_name.inc"
 static void server_store_hid_subscription(const server_peer_t *peer,
                                           const server_char_t *characteristic,
                                           const struct ble_gap_conn_desc *desc)
@@ -663,6 +668,8 @@ static int server_gap(struct ble_gap_event *event, void *arg)
             }
             if (p->bonded) peripheral->pairing = false;
             if (!rc) server_restore_hid_subscriptions(p, &desc);
+            if (!rc && p->encrypted && p->bonded && peripheral->manual)
+                server_host_name_request(p);
             solar_os_ble_hid_device_event_t hid_event = {
                 .type = SOLAR_OS_BLE_HID_SECURED,
                 .peer = p->id,
@@ -1242,6 +1249,8 @@ static esp_err_t server_hid_execute(uint32_t owner,
         };
         for (size_t i=0; i<6; i++) r->info.host_bda[i] = peripheral->selected_address.val[5-i];
         if (p) {
+            if (!p->retiring && p->name_complete)
+                memcpy(r->info.host_name, p->name, sizeof(r->info.host_name));
             server_char_t *c = server_characteristic(peripheral->hid_keyboard, 0);
             r->info.keyboard_subscribed = c && (p->subscriptions[c->index] & 1);
             c = server_characteristic(peripheral->hid_mouse, 0);
@@ -1264,10 +1273,13 @@ static esp_err_t server_hid_execute(uint32_t owner,
                 const ble_addr_t *peer = &store.records[i].peer;
                 if (!server_host_bonded(peer)) continue;
                 solar_os_ble_hid_host_t *host = &r->hosts[r->host_count++];
+                memset(host, 0, sizeof(*host));
                 for (size_t j=0; j<6; j++) host->bda[j] = peer->val[5-j];
                 host->addr_type = peer->type;
                 host->connected = peripheral->peers && !peripheral->peers->retiring &&
                     peripheral->hid_bond_valid && server_same_address(peer, &peripheral->hid_bond_addr);
+                if (host->connected && peripheral->peers->name_complete)
+                    memcpy(host->name, peripheral->peers->name, sizeof(host->name));
             }
             return ESP_OK;
         }

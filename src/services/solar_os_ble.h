@@ -39,6 +39,9 @@ typedef struct {
     uint8_t bda[6];
     uint8_t addr_type;
     bool connected;
+    /* Best-effort GAP Device Name of the current managed connection. RAM only;
+     * empty while unavailable. Apps own persistent friendly-name caches. */
+    char name[SOLAR_OS_BLE_NAME_MAX];
 } solar_os_ble_hid_host_t;
 
 typedef enum {
@@ -78,6 +81,7 @@ typedef struct {
     bool host_selected;
     uint8_t host_bda[6];
     uint8_t host_addr_type;
+    char host_name[SOLAR_OS_BLE_NAME_MAX];
 } solar_os_ble_hid_info_t;
 
 esp_err_t solar_os_ble_hid_device_start(solar_os_ble_session_t session,

@@ -435,12 +435,13 @@ static mp_obj_t solaros_ble_hid_hosts(void)
     python_ble_check(solar_os_ble_hid_device_hosts(python_ble_get(), hosts, SOLAR_OS_BLE_HID_HOST_MAX, &count));
     mp_obj_t result = mp_obj_new_list(0, NULL);
     for (size_t i=0; i<count; i++) {
-        mp_obj_t host = mp_obj_new_dict(3); char address[18];
+        mp_obj_t host = mp_obj_new_dict(4); char address[18];
         snprintf(address, sizeof(address), "%02x:%02x:%02x:%02x:%02x:%02x",
             hosts[i].bda[0], hosts[i].bda[1], hosts[i].bda[2], hosts[i].bda[3], hosts[i].bda[4], hosts[i].bda[5]);
         python_dict_store_cstr(host, "address", address);
         python_dict_store_uint(host, "addr_type", hosts[i].addr_type);
         python_dict_store_bool(host, "connected", hosts[i].connected);
+        python_dict_store_cstr(host, "name", hosts[i].name);
         mp_obj_list_append(result, host);
     }
     return result;
@@ -489,7 +490,8 @@ static mp_obj_t solaros_ble_hid_status(void)
 {
     solar_os_ble_hid_info_t info;
     python_ble_check(solar_os_ble_hid_device_status(python_ble_get(), &info));
-    mp_obj_t result = mp_obj_new_dict(13);
+    mp_obj_t result = mp_obj_new_dict(17);
+    python_dict_store_cstr(result, "host_name", info.host_name);
     python_dict_store_bool(result, "manual", info.manual);
     python_dict_store_bool(result, "pairing", info.pairing);
     python_dict_store_bool(result, "host_selected", info.host_selected);

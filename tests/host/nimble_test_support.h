@@ -5,7 +5,8 @@
 #include "solar_os_ble.h"
 extern struct nimble_test_state {
     int submit_error, connect_calls, cancel_calls, terminate_calls, security_calls, inject_calls, read_calls, write_calls;
-    uint16_t mtu, last_handle, last_start, last_end;
+    uint16_t mtu, last_handle, last_start, last_end, read_uuid;
+    int read_uuid_calls;
     ble_addr_t address;
     ble_gap_event_fn *gap;
     void *gap_arg;

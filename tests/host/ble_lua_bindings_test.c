@@ -261,10 +261,11 @@ int main(void)
     assert(solar_os_ble_server_request(solua_ble_session,&request)==ESP_ERR_INVALID_ARG);
     run(L, "assert(not pcall(hid.start,'')); assert(not pcall(hid.start,string.rep('x',27))); "
            "assert(not pcall(hid.start,'x'..string.char(0))); hid.start('Lua HID'); hid.pair(); "
-           "assert(hid.status().event_capacity==16 and hid.poll()==nil)");
+           "assert(hid.status().event_capacity==16 and hid.status().host_name=='Desktop' and hid.poll()==nil)");
     run(L, "assert(not pcall(hid.start,'name',1)); hid.start('Lua HID',true)");
     assert(fake_hid_request.manual);
-    run(L, "assert(type(hid.hosts())=='table'); "
+    run(L, "local h=hid.hosts()[1]; assert(h.name=='Desktop' and h.connected and h.addr_type==1 "
+           "and h.address=='01:02:03:04:05:06'); "
            "assert(not pcall(hid.connect,'bad')); "
            "assert(not pcall(hid.forget,'01:02:03:04:05:06',-1)); "
            "assert(not pcall(hid.connect,'01:02:03:04:05:06',2)); "

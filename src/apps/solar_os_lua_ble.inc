@@ -413,10 +413,11 @@ static int solua_ble_hid_hosts(lua_State *L)
     for (size_t i=0; i<count; i++) {
         char address[18]; snprintf(address, sizeof(address), "%02x:%02x:%02x:%02x:%02x:%02x",
             hosts[i].bda[0], hosts[i].bda[1], hosts[i].bda[2], hosts[i].bda[3], hosts[i].bda[4], hosts[i].bda[5]);
-        lua_createtable(L, 0, 3);
+        lua_createtable(L, 0, 4);
         solua_set_str(L, -1, "address", address);
         solua_set_int(L, -1, "addr_type", hosts[i].addr_type);
         solua_set_bool(L, -1, "connected", hosts[i].connected);
+        solua_set_str(L, -1, "name", hosts[i].name);
         lua_rawseti(L, -2, i+1);
     }
     return 1;
@@ -450,7 +451,8 @@ static int solua_ble_hid_status(lua_State *L)
 {
     solar_os_ble_hid_info_t info;
     solua_ble_check(L, solar_os_ble_hid_device_status(solua_ble_get(L), &info));
-    lua_createtable(L, 0, 13);
+    lua_createtable(L, 0, 17);
+    solua_set_str(L, -1, "host_name", info.host_name);
     solua_set_bool(L, -1, "manual", info.manual);
     solua_set_bool(L, -1, "pairing", info.pairing);
     solua_set_bool(L, -1, "host_selected", info.host_selected);

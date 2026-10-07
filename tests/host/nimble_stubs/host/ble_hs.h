@@ -58,7 +58,7 @@ struct os_mbuf { size_t len; uint8_t *data; struct os_mbuf *next; };
 size_t nimble_test_mbuf_len(const struct os_mbuf *om);
 #define OS_MBUF_PKTLEN(om) nimble_test_mbuf_len(om)
 int os_mbuf_copydata(const struct os_mbuf *om, int offset, int len, void *out);
-struct ble_gatt_attr { uint16_t handle; struct os_mbuf *om; };
+struct ble_gatt_attr { uint16_t handle, offset; struct os_mbuf *om; };
 struct ble_gap_sec_state { unsigned encrypted:1, authenticated:1, bonded:1, key_size:5, authorize:1; };
 struct ble_gap_conn_desc { struct ble_gap_sec_state sec_state; ble_addr_t peer_id_addr; uint8_t role; };
 struct ble_sm_io { uint8_t action; uint32_t passkey; uint8_t numcmp_accept; };
@@ -102,6 +102,7 @@ int ble_gattc_disc_all_dscs(uint16_t, uint16_t, uint16_t, ble_gatt_dsc_fn *, voi
 int ble_gattc_exchange_mtu(uint16_t, ble_gatt_mtu_fn *, void *);
 uint16_t ble_att_mtu(uint16_t);
 int ble_gattc_read(uint16_t, uint16_t, ble_gatt_attr_fn *, void *);
+int ble_gattc_read_by_uuid(uint16_t, uint16_t, uint16_t, const ble_uuid_t *, ble_gatt_attr_fn *, void *);
 int ble_gattc_read_long(uint16_t, uint16_t, uint16_t, ble_gatt_attr_fn *, void *);
 int ble_gattc_write_flat(uint16_t, uint16_t, const void *, uint16_t, ble_gatt_attr_fn *, void *);
 int ble_gattc_write_no_rsp_flat(uint16_t, uint16_t, const void *, uint16_t);

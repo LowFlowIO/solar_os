@@ -150,6 +150,10 @@ int ble_gattc_read(uint16_t c, uint16_t h, ble_gatt_attr_fn *fn, void *arg)
 { (void)c; fake.read_calls++; fake.last_handle=h; fake.attr=fn; fake.arg=arg; return fake.submit_error; }
 int ble_gattc_read_long(uint16_t c, uint16_t h, uint16_t offset, ble_gatt_attr_fn *fn, void *arg)
 { assert(offset == 0); return ble_gattc_read(c,h,fn,arg); }
+int ble_gattc_read_by_uuid(uint16_t c, uint16_t s, uint16_t e, const ble_uuid_t *uuid,
+                          ble_gatt_attr_fn *fn, void *arg)
+{ (void)c; fake.read_uuid_calls++; fake.last_start=s; fake.last_end=e;
+  fake.read_uuid=ble_uuid_u16(uuid); fake.attr=fn; fake.arg=arg; return fake.submit_error; }
 int ble_gattc_write_flat(uint16_t c, uint16_t h, const void *v, uint16_t n, ble_gatt_attr_fn *fn, void *arg)
 { (void)c; fake.write_calls++; fake.last_handle=h; assert(n<=sizeof(fake.written));
   memcpy(fake.written,v,n); fake.written_len=n; fake.attr=fn; fake.arg=arg; return fake.submit_error; }

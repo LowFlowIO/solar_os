@@ -85,7 +85,12 @@ when finished with a peer.
 [Python BLE HID API](python.ble.md#solarosblehid). `start(name)` publishes a
 fixed encrypted and bonded composite keyboard, mouse, and gamepad service for
 one host. `start(name, true)` starts a manual host-selection lease, initially
-idle. `hosts()` lists saved HID hosts with `address`, `addr_type`, and `connected`.
+idle. `hosts()` lists saved HID hosts with `address`, `addr_type`, `connected`,
+and `name`. For manual leases, the current encrypted, bonded host's GAP Device
+Name is read asynchronously, without delaying reports. `name` and
+`status().host_name` are empty until available or when the host does not permit
+the read. Names are UTF-8 prefixes of at most 63 bytes, kept only for the current
+connection. Applications can cache them on mounted storage.
 For manual leases, `connect(address, addr_type)` advertises only to the selected
 saved host, `forget(address, addr_type)` deletes that host pairing, and
 `disconnect()` returns to idle while keeping pairings. Address type defaults to

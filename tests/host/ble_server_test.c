@@ -100,6 +100,74 @@ static int access_value(uint16_t conn, struct ble_gatt_access_ctxt *ctx)
     const struct ble_gatt_chr_def *c = fake.server_definitions[0].characteristics;
     return c->access_cb(conn,*c->val_handle,ctx,c->arg);
 }
+static void name_start(server_peer_t *p)
+{
+    p->name_requested = p->name_complete = false;
+    p->name_length = p->name_handle = 0;
+    memset(p->name, 0, sizeof(p->name));
+    const int before = fake.read_uuid_calls;
+    lock(); server_host_name_request(p); server_host_name_request(p); unlock();
+    assert(fake.read_uuid_calls == before+1 && fake.read_uuid == 0x2a00);
+    assert(fake.last_start == 1 && fake.last_end == UINT16_MAX);
+}
+static void name_handle(server_peer_t *p)
+{
+    ble_gatt_attr_fn *lookup = fake.attr;
+    void *arg = fake.arg;
+    struct ble_gatt_error ok = {0};
+    struct ble_gatt_attr attr = {.handle=17};
+    assert(lookup(p->conn, &ok, &attr, arg) == 1);
+    assert(fake.attr != lookup && fake.last_handle == 17);
+    /* UUID-search completion must not complete the separate long read. */
+    struct ble_gatt_error done = {.status=BLE_HS_EDONE};
+    assert(lookup(p->conn, &done, NULL, arg) == 1 && !p->name_complete);
+}
+static int name_chunk(server_peer_t *p, size_t offset, const char *text, size_t length)
+{
+    struct os_mbuf buffer = {.len=length,.data=(uint8_t *)text};
+    struct ble_gatt_attr attr = {.handle=17,.offset=offset,.om=&buffer};
+    struct ble_gatt_error ok = {0};
+    return fake.attr(p->conn, &ok, &attr, fake.arg);
+}
+static void name_done(server_peer_t *p, int status)
+{
+    struct ble_gatt_error error = {.status=status};
+    assert(fake.attr(p->conn, &error, NULL, fake.arg) == 1);
+}
+static void test_names(server_peer_t *p)
+{
+    /* Short UTF-8 name, segmented long name, complete UTF-8 truncation,
+     * unavailable/denied names, malformed encoding and immediate failure. */
+    name_handle(p);
+    assert(name_chunk(p, 0, "T\xc3\xa9l\xc3\xa9phone", 11) == 0);
+    name_done(p, BLE_HS_EDONE);
+    assert(p->name_complete && !strcmp(p->name, "T\xc3\xa9l\xc3\xa9phone"));
+    name_start(p); name_handle(p);
+    assert(name_chunk(p, 0, "Winter", 6) == 0);
+    assert(name_chunk(p, 6, "mute", 4) == 0);
+    name_done(p, BLE_HS_EDONE);
+    assert(!strcmp(p->name, "Wintermute"));
+    name_start(p); name_handle(p);
+    char long_name[70]; memset(long_name, 'x', sizeof(long_name));
+    long_name[62]=(char)0xc3; long_name[63]=(char)0xa9;
+    assert(name_chunk(p, 0, long_name, sizeof(long_name)) == 1);
+    assert(p->name_complete && strlen(p->name) == 62);
+    name_start(p); name_done(p, BLE_HS_ENOENT);
+    assert(p->name_complete && !p->name[0] && p->encrypted && p->bonded && !p->retiring);
+    name_start(p); name_handle(p); name_done(p, BLE_HS_EAPP);
+    assert(!p->name[0] && !p->retiring);
+    name_start(p); name_handle(p);
+    assert(name_chunk(p, 0, "\xc0\x80", 2) == 0); name_done(p, BLE_HS_EDONE);
+    assert(!p->name[0]);
+    name_start(p); name_handle(p);
+    assert(name_chunk(p, 2, "bad offset", 10) == 1 && !p->name[0]);
+    fake.submit_error = BLE_HS_EBUSY;
+    name_start(p);
+    assert(p->name_complete && !p->name[0] && !p->retiring);
+    fake.submit_error = 0;
+    /* Leave one unfinished read for teardown/reused-handle checks. */
+    name_start(p); name_handle(p);
+}
 int main(void)
 {
     nimble_test_reset(); assert(solar_os_ble_backend_register()==ESP_OK);
@@ -507,6 +575,10 @@ int main(void)
     secured.enc_change.conn_handle=41;
     fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
     assert(peripheral->selected_host && !peripheral->pairing);
+    assert(peripheral->peers->name_requested && !peripheral->peers->name_complete);
+    test_names(peripheral->peers);
+    ble_gatt_attr_fn *late_name = fake.attr;
+    void *late_name_arg = fake.arg;
     hid.op=SOLAR_OS_BLE_HID_OP_HOSTS;
     assert(execute_hid(80,&hid)==ESP_OK && hid.host_count==2);
     server_host_store_t saved;
@@ -524,8 +596,25 @@ int main(void)
     assert(!memcmp(fake.random_address,new_identity.val,6));
     connect_peer(42); secured.enc_change.conn_handle=42;
     fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
+    /* A callback from the old lease cannot write into the replacement peer. */
+    struct ble_gatt_error name_error={.status=BLE_HS_EDONE};
+    assert(late_name(42,&name_error,NULL,late_name_arg)==1);
+    assert(!peripheral->peers->name_complete);
+    name_handle(peripheral->peers);
+    subscribe_handle(42,keyboard->handle);
+    solar_os_ble_hid_request_t report={.op=SOLAR_OS_BLE_HID_OP_KEYBOARD_PRESS,.key_count=1,.keys={4}};
+    assert(execute_hid(81,&report)==ESP_OK); /* Reports do not wait for lookup. */
+    assert(name_chunk(peripheral->peers,0,"Desktop",7)==0);
+    name_done(peripheral->peers,BLE_HS_EDONE);
+    hid.op=SOLAR_OS_BLE_HID_OP_HOSTS;
+    assert(execute_hid(81,&hid)==ESP_OK && hid.host_count==2);
+    assert(!hid.hosts[0].name[0] && !strcmp(hid.hosts[1].name,"Desktop"));
+    server_host_store_t names_not_persisted;
+    assert(server_hosts_load(&names_not_persisted)==ESP_OK);
+    assert(!memcmp(&saved,&names_not_persisted,sizeof(saved))); /* No name in NVS. */
     hid.op=SOLAR_OS_BLE_HID_OP_STATUS;
     assert(execute_hid(81,&hid)==ESP_OK && hid.info.manual && hid.info.host_selected && !hid.info.pairing);
+    assert(!strcmp(hid.info.host_name,"Desktop"));
     /* A late security event from a retiring peer cannot save the new pairing
      * identity against the old host or complete a cancelled pairing flow. */
     peripheral->peers->retiring=true;

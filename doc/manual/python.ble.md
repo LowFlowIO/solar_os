@@ -64,9 +64,15 @@ while not solaros.should_exit():
   selection. The name is 1..26 bytes without an embedded NUL. One remote host
   can connect at a time. A live lease cannot change its manual setting.
 - `hosts()`: list saved HID hosts as dictionaries with `address`, `addr_type`,
-  and `connected`. Addresses use the same format as BLE scan results. Host
+  `connected`, and `name`. Addresses use the same format as BLE scan results. Host
   encryption keys and identity metadata persist in NVS; the local input
   keyboard is excluded from this list.
+  For manual leases, SolarOS asynchronously reads the connected host's GAP
+  Device Name after encryption and bonding. `name` is a UTF-8 prefix of at most
+  63 bytes, empty until available or if the host does not permit the read.
+  Lookup does not gate keyboard reports. Names live only for that connection;
+  applications can cache them on mounted storage. `status()["host_name"]`
+  exposes the same current name without rereading the saved host list.
 - `connect(address, addr_type=0)`: for a manual lease, advertise directly to
   this saved host using its stored local identity. The host initiates the BLE
   connection; SolarOS cannot dial a peripheral-to-host connection. Other saved
