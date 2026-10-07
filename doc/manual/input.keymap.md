@@ -102,6 +102,104 @@ the driver recovers; held keys have been released.
 Mappings last until detach or reboot. Load a saved file from a startup script
 to reuse it after startup.
 
+## Desktop keymap tool
+
+From a SolarOS source checkout, use the Python CLI to create, edit, inspect,
+or validate a mapping. It uses only the Python standard library.
+
+```sh
+python3 scripts/keymap.py profiles
+python3 scripts/keymap.py show --profile inputronic-keyboard
+python3 scripts/keymap.py create --profile inputronic-keyboard \
+  --set FN1=F1 --set FN2=Escape --output my-keymap.json
+python3 scripts/keymap.py validate --profile inputronic-keyboard --input my-keymap.json
+python3 scripts/keymap.py edit --profile inputronic-keyboard \
+  --input my-keymap.json --set FN3=Tab
+```
+
+`create --interactive` prompts for the six Inputronic FN keys. On the other
+profiles it accepts named assignments until an empty line finishes. An
+interactive terminal also enters this mode when no assignments are supplied.
+`show` lists the profile's key names, physical IDs, and both layers; add
+`--input PATH` to preview a mapping. Editing retains existing assignments.
+Creation requires `--force` to replace an existing output file. Editing updates
+its input file unless a separate `--output PATH` is supplied.
+
+Assignment names are case-insensitive. Use a key name from `show` or
+`physical:ID`, for example `--set physical:78=F1`. Actions include HID names
+such as `F1`, `Escape`, `Ctrl`, `Shift`, and `Space`; `char:!` for a logical
+byte; `usage:0x3a` or `key:27` for numeric output; `raw` for physical events;
+and `none` to clear an entry. `tap:Space` selects the symbol layer when held
+and emits Space on an unused tap.
+
+For a generic TCA8418 with a smaller matrix, add `--rows N --cols N` to
+match its configured geometry. Physical IDs retain the controller's
+ten-column stride; keys outside the selected geometry are rejected. The
+Inputronic and Pager profiles have fixed geometry.
+
+Use `--symbol KEY=ACTION` to change a symbol entry. For example:
+
+```sh
+python3 scripts/keymap.py create --profile inputronic-keyboard \
+  --set FN3=tap:Space --symbol A=char:! --output symbols.json
+```
+
+Only one layer selector is permitted. The Pager already uses Space as its
+selector; replace that assignment before choosing a different selector.
+The tool writes ordinary schema-1 JSON containing only selected overrides.
+Explicit assignments are retained even when they match the standard profile.
+Profiles describe the standard mappings, so previews do not automatically
+include custom defaults compiled into a particular firmware image.
+
+## Compile custom defaults
+
+Select a keyboard profile and a mapping file when building firmware:
+
+```sh
+SOLAR_OS_KEYMAP_PROFILE=inputronic-keyboard \
+SOLAR_OS_KEYMAP_FILE=my-keymap.json \
+pio run -e waveshare_esp32_s3_sim7670g_4g
+```
+
+The supported profiles are `inputronic-keyboard`, `lilygo-pager-keyboard`,
+and `tca8418`. Profile definitions in `keymaps/profiles/` supply shared key
+names and standard mappings to the desktop tool and firmware generator.
+Custom files replace their listed entries in the standard profile. The
+resulting tables are compiled into firmware; a device-side JSON file is not
+needed at startup. The selection applies to all attachments of that profile.
+For a generic TCA8418 configured with fewer rows or columns, only its active
+matrix positions are used.
+
+Both variables must be supplied together. Relative paths are resolved from
+the SolarOS project directory. The same selections can be placed in a
+PlatformIO environment as `custom_solaros_keymap_profile` and
+`custom_solaros_keymap_file`, or supplied as CMake definitions with the
+`SOLAR_OS_KEYMAP_PROFILE` and `SOLAR_OS_KEYMAP_FILE` names.
+
+For several custom profiles, set `SOLAR_OS_KEYMAPS_FILE` to an index file:
+
+```json
+{
+  "schema": 1,
+  "profiles": {
+    "inputronic-keyboard": "inputronic.json",
+    "lilygo-pager-keyboard": "pager.json"
+  }
+}
+```
+
+Paths within the index are relative to the index's directory. Use
+`SOLAR_OS_KEYMAPS_FILE` by itself; it cannot be combined with the single-profile
+variables. Its PlatformIO option is `custom_solaros_keymaps_file`. Every
+selected profile's package must be enabled in the build. Missing files,
+unknown profiles, and invalid maps stop the build. File edits trigger
+regeneration; removing the selection restores the standard tables on rebuild.
+
+Boot and `input keymap SOURCE reset` use the compiled default, including
+custom assignments. Runtime loads also start from that compiled default, so
+omitted entries retain it. To return to the standard firmware default, rebuild
+without the custom selection. This does not alter the selected US/DE layout.
+
 ## Python and Lua
 
 When `service.input-keymap` is included, both runtimes provide:
@@ -128,3 +226,7 @@ in Python and no values in Lua; failures raise an exception or error.
 - `solaros.input.load_keymap(name,path)` and `reset_keymap(name)` apply changes.
 - Mappings last until detach or reboot. Release and press held keys again
   after applying a map. `setterm keyboard us|de` selects language layout.
+- `python3 scripts/keymap.py create --profile PROFILE --set KEY=ACTION --output PATH`
+  creates a sparse mapping from a desktop source checkout.
+- `SOLAR_OS_KEYMAP_PROFILE` with `SOLAR_OS_KEYMAP_FILE`, or `SOLAR_OS_KEYMAPS_FILE`,
+  selects compiled firmware defaults; reset restores those defaults.

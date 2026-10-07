@@ -8,40 +8,17 @@
 #include "solar_os_tca8418.h"
 #include "solar_os_memory.h"
 #include <stdlib.h>
+#include "solar_os_pager_keymap_generated.h"
 
 /* Matrix positions and printed symbol legends from the existing Pager
  * profile. Controller transactions and input state live in the shared core. */
 void solar_os_lilygo_pager_keyboard_map(solar_os_matrix_keyboard_map_t *map)
 {
-    static const uint8_t usages[4][10] = {
-        {0x14,0x1a,0x08,0x15,0x17,0x1c,0x18,0x0c,0x12,0x13},
-        {0x04,0x16,0x07,0x09,0x0a,0x0b,0x0d,0x0e,0x0f,0x28},
-        {0xe2,0x1d,0x1b,0x06,0x19,0x05,0x11,0x10,0xe1,0x2a},
-        {0x2c,0,0,0,0,0,0,0,0,0},
-    };
-    static const char symbols[4][10] = {
-        {'1','2','3','4','5','6','7','8','9','0'},
-        {'*','/','+','-','=',':','\'','"','@',0x1b},
-        {0,'_','$',';','?','!',',','.',0,0},
-        {0,0,0,0,0,0,0,0,0,0},
-    };
-    solar_os_matrix_keyboard_init_map(map, 4U, 10U);
-    for (unsigned id = 1; id <= 40; id++) {
-        const unsigned row = (id - 1U) / 10U, col = (id - 1U) % 10U;
-        map->keys[0][id].usage = usages[row][col];
-        /* Unlabelled cells are unused rather than phantom Space presses. */
-        if (usages[row][col] == 0U) continue;
-        map->keys[1][id] = map->keys[0][id];
-        if (symbols[row][col] != 0) {
-            map->keys[1][id].usage = 0;
-            map->keys[1][id].key = (uint8_t)symbols[row][col];
-        }
-    }
-    map->keys[0][31].flags = SOLAR_OS_MATRIX_KEY_LAYER_TAP;
-    memset(&map->keys[1][31], 0, sizeof(map->keys[1][31]));
-    /* Existing Alt+B reservation: no text and no new backlight action. */
-    map->keys[0][26].flags = SOLAR_OS_MATRIX_KEY_ALT_BLOCK;
-    map->keys[1][26].flags = SOLAR_OS_MATRIX_KEY_ALT_BLOCK;
+    solar_os_matrix_keyboard_init_map(map, SOLAR_OS_PAGER_KEYMAP_ROWS,
+                                    SOLAR_OS_PAGER_KEYMAP_COLS);
+    for (unsigned layer = 0; layer < 2U; layer++)
+        memcpy(map->keys[layer], solar_os_pager_default_keys[layer],
+               sizeof(solar_os_pager_default_keys[layer]));
 }
 
 #define PAGER_DEVICE_MAX 4U

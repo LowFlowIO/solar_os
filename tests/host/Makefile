@@ -8,6 +8,8 @@ TARGETS := writer_buffer_test writer_files_test file_shortcuts_test sketch_canva
 
 MANUAL_GENERATED_DIR := generated/solar_os
 MANUAL_GENERATED_HEADER := $(MANUAL_GENERATED_DIR)/solar_os_manual_data.h
+KEYMAP_GENERATED_HEADERS := $(addprefix $(MANUAL_GENERATED_DIR)/,solar_os_tca8418_keymap_generated.h solar_os_inputronic_keymap_generated.h solar_os_pager_keymap_generated.h)
+KEYMAP_INPUTS := $(wildcard $(ROOT)/keymaps/profiles/*.json) $(ROOT)/scripts/generate_keymaps.py $(ROOT)/scripts/solaros_keymap.py $(ROOT)/scripts/solaros_keymap_build.py
 
 .PHONY: all test clean
 
@@ -525,8 +527,13 @@ cardkb_codec_test: cardkb_codec_test.c $(ROOT)/src/services/solar_os_cardkb_code
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services \
 		cardkb_codec_test.c $(ROOT)/src/services/solar_os_cardkb_codec.c -o $@
 
+$(KEYMAP_GENERATED_HEADERS) &: $(KEYMAP_INPUTS)
+	python3 $(ROOT)/scripts/generate_keymaps.py --output-dir $(MANUAL_GENERATED_DIR)
+
+inputronic_keyboard_test matrix_keyboard_test: $(KEYMAP_GENERATED_HEADERS)
+
 inputronic_keyboard_test: inputronic_keyboard_test.c $(wildcard $(ROOT)/src/services/solar_os_inputronic_keyboard*) $(wildcard $(ROOT)/src/services/solar_os_lilygo_pager_keyboard*) $(wildcard $(ROOT)/src/services/solar_os_tca8418*) $(wildcard $(ROOT)/src/services/solar_os_matrix_keyboard*) $(wildcard $(ROOT)/src/services/solar_os_input_keymap*) $(wildcard inputronic_stubs/*.h inputronic_stubs/freertos/*.h inputronic_stubs/driver/*.h)
-	$(CC) $(CFLAGS) -include compat.h -Iinputronic_stubs -Iexpansion_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services -I$(CJSON_DIR) \
+	$(CC) $(CFLAGS) -include compat.h -I$(MANUAL_GENERATED_DIR) -Iinputronic_stubs -Iexpansion_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services -I$(CJSON_DIR) \
 		inputronic_keyboard_test.c $(ROOT)/src/services/solar_os_input_keymap.c \
 		$(ROOT)/src/services/solar_os_input_keymap_mapper.c \
 		$(ROOT)/src/services/solar_os_input_keymap_json.c $(CJSON_DIR)/cJSON.c -lm \
@@ -535,7 +542,7 @@ inputronic_keyboard_test: inputronic_keyboard_test.c $(wildcard $(ROOT)/src/serv
 
 matrix_keyboard_test: matrix_keyboard_test.c keymap_memory_stub.c $(wildcard $(ROOT)/src/services/solar_os_matrix_keyboard*) $(wildcard $(ROOT)/src/services/solar_os_input_keymap*) $(wildcard $(ROOT)/src/services/solar_os_inputronic_keyboard_profile*) $(wildcard $(ROOT)/src/services/solar_os_lilygo_pager_keyboard*) $(wildcard inputronic_stubs/*.h inputronic_stubs/freertos/*.h)
 	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -include compat.h \
-		-Iinputronic_stubs -Iexpansion_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services -I$(CJSON_DIR) \
+		-I$(MANUAL_GENERATED_DIR) -Iinputronic_stubs -Iexpansion_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services -I$(CJSON_DIR) \
 		matrix_keyboard_test.c keymap_memory_stub.c $(ROOT)/src/services/solar_os_input_keymap_mapper.c $(ROOT)/src/services/solar_os_matrix_keyboard.c \
 		$(ROOT)/src/services/solar_os_input_keymap_json.c \
 		$(ROOT)/src/services/solar_os_inputronic_keyboard_profile.c \

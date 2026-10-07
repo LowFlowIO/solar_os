@@ -10,8 +10,11 @@
   inspection and reset through `input keymap`, and map loading and reset from
   Python and Lua. Source mapping is owned by the reusable input-keymap
   service, with source-local physical IDs, optional matrix selectors, and
-  capability discovery through the shell and both runtimes. The Pager profile
-  retains its symbol layer and backlight;
+  capability discovery through the shell and both runtimes. Keyboard profiles
+  have shared descriptions for a desktop Python keymap CLI and
+  validated build-time custom defaults, selected per keyboard profile.
+  Runtime map loading and reset retain those compiled defaults. The Pager
+  profile retains its symbol layer and backlight;
   custom Pager configurations should use `lilygo-pager-keyboard` in place of
   `tca8418`. Python and Lua can exclusively capture a named local keyboard
   with source-specific key presses, releases, HID usages, and modifiers for
