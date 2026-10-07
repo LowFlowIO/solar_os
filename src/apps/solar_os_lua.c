@@ -6836,6 +6836,41 @@ static void solua_push_input_event(lua_State *L,
     }
 }
 
+static int solua_input_capture_keyboard(lua_State *L)
+{
+    if (solua.device_input == NULL) {
+        return luaL_error(L, "keyboard capture requires a foreground app");
+    }
+    return solua_check_esp(L, solar_os_input_capture_keyboard(luaL_checkstring(L, 1), &solua));
+}
+
+static int solua_input_release_keyboard(lua_State *L)
+{
+    solar_os_input_release_keyboard(&solua);
+    return 0;
+}
+
+static int solua_input_read_key(lua_State *L)
+{
+    solar_os_input_key_event_t event;
+    bool reset;
+    if (!solar_os_input_read_captured_key(&solua, &event, &reset)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_newtable(L);
+    solua_set_str(L, -1, "type", reset ? "reset" : "key");
+    if (!reset) {
+        solua_input_set_source(L, event.source);
+        solua_set_int(L, -1, "physical_key", event.physical_key);
+        solua_set_int(L, -1, "usage", event.usage);
+        solua_set_int(L, -1, "key", event.key);
+        solua_set_int(L, -1, "modifiers", event.modifiers);
+        solua_set_int(L, -1, "action", event.action);
+    }
+    return 1;
+}
+
 static int solua_input_sources(lua_State *L)
 {
     lua_newtable(L);
@@ -8493,6 +8528,7 @@ static void solua_task(void *arg)
     }
 
 done:
+    solar_os_input_release_keyboard(&solua);
 #if SOLAR_OS_PACKAGE_SERVICE_IMAGE
     solua_image_close_all_handles();
 #endif
@@ -8841,6 +8877,7 @@ static void solua_stop(solar_os_context_t *ctx)
         solua.key_input = NULL;
     }
     if (solua.device_input != NULL) {
+        solar_os_input_release_keyboard(&solua);
         solar_os_queue_delete(solua.device_input);
         solua.device_input = NULL;
     }

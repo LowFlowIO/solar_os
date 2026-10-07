@@ -7648,6 +7648,44 @@ static mp_obj_t python_input_event_to_dict(const solar_os_event_t *event)
     return dict;
 }
 
+static mp_obj_t solaros_input_capture_keyboard(mp_obj_t name_obj)
+{
+    if (python_app.device_input == NULL) {
+        mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("keyboard capture requires a foreground app"));
+    }
+    python_check_esp(solar_os_input_capture_keyboard(mp_obj_str_get_str(name_obj), &python_app));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_input_capture_keyboard_obj, solaros_input_capture_keyboard);
+
+static mp_obj_t solaros_input_release_keyboard(void)
+{
+    solar_os_input_release_keyboard(&python_app);
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_input_release_keyboard_obj, solaros_input_release_keyboard);
+
+static mp_obj_t solaros_input_read_key(void)
+{
+    solar_os_input_key_event_t event;
+    bool reset;
+    if (!solar_os_input_read_captured_key(&python_app, &event, &reset)) {
+        return mp_const_none;
+    }
+    mp_obj_t dict = mp_obj_new_dict(10);
+    python_dict_store_cstr(dict, "type", reset ? "reset" : "key");
+    if (!reset) {
+        python_input_store_source(dict, event.source);
+        python_dict_store_uint(dict, "physical_key", event.physical_key);
+        python_dict_store_uint(dict, "usage", event.usage);
+        python_dict_store_uint(dict, "key", event.key);
+        python_dict_store_uint(dict, "modifiers", event.modifiers);
+        python_dict_store_int(dict, "action", event.action);
+    }
+    return dict;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_input_read_key_obj, solaros_input_read_key);
+
 static mp_obj_t solaros_input_sources(void)
 {
     mp_obj_t list = mp_obj_new_list(0, NULL);
@@ -9253,6 +9291,7 @@ static void python_task(void *arg)
     }
 
     if (python_app.vm_active) {
+        solar_os_input_release_keyboard(&python_app);
 #if SOLAR_OS_PACKAGE_SERVICE_HID
         solar_os_hid_release_all();
 #endif
@@ -9763,6 +9802,7 @@ static void python_stop(solar_os_context_t *ctx)
         python_app.key_input = NULL;
     }
     if (python_app.device_input != NULL) {
+        solar_os_input_release_keyboard(&python_app);
         solar_os_queue_delete(python_app.device_input);
         python_app.device_input = NULL;
     }

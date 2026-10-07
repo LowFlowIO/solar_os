@@ -13,7 +13,10 @@
   capability discovery through the shell and both runtimes. The Pager profile
   retains its symbol layer and backlight;
   custom Pager configurations should use `lilygo-pager-keyboard` in place of
-  `tca8418`.
+  `tca8418`. Python and Lua can exclusively capture a named local keyboard
+  with source-specific key presses, releases, HID usages, and modifiers for
+  forwarding utilities. Capture bypasses local shortcuts and releases on
+  runtime teardown; queue loss and source removal signal an input reset.
 - **4.16.1** — 2026-10-06 — Camera expansion attachments can use a
   named I2C bus for SCCB control, including the board-owned bus wired to the
   CL32 camera connector, or explicit SIOD/SIOC pins. Shared bus devices remain

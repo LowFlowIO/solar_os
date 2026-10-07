@@ -21,6 +21,25 @@ agent_reference_sections = true
 
 ## `solaros.input`
 
+Foreground Lua apps can use `capture_keyboard(name)`, `read_key()`, and
+`release_keyboard()` to exclusively capture a ready local key-event source
+before SolarOS shortcuts and character decoding. `read_key()` is nonblocking
+and returns `nil` or a table with `type="key"`, source metadata,
+`physical_key`, canonical HID `usage`, translated `key`, `modifiers`,
+and `action`. Zero usage means the source cannot identify that HID key.
+Actions are `KEY_PRESS`, `KEY_RELEASE`, and `KEY_REPEAT`.
+Modifier bits follow USB HID order; `MOD_CTRL` and `MOD_ALT` match either side.
+
+One foreground Python or Lua app can own a capture. The selected source bypasses
+focus switching and the usual app-exit key, including while another session has
+focus; the script must provide an exit chord and check `should_exit()`.
+Port characters and other sources retain their normal routing. Release outside
+`pcall` on exit; runtime teardown also releases the capture.
+The 32-event queue returns `{type="reset"}` before subsequent keys on overflow,
+source release, readiness loss, or detach. Release forwarded held keys on reset.
+Detach ends capture of that source even if the source ID is reused.
+Headless runners cannot claim keyboards.
+
 When `service.input-keymap` is included,
 `solaros.input.load_keymap(name, path)` loads a validated JSON mapping file for
 the named attachment, and `solaros.input.reset_keymap(name)` restores its
