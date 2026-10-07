@@ -65,7 +65,46 @@ int ble_gap_conn_find(uint16_t c, struct ble_gap_conn_desc *desc)
 { (void)c; desc->peer_id_addr=fake.address; desc->sec_state.encrypted=fake.encrypted;
   desc->sec_state.bonded=fake.bonded; return 0; }
 int ble_store_util_delete_peer(const ble_addr_t *peer_id_addr)
-{ (void)peer_id_addr; fake.store_delete_calls++; return fake.store_delete_error; }
+{
+    fake.store_delete_calls++;
+    fake.deleted_bond = *peer_id_addr;
+    if (fake.store_delete_error) return fake.store_delete_error;
+    for (size_t type=0; type<2; type++) {
+        for (size_t i=0; i<fake.store_bond_count[type];) {
+            if (!memcmp(&fake.store_bonds[type][i],peer_id_addr,sizeof(*peer_id_addr))) {
+                memmove(&fake.store_bonds[type][i],&fake.store_bonds[type][i+1],
+                    (--fake.store_bond_count[type]-i)*sizeof(*peer_id_addr));
+            } else i++;
+        }
+    }
+    return 0;
+}
+int ble_store_iterate(int type, ble_store_iterator_fn *callback, void *arg)
+{
+    if (fake.store_iterate_error) return fake.store_iterate_error;
+    assert(type==BLE_STORE_OBJ_TYPE_OUR_SEC || type==BLE_STORE_OBJ_TYPE_PEER_SEC);
+    size_t index=type==BLE_STORE_OBJ_TYPE_OUR_SEC ? 0 : 1;
+    for (size_t i=0; i<fake.store_bond_count[index]; i++) {
+        union ble_store_value value={.sec={.peer_addr=fake.store_bonds[index][i]}};
+        if (callback(type,&value,arg)) break;
+    }
+    return 0;
+}
+int ble_gap_conn_find_by_addr(const ble_addr_t *address, struct ble_gap_conn_desc *desc)
+{
+    for (size_t i=0; i<fake.active_bond_count; i++) {
+        if (!memcmp(address,&fake.active_bonds[i],sizeof(*address))) {
+            if (desc) desc->peer_id_addr=*address;
+            return 0;
+        }
+    }
+    return BLE_HS_ENOTCONN;
+}
+bool solar_os_ble_nimble_keyboard_bond_remembered(const ble_addr_t *address)
+{
+    return fake.keyboard_bond_valid &&
+        !memcmp(address,&fake.keyboard_bond,sizeof(*address));
+}
 int ble_store_read_cccd(const struct ble_store_key_cccd *key,
                         struct ble_store_value_cccd *value)
 {

@@ -60,6 +60,7 @@ struct ble_gap_sec_state { unsigned encrypted:1, authenticated:1, bonded:1, key_
 struct ble_gap_conn_desc { struct ble_gap_sec_state sec_state; ble_addr_t peer_id_addr; uint8_t role; };
 struct ble_sm_io { uint8_t action; uint32_t passkey; uint8_t numcmp_accept; };
 int ble_gap_conn_find(uint16_t conn, struct ble_gap_conn_desc *desc);
+int ble_gap_conn_find_by_addr(const ble_addr_t *address, struct ble_gap_conn_desc *desc);
 int ble_sm_inject_io(uint16_t conn, struct ble_sm_io *io);
 enum { BLE_GAP_EVENT_CONNECT, BLE_GAP_EVENT_DISCONNECT, BLE_GAP_EVENT_ENC_CHANGE, BLE_GAP_EVENT_NOTIFY_RX,
     BLE_GAP_EVENT_ADV_COMPLETE, BLE_GAP_EVENT_SUBSCRIBE, BLE_GAP_EVENT_NOTIFY_TX,

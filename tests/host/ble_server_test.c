@@ -247,6 +247,45 @@ int main(void)
     assert(fake.store_delete_calls==before_pair_delete+1);
     assert(fake.security_calls==1 && peripheral->peer_count==1);
     assert(!peripheral->advertising); /* HID accepts one active host. */
+    /* Full bond storage must make room before NimBLE can emit a passkey.
+     * Preserve even a disconnected input keyboard, other live peers, and
+     * the host currently pairing. Local-only partial bonds are eligible. */
+    struct ble_store_status_event full={.event_code=BLE_STORE_EVENT_FULL,
+        .full={.obj_type=BLE_STORE_OBJ_TYPE_OUR_SEC,.conn_handle=31}};
+    const ble_addr_t keyboard_bond={.val={1}}, live_bond={.val={2}},
+        host_bond={.val={3}}, unused_bond={.val={4}};
+    fake.keyboard_bond=keyboard_bond; fake.keyboard_bond_valid=true;
+    fake.active_bonds[0]=live_bond; fake.active_bonds[1]=host_bond;
+    fake.active_bond_count=2;
+    fake.store_bonds[0][0]=keyboard_bond; fake.store_bonds[0][1]=live_bond;
+    fake.store_bonds[0][2]=host_bond; fake.store_bonds[0][3]=unused_bond;
+    fake.store_bond_count[0]=4;
+    int deletes=fake.store_delete_calls;
+    assert(solar_os_ble_nimble_store_status(&full,NULL)==0);
+    assert(fake.store_delete_calls==deletes+1 && fake.store_bond_count[0]==3);
+    assert(!memcmp(&fake.deleted_bond,&unused_bond,sizeof(unused_bond)));
+    /* No eligible bond is a reported error, never an input disconnection. */
+    assert(solar_os_ble_nimble_store_status(&full,NULL)==BLE_HS_ENOMEM);
+    assert(fake.store_delete_calls==deletes+1);
+    fake.store_bonds[1][0]=unused_bond; fake.store_bond_count[1]=1;
+    full.full.obj_type=BLE_STORE_OBJ_TYPE_PEER_SEC;
+    peripheral->pairing=false;
+    assert(solar_os_ble_nimble_store_status(&full,NULL)==BLE_HS_ENOMEM);
+    peripheral->pairing=true;
+    full.full.conn_handle=99;
+    assert(solar_os_ble_nimble_store_status(&full,NULL)==BLE_HS_ENOMEM);
+    full.full.conn_handle=31;
+    full.event_code=BLE_STORE_EVENT_OVERFLOW;
+    assert(solar_os_ble_nimble_store_status(&full,NULL)==BLE_HS_ENOMEM);
+    full.event_code=BLE_STORE_EVENT_FULL;
+    fake.store_iterate_error=BLE_HS_EAPP;
+    assert(solar_os_ble_nimble_store_status(&full,NULL)==BLE_HS_EAPP);
+    fake.store_iterate_error=0; fake.store_delete_error=BLE_HS_EAPP;
+    assert(solar_os_ble_nimble_store_status(&full,NULL)==BLE_HS_EAPP);
+    assert(fake.store_bond_count[1]==1);
+    fake.store_delete_error=0;
+    assert(solar_os_ble_nimble_store_status(&full,NULL)==0);
+    assert(fake.store_bond_count[1]==0);
     const uint32_t hid_peer = peripheral->peers->id;
     struct ble_gap_event passkey_event={.type=BLE_GAP_EVENT_PASSKEY_ACTION,
         .passkey={.conn_handle=31}};
@@ -255,8 +294,9 @@ int main(void)
     struct ble_gap_event repeat_pairing={.type=BLE_GAP_EVENT_REPEAT_PAIRING,
         .repeat_pairing={.conn_handle=31}};
     assert(fake.server_gap(&repeat_pairing,fake.server_gap_arg)==BLE_GAP_REPEAT_PAIRING_RETRY);
-    assert(fake.store_delete_calls==before_pair_delete+2 && shared_security_calls==0);
+    assert(fake.store_delete_calls==before_pair_delete+5 && shared_security_calls==0);
     bool saw_passkey=false;
+    int storage_failures=0;
     while (true) {
         hid=(solar_os_ble_hid_request_t){.op=SOLAR_OS_BLE_HID_OP_POLL};
         if (execute_hid(77,&hid)==ESP_ERR_NOT_FOUND) break;
@@ -264,8 +304,14 @@ int main(void)
             assert(hid.event.peer==hid_peer && hid.event.passkey==12345);
             saw_passkey=true;
         }
+        if (hid.event.type==SOLAR_OS_BLE_HID_SECURED && hid.event.status) {
+            assert(hid.event.peer==hid_peer);
+            assert(hid.event.status==BLE_HS_ENOMEM || hid.event.status==BLE_HS_EAPP);
+            storage_failures++;
+        }
     }
     assert(saw_passkey);
+    assert(storage_failures==3);
     fake.encrypted=true; fake.bonded=true;
     fake.store_cccd_handle=keyboard->handle;
     fake.store_cccd_flags=1;

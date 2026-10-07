@@ -451,6 +451,57 @@ static int server_repeat_pairing(struct ble_gap_event *event)
     }
     return BLE_GAP_REPEAT_PAIRING_RETRY;
 }
+
+typedef struct {
+    bool found;
+    ble_addr_t address;
+} server_bond_candidate_t;
+
+static int server_unused_bond(int type, union ble_store_value *value, void *arg)
+{
+    (void)type;
+    server_bond_candidate_t *candidate = arg;
+    const ble_addr_t *address = &value->sec.peer_addr;
+    /* Input remains usable after a host-pairing reset, including when its
+     * remembered keyboard is temporarily disconnected. */
+    if (solar_os_ble_nimble_keyboard_bond_remembered(address)) return 0;
+    const int rc = ble_gap_conn_find_by_addr(address, NULL);
+    if (rc != BLE_HS_ENOTCONN) return 0; /* Protect live links and lookup errors. */
+    candidate->address = *address;
+    candidate->found = true;
+    return 1; /* Stop iteration; delete only after the iterator has returned. */
+}
+
+int solar_os_ble_nimble_store_status(struct ble_store_status_event *event, void *arg)
+{
+    (void)arg;
+    if (!mutex || event->event_code != BLE_STORE_EVENT_FULL ||
+        (event->full.obj_type != BLE_STORE_OBJ_TYPE_OUR_SEC &&
+         event->full.obj_type != BLE_STORE_OBJ_TYPE_PEER_SEC)) return BLE_HS_ENOMEM;
+    lock();
+    /* Only explicit HID pairing may replace an unused bond. Other clients,
+     * normal reconnects and notification storage cannot evict input bonds. */
+    if (!peripheral || peripheral->kind != SERVER_KIND_HID ||
+        !peripheral->pairing || peripheral->closing ||
+        !server_peer(0, event->full.conn_handle)) {
+        unlock();
+        return BLE_HS_ENOMEM;
+    }
+    server_bond_candidate_t candidate = {0};
+    int rc = ble_store_iterate(event->full.obj_type, server_unused_bond, &candidate);
+    if (!rc) rc = candidate.found ?
+        ble_store_util_delete_peer(&candidate.address) : BLE_HS_ENOMEM;
+    if (rc) {
+        solar_os_ble_hid_device_event_t failure = {
+            .type = SOLAR_OS_BLE_HID_SECURED,
+            .peer = server_peer(0, event->full.conn_handle)->id,
+            .status = rc,
+        };
+        (void)server_hid_event(&failure);
+    }
+    unlock();
+    return rc;
+}
 static int server_gap(struct ble_gap_event *event, void *arg)
 {
     lock();

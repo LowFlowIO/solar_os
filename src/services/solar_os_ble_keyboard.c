@@ -747,6 +747,14 @@ static bool bda_matches_remembered_peer(const uint8_t *bda)
     return remembered_peer_index_by_bda(bda) >= 0;
 }
 
+bool solar_os_ble_nimble_keyboard_bond_remembered(const ble_addr_t *address)
+{
+    uint8_t bda[6];
+    solar_os_ble_nimble_display_address(bda, address);
+    const ble_keyboard_peer_t *peer = remembered_peer_for_bda(bda);
+    return peer && (peer->addr_type & 1) == (address->type & 1);
+}
+
 static bool name_matches_remembered_peer(const char *name)
 {
     return remembered_peer_index_by_name(name) >= 0;
@@ -1953,6 +1961,7 @@ esp_err_t solar_os_ble_backend_init(void)
     ble_hs_cfg.sm_our_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_hs_cfg.sm_their_key_dist = BLE_SM_PAIR_KEY_DIST_ENC | BLE_SM_PAIR_KEY_DIST_ID;
     ble_store_config_init();
+    ble_hs_cfg.store_status_cb = solar_os_ble_nimble_store_status;
     /* Stable standard services support discovery caching / Service Changed
      * for runtime application services. They do not start advertising. */
     ble_svc_gap_init();

@@ -65,6 +65,8 @@ while not solaros.should_exit():
 - `pair()`: enter explicit new-host pairing mode. SolarOS removes the next
   connecting peer's stored HID bond before starting security. Omit this on
   normal startup so a remembered host reconnects without pairing again.
+  If bond storage is full, explicit HID pairing may replace an unused bond.
+  The remembered input keyboard and all connected peers are preserved.
 - `stop()`: send best-effort neutral keyboard, mouse, and gamepad reports, stop
   advertising, disconnect the host, and retire the service.
 - `status()`: return `registered`, `advertising`, `closing`, `connected`,

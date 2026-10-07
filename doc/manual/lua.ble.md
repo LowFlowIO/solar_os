@@ -86,6 +86,8 @@ when finished with a peer.
 fixed encrypted and bonded composite keyboard, mouse, and gamepad service for
 one host. `pair()` explicitly forgets the next connecting peer's old HID bond
 before security; call it only for a user-requested new-host pairing flow.
+When bond storage is full, this explicit pairing flow may replace an unused
+bond, preserving the remembered input keyboard and all connected peers.
 `status()` returns connection, security, subscription, keyboard LED,
 and queue state. `poll()` returns `nil` or a `connected`, `secured`,
 `disconnected`, `keyboard-leds`, or `passkey` event. Render a passkey as six
