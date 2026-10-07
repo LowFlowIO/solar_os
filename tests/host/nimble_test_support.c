@@ -2,6 +2,8 @@
 #include "esp_hid_common.h"
 #include "host/ble_store.h"
 #include "freertos/queue.h"
+#include <nvs.h>
+#include "host/ble_hs_id.h"
 #include <freertos/semphr.h>
 #include <assert.h>
 #include <stdlib.h>
@@ -69,6 +71,8 @@ int ble_store_util_delete_peer(const ble_addr_t *peer_id_addr)
     fake.store_delete_calls++;
     fake.deleted_bond = *peer_id_addr;
     if (fake.store_delete_error) return fake.store_delete_error;
+    if (!memcmp(&fake.store_cccd_written.peer_addr, peer_id_addr, sizeof(*peer_id_addr)))
+        memset(&fake.store_cccd_written, 0, sizeof(fake.store_cccd_written));
     for (size_t type=0; type<2; type++) {
         for (size_t i=0; i<fake.store_bond_count[type];) {
             if (!memcmp(&fake.store_bonds[type][i],peer_id_addr,sizeof(*peer_id_addr))) {
@@ -199,7 +203,8 @@ int ble_gap_adv_rsp_set_fields(const struct ble_hs_adv_fields *fields) { assert(
 int ble_gap_adv_start(uint8_t own, const ble_addr_t *addr, int32_t ms,
     const struct ble_gap_adv_params *params, ble_gap_event_fn *cb, void *arg)
 {
-    (void)own; (void)addr; (void)ms; (void)params;
+    (void)ms; fake.adv_own=own; fake.adv_mode=params->conn_mode;
+    fake.adv_target=addr ? *addr : (ble_addr_t){0};
     fake.adv_calls++; fake.server_gap=cb; fake.server_gap_arg=arg;
     fake.advertising = !fake.submit_error; return fake.submit_error;
 }
@@ -250,3 +255,34 @@ int xQueueReceive(QueueHandle_t q, void *value, unsigned timeout)
 { (void)timeout; if(!q->count) return pdFALSE; memcpy(value,q->data,q->size);
   memmove(q->data,q->data+q->size,--q->count*q->size); return pdTRUE; }
 unsigned uxQueueSpacesAvailable(QueueHandle_t q) { return q->cap-q->count; }
+
+int ble_store_read_our_sec(const struct ble_store_key_sec *key, struct ble_store_value_sec *value)
+{
+    for (size_t i=0; i<fake.store_bond_count[0]; i++)
+        if (!memcmp(&key->peer_addr, &fake.store_bonds[0][i], sizeof(ble_addr_t))) {
+            value->peer_addr=key->peer_addr; return 0;
+        }
+    return BLE_HS_ENOENT;
+}
+int ble_gap_conn_active(void) { return fake.initiating; }
+int ble_gap_disc_active(void) { return fake.scan_active; }
+int ble_gap_disc_cancel(void) { fake.scan_cancel_calls++; fake.scan_active=false; return 0; }
+int ble_hs_id_gen_rnd(int nrpa, ble_addr_t *address)
+{ assert(!nrpa); *address=(ble_addr_t){.type=1,.val={++fake.random_calls,2,3,4,5,0xc6}}; return 0; }
+int ble_hs_id_set_rnd(const uint8_t *address)
+{ fake.random_set_calls++; memcpy(fake.random_address,address,6); return fake.submit_error; }
+int ble_hs_id_copy_addr(uint8_t type, uint8_t *out, int *nrpa)
+{ assert(type==0); (void)nrpa; memcpy(out,(uint8_t[]){1,2,3,4,5,6},6); return 0; }
+esp_err_t nvs_open(const char *name, int mode, nvs_handle_t *handle)
+{ assert(!strcmp(name,"hidhosts")); *handle=1; return fake.nvs_error ? fake.nvs_error : mode==NVS_READONLY && !fake.nvs_length ? ESP_ERR_NVS_NOT_FOUND : ESP_OK; }
+esp_err_t nvs_get_blob(nvs_handle_t handle, const char *key, void *out, size_t *length)
+{ (void)handle; assert(!strcmp(key,"hosts")); if (!fake.nvs_length) return ESP_ERR_NVS_NOT_FOUND;
+  if (*length<fake.nvs_length) return ESP_ERR_INVALID_SIZE;
+  *length=fake.nvs_length; memcpy(out,fake.nvs_blob,*length); return ESP_OK; }
+esp_err_t nvs_set_blob(nvs_handle_t handle, const char *key, const void *data, size_t length)
+{ (void)handle; assert(!strcmp(key,"hosts") && length<=sizeof(fake.nvs_blob));
+  memcpy(fake.nvs_pending,data,length); fake.nvs_pending_length=length; return fake.nvs_error; }
+esp_err_t nvs_commit(nvs_handle_t handle)
+{ (void)handle; if(fake.nvs_error) return fake.nvs_error;
+  memcpy(fake.nvs_blob,fake.nvs_pending,fake.nvs_pending_length); fake.nvs_length=fake.nvs_pending_length; return ESP_OK; }
+void nvs_close(nvs_handle_t handle) { (void)handle; }

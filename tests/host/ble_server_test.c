@@ -453,6 +453,119 @@ int main(void)
     solar_os_ble_backend_server_cancel(79); nimble_test_drain();
     assert(peripheral->dormant && server_idle_locked());
 
+    /* Managed leases start idle even with a remembered host. Import legacy
+     * public hosts from HID CCCDs, never the local input keyboard's bond. */
+    fake.store_bonds[0][1]=previous_host; fake.store_bond_count[0]=2;
+    fake.store_cccd_written=(struct ble_store_value_cccd){
+        .peer_addr=previous_host,.chr_val_handle=keyboard->handle,.flags=1};
+    const int adv_before_managed=fake.adv_calls;
+    hid=(solar_os_ble_hid_request_t){.op=SOLAR_OS_BLE_HID_OP_START,.name="Managed HID",.manual=true};
+    assert(execute_hid(80,&hid)==ESP_OK);
+    assert(peripheral->manual && !peripheral->wants_advertising && !peripheral->advertising);
+    assert(fake.adv_calls==adv_before_managed);
+    hid.op=SOLAR_OS_BLE_HID_OP_HOSTS;
+    assert(execute_hid(80,&hid)==ESP_OK && hid.host_count==1);
+    assert(hid.hosts[0].bda[0]==previous_host.val[5] && hid.hosts[0].bda[5]==previous_host.val[0]);
+    hid=(solar_os_ble_hid_request_t){.op=SOLAR_OS_BLE_HID_OP_CONNECT,.addr_type=previous_host.type};
+    for (size_t i=0;i<6;i++) hid.bda[i]=previous_host.val[5-i];
+    assert(execute_hid(80,&hid)==ESP_OK && server_advertise()==0);
+    assert(fake.adv_own==BLE_OWN_ADDR_PUBLIC && fake.adv_mode==BLE_GAP_CONN_MODE_DIR);
+    assert(!memcmp(&fake.adv_target,&previous_host,sizeof(previous_host)));
+    /* A different host is retired without negotiating security. */
+    fake.address=keyboard_bond;
+    int security_before=fake.security_calls;
+    connect_peer(40);
+    assert(fake.security_calls==security_before && peripheral->peers->retiring);
+    disconnect_peer(40);
+    assert(peripheral->advertising);
+    hid.op=SOLAR_OS_BLE_HID_OP_DISCONNECT;
+    assert(execute_hid(80,&hid)==ESP_OK && !peripheral->advertising && !peripheral->wants_advertising);
+    /* Fresh pairing changes only our peripheral identity, retains BOTH bonds,
+     * and never deletes the input keyboard or previous host. */
+    deletes=fake.store_delete_calls;
+    hid.op=SOLAR_OS_BLE_HID_OP_PAIR;
+    assert(execute_hid(80,&hid)==ESP_OK);
+    fake.initiating=true;
+    assert(server_advertise()==BLE_HS_EBUSY && !peripheral->advertising);
+    fake.initiating=false; fake.scan_active=true;
+    solar_os_ble_hid_request_t retry_status={.op=SOLAR_OS_BLE_HID_OP_STATUS};
+    assert(solar_os_ble_backend_hid_request(80,&retry_status)==ESP_OK);
+    nimble_test_drain();
+    assert(peripheral->advertising && fake.scan_cancel_calls==1);
+    assert(fake.adv_own==BLE_OWN_ADDR_RANDOM && fake.adv_mode==BLE_GAP_CONN_MODE_UND);
+    assert((fake.random_address[5]&0xc0)==0xc0 && fake.store_delete_calls==deletes);
+    assert(fake.store_bond_count[0]==2);
+    const ble_addr_t first_identity=peripheral->local_identity;
+    assert(execute_hid(80,&hid)==ESP_OK && server_advertise()==0);
+    assert(!server_same_address(&first_identity,&peripheral->local_identity));
+    const ble_addr_t new_identity=peripheral->local_identity;
+    const ble_addr_t new_host={.type=1,.val={10,11,12,13,14,0xcf}};
+    fake.address=new_host;
+    connect_peer(41);
+    fake.store_bonds[0][2]=new_host; fake.store_bond_count[0]=3;
+    fake.encrypted=fake.bonded=true;
+    secured.enc_change.conn_handle=41;
+    fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
+    assert(peripheral->selected_host && !peripheral->pairing);
+    hid.op=SOLAR_OS_BLE_HID_OP_HOSTS;
+    assert(execute_hid(80,&hid)==ESP_OK && hid.host_count==2);
+    server_host_store_t saved;
+    assert(server_hosts_load(&saved)==ESP_OK && saved.count==2);
+    assert(server_same_address(&saved.records[1].local,&new_identity));
+    solar_os_ble_backend_server_cancel(80); nimble_test_drain(); disconnect_peer(41);
+    /* Reopen and restore the stored local identity. Advertising is directed
+     * to the chosen host and other saved hosts cannot steal this connection. */
+    hid=(solar_os_ble_hid_request_t){.op=SOLAR_OS_BLE_HID_OP_START,.name="Managed HID",.manual=true};
+    assert(execute_hid(81,&hid)==ESP_OK && !peripheral->advertising);
+    hid.op=SOLAR_OS_BLE_HID_OP_CONNECT; hid.addr_type=new_host.type;
+    for(size_t i=0;i<6;i++) hid.bda[i]=new_host.val[5-i];
+    assert(execute_hid(81,&hid)==ESP_OK && server_advertise()==0);
+    assert(fake.adv_own==BLE_OWN_ADDR_RANDOM && fake.adv_mode==BLE_GAP_CONN_MODE_DIR);
+    assert(!memcmp(fake.random_address,new_identity.val,6));
+    connect_peer(42); secured.enc_change.conn_handle=42;
+    fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
+    hid.op=SOLAR_OS_BLE_HID_OP_STATUS;
+    assert(execute_hid(81,&hid)==ESP_OK && hid.info.manual && hid.info.host_selected && !hid.info.pairing);
+    /* A late security event from a retiring peer cannot save the new pairing
+     * identity against the old host or complete a cancelled pairing flow. */
+    peripheral->peers->retiring=true;
+    peripheral->pairing=true;
+    fake.nvs_error=ESP_ERR_NO_MEM;
+    fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
+    assert(peripheral->peers->bonded && peripheral->pairing);
+    fake.nvs_error=0;
+    peripheral->peers->retiring=false;
+    peripheral->pairing=false;
+    /* Deleting the connected host cancels advertising before retiring it. */
+    hid.op=SOLAR_OS_BLE_HID_OP_FORGET;
+    assert(execute_hid(81,&hid)==ESP_OK && peripheral->peers->retiring);
+    assert(!peripheral->wants_advertising && !peripheral->selected_host);
+    disconnect_peer(42);
+    assert(!peripheral->advertising && fake.store_bond_count[0]==2);
+    hid.op=SOLAR_OS_BLE_HID_OP_HOSTS;
+    assert(execute_hid(81,&hid)==ESP_OK && hid.host_count==1);
+    /* Input keyboard addresses cannot be used with host deletion. */
+    hid.op=SOLAR_OS_BLE_HID_OP_FORGET; hid.addr_type=keyboard_bond.type;
+    for(size_t i=0;i<6;i++) hid.bda[i]=keyboard_bond.val[5-i];
+    deletes=fake.store_delete_calls;
+    assert(execute_hid(81,&hid)==ESP_ERR_NOT_FOUND && fake.store_delete_calls==deletes);
+    /* Failure to persist the new pairing must never expose a ready host. */
+    hid.op=SOLAR_OS_BLE_HID_OP_PAIR;
+    assert(execute_hid(81,&hid)==ESP_OK && server_advertise()==0);
+    fake.address=new_host; connect_peer(43);
+    fake.nvs_error=ESP_ERR_NO_MEM;
+    secured.enc_change.conn_handle=43;
+    fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
+    assert(!peripheral->peers->bonded && !peripheral->peers->encrypted && peripheral->peers->retiring);
+    assert(!peripheral->wants_advertising && !peripheral->pairing && !peripheral->selected_host);
+    fake.nvs_error=0; disconnect_peer(43);
+    /* Corrupt persisted host records fail closed. */
+    fake.nvs_blob[0]=99;
+    hid.op=SOLAR_OS_BLE_HID_OP_HOSTS;
+    assert(execute_hid(81,&hid)==ESP_ERR_INVALID_SIZE);
+    fake.nvs_blob[0]=1;
+    solar_os_ble_backend_server_cancel(81); nimble_test_drain();
+
     /* The generic application server can replace a dormant native HID
      * service when a script requests the shared peripheral lease. */
     const int before_replace=fake.server_delete_calls;

@@ -68,6 +68,8 @@ typedef struct {
     uint32_t hid_keyboard, hid_mouse, hid_gamepad;
     ble_addr_t hid_bond_addr;
     bool hid_bond_valid;
+    bool manual, selected_host, local_identity_ready;
+    ble_addr_t selected_address, local_identity;
     uint8_t hid_subscriptions[3];
     uint8_t keyboard[8], keyboard_leds, mouse_buttons;
     int16_t gamepad_axes[6];
@@ -333,6 +335,7 @@ static int server_advertise(void)
         !peripheral->wants_advertising ||
         peripheral->advertising ||
         (peripheral->kind == SERVER_KIND_HID && peripheral->peer_count)) return 0;
+    if (peripheral->manual && !peripheral->pairing && !peripheral->selected_host) return 0;
     if (server_central_count() + peripheral->peer_count + peripheral->untracked >=
         solar_os_ble_backend_capacity()) return BLE_HS_EBUSY;
     if (server_peer_ticket == UINT32_MAX) return BLE_HS_ENOMEM;
@@ -366,7 +369,30 @@ static int server_advertise(void)
     if (rc) return rc;
     struct ble_gap_adv_params params = {0};
     params.conn_mode = BLE_GAP_CONN_MODE_UND; params.disc_mode = BLE_GAP_DISC_MODE_GEN;
-    rc = ble_gap_adv_start(BLE_OWN_ADDR_PUBLIC, NULL, BLE_HS_FOREVER, &params,
+    uint8_t own_type = BLE_OWN_ADDR_PUBLIC;
+    const ble_addr_t *target = NULL;
+    if (peripheral->manual) {
+        if (peripheral->local_identity.type == BLE_ADDR_RANDOM) {
+            if (!peripheral->local_identity_ready) {
+                if (ble_gap_conn_active()) return BLE_HS_EBUSY;
+                if (ble_gap_disc_active()) {
+                    rc = ble_gap_disc_cancel();
+                    if (rc && rc != BLE_HS_EALREADY) return rc;
+                }
+                rc = ble_hs_id_set_rnd(peripheral->local_identity.val);
+                if (rc) return rc;
+                peripheral->local_identity_ready = true;
+            }
+            own_type = BLE_OWN_ADDR_RANDOM;
+        }
+        if (!peripheral->pairing) {
+            target = &peripheral->selected_address;
+            params.conn_mode = BLE_GAP_CONN_MODE_DIR;
+            params.disc_mode = BLE_GAP_DISC_MODE_NON;
+            params.itvl_min = params.itvl_max = 160; /* Low-duty directed advertising. */
+        }
+    }
+    rc = ble_gap_adv_start(own_type, target, BLE_HS_FOREVER, &params,
         server_gap, (void *)(uintptr_t)peripheral->epoch);
     peripheral->advertising = rc == 0;
     return rc;
@@ -442,6 +468,9 @@ static int server_descriptor_access(uint16_t conn, uint16_t handle,
 }
 static int server_repeat_pairing(struct ble_gap_event *event)
 {
+    server_peer_t *peer = server_peer(0, event->repeat_pairing.conn_handle);
+    if (peripheral->manual && (!peripheral->pairing || !peer || peer->retiring))
+        return BLE_GAP_REPEAT_PAIRING_IGNORE;
     struct ble_gap_conn_desc desc = {0};
     if (ble_gap_conn_find(event->repeat_pairing.conn_handle, &desc)) {
         return BLE_GAP_REPEAT_PAIRING_IGNORE;
@@ -456,6 +485,8 @@ typedef struct {
     bool found;
     ble_addr_t address;
 } server_bond_candidate_t;
+
+#include "solar_os_ble_hid_hosts.inc"
 
 static int server_saved_hid_bond(int type, union ble_store_value *value, void *arg)
 {
@@ -543,6 +574,17 @@ static int server_gap(struct ble_gap_event *event, void *arg)
                 peripheral->untracked > solar_os_ble_backend_capacity()) {
                 p->retiring = !ble_gap_terminate(p->conn, BLE_ERR_REM_USER_CONN_TERM);
             } else if (peripheral->kind == SERVER_KIND_HID) {
+                struct ble_gap_conn_desc identity = {0};
+                if (peripheral->manual &&
+                    (ble_gap_conn_find(p->conn, &identity) ||
+                     solar_os_ble_nimble_keyboard_bond_remembered(&identity.peer_id_addr) ||
+                     (!peripheral->pairing &&
+                      (!peripheral->selected_host ||
+                       !server_same_address(&identity.peer_id_addr,
+                                            &peripheral->selected_address))))) {
+                    p->retiring = !ble_gap_terminate(p->conn, BLE_ERR_REM_USER_CONN_TERM);
+                    break;
+                }
                 peripheral->neutralized = false;
                 solar_os_ble_hid_device_event_t hid_event = {
                     .type = SOLAR_OS_BLE_HID_CONNECTED,
@@ -600,12 +642,25 @@ static int server_gap(struct ble_gap_event *event, void *arg)
          * and a second terminate command targets an already broken link. */
         if (event->enc_change.status == BLE_HS_ENOTCONN) break;
         p = server_peer(0, event->enc_change.conn_handle);
-        if (p && peripheral->kind == SERVER_KIND_HID) {
+        if (p && !p->retiring && peripheral->kind == SERVER_KIND_HID) {
             struct ble_gap_conn_desc desc = {0};
-            const int rc = event->enc_change.status ? event->enc_change.status :
+            int rc = event->enc_change.status ? event->enc_change.status :
                 ble_gap_conn_find(p->conn, &desc);
             p->encrypted = !rc && desc.sec_state.encrypted;
             p->bonded = !rc && desc.sec_state.bonded;
+            if (p->bonded && peripheral->manual && peripheral->pairing) {
+                if (server_hosts_remember(&desc.peer_id_addr, &peripheral->local_identity)) {
+                    rc = BLE_HS_EAPP;
+                    p->encrypted = p->bonded = false;
+                    peripheral->wants_advertising = peripheral->pairing = false;
+                    /* Do not leave a bond whose local identity could not be
+                     * saved, or later import it as a legacy public host. */
+                    (void)ble_store_util_delete_peer(&desc.peer_id_addr);
+                } else {
+                    peripheral->selected_address = desc.peer_id_addr;
+                    peripheral->selected_host = true;
+                }
+            }
             if (p->bonded) peripheral->pairing = false;
             if (!rc) server_restore_hid_subscriptions(p, &desc);
             solar_os_ble_hid_device_event_t hid_event = {
@@ -617,6 +672,10 @@ static int server_gap(struct ble_gap_event *event, void *arg)
             };
             (void)server_hid_event(&hid_event);
             if (rc || !p->encrypted) {
+                if (peripheral->manual) {
+                    peripheral->wants_advertising = false;
+                    peripheral->pairing = peripheral->selected_host = false;
+                }
                 p->retiring = !ble_gap_terminate(p->conn, BLE_ERR_AUTH_FAIL);
             }
         }
@@ -1094,10 +1153,30 @@ static int8_t server_hid_axis(int16_t value)
     return (int8_t)(value / 258);
 }
 
+/* Cancel the current host offer before dropping the link. Local input bonds
+ * and central-role connections are unaffected. */
+static esp_err_t server_hid_idle(void)
+{
+    int rc = peripheral->advertising ? ble_gap_adv_stop() : 0;
+    if (rc && rc != BLE_HS_EALREADY) return solar_os_ble_nimble_error(rc);
+    peripheral->advertising = false;
+    peripheral->wants_advertising = false;
+    peripheral->pairing = peripheral->selected_host = false;
+    server_hid_neutralize();
+    server_peer_t *p = peripheral->peers;
+    if (p && !p->retiring) {
+        rc = ble_gap_terminate(p->conn, BLE_ERR_REM_USER_CONN_TERM);
+        if (rc && rc != BLE_HS_ENOTCONN) return solar_os_ble_nimble_error(rc);
+        p->retiring = true;
+    }
+    return ESP_OK;
+}
+
 static esp_err_t server_hid_execute(uint32_t owner,
                                     solar_os_ble_hid_request_t *r)
 {
     if (r->op == SOLAR_OS_BLE_HID_OP_START) {
+        const bool fresh = !peripheral || peripheral->dormant;
         const size_t length = strlen(r->name);
         if (!length || length > 26) return ESP_ERR_INVALID_ARG;
         if (peripheral) {
@@ -1130,7 +1209,13 @@ static esp_err_t server_hid_execute(uint32_t owner,
         }
         int rc = server_register_services();
         if (rc) return solar_os_ble_nimble_error(rc);
-        peripheral->wants_advertising = true;
+        if (!fresh && peripheral->manual != r->manual) return ESP_ERR_INVALID_STATE;
+        if (fresh) {
+            peripheral->manual = r->manual;
+            peripheral->pairing = peripheral->selected_host = false;
+            peripheral->local_identity_ready = false;
+            peripheral->wants_advertising = !r->manual;
+        }
         rc = server_advertise();
         if (rc) peripheral->wants_advertising = false;
         return solar_os_ble_nimble_error(rc);
@@ -1140,6 +1225,10 @@ static esp_err_t server_hid_execute(uint32_t owner,
     if (r->op == SOLAR_OS_BLE_HID_OP_STATUS) {
         server_peer_t *p = peripheral->peers;
         r->info = (solar_os_ble_hid_info_t){
+            .manual = peripheral->manual,
+            .pairing = peripheral->pairing,
+            .host_selected = peripheral->selected_host,
+            .host_addr_type = peripheral->selected_address.type,
             .registered = peripheral->registered,
             .advertising = peripheral->advertising,
             .closing = peripheral->closing,
@@ -1151,6 +1240,7 @@ static esp_err_t server_hid_execute(uint32_t owner,
             .event_count = peripheral->count,
             .events_dropped = peripheral->dropped,
         };
+        for (size_t i=0; i<6; i++) r->info.host_bda[i] = peripheral->selected_address.val[5-i];
         if (p) {
             server_char_t *c = server_characteristic(peripheral->hid_keyboard, 0);
             r->info.keyboard_subscribed = c && (p->subscriptions[c->index] & 1);
@@ -1162,7 +1252,73 @@ static esp_err_t server_hid_execute(uint32_t owner,
         return ESP_OK;
     }
     if (peripheral->closing) return ESP_ERR_INVALID_STATE;
+    if (r->op == SOLAR_OS_BLE_HID_OP_HOSTS ||
+        r->op == SOLAR_OS_BLE_HID_OP_CONNECT ||
+        r->op == SOLAR_OS_BLE_HID_OP_FORGET) {
+        server_host_store_t store;
+        esp_err_t error = server_hosts_read(&store);
+        if (error) return error;
+        if (r->op == SOLAR_OS_BLE_HID_OP_HOSTS) {
+            r->host_count = 0;
+            for (size_t i=0; i<store.count; i++) {
+                const ble_addr_t *peer = &store.records[i].peer;
+                if (!server_host_bonded(peer)) continue;
+                solar_os_ble_hid_host_t *host = &r->hosts[r->host_count++];
+                for (size_t j=0; j<6; j++) host->bda[j] = peer->val[5-j];
+                host->addr_type = peer->type;
+                host->connected = peripheral->peers && !peripheral->peers->retiring &&
+                    peripheral->hid_bond_valid && server_same_address(peer, &peripheral->hid_bond_addr);
+            }
+            return ESP_OK;
+        }
+        if (!peripheral->manual || r->addr_type > 1) return ESP_ERR_INVALID_STATE;
+        ble_addr_t peer; solar_os_ble_nimble_address(&peer, r->bda, r->addr_type);
+        size_t index=0;
+        while (index < store.count && !server_same_address(&peer, &store.records[index].peer)) index++;
+        if (index == store.count || !server_host_bonded(&peer)) return ESP_ERR_NOT_FOUND;
+        if (r->op == SOLAR_OS_BLE_HID_OP_FORGET) {
+            if (peripheral->selected_host && server_same_address(&peer, &peripheral->selected_address)) {
+                error = server_hid_idle();
+                if (error) return error;
+            }
+            const int rc = ble_store_util_delete_peer(&peer);
+            if (rc && rc != BLE_HS_ENOENT) return solar_os_ble_nimble_error(rc);
+            memmove(&store.records[index], &store.records[index+1],
+                (--store.count-index) * sizeof(store.records[0]));
+            return server_hosts_save(&store);
+        } else {
+            if (peripheral->selected_host && !peripheral->pairing &&
+                server_same_address(&peer, &peripheral->selected_address)) {
+                peripheral->wants_advertising = true;
+                return ESP_OK;
+            }
+        }
+        error = server_hid_idle();
+        if (error) return error;
+        peripheral->selected_address = peer;
+        peripheral->selected_host = true;
+        peripheral->local_identity = store.records[index].local;
+        peripheral->local_identity_ready = false;
+        peripheral->wants_advertising = true;
+        return ESP_OK; /* Retirement and advertising run on the host queue. */
+    }
+    if (r->op == SOLAR_OS_BLE_HID_OP_DISCONNECT) {
+        if (!peripheral->manual) return ESP_ERR_INVALID_STATE;
+        return server_hid_idle();
+    }
     if (r->op == SOLAR_OS_BLE_HID_OP_PAIR) {
+        if (peripheral->manual) {
+            ble_addr_t identity;
+            const int rc = ble_hs_id_gen_rnd(0, &identity);
+            if (rc) return solar_os_ble_nimble_error(rc);
+            esp_err_t error = server_hid_idle();
+            if (error) return error;
+            peripheral->local_identity = identity;
+            peripheral->local_identity_ready = false;
+            peripheral->pairing = true;
+            peripheral->wants_advertising = true;
+            return ESP_OK;
+        }
         /* Forget our previous host now, including while it is disconnected.
          * The retained HID lease keeps the bonded identity across app stops.
          * Input keyboard bonds belong to the central role and stay intact. */
@@ -1330,7 +1486,16 @@ esp_err_t solar_os_ble_backend_hid_request(solar_os_ble_session_t owner,
         r->op == SOLAR_OS_BLE_HID_OP_GAMEPAD_AXIS ||
         r->op == SOLAR_OS_BLE_HID_OP_GAMEPAD_BUTTON ||
         r->op == SOLAR_OS_BLE_HID_OP_GAMEPAD_HAT) {
-        lock(); esp_err_t result = server_hid_execute(owner, r); unlock(); return result;
+        lock(); esp_err_t result = server_hid_execute(owner, r);
+        /* A local keyboard may have been initiating a connection when pairing
+         * was requested. Retry advertising cooperatively on subsequent polls,
+         * on the host queue rather than the interpreter task. */
+        if (result == ESP_OK && peripheral && peripheral->manual &&
+            peripheral->owner == owner && peripheral->wants_advertising &&
+            !peripheral->advertising && !peripheral->peer_count &&
+            !peripheral->closing && !peripheral->dormant)
+            ble_npl_eventq_put(nimble_port_get_dflt_eventq(), &command_event);
+        unlock(); return result;
     }
     server_command_t *c = calloc(1, sizeof(*c));
     if (!c) return ESP_ERR_NO_MEM;

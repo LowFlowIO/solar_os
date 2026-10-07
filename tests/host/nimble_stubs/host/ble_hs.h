@@ -30,6 +30,9 @@ extern struct ble_hs_cfg_stub ble_hs_cfg;
 #define BLE_GAP_SUBSCRIBE_REASON_TERM 2
 #define BLE_GAP_SUBSCRIBE_REASON_RESTORE 3
 #define BLE_OWN_ADDR_PUBLIC 0
+#define BLE_OWN_ADDR_RANDOM 1
+#define BLE_ADDR_PUBLIC 0
+#define BLE_ADDR_RANDOM 1
 #define BLE_UUID_TYPE_16 16
 #define BLE_UUID_TYPE_32 32
 #define BLE_UUID_TYPE_128 128
@@ -107,6 +110,8 @@ int ble_gattc_write_no_rsp_flat(uint16_t, uint16_t, const void *, uint16_t);
 #define BLE_HS_ADV_F_BREDR_UNSUP 4
 #define BLE_HS_FOREVER INT32_MAX
 #define BLE_GAP_CONN_MODE_UND 2
+#define BLE_GAP_CONN_MODE_DIR 1
+#define BLE_GAP_DISC_MODE_NON 0
 #define BLE_GAP_DISC_MODE_GEN 2
 #define BLE_GATT_ACCESS_OP_READ_CHR 0
 #define BLE_GATT_ACCESS_OP_WRITE_CHR 1
@@ -150,7 +155,10 @@ struct ble_hs_adv_fields {
     uint16_t appearance; bool appearance_is_present;
     bool uuids16_is_complete;
 };
-struct ble_gap_adv_params { uint8_t conn_mode, disc_mode; };
+struct ble_gap_adv_params { uint8_t conn_mode, disc_mode; uint16_t itvl_min, itvl_max; };
+int ble_gap_conn_active(void);
+int ble_gap_disc_active(void);
+int ble_gap_disc_cancel(void);
 int ble_uuid_from_str(ble_uuid_any_t *, const char *);
 int ble_uuid_cmp(const ble_uuid_t *, const ble_uuid_t *);
 int ble_gap_adv_stop(void);

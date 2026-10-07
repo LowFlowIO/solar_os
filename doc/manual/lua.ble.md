@@ -84,8 +84,16 @@ when finished with a peer.
 `solaros.ble.hid` mirrors the
 [Python BLE HID API](python.ble.md#solarosblehid). `start(name)` publishes a
 fixed encrypted and bonded composite keyboard, mouse, and gamepad service for
-one host. `pair()` explicitly forgets the next connecting peer's old HID bond
-before security; call it only for a user-requested new-host pairing flow.
+one host. `start(name, true)` starts a manual host-selection lease, initially
+idle. `hosts()` lists saved HID hosts with `address`, `addr_type`, and `connected`.
+For manual leases, `connect(address, addr_type)` advertises only to the selected
+saved host, `forget(address, addr_type)` deletes that host pairing, and
+`disconnect()` returns to idle while keeping pairings. Address type defaults to
+zero. The remote host initiates the BLE connection.
+Manual `pair()` drops the selected connection and advertises a fresh peripheral
+identity for a new host, preserving other saved hosts and the local keyboard.
+The default lease's `pair()` resets the previous host pairing on the public
+identity. Call it only for a user-requested new-host pairing flow.
 When bond storage is full, this explicit pairing flow may replace an unused
 bond, preserving the remembered input keyboard and all connected peers.
 `status()` returns connection, security, subscription, keyboard LED,
