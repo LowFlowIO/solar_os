@@ -372,6 +372,14 @@ int main(void)
     assert(peripheral->keyboard_leds==SOLAR_OS_BLE_HID_KEYBOARD_LED_CAPS_LOCK &&
         output->value[0]==SOLAR_OS_BLE_HID_KEYBOARD_LED_CAPS_LOCK);
     peripheral->head=0; peripheral->count=0;
+    /* Security teardown is followed by GAP disconnect. It must not enqueue
+     * a fake authentication failure or issue another terminate command. */
+    const int before_broken_security=fake.terminate_calls;
+    secured.enc_change.status=BLE_HS_ENOTCONN;
+    fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
+    assert(fake.terminate_calls==before_broken_security && !peripheral->count);
+    assert(peripheral->peers->encrypted && !peripheral->peers->retiring);
+    secured.enc_change.status=0;
     const uint16_t retained_keyboard_handle=keyboard->handle;
     const int hid_add_calls=fake.server_add_calls;
     const int before_close=fake.notify_calls;
@@ -408,6 +416,42 @@ int main(void)
     solar_os_ble_backend_server_cancel(78); nimble_test_drain();
     disconnect_peer(32);
     assert(peripheral && peripheral->dormant && server_idle_locked());
+
+    /* Reset drops the disconnected remembered host immediately, before a
+     * replacement host connects. Preserve the input keyboard's security. */
+    hid=(solar_os_ble_hid_request_t){.op=SOLAR_OS_BLE_HID_OP_START,.name="Reset HID"};
+    assert(execute_hid(79,&hid)==ESP_OK);
+    assert(peripheral->hid_bond_valid);
+    const ble_addr_t previous_host=peripheral->hid_bond_addr;
+    fake.store_bonds[0][0]=keyboard_bond;
+    fake.store_bonds[0][1]=previous_host;
+    fake.store_bond_count[0]=2;
+    hid.op=SOLAR_OS_BLE_HID_OP_PAIR;
+    fake.store_delete_error=BLE_HS_EAPP;
+    assert(execute_hid(79,&hid)!=ESP_OK);
+    assert(peripheral->hid_bond_valid && !peripheral->pairing);
+    fake.store_delete_error=0;
+    assert(execute_hid(79,&hid)==ESP_OK);
+    assert(peripheral->pairing && !peripheral->hid_bond_valid);
+    assert(!memcmp(&fake.deleted_bond,&previous_host,sizeof(previous_host)));
+    assert(fake.store_bond_count[0]==1 &&
+        !memcmp(&fake.store_bonds[0][0],&keyboard_bond,sizeof(keyboard_bond)));
+    /* Fresh-boot state has no cached identity; recover it from persisted HID
+     * subscriptions, with the same input-bond protection and error handling. */
+    fake.store_cccd_written=(struct ble_store_value_cccd){
+        .peer_addr=previous_host,.chr_val_handle=keyboard->handle,.flags=1};
+    fake.store_bonds[0][1]=previous_host; fake.store_bond_count[0]=2;
+    assert(execute_hid(79,&hid)==ESP_OK);
+    assert(fake.store_bond_count[0]==1);
+    fake.store_cccd_written.peer_addr=keyboard_bond;
+    deletes=fake.store_delete_calls;
+    assert(execute_hid(79,&hid)==ESP_OK);
+    assert(fake.store_delete_calls==deletes && fake.store_bond_count[0]==1);
+    fake.store_iterate_error=BLE_HS_EAPP;
+    assert(execute_hid(79,&hid)!=ESP_OK);
+    fake.store_iterate_error=0;
+    solar_os_ble_backend_server_cancel(79); nimble_test_drain();
+    assert(peripheral->dormant && server_idle_locked());
 
     /* The generic application server can replace a dormant native HID
      * service when a script requests the shared peripheral lease. */

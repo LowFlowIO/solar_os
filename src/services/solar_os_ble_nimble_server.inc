@@ -457,6 +457,19 @@ typedef struct {
     ble_addr_t address;
 } server_bond_candidate_t;
 
+static int server_saved_hid_bond(int type, union ble_store_value *value, void *arg)
+{
+    (void)type;
+    server_bond_candidate_t *candidate = arg;
+    server_char_t *c = server_characteristic(0, value->cccd.chr_val_handle);
+    if (!c || server_hid_subscription_slot(c->hid_kind) < 0 ||
+        solar_os_ble_nimble_keyboard_bond_remembered(&value->cccd.peer_addr))
+        return 0;
+    candidate->address = value->cccd.peer_addr;
+    candidate->found = true;
+    return 1;
+}
+
 static int server_unused_bond(int type, union ble_store_value *value, void *arg)
 {
     (void)type;
@@ -582,6 +595,10 @@ static int server_gap(struct ble_gap_event *event, void *arg)
         } else if (peripheral->untracked) peripheral->untracked--;
         break;
     case BLE_GAP_EVENT_ENC_CHANGE:
+        /* NimBLE emits ENOTCONN while tearing down a security procedure.
+         * GAP disconnect follows; this is not a new authentication failure
+         * and a second terminate command targets an already broken link. */
+        if (event->enc_change.status == BLE_HS_ENOTCONN) break;
         p = server_peer(0, event->enc_change.conn_handle);
         if (p && peripheral->kind == SERVER_KIND_HID) {
             struct ble_gap_conn_desc desc = {0};
@@ -1146,6 +1163,26 @@ static esp_err_t server_hid_execute(uint32_t owner,
     }
     if (peripheral->closing) return ESP_ERR_INVALID_STATE;
     if (r->op == SOLAR_OS_BLE_HID_OP_PAIR) {
+        /* Forget our previous host now, including while it is disconnected.
+         * The retained HID lease keeps the bonded identity across app stops.
+         * Input keyboard bonds belong to the central role and stay intact. */
+        server_bond_candidate_t previous = {
+            .found = peripheral->hid_bond_valid,
+            .address = peripheral->hid_bond_addr,
+        };
+        if (!previous.found) {
+            /* On a fresh boot, our stored report subscriptions identify the
+             * HID host without deleting unrelated central-role bonds. */
+            const int rc = ble_store_iterate(BLE_STORE_OBJ_TYPE_CCCD,
+                                            server_saved_hid_bond, &previous);
+            if (rc) return solar_os_ble_nimble_error(rc);
+        }
+        if (previous.found) {
+            if (solar_os_ble_nimble_keyboard_bond_remembered(
+                    &previous.address)) return ESP_ERR_INVALID_STATE;
+            const int rc = ble_store_util_delete_peer(&previous.address);
+            if (rc && rc != BLE_HS_ENOENT) return solar_os_ble_nimble_error(rc);
+        }
         peripheral->pairing = true;
         peripheral->hid_bond_valid = false;
         memset(peripheral->hid_subscriptions, 0,

@@ -82,6 +82,13 @@ int ble_store_util_delete_peer(const ble_addr_t *peer_id_addr)
 int ble_store_iterate(int type, ble_store_iterator_fn *callback, void *arg)
 {
     if (fake.store_iterate_error) return fake.store_iterate_error;
+    if (type==BLE_STORE_OBJ_TYPE_CCCD) {
+        if (fake.store_cccd_written.chr_val_handle) {
+            union ble_store_value value={.cccd=fake.store_cccd_written};
+            (void)callback(type,&value,arg);
+        }
+        return 0;
+    }
     assert(type==BLE_STORE_OBJ_TYPE_OUR_SEC || type==BLE_STORE_OBJ_TYPE_PEER_SEC);
     size_t index=type==BLE_STORE_OBJ_TYPE_OUR_SEC ? 0 : 1;
     for (size_t i=0; i<fake.store_bond_count[index]; i++) {
