@@ -168,9 +168,48 @@ static void test_names(server_peer_t *p)
     /* Leave one unfinished read for teardown/reused-handle checks. */
     name_start(p); name_handle(p);
 }
+static void test_hid_boot_database(void)
+{
+    /* Startup allocation failures must leave no native service or lease. */
+    for (int n=1;;n++) {
+        nimble_test_reset(); allocation=0; fail_at=n;
+        esp_err_t result=solar_os_ble_nimble_hid_prepare();
+        fail_at=0;
+        if (result==ESP_OK) break;
+        assert(result==ESP_ERR_NO_MEM && (!peripheral || !peripheral->registered));
+        assert(fake.server_add_calls==0 && fake.server_static_add_calls==0);
+        solar_os_ble_backend_reset();
+        assert(!peripheral && solar_os_ble_nimble_client_idle());
+    }
+    assert(peripheral->registered && peripheral->dormant);
+    assert(solar_os_ble_nimble_client_idle());
+    assert(fake.server_static_add_calls==1 && fake.server_add_calls==0 && fake.adv_calls==0);
+    const uint16_t handle=hid_characteristic(SERVER_HID_KEYBOARD_INPUT)->handle;
+    solar_os_ble_hid_request_t hid={.op=SOLAR_OS_BLE_HID_OP_START,.name="Boot HID",.manual=true};
+    assert(execute_hid(42,&hid)==ESP_OK && !peripheral->dormant);
+    assert(hid_characteristic(SERVER_HID_KEYBOARD_INPUT)->handle==handle);
+    assert(fake.server_add_calls==0 && fake.adv_calls==0);
+    solar_os_ble_backend_server_cancel(42); nimble_test_drain();
+    assert(peripheral->dormant && peripheral->registered);
+    assert(execute_hid(43,&hid)==ESP_OK);
+    assert(fake.server_add_calls==0 && hid_characteristic(SERVER_HID_KEYBOARD_INPUT)->handle==handle);
+    solar_os_ble_backend_server_cancel(43); nimble_test_drain();
+    create_server(); /* Generic apps can replace the dormant service. */
+    assert(fake.server_delete_calls==1 && peripheral->kind==SERVER_KIND_GENERIC);
+    solar_os_ble_backend_reset();
+    nimble_test_reset(); fake.server_count_error=BLE_HS_ENOMEM;
+    assert(solar_os_ble_nimble_hid_prepare()==ESP_ERR_NO_MEM);
+    assert(fake.server_static_add_calls==0 && fake.adv_calls==0);
+    solar_os_ble_backend_reset();
+    nimble_test_reset(); fake.server_add_error=BLE_HS_ENOMEM;
+    assert(solar_os_ble_nimble_hid_prepare()==ESP_ERR_NO_MEM);
+    assert(fake.adv_calls==0);
+    solar_os_ble_backend_reset(); nimble_test_reset();
+}
 int main(void)
 {
     nimble_test_reset(); assert(solar_os_ble_backend_register()==ESP_OK);
+    test_hid_boot_database();
     /* Every allocation while defining and starting the peripheral is recoverable. */
     for (int n=1;n<=7;n++) {
         allocation=0; fail_at=n;

@@ -226,6 +226,16 @@ int ble_gatts_add_dynamic_svcs(const struct ble_gatt_svc_def *definitions)
         }
     return 0;
 }
+int ble_gatts_count_cfg(const struct ble_gatt_svc_def *definitions)
+{ (void)definitions; return fake.server_count_error; }
+int ble_gatts_add_svcs(const struct ble_gatt_svc_def *definitions)
+{
+    fake.server_static_add_calls++;
+    const int calls = fake.server_add_calls;
+    int rc = ble_gatts_add_dynamic_svcs(definitions);
+    fake.server_add_calls = calls;
+    return rc;
+}
 int ble_gatts_delete_svc(const ble_uuid_t *uuid)
 { (void)uuid; fake.server_delete_calls++; return fake.server_delete_error; }
 int ble_gatts_find_svc(const ble_uuid_t *uuid, uint16_t *handle)

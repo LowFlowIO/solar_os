@@ -16,3 +16,5 @@ int solar_os_ble_nimble_store_status(struct ble_store_status_event *event, void 
 bool solar_os_ble_nimble_keyboard_bond_remembered(const ble_addr_t *address);
 bool solar_os_ble_nimble_client_idle(void);
 void solar_os_ble_nimble_host_stopped(void);
+/* After standard GATT services, before starting the NimBLE host task. */
+esp_err_t solar_os_ble_nimble_hid_prepare(void);

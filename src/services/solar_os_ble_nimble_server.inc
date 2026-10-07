@@ -798,7 +798,7 @@ static bool server_uuid(const char *text, ble_uuid_any_t *uuid)
     }
     return ble_uuid_from_str(uuid, text) == 0;
 }
-static int server_register_services(void)
+static int server_register_services(bool startup)
 {
     if (peripheral->registered) return 0;
     if (!peripheral->service_count) return BLE_HS_EINVAL;
@@ -841,7 +841,13 @@ static int server_register_services(void)
                 .val_handle=&c->handle};
         }
     }
-    int rc = ble_gatts_add_dynamic_svcs(peripheral->definitions);
+    int rc;
+    if (startup) {
+        rc = ble_gatts_count_cfg(peripheral->definitions);
+        if (!rc) rc = ble_gatts_add_svcs(peripheral->definitions);
+    } else {
+        rc = ble_gatts_add_dynamic_svcs(peripheral->definitions);
+    }
     peripheral->registered = rc == 0;
     return rc;
 }
@@ -967,6 +973,32 @@ static bool server_build_hid(void)
     return true;
 }
 
+/* Register the fixed HOGP database before the host starts. Adding the same
+ * handles dynamically after each reboot queues Service Changed for every
+ * bonded host, causing Android to discard its saved HID reconnect data. */
+esp_err_t solar_os_ble_nimble_hid_prepare(void)
+{
+    esp_err_t result = solar_os_ble_backend_register();
+    if (result != ESP_OK) return result;
+    lock();
+    if (peripheral) { unlock(); return ESP_ERR_INVALID_STATE; }
+    peripheral = calloc(1, sizeof(*peripheral));
+    if (!peripheral) { unlock(); return ESP_ERR_NO_MEM; }
+    peripheral->hid_events = calloc(16, sizeof(*peripheral->hid_events));
+    peripheral->owner = SOLAR_OS_BLE_SESSION_INVALID;
+    peripheral->kind = SERVER_KIND_HID;
+    peripheral->capacity = 16;
+    peripheral->dormant = true;
+    if (!peripheral->hid_events || !server_build_hid()) {
+        server_free();
+        unlock();
+        return ESP_ERR_NO_MEM;
+    }
+    result = solar_os_ble_nimble_error(server_register_services(true));
+    unlock();
+    return result;
+}
+
 static esp_err_t server_execute(uint32_t owner, solar_os_ble_server_request_t *r)
 {
     if (r->op == SOLAR_OS_BLE_SERVER_CREATE) {
@@ -1047,7 +1079,7 @@ static esp_err_t server_execute(uint32_t owner, solar_os_ble_server_request_t *r
         return ESP_OK;
     }
     if (r->op == SOLAR_OS_BLE_SERVER_START) {
-        int rc = server_register_services();
+        int rc = server_register_services(false);
         if (rc) return solar_os_ble_nimble_error(rc);
         peripheral->wants_advertising = true;
         rc = server_advertise();
@@ -1220,7 +1252,7 @@ static esp_err_t server_hid_execute(uint32_t owner,
                 return ESP_ERR_NO_MEM;
             }
         }
-        int rc = server_register_services();
+        int rc = server_register_services(false);
         if (rc) return solar_os_ble_nimble_error(rc);
         if (!fresh && peripheral->manual != r->manual) return ESP_ERR_INVALID_STATE;
         if (fresh) {

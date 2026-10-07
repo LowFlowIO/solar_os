@@ -21,6 +21,7 @@ extern struct nimble_test_state {
     size_t written_len;
     struct ble_sm_io injected;
     int server_add_error, server_delete_error, server_add_calls, server_delete_calls, adv_calls, notify_calls;
+    int server_static_add_calls, server_count_error;
     int store_delete_error, store_delete_calls;
     int store_iterate_error;
     ble_addr_t store_bonds[2][4], active_bonds[4], keyboard_bond, deleted_bond;

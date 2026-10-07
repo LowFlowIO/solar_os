@@ -169,6 +169,8 @@ int ble_gap_adv_set_fields(const struct ble_hs_adv_fields *);
 int ble_gap_adv_rsp_set_fields(const struct ble_hs_adv_fields *);
 int ble_gap_adv_start(uint8_t, const ble_addr_t *, int32_t, const struct ble_gap_adv_params *, ble_gap_event_fn *, void *);
 int ble_gatts_add_dynamic_svcs(const struct ble_gatt_svc_def *);
+int ble_gatts_count_cfg(const struct ble_gatt_svc_def *);
+int ble_gatts_add_svcs(const struct ble_gatt_svc_def *);
 int ble_gatts_delete_svc(const ble_uuid_t *);
 int ble_gatts_find_svc(const ble_uuid_t *, uint16_t *);
 struct os_mbuf *ble_hs_mbuf_from_flat(const void *, uint16_t);
