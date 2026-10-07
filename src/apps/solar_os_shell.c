@@ -806,6 +806,7 @@ static const char * const display_subcommands[] = {
 };
 static const char * const display_layout_axes[] = {"--horizontal", "--vertical"};
 static const char * const input_subcommands[] = {
+    "keymap",
     "status", "test", "calibrate", "emit",
     "keyboard", "touch", "mouse", "joystick", "dpad", "buttons", "gesture",
 };
@@ -1892,6 +1893,12 @@ static const char * const path_display_split_target[] = {
 static const char * const path_display_unsplit[] = {"display", "unsplit"};
 static const char * const path_input[] = {"input"};
 static const char * const path_input_test[] = {"input", "test"};
+#if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
+static const char * const input_keymap_subcommands[] = {"show", "load", "reset"};
+static const char * const path_input_keymap[] = {"input", "keymap"};
+static const char * const path_input_keymap_source[] = {"input", "keymap", SHELL_COMPLETION_ANY};
+static const char * const path_input_keymap_load[] = {"input", "keymap", SHELL_COMPLETION_ANY, "load"};
+#endif
 static const char * const path_input_calibrate[] = {"input", "calibrate"};
 static const char * const path_input_emit[] = {"input", "emit"};
 static const char * const path_input_keyboard[] = {"input", "keyboard"};
@@ -3169,6 +3176,11 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_display, display_subcommands),
     SHELL_COMPLETION_STATIC(path_input, input_subcommands),
     SHELL_COMPLETION_INPUT_SOURCES(path_input_test, false),
+#if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
+    SHELL_COMPLETION_INPUT_SOURCES(path_input_keymap, false),
+    SHELL_COMPLETION_STATIC(path_input_keymap_source, input_keymap_subcommands),
+    SHELL_COMPLETION_PATH(path_input_keymap_load, false),
+#endif
     SHELL_COMPLETION_INPUT_SOURCES(path_input_calibrate, true),
     SHELL_COMPLETION_STATIC(path_input_emit, input_emit_keys),
     SHELL_COMPLETION_STATIC(path_input_keyboard, input_class_subcommands),

@@ -273,8 +273,10 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `cvbs-pal` | 384x288 or 320x200 monochrome PAL composite output | `i2s=i2s0 out=gpio25` | Classic ESP32 driver; ESP32-WROVER v3.0 registers it as fixed `display0`. |
 | `vga32` | Build-selected RGB222 VGA output | `r0=<pin> r1=<pin> g0=<pin> g1=<pin> b0=<pin> b1=<pin> hsync=<pin> vsync=<pin>` | Classic ESP32 driver; claims I2S1 and TTGO VGA32 registers it as fixed `display0`. |
 | `cardkb` | M5Stack Unit CardKB | `i2c=<bus> addr=0x5f` | Polls released keys into the shared input service for shells and foreground apps. |
+| `inputronic-keyboard` | Soldered Inputronic KEYBOARD (SKU 333360) | `i2c=<bus> addr=0x34 [reset=<gpio>] [irq=<gpio>]` | Polls the 8x10 matrix FIFO and publishes press/release events through the shared input service. Optional active-low reset and interrupt pins. |
 | `tdeck-keyboard` | LilyGO T-Deck raw-matrix keyboard | `i2c=<bus> addr=0x55` | Polls the raw matrix and publishes keys through the shared input service. The built-in T-Deck attachment uses its board keymap; other boards can attach the same controller to a named I2C bus. |
-| `tca8418` | TCA8418 4x10 matrix keyboard | `i2c=<bus> addr=0x34`; optional `irq=<pin> backlight=<pwm-pin>` | Polls the key-event FIFO and publishes keyboard input; the optional PWM binding controls keyboard backlight brightness. |
+| `tca8418` | Generic TCA8418 matrix keyboard | `i2c=<bus> addr=0x34 [rows=1..8] [cols=1..10] [reset=<pin>] [irq=<pin>]` | Defaults to an 8x10 reference map; supports user mappings through `input keymap`. |
+| `lilygo-pager-keyboard` | LilyGO T-LoRa-Pager keyboard | `i2c=<bus> addr=0x34 [reset=<pin>] [irq=<pin>] [backlight=<pwm-pin>]` | Fixed 4x10 Pager wiring and symbol layer, with optional PWM backlight. |
 | `cl32-core` | Integrated CL-32 ATmega808 controller | `i2c=<bus> addr=0x08` | Fixed CL-32-only `core0`; polls keyboard press/release events into `keyboard0` and provides `battery0` from the AVR voltage, USB-power, and charging state. It is not runtime-probeable or detachable. |
 | `gpio-keys` | Active-low pull-up buttons | One or more `key:<name>=<gpio>` bindings | Publishes press/release keyboard events and releases all GPIO claims on detach. |
 | `ps2-keyboard` | PS/2 scan-code set 2 keyboard | `ps2=<bus>` | Publishes canonical keyboard press/release events from an exclusive PS/2 bus. |
@@ -529,6 +531,100 @@ shared SolarOS input path. CardKB reports one value after release, so host-side
 key repeat is not available. Its values 128 through 175 are private Fn
 combinations and are ignored instead of being confused with SolarOS logical
 keys.
+
+### TCA8418 matrix keyboards and mappings
+
+`tca8418`, `inputronic-keyboard`, and `lilygo-pager-keyboard` share the
+same controller backend, FIFO recovery, and matrix-to-input mapper. Each
+attachment owns one controller and input source. The fixed controller address
+is `0x34`; multiple controllers require separate named I2C buses.
+RESET and INT bindings are optional. RESET is active low and is pulsed before
+the first probe. FIFO polling works with or without INT.
+
+The generic `tca8418` driver accepts `rows=1..8` and `cols=1..10`, defaulting
+to 8 rows and 10 columns. The branded drivers select their own fixed geometry
+and mapping. Generic TCA8418 has no PWM dependency; the Pager profile owns
+its optional backlight.
+
+```text
+expansion attach tca8418 keyboard1 i2c=i2c0 addr=0x34 rows=4 cols=10
+input keymap keyboard1
+input keymap keyboard1 load /sd/keymap.json
+input keymap keyboard1 reset
+```
+
+The generic default is a reference wiring map. These are the keys under the
+US keyboard layout; HID usages pass through the active SolarOS keyboard
+layout for translation.
+
+| Row | Columns 0 through 9 |
+| --- | --- |
+| 0 | Q W E R T Y U I O P |
+| 1 | A S D F G H J K L Enter |
+| 2 | Left Shift Z X C V B N M Backspace Left Control |
+| 3 | Space Tab Escape Caps Lock Left Alt Left Down Up Right Delete |
+| 4 | 1 2 3 4 5 6 7 8 9 0 |
+| 5 | F1 F2 F3 F4 F5 F6 F7 F8 F9 F10 |
+| 6 | Minus Equals Left bracket Right bracket Backslash Semicolon Quote Grave Comma Period |
+| 7 | Left GUI Right Control Right Shift Right Alt Right GUI F11 F12 Insert Home End |
+
+Rows and columns are zero-based in mapping files. The physical event ID is
+`1 + row * 10 + col`, even when fewer than ten columns are enabled.
+The controller's matrix geometry is selected at attachment; mapping files
+cannot change it.
+
+The input service manages each source's mapping, modifier state, symbol layer,
+and tap/hold selector. `input keymap` lists mapping support; `input keymap
+keyboard1 show` inspects the active map. See [source keymaps](input.keymap.md)
+for physical-key selectors, compatible matrix selectors, JSON fields, and
+Python/Lua capability queries. The existing row/column mapping files remain
+valid for these three profiles.
+
+The Pager's built-in profile uses Space as a tap/hold symbol selector and its
+Caps-labelled key as a momentary Shift modifier. Unlabelled cells produce no
+logical input. The Pager board manifest initializes `lilygo-pager-keyboard`;
+scripts that previously selected `tca8418` for the Pager should use this name
+to retain its wiring, symbol layer, and backlight binding. The generic
+`tca8418` name now selects the reference map. Custom flavors can select the
+`lilygo_pager_keyboard` hardware group for the Pager profile.
+
+### Soldered Inputronic KEYBOARD
+
+The standalone Inputronic KEYBOARD (SKU 333360) uses a TCA8418 at the fixed
+I2C address `0x34`. Connect its easyC/Qwiic connector to a 3.3 V supply,
+ground, and the SDA/SCL pins of a named I2C bus. Use `expansion bus` to
+identify the bus and its pins. A board-owned bus can be shared with other
+devices at different addresses. Enable the `inputronic_keyboard` hardware
+group in custom flavors; it is included in `full`.
+
+```text
+expansion attach inputronic-keyboard keyboard1 i2c=i2c0 addr=0x34
+input keyboard
+expansion detach keyboard1
+```
+
+If RESET is wired to a host GPIO, add `reset=<gpio>` to pulse the active-low
+reset and hold it high before probing the keyboard. Otherwise RESET must
+have a pull-up to the keyboard supply. If INT is wired, `irq=<gpio>` reserves
+that input with a pull-up; FIFO polling still runs without a host interrupt.
+The custom 4G/e-paper profile binds RESET to GPIO41 and INT to GPIO40.
+
+Letters use the active SolarOS keyboard layout. Caps Lock starts off and
+toggles on each Caps press; Shift reverses letter case. Number and punctuation
+keys retain the Inputronic symbol map: Shift+0 through Shift+9 produce
+`= ! " # $ % & / ( )`, and Shift+semicolon, Shift+comma, and Shift+period
+produce colon, semicolon, and colon. Control/Alt chords and modified arrows
+use the common keyboard translation. Enter, Escape, Tab, Backspace, Delete,
+arrows, Space, and F1 through F10 feed shells and foreground apps. Held keys
+use the shared input repeat settings.
+
+The six FN keys publish physical press/release events with logical key and
+HID usage zero for applications to interpret. Their physical IDs are
+FN1=78, FN2=79, FN3=17, FN4=18, FN5=19, and FN6=20. They do not emit text.
+FIFO overflow or I2C failure clears held keys and modifiers; after recovery,
+release and press any still-held key again. Detaching closes the keyboard
+source and releases the expansion's bus/address claims. Multiple keyboards
+can use separate named buses, each at `0x34`.
 
 ### RFM95W on ESP32-S3-DevKitC-1
 
