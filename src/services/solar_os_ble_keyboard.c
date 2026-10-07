@@ -1967,7 +1967,8 @@ esp_err_t solar_os_ble_backend_init(void)
     ble_svc_gap_init();
     ble_svc_gatt_init();
     (void)ble_att_set_preferred_mtu(517);
-    if (solar_os_task_create_pinned_internal(host_task, "nimble_host", 4096, NULL,
+    if (solar_os_task_create_pinned_internal(host_task, "nimble_host",
+        CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE, NULL,
         configMAX_PRIORITIES - 4, &host_task_handle, 0, SOLAR_OS_TASK_ROLE_SYSTEM) != pdPASS) {
         (void)solar_os_ble_hid_deinit();
         (void)nimble_port_deinit();
