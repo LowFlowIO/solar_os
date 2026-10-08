@@ -13,7 +13,10 @@ struct ble_store_status_event {
 typedef int ble_store_iterator_fn(int type, union ble_store_value *value, void *arg);
 int ble_store_iterate(int type, ble_store_iterator_fn *callback, void *arg);
 struct ble_store_key_sec { ble_addr_t peer_addr; };
-struct ble_store_value_sec { ble_addr_t peer_addr; };
+struct ble_store_value_sec {
+    ble_addr_t peer_addr;
+    uint8_t ltk_present, authenticated, sc;
+};
 int ble_store_read_our_sec(const struct ble_store_key_sec *, struct ble_store_value_sec *);
 struct ble_store_key_cccd {
     ble_addr_t peer_addr;

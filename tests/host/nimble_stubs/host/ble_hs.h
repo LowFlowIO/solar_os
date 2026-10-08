@@ -24,7 +24,7 @@
 #define BLE_HS_IO_DISPLAY_ONLY 0
 #define BLE_HS_IO_KEYBOARD_ONLY 2
 #define BLE_HS_IO_KEYBOARD_DISPLAY 4
-struct ble_hs_cfg_stub { uint8_t sm_io_cap; };
+struct ble_hs_cfg_stub { uint8_t sm_io_cap, sm_mitm, sm_sc; };
 extern struct ble_hs_cfg_stub ble_hs_cfg;
 #define BLE_GAP_SUBSCRIBE_REASON_WRITE 1
 #define BLE_GAP_SUBSCRIBE_REASON_TERM 2

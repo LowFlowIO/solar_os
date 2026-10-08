@@ -79,7 +79,9 @@ while not solaros.should_exit():
   initiates the BLE connection; SolarOS cannot dial a peripheral-to-host
   connection. Other saved hosts cannot take this offer. Automatic reconnection
   requires the host's Bluetooth to be enabled and its HID reconnect policy to
-  allow the connection.
+  allow the connection. Reconnect requests use the saved bond's authentication
+  and Secure Connections settings; selecting a saved host does not require
+  enabling pairing again on the host.
 - `forget(address, addr_type=0)`: delete this HID host's pairing. If selected,
   stop its connection offer and disconnect it. Local input bonds stay intact.
 - `disconnect()`: cancel a manual lease's host offer and disconnect its host,

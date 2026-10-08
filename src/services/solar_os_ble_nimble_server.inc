@@ -499,6 +499,31 @@ typedef struct {
 
 #include "solar_os_ble_hid_hosts.inc"
 
+static int server_hid_security_initiate(uint16_t conn)
+{
+    if (!peripheral->manual || peripheral->pairing)
+        return ble_gap_security_initiate(conn);
+
+    const struct ble_store_key_sec key = {.peer_addr=peripheral->selected_address};
+    struct ble_store_value_sec bond = {0};
+    int rc = ble_store_read_our_sec(&key, &bond);
+    if (rc) return rc;
+    if (!bond.ltk_present) return BLE_HS_ENOENT;
+
+    /* Request the security established by this bond. Asking for authenticated
+     * Secure Connections with a legacy or Just Works LTK makes Linux attempt
+     * new pairing, which a non-pairable remembered host rejects with 0x505.
+     * NimBLE constructs and sends the Security Request synchronously here on
+     * the host queue; restore the defaults before any later pairing callback. */
+    const uint8_t mitm = ble_hs_cfg.sm_mitm, sc = ble_hs_cfg.sm_sc;
+    ble_hs_cfg.sm_mitm = bond.authenticated;
+    ble_hs_cfg.sm_sc = bond.sc;
+    rc = ble_gap_security_initiate(conn);
+    ble_hs_cfg.sm_mitm = mitm;
+    ble_hs_cfg.sm_sc = sc;
+    return rc;
+}
+
 static int server_saved_hid_bond(int type, union ble_store_value *value, void *arg)
 {
     (void)type;
@@ -611,7 +636,7 @@ static int server_gap(struct ble_gap_event *event, void *arg)
                         if (rc == BLE_HS_ENOENT) rc = 0;
                     }
                 }
-                if (!rc) rc = ble_gap_security_initiate(p->conn);
+                if (!rc) rc = server_hid_security_initiate(p->conn);
                 if (rc && rc != BLE_HS_EALREADY) {
                     p->retiring = !ble_gap_terminate(p->conn, BLE_ERR_AUTH_FAIL);
                 }

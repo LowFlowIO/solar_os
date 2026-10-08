@@ -94,7 +94,9 @@ connection. Applications can cache them on mounted storage.
 For manual leases, `connect(address, addr_type)` advertises only to the selected
 saved host, `forget(address, addr_type)` deletes that host pairing, and
 `disconnect()` returns to idle while keeping pairings. Address type defaults to
-zero. The remote host initiates the BLE connection.
+zero. The remote host initiates the BLE connection. Reconnect requests use the
+saved bond's authentication and Secure Connections settings; selecting a saved
+host does not require enabling pairing again on the host.
 Manual `pair()` drops the selected connection and advertises a fresh peripheral
 identity for a new host, preserving other saved hosts and the local keyboard.
 The default lease's `pair()` resets the previous host pairing on the public

@@ -353,6 +353,7 @@ int main(void)
     connect_peer(31);
     assert(fake.store_delete_calls==before_pair_delete+1);
     assert(fake.security_calls==1 && peripheral->peer_count==1);
+    assert(fake.security_mitm==1 && fake.security_sc==1); /* Fresh pairing defaults. */
     assert(!peripheral->advertising); /* HID accepts one active host. */
     /* Full bond storage must make room before NimBLE can emit a passkey.
      * Preserve even a disconnected input keyboard, other live peers, and
@@ -668,7 +669,7 @@ int main(void)
     assert(!strcmp(hid.info.host_name,"Desktop"));
     /* Repeated disconnect/select cycles retain the paired local identity and
      * reapply the chosen peer filter without reopening fresh pairing. */
-    for (unsigned cycle=0; cycle<3; cycle++) {
+    for (unsigned cycle=0; cycle<4; cycle++) {
         solar_os_ble_hid_request_t reconnect={.op=SOLAR_OS_BLE_HID_OP_DISCONNECT};
         assert(execute_hid(81,&reconnect)==ESP_OK && peripheral->peers->retiring);
         disconnect_peer(42);
@@ -681,7 +682,16 @@ int main(void)
         assert(fake.adv_mode==BLE_GAP_CONN_MODE_UND && fake.adv_filter==BLE_HCI_ADV_FILT_CONN);
         assert(!memcmp(fake.random_address,new_identity.val,6));
         assert(!memcmp(&fake.whitelist_peer,&new_host,sizeof(new_host)));
+        /* Reconnect with unauthenticated/authenticated legacy and SC bonds.
+         * The request must not upgrade an existing LTK or leak its policy
+         * into input-keyboard pairing or a later fresh HID pairing. */
+        fake.bond_authenticated=(cycle & 1) != 0;
+        fake.bond_sc=(cycle & 2) != 0;
+        security_before=fake.security_calls;
         connect_peer(42);
+        assert(fake.security_calls==security_before+1);
+        assert(fake.security_mitm==fake.bond_authenticated && fake.security_sc==fake.bond_sc);
+        assert(ble_hs_cfg.sm_mitm==1 && ble_hs_cfg.sm_sc==1);
         fake.server_gap(&secured,fake.server_gap_arg); nimble_test_drain();
         subscribe_handle(42,keyboard->handle);
         reconnect.op=SOLAR_OS_BLE_HID_OP_STATUS;
@@ -689,6 +699,15 @@ int main(void)
         assert(reconnect.info.connected && reconnect.info.encrypted && reconnect.info.bonded);
         assert(server_hid_ready(keyboard->id));
     }
+    fake.submit_error=BLE_HS_EBUSY;
+    assert(server_hid_security_initiate(42)==BLE_HS_EBUSY);
+    assert(ble_hs_cfg.sm_mitm==1 && ble_hs_cfg.sm_sc==1);
+    fake.submit_error=0;
+    security_before=fake.security_calls;
+    fake.bond_no_ltk=true;
+    assert(server_hid_security_initiate(42)==BLE_HS_ENOENT);
+    assert(fake.security_calls==security_before); /* Never pair instead of restoring a missing LTK. */
+    fake.bond_no_ltk=false;
     /* A late security event from a retiring peer cannot save the new pairing
      * identity against the old host or complete a cancelled pairing flow. */
     peripheral->peers->retiring=true;

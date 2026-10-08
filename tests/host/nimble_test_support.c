@@ -18,7 +18,8 @@ static struct ble_npl_eventq eventq;
 static pthread_mutex_t event_lock = PTHREAD_MUTEX_INITIALIZER;
 static pthread_cond_t event_changed = PTHREAD_COND_INITIALIZER;
 void nimble_test_reset(void)
-{ memset(&fake, 0, sizeof(fake)); fake.mtu = 517; ble_hs_cfg.sm_io_cap = BLE_HS_IO_DISPLAY_ONLY; }
+{ memset(&fake, 0, sizeof(fake)); fake.mtu = 517;
+  ble_hs_cfg=(struct ble_hs_cfg_stub){.sm_io_cap=BLE_HS_IO_DISPLAY_ONLY,.sm_mitm=1,.sm_sc=1}; }
 struct ble_npl_eventq *nimble_port_get_dflt_eventq(void) { return &eventq; }
 void ble_npl_event_init(struct ble_npl_event *e, void (*fn)(struct ble_npl_event *), void *arg)
 { *e = (struct ble_npl_event){.fn = fn, .arg = arg}; }
@@ -60,7 +61,13 @@ int ble_gap_connect(uint8_t own, const ble_addr_t *addr, int ms, const void *par
   fake.gap = fn; fake.gap_arg = arg; return fake.submit_error; }
 int ble_gap_conn_cancel(void) { fake.cancel_calls++; return 0; }
 int ble_gap_terminate(uint16_t c, uint8_t r) { (void)c; (void)r; fake.terminate_calls++; return 0; }
-int ble_gap_security_initiate(uint16_t c) { (void)c; fake.security_calls++; return fake.submit_error; }
+int ble_gap_security_initiate(uint16_t c)
+{
+    (void)c; fake.security_calls++;
+    fake.security_mitm=ble_hs_cfg.sm_mitm;
+    fake.security_sc=ble_hs_cfg.sm_sc;
+    return fake.submit_error;
+}
 int ble_sm_inject_io(uint16_t c, struct ble_sm_io *io)
 { (void)c; fake.inject_calls++; fake.injected=*io; return fake.submit_error; }
 int ble_gap_conn_find(uint16_t c, struct ble_gap_conn_desc *desc)
@@ -276,7 +283,10 @@ int ble_store_read_our_sec(const struct ble_store_key_sec *key, struct ble_store
 {
     for (size_t i=0; i<fake.store_bond_count[0]; i++)
         if (!memcmp(&key->peer_addr, &fake.store_bonds[0][i], sizeof(ble_addr_t))) {
-            value->peer_addr=key->peer_addr; return 0;
+            *value=(struct ble_store_value_sec){.peer_addr=key->peer_addr,
+                .ltk_present=!fake.bond_no_ltk,
+                .authenticated=fake.bond_authenticated,.sc=fake.bond_sc};
+            return 0;
         }
     return BLE_HS_ENOENT;
 }

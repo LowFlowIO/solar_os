@@ -27,6 +27,8 @@ extern struct nimble_test_state {
     ble_addr_t store_bonds[2][4], active_bonds[4], keyboard_bond, deleted_bond;
     size_t store_bond_count[2], active_bond_count;
     bool keyboard_bond_valid;
+    bool bond_no_ltk, bond_authenticated, bond_sc;
+    uint8_t security_mitm, security_sc;
     int store_cccd_read_calls, store_cccd_write_calls;
     uint16_t store_cccd_handle, store_cccd_flags;
     struct ble_store_value_cccd store_cccd_written;
