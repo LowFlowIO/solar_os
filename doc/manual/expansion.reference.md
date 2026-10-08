@@ -275,6 +275,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `cardkb` | M5Stack Unit CardKB | `i2c=<bus> addr=0x5f` | Polls released keys into the shared input service for shells and foreground apps. |
 | `inputronic-keyboard` | Soldered Inputronic KEYBOARD (SKU 333360) | `i2c=<bus> addr=0x34 [reset=<gpio>] [irq=<gpio>]` | Polls the 8x10 matrix FIFO and publishes press/release events through the shared input service. Optional active-low reset and interrupt pins. |
 | `tdeck-keyboard` | LilyGO T-Deck raw-matrix keyboard | `i2c=<bus> addr=0x55` | Polls the raw matrix and publishes keys through the shared input service. The built-in T-Deck attachment uses its board keymap; other boards can attach the same controller to a named I2C bus. |
+| `tab5-keyboard` | M5Stack Tab5 70-key keyboard | `i2c=<bus> addr=0x6d [irq=<pin>]` | Normal-mode press/release events, runtime keymaps, optional active-low interrupt with polling fallback. Accepts an already configured address from `0x08` to `0x77`. |
 | `tca8418` | Generic TCA8418 matrix keyboard | `i2c=<bus> addr=0x34 [rows=1..8] [cols=1..10] [reset=<pin>] [irq=<pin>]` | Defaults to an 8x10 reference map; supports user mappings through `input keymap`. |
 | `lilygo-pager-keyboard` | LilyGO T-LoRa-Pager keyboard | `i2c=<bus> addr=0x34 [reset=<pin>] [irq=<pin>] [backlight=<pwm-pin>]` | Fixed 4x10 Pager wiring and symbol layer, with optional PWM backlight. |
 | `cl32-core` | Integrated CL-32 ATmega808 controller | `i2c=<bus> addr=0x08` | Fixed CL-32-only `core0`; polls keyboard press/release events into `keyboard0` and provides `battery0` from the AVR voltage, USB-power, and charging state. It is not runtime-probeable or detachable. |
@@ -531,6 +532,64 @@ shared SolarOS input path. CardKB reports one value after release, so host-side
 key repeat is not available. Its values 128 through 175 are private Fn
 combinations and are ignored instead of being confused with SolarOS logical
 keys.
+
+### M5Stack Tab5 Keyboard
+
+The [Tab5 Keyboard (A164)](https://docs.m5stack.com/en/tab5/Tab5_Keyboard)
+is a 3.3 V, 70-key I2C keyboard with a default address of `0x6d`. Connect
+3.3 V, GND, SDA, and SCL to the corresponding board supply and named bus.
+INT is optional; connect it to a free, input-capable GPIO and pass `irq=<pin>`.
+Use `expansion status` and `expansion layout` to find the board's buses and pins.
+
+The `waveshare_esp32_s3_sim7670g_4g_epaper` profile attaches this keyboard
+automatically as fixed `keyboard0` on `i2c0` at `0x6d`, with INT on GPIO41.
+GPIO40 is available for expansion.
+Use `input test keyboard0` to inspect its event count and last event. Fixed
+board attachments cannot be detached or attached a second time from the shell.
+
+On boards without a fixed Tab5 attachment, attach a connected keyboard with:
+
+```text
+expansion attach tab5-keyboard keyboard0 i2c=i2c0 addr=0x6d
+input sources
+input keymap keyboard0 show
+expansion detach keyboard0
+```
+
+For interrupt operation, append an available GPIO binding, for example
+`irq=gpio1` when GPIO1 is free on the board. Falling INT wakes the keyboard
+worker. It also polls every 50 ms to cover missed edges; without INT it polls
+every 10 ms. These are worker intervals, not guaranteed input latency.
+
+The driver selects Normal mode and maps both press and release events into
+the common input service, including host key repeat. Aa acts as held Shift,
+Ctrl and Alt are held modifiers, and Sym selects the printed symbol layer
+while held. Character-mode latch and double-click behavior is not used.
+Letters and navigation keys carry HID usages. Printed punctuation uses logical
+character mappings without HID usages; raw HID forwarding requires a mapping
+that supplies the appropriate usages and modifiers.
+
+Physical IDs are `1 + row * 14 + column`, with rows `0..4` and columns `0..13`.
+Use `input keymap keyboard0 load <path>` and `input keymap keyboard0 reset`
+to customize or restore the built-in map. This driver uses runtime keymaps;
+it is not a `SOLAR_OS_KEYMAP_PROFILE` desktop/build profile.
+
+The firmware has a 32-event FIFO and no overflow status flag. A detected full
+queue, malformed event, input queue failure, or I2C error releases tracked
+keys and triggers reconfiguration with a cleared FIFO. Release and press keys
+again after recovery. A controller reset or an undetected dropped event cannot
+be reconstructed from the event-only protocol.
+
+Detach stops the worker and removes its GPIO handler, releases keys, and
+restores the previous keyboard mode and interrupt configuration. It leaves
+the named I2C bus available to other devices. If restoring configuration fails,
+ownership is retained so detach can be retried. Attaching clears old queued
+events; RGB settings and the persistent I2C address are not changed.
+
+Custom flavors can enable `tab5_keyboard = true` in `[groups]` or select
+`expansion_tab5_keyboard` in `[packages]`. The full flavor includes it on
+ESP32 and ESP32-S3 boards with expansion I2C support. `addr` selects the current
+device address; it does not reprogram the keyboard.
 
 ### TCA8418 matrix keyboards and mappings
 

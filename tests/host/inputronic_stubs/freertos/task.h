@@ -9,6 +9,8 @@ typedef void (*TaskFunction_t)(void *);
 #define tskNO_AFFINITY (-1)
 uint32_t ulTaskNotifyTake(BaseType_t clear, TickType_t ticks);
 BaseType_t xTaskNotifyGive(TaskHandle_t task);
+void vTaskNotifyGiveFromISR(TaskHandle_t task, BaseType_t *wake);
+#define portYIELD_FROM_ISR() ((void)0)
 
 TickType_t xTaskGetTickCount(void);
 void vTaskDelay(TickType_t ticks);

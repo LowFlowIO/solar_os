@@ -115,6 +115,7 @@ drv2605 = true
 bq25896 = true
 axp2101 = true
 tdeck_keyboard = true
+tab5_keyboard = true
 analog_joystick = true
 ps2_mouse = true
 sdspi = true

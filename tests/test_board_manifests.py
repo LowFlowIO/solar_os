@@ -62,6 +62,29 @@ class BoardManifestTest(unittest.TestCase):
                 with self.assertRaises(ManifestError):
                     validate_board(board, self.drivers)
 
+    def test_tab5_keyboard_named_bus_optional_irq_and_address_range(self) -> None:
+        for profile in ("esp32_s3_devkitc1_n16r8", "esp32_devkitc_v4_wrover"):
+            board = load_board_manifest(self.manifest_dir / f"{profile}.toml", self.manifest_dir)
+            device = {"driver": "tab5-keyboard", "name": "keyboard1",
+                      "bindings": {"i2c": "i2c0", "addr": 0x6d}}
+            board.setdefault("devices", []).append(device)
+            validate_board(board, self.drivers)
+            self.assertIn("expansion_tab5_keyboard", required_packages(board, self.drivers))
+            self.assertIn('.driver = "tab5-keyboard", .name = "keyboard1"',
+                          generate_header(board, self.drivers))
+            if profile == "esp32_s3_devkitc1_n16r8":
+                device["bindings"]["irq"] = 1
+                pin = next(pin for pin in board["pins"] if pin["gpio"] == 1)
+                pin.update(policy="fixed", adc=False, pwm=False)
+                validate_board(board, self.drivers)
+            for address in (0x08, 0x77):
+                device["bindings"]["addr"] = address
+                validate_board(board, self.drivers)
+            for address in (0x07, 0x78):
+                device["bindings"]["addr"] = address
+                with self.assertRaises(ManifestError):
+                    validate_board(board, self.drivers)
+
     def test_generic_tca8418_geometry_and_pager_profile(self) -> None:
         board = load_board_manifest(self.manifest_dir / "esp32_devkitc_v4_wrover.toml",
                                     self.manifest_dir)
@@ -84,16 +107,17 @@ class BoardManifestTest(unittest.TestCase):
         self.assertEqual(keyboard["bindings"]["backlight"], 46)
         self.assertIn('.driver = "lilygo-pager-keyboard"', generate_header(pager, self.drivers))
 
-    def test_4g_epaper_initializes_inputronic_on_board_bus(self) -> None:
+    def test_4g_epaper_initializes_tab5_on_board_bus(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "waveshare_esp32_s3_sim7670g_4g_epaper.toml",
             self.manifest_dir)
         keyboard = next(device for device in board["devices"]
                         if device["name"] == "keyboard0")
-        self.assertEqual(keyboard["driver"], "inputronic-keyboard")
+        self.assertEqual(keyboard["driver"], "tab5-keyboard")
         self.assertEqual(keyboard["bindings"],
-                         {"i2c": "i2c0", "addr": 0x34, "reset": 41, "irq": 40})
-        self.assertIn("expansion_inputronic_keyboard", required_packages(board, self.drivers))
+                         {"i2c": "i2c0", "addr": 0x6d, "irq": 41})
+        self.assertIn("expansion_tab5_keyboard", required_packages(board, self.drivers))
+        self.assertEqual(next(pin for pin in board["pins"] if pin["gpio"] == 40)["policy"], "free")
         self.assertNotIn("expansion_cardkb", required_packages(board, self.drivers))
         validate_board(board, self.drivers)
 

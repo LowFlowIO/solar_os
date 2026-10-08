@@ -2,6 +2,14 @@
 
 ## 4.x
 
+- **4.16.3** — 2026-10-08 — Added the reusable M5Stack Tab5 Keyboard
+  expansion driver with named I2C bindings, an optional interrupt, physical
+  press/release events, key repeat, held modifiers, and the printed Sym layer.
+  Runtime keymaps can be inspected, loaded, and reset through `input keymap`.
+  The full flavor includes the driver on ESP32 and ESP32-S3 boards with
+  expansion I2C support. The Waveshare 4G/e-paper profile now uses Tab5 as
+  fixed `keyboard0` at `0x6d`, with INT on GPIO41, replacing its Inputronic
+  default and freeing GPIO40 for expansion.
 - **4.16.2** — 2026-10-06 — Added the reusable Soldered Inputronic
   keyboard driver and enabled it on the custom Waveshare 4G/e-paper profile.
   TCA8418 keyboards share one controller backend with separate generic,
