@@ -1,6 +1,7 @@
 import importlib.util
 from pathlib import Path
 import sys
+import tomllib
 import unittest
 
 
@@ -48,6 +49,27 @@ class FlavorPackagesTest(unittest.TestCase):
                              flavor)
             self.assertEqual(packages["app_gameboy"], expected,
                              flavor)
+
+    def test_odroid_runtime_i2c_survives_board_and_target_pruning(self):
+        board = tomllib.loads(
+            (REPOSITORY / "boards" / "manifests" / "odroid_go.toml").read_text()
+        )
+        capabilities = set(board["build"]["capabilities"])
+        for flavor in ("core", "full"):
+            with self.subTest(flavor=flavor):
+                _, _, groups, packages = self.resolve(flavor)
+                _, pruned = generate_flavor_config.apply_board_capability_pruning(
+                    self.catalog, groups, packages, capabilities
+                )
+                pruned = generate_flavor_config.apply_target_pruning(
+                    self.catalog, pruned, board["target"]["mcu"]
+                )
+                for package in ("service_resources", "service_i2c",
+                                "service_expansion", "expansion_cardkb"):
+                    self.assertTrue(pruned[package], package)
+                if flavor == "full":
+                    self.assertTrue(pruned["expansion_tab5_keyboard"])
+                    self.assertTrue(pruned["expansion_inputronic_keyboard"])
 
     def test_native_image_pipeline_does_not_require_espdl(self):
         _, _, groups, packages = self.resolve("full")

@@ -210,7 +210,7 @@ The current tree includes these board targets:
 | `waveshare_esp32_s3_epaper_3_97` | `waveshare_esp32_s3_epaper_3_97` | [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97) | ESP32-S3-WROOM-1-N16R8 target with an SSD1677 e-paper display that defaults to 800x480 landscape, AXP2101 battery/charger monitoring, QMI8658 six-axis IMU, four-bit SDMMC, native USB CDC, UART, PCF85063 RTC, SHTC3 temperature/humidity sensor, ES8311 speaker/microphone audio, rotary navigation, Wi-Fi, BLE, and expansion I2C/UART. |
 | `xteink_x4_pro` | `xteink_x4_pro` | Xteink X4 Pro | ESP32-S3 target with 16 MB flash, 8 MB OPI PSRAM, an 800x480 landscape e-paper display with cached SSD1677/UC8179/UC8279 identification, fixed-mix frontlight brightness, GT911 touch and Home pad, one-bit SDMMC, BM8563-compatible RTC, CW2017 gauge, native USB CDC, UART0, navigation buttons, Wi-Fi, and BLE. |
 | `cl_32` | `cl_32` | CL-32 | ESP32-S3-WROOM-1-N16R8 target with a 384x168 ST7305 reflective LCD, an ATmega808-backed keyboard and battery monitor, native USB CDC, UART, microSD over SDSPI, PCF85063 RTC, onboard PWM buzzer, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S. |
-| `odroid_go` | `odroid_go` | Hardkernel ODROID-GO | Classic ESP32 target with ILI9341 display, SD over VSPI/SDSPI, battery ADC, ESP32 DAC speaker, buttons, ADC D-pad, status LED, display brightness, expansion SPI/UART/GPIO/PWM, and runtime GPIO4/GPIO15. |
+| `odroid_go` | `odroid_go` | Hardkernel ODROID-GO | Classic ESP32 target with ILI9341 display, SD over VSPI/SDSPI, battery ADC, ESP32 DAC speaker, buttons, ADC D-pad, status LED, display brightness, expansion I2C/SPI/UART/GPIO/PWM, and runtime GPIO4/GPIO15. |
 | `freenove_esp32_wrover_v3` | `freenove_esp32_wrover_v3` | Freenove ESP32-WROVER v3.0 (FNK0060) | Classic ESP32 target with 8 MB PSRAM, CH340/UART console, one-bit SDMMC, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, and a 384x288 monochrome PAL composite display on GPIO25. |
 | `ttgo_vga32_v14` | `ttgo_vga32_v14` | LilyGO TTGO VGA32 v1.4 | ESP32-PICO-D4 desktop target with 8 MB external PSRAM, build-selectable 320x200@70Hz, 320x240@60Hz, 640x400@70Hz, or 640x480@60Hz VGA output through the onboard RGB222 resistor DAC, GPIO25 mono DAC audio, a default-attached PS/2 keyboard, v1.4 microSD wiring over HSPI, USB-UART, Wi-Fi, BLE disabled by default, and two input-only expansion GPIOs. |
 | `esp32_s3_devkitc1_n16r8` | `esp32_s3_devkitc1_n16r8` | Espressif ESP32-S3-DevKitC-1-N16R8 | Headless ESP32-S3 target with CDC, UART, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, expansion I2C/SPI/UART/GPIO/ADC/PWM, graphics through attachable display targets, and no primary display or onboard sensors. |
@@ -715,7 +715,7 @@ It uses an ESP32-WROVER module with 4 MiB PSRAM, the ILI9341 display driver,
 SDSPI storage on the VSPI bus, battery ADC, ESP32 DAC speaker output, digital
 buttons, ADC D-pad input, status LED, PWM display brightness, Wi-Fi, and BLE.
 
-The board does not have CDC, I2C, RTC, onboard temperature/humidity sensors, or
+The board does not have CDC, a board-defined I2C bus, RTC, onboard temperature/humidity sensors, or
 audio input enabled. It boots into the display shell, and `uart0` on GPIO1/GPIO3
 is available as the serial byte-stream port.
 
@@ -740,6 +740,17 @@ LCD backlight, GPIO25 is speaker amplifier enable, GPIO26 is the DAC sample
 output, GPIO34/GPIO35 are the ADC D-pad axes, GPIO36 is battery ADC, GPIO39 is
 the board key input, and GPIO32/GPIO33/GPIO13/GPIO27/GPIO0 are built-in
 buttons.
+
+Create an I2C bus on the free P2 header pins with:
+
+```text
+expansion bus create i2c i2c0 port=i2c0 sda=gpio4 scl=gpio15 speed=100000
+i2c scan i2c0
+```
+
+Either I2C controller (`i2c0` or `i2c1`) can be selected. GPIO4 and GPIO15 must
+be unused; while the bus exists, they cannot also serve as external SPI chip
+selects, GPIO, PWM, or another runtime bus. No I2C bus is created at boot.
 
 GPIO25 is amplifier enable/shutdown wiring, not a second SolarOS DAC channel.
 Treat GPIO26 as the only DAC sample output for ODROID-GO audio.
