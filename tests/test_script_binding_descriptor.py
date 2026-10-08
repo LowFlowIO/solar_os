@@ -102,7 +102,9 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
             DESCRIPTOR,
             re.MULTILINE,
         )
-        self.assertEqual(len(nested), 38)
+        self.assertEqual(len(nested), 42)
+        self.assertTrue({("ble", "hid", name, name) for name in
+                         ("hosts", "connect", "forget", "disconnect")}.issubset(set(nested)))
         for module, submodule, _public_name, native_name in nested:
             python_handler = f"solaros_{module}_{submodule}_{native_name}_obj"
             lua_handler = f"solua_{module}_{submodule}_{native_name}"
@@ -201,7 +203,7 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
             + submodule_constant_count
             + subnested_count
             + hid_keycode_count * hid_keycode_include_count,
-            841,
+            845,
         )
 
     def test_tui_and_gfx_export_modified_horizontal_navigation_keys(self):

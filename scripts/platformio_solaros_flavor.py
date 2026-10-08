@@ -195,6 +195,7 @@ tracked_files = (
     project_dir / "scripts" / "solaros_keymap.py",
     project_dir / "scripts" / "solaros_keymap_build.py",
     project_dir / "patches" / "nimble" / "required_config.txt",
+    project_dir / "patches" / "nimble" / "config_guard.cmake",
     project_dir / "scripts" / "validate_board_metadata.py",
     project_dir / "scripts" / "generate_board_profile.py",
     project_dir / "scripts" / "solaros_board_manifest.py",

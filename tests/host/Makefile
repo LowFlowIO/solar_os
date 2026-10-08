@@ -290,7 +290,8 @@ ble_multi_peer_test: ble_multi_peer_test.c ble_test_support.c $(ROOT)/src/servic
 ble_nimble_test ble_hid_test ble_server_test: %: %.c nimble_test_support.c ble_test_support.c \
 		$(ROOT)/src/services/solar_os_ble_nimble.c $(ROOT)/src/services/solar_os_ble_hid.c \
 		$(ROOT)/src/services/solar_os_ble_hid_report_map.c \
-		$(ROOT)/src/services/solar_os_ble_nimble_server.inc \
+		$(ROOT)/src/services/solar_os_ble_nimble_server.inc $(ROOT)/src/services/solar_os_ble_hid_hosts.inc \
+		$(ROOT)/src/services/solar_os_ble_hid_name.inc \
 		$(wildcard $(ROOT)/src/services/solar_os_ble*.h) \
 		$(wildcard ble_stubs/freertos/*.h) \
 		$(wildcard nimble_stubs/*/*/*.h) $(wildcard nimble_stubs/*/*.h) \
