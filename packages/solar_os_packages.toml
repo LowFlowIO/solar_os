@@ -532,6 +532,11 @@ label = "Soldered Inputronic keyboard"
 category = "Expansion hardware"
 members = ["expansion_inputronic_keyboard"]
 
+[groups.tab5_keyboard]
+label = "M5Stack Tab5 keyboard"
+category = "Expansion hardware"
+members = ["expansion_tab5_keyboard"]
+
 [groups.tdeck_keyboard]
 label = "T-Deck keyboard"
 category = "Expansion hardware"
@@ -1618,6 +1623,20 @@ sources = [
   "services/solar_os_inputronic_keyboard.c",
   "services/solar_os_inputronic_keyboard_profile.c",
   "services/solar_os_inputronic_keyboard_driver.c",
+]
+requires = ["esp_driver_i2c", "esp_driver_gpio"]
+capabilities = ["expansion_i2c"]
+
+[packages.expansion_tab5_keyboard]
+label = "expansion.tab5-keyboard"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_tab5_keyboard_expansion_driver"]
+depends = ["service_expansion", "service_i2c", "service_input_keymap"]
+sources = [
+  "drivers/tab5_keyboard.c",
+  "services/solar_os_tab5_keyboard.c",
+  "services/solar_os_tab5_keyboard_profile.c",
+  "services/solar_os_tab5_keyboard_driver.c",
 ]
 requires = ["esp_driver_i2c", "esp_driver_gpio"]
 capabilities = ["expansion_i2c"]

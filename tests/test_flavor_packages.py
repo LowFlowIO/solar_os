@@ -281,6 +281,21 @@ class FlavorPackagesTest(unittest.TestCase):
                               generate_flavor_config.collect_expansion_drivers(
                                   self.catalog, pruned))
 
+    def test_tab5_keyboard_requires_expansion_i2c_on_both_targets(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["tab5_keyboard"])
+        for target in ("esp32", "esp32s3"):
+            for capabilities, expected in (({"i2c", "expansion_i2c"}, True), ({"i2c"}, False)):
+                with self.subTest(target=target, capabilities=capabilities):
+                    _, pruned = generate_flavor_config.apply_board_capability_pruning(
+                        self.catalog, groups, packages, capabilities)
+                    pruned = generate_flavor_config.apply_target_pruning(self.catalog, pruned, target)
+                    self.assertEqual(pruned["expansion_tab5_keyboard"], expected)
+                    drivers = generate_flavor_config.collect_expansion_drivers(self.catalog, pruned)
+                    self.assertEqual("solar_os_tab5_keyboard_expansion_driver" in drivers, expected)
+                    if expected:
+                        self.assertTrue(pruned["service_input_keymap"])
+
     def test_tca8418_profiles_share_backend_without_generic_pwm_dependency(self):
         _, _, _, packages = self.resolve("full")
         backend = self.catalog.package_defs["service_tca8418"]

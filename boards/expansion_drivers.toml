@@ -72,6 +72,30 @@ hint = "0x55"
 required = true
 allowed = [0x55]
 
+[drivers.tab5-keyboard]
+summary = "M5Stack Tab5 70-key keyboard"
+package = "expansion_tab5_keyboard"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2c"]
+default_name = "keyboard0"
+[[drivers.tab5-keyboard.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+[[drivers.tab5-keyboard.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x6d"
+required = true
+min = 0x08
+max = 0x77
+[[drivers.tab5-keyboard.bindings]]
+key = "irq"
+kind = "gpio"
+hint = "gpio"
+role = "irq"
+
 [drivers.tca8418]
 summary = "Generic TCA8418 matrix keyboard"
 package = "tca8418"

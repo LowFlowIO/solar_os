@@ -40,6 +40,18 @@ TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
+TARGETS += tab5_keyboard_test
+
+tab5_keyboard_test: tab5_keyboard_test.c $(wildcard $(ROOT)/src/services/solar_os_tab5_keyboard*) \
+        $(ROOT)/src/drivers/tab5_keyboard.c $(ROOT)/src/drivers/tab5_keyboard.h \
+        $(wildcard $(ROOT)/src/services/solar_os_input_keymap*) \
+        $(wildcard inputronic_stubs/*.h inputronic_stubs/freertos/*.h inputronic_stubs/driver/*.h)
+	$(CC) $(CFLAGS) -include compat.h -Iinputronic_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/src -I$(ROOT)/src/services -I$(ROOT)/src/drivers -I$(CJSON_DIR) \
+		tab5_keyboard_test.c $(ROOT)/src/drivers/tab5_keyboard.c \
+		$(ROOT)/src/services/solar_os_tab5_keyboard_profile.c \
+		$(ROOT)/src/services/solar_os_input_keymap.c $(ROOT)/src/services/solar_os_input_keymap_mapper.c \
+		$(ROOT)/src/services/solar_os_input_keymap_json.c $(CJSON_DIR)/cJSON.c -lm -o $@
 
 rtc_pcf8563_test: rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c \
         $(ROOT)/src/drivers/rtc_pcf8563.h $(ROOT)/src/services/solar_os_pcf8563.c \
@@ -916,6 +928,7 @@ test: $(TARGETS)
 	./ps2_mouse_test
 	./cardkb_codec_test
 	./inputronic_keyboard_test
+	./tab5_keyboard_test
 	./matrix_keyboard_test
 	./input_keymap_service_test
 	./cl32_keyboard_test
