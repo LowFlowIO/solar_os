@@ -1142,7 +1142,8 @@ available for the compiled board.
 | `pwm` | `pwm set <output> <freq-hz> <duty-percent>` | Start PWM on provider:number, or a native GPIO number. |
 | `pwm` | `pwm pulse <output> <freq-hz> <pulse-us>` | Command a pulse width in microseconds. |
 | `pwm` | `pwm off <output>` | Stop a general PWM output. |
-| `servo` | `servo list` / `servo status [name]` | Inspect calibrated servo outputs. |
+| `servo` | `servo list` | Show names, outputs, enabled state, and owners in a compact list. |
+| `servo` | `servo status [name]` | Show calibration, frequency, inversion, and the last accepted command for all servos or one named servo. |
 | `servo` | `servo open <name> <output> <min-us> <max-us> <min-deg> <max-deg> [freq-hz [inverted:0\|1]]` | Reserve an output without pulses; see [Servo outputs](servo.md). |
 | `servo` | `servo set <name> <angle-deg>` / `servo pulse <name> <pulse-us>` | Command a calibrated angle or pulse width. |
 | `servo` | `servo disable <name>` / `servo close <name>` | Stop pulses, retaining or releasing the reservation. |

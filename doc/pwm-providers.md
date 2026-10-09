@@ -59,3 +59,5 @@ only the affected servo's operation lock across I/O.
 Both services use static, bounded state and create no worker tasks. The limits
 are four providers, 32 active/reserved PWM outputs, and 16 named servo objects.
 Native PWM independently has four managed LEDC channels on one timer.
+Task-only registry and servo metadata uses external BSS when the build supports
+it. Mutex storage and the native PWM driver's state remain in internal SRAM.

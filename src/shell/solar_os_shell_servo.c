@@ -38,11 +38,17 @@ static void usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "servo disable <name> | close <name>");
 }
 
-static void print_info(solar_os_shell_io_t *term, const solar_os_servo_info_t *info)
+static void print_info(solar_os_shell_io_t *term, const solar_os_servo_info_t *info,
+                       bool detailed)
 {
     const solar_os_servo_config_t *c = &info->config;
     char output[SOLAR_OS_PWM_ENDPOINT_MAX];
     solar_os_pwm_format_output(&c->output, output, sizeof(output));
+    if (!detailed) {
+        solar_os_shell_io_printf(term, "%s %s %s owner=%s\r\n",
+            info->name, output, info->enabled ? "enabled" : "disabled", info->owner);
+        return;
+    }
     solar_os_shell_io_printf(term,
         "%s %s owner=%s %s %" PRIu32 " Hz pulses=%" PRIu32 "..%" PRIu32
         " us angles=%.3f..%.3f deg%s\r\n",
@@ -62,14 +68,15 @@ void solar_os_shell_cmd_servo(solar_os_context_t *ctx, int argc, char **argv)
     if (argc == 1 || (argc == 2 &&
         (strcmp(argv[1], "list") == 0 || strcmp(argv[1], "status") == 0))) {
         solar_os_servo_info_t info;
+        const bool detailed = argc == 2 && strcmp(argv[1], "status") == 0;
         if (solar_os_servo_count() == 0U) solar_os_shell_io_writeln(term, "no servos open");
-        for (size_t i = 0; solar_os_servo_get(i, &info); i++) print_info(term, &info);
+        for (size_t i = 0; solar_os_servo_get(i, &info); i++) print_info(term, &info, detailed);
         return;
     }
     if (argc == 3 && strcmp(argv[1], "status") == 0) {
         solar_os_servo_info_t info;
         ret = solar_os_servo_status(argv[2], &info);
-        if (ret == ESP_OK) { print_info(term, &info); return; }
+        if (ret == ESP_OK) { print_info(term, &info, true); return; }
     } else if (argc >= 8 && argc <= 10 && strcmp(argv[1], "open") == 0) {
         uint32_t inverted = 0;
         solar_os_servo_config_t config = {.freq_hz = SOLAR_OS_SERVO_FREQ_DEFAULT_HZ};

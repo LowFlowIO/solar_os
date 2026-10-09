@@ -3,6 +3,7 @@
 #include <math.h>
 #include <stdio.h>
 #include <string.h>
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "solar_os_pwm.h"
@@ -10,13 +11,14 @@
 typedef struct {
     bool used;
     unsigned refs;
-    StaticSemaphore_t mutex_storage;
     SemaphoreHandle_t mutex;
     solar_os_servo_info_t info;
     char pwm_owner[SOLAR_OS_SERVO_OWNER_MAX];
 } servo_slot_t;
 
-static servo_slot_t servos[SOLAR_OS_SERVO_MAX];
+/* Calibration and command state is task-only. Keep mutex storage internal. */
+static EXT_RAM_BSS_ATTR servo_slot_t servos[SOLAR_OS_SERVO_MAX];
+static StaticSemaphore_t servo_slot_mutex_storage[SOLAR_OS_SERVO_MAX];
 static SemaphoreHandle_t servo_mutex;
 static StaticSemaphore_t servo_mutex_storage;
 static portMUX_TYPE servo_init_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -27,7 +29,7 @@ static void servo_lock(void)
     if (servo_mutex == NULL) {
         servo_mutex = xSemaphoreCreateMutexStatic(&servo_mutex_storage);
         for (size_t i = 0; i < SOLAR_OS_SERVO_MAX; i++) {
-            servos[i].mutex = xSemaphoreCreateMutexStatic(&servos[i].mutex_storage);
+            servos[i].mutex = xSemaphoreCreateMutexStatic(&servo_slot_mutex_storage[i]);
         }
     }
     portEXIT_CRITICAL(&servo_init_lock);

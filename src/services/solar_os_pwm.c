@@ -3,6 +3,7 @@
 #include <stdio.h>
 #include <string.h>
 
+#include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "solar_os_config.h"
@@ -17,7 +18,6 @@ typedef struct {
     void *ctx;
     unsigned refs;
     unsigned bindings;
-    StaticSemaphore_t storage;
     SemaphoreHandle_t mutex;
 } pwm_provider_t;
 
@@ -29,8 +29,11 @@ typedef struct {
     char owner[SOLAR_OS_PWM_OWNER_MAX];
 } pwm_binding_t;
 
-static pwm_provider_t providers[SOLAR_OS_PWM_PROVIDER_MAX];
-static pwm_binding_t bindings[SOLAR_OS_PWM_OUTPUT_MAX];
+/* Provider metadata is used only from tasks; FreeRTOS mutex storage stays
+ * internal so its scheduler operations never depend on the PSRAM cache. */
+static EXT_RAM_BSS_ATTR pwm_provider_t providers[SOLAR_OS_PWM_PROVIDER_MAX];
+static EXT_RAM_BSS_ATTR pwm_binding_t bindings[SOLAR_OS_PWM_OUTPUT_MAX];
+static StaticSemaphore_t provider_mutex_storage[SOLAR_OS_PWM_PROVIDER_MAX];
 static StaticSemaphore_t registry_storage, init_storage;
 static SemaphoreHandle_t registry_mutex, init_mutex;
 static portMUX_TYPE init_lock = portMUX_INITIALIZER_UNLOCKED;
@@ -42,7 +45,7 @@ static void ensure_mutex(void)
         registry_mutex = xSemaphoreCreateMutexStatic(&registry_storage);
         init_mutex = xSemaphoreCreateMutexStatic(&init_storage);
         for (size_t i = 0; i < SOLAR_OS_PWM_PROVIDER_MAX; i++) {
-            providers[i].mutex = xSemaphoreCreateMutexStatic(&providers[i].storage);
+            providers[i].mutex = xSemaphoreCreateMutexStatic(&provider_mutex_storage[i]);
         }
     }
     portEXIT_CRITICAL(&init_lock);

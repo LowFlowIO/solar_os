@@ -41,6 +41,12 @@ servo disable <name>
 servo close <name>
 ```
 
+`servo list` (or bare `servo`) shows one line per open servo: its name, output,
+enabled state, and owner. `servo status` adds calibration, frequency, inversion,
+and the last accepted command for all open servos. `servo status <name>` shows
+those details for one servo. Tab completes open servo names after `set`,
+`status`, `pulse`, `disable`, and `close`.
+
 Names contain 1 through 15 letters, digits, underscores, or hyphens. The
 following example assumes an available GPIO1 and a servo calibrated for
 1000 through 2000 microseconds over -45 through 45 degrees:
