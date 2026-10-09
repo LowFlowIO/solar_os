@@ -26,6 +26,7 @@ typedef unsigned TickType_t;
 #define SOLAR_OS_EVENT_TICK 0
 #define SOLAR_OS_EVENT_KEY 1
 #define SOLAR_OS_EVENT_CHAR 2
+#define SOLAR_OS_EVENT_RESUME 3
 typedef struct {
     bool streaming, finished;
     int result, argc;
@@ -38,9 +39,10 @@ typedef struct {
 } solar_os_event_t;
 typedef struct { int (*write)(const char *, size_t, void *); } solar_os_native_run_options_t;
 typedef struct {
-    atomic_bool done, stop_requested, input_reset;
+    atomic_bool done, stop_requested, input_reset, redraw_requested;
+    atomic_bool resumable, suspend_requested, suspended;
     uint64_t stop_deadline_us;
-    bool worker_started;
+    bool worker_started, keyboard_captured;
     void *presenter, *keys, *gfx;
     int argc, exit_code;
     char args[8][160], detail[160], cwd[160];
@@ -56,6 +58,9 @@ static uint64_t clock_us;
 static unsigned sequence, unload_order, audio_order, presenter_order, delete_order, release_order;
 static unsigned sent_keys, restarts;
 static bool finish_during_wait, fail_presenter;
+static unsigned suspend_order, resume_order;
+static unsigned redraws;
+static int transition, resume_result;
 static jmp_buf restarted;
 static const int vm_app;
 static const char *shell_cwd = "/sdcard";
@@ -105,6 +110,8 @@ static bool solar_os_gfx_palette_inverted(void *gfx) { (void)gfx; return theme_i
 static bool vm_stop_requested(void);
 static void vm_worker(void *arg);
 static bool vm_ready(void);
+static void vTaskDelay(TickType_t ticks);
+static void vm_sleep_ms(uint32_t ms) { vTaskDelay(pdMS_TO_TICKS(ms) ? pdMS_TO_TICKS(ms) : 1U); }
 static TaskHandle_t xTaskGetCurrentTaskHandle(void) { return current_task; }
 static uint64_t vm_time_us(void) { return clock_us; }
 static size_t strlcpy(char *dst, const char *src, size_t size)
@@ -132,6 +139,12 @@ static int solar_os_frame_presenter_deinit(void *presenter)
     assert(presenter && !vm_ready()); presenter_order = ++sequence;
     return fail_presenter ? ESP_FAIL : ESP_OK;
 }
+static int solar_os_frame_presenter_suspend_checked(void *presenter)
+{ assert(presenter && !vm_ready()); suspend_order = ++sequence; return fail_presenter ? ESP_ERR_TIMEOUT : ESP_OK; }
+static int solar_os_frame_presenter_resume(void *presenter)
+{ assert(presenter && !vm_ready()); resume_order = ++sequence; return resume_result; }
+static bool solar_os_frame_presenter_redraw(void *presenter)
+{ assert(presenter && !vm_ready()); redraws++; return true; }
 static void solar_os_task_delete_internal(TaskHandle_t task)
 {
     assert(!task && vm_ready() && !atomic_load(&vm_worker_task)); delete_order = ++sequence;
@@ -145,13 +158,25 @@ static void complete_worker(void)
 static void vTaskDelay(TickType_t ticks)
 {
     assert(ticks); clock_us += ticks * 10000U;
+    if (transition == 1) { /* Model worker acknowledgement while main waits. */
+        assert(atomic_load(&vm.suspend_requested));
+        atomic_store(&vm.suspended, true);
+    } else if (transition == 2) { /* Model presenter resume acknowledgement. */
+        assert(!atomic_load(&vm.suspend_requested));
+        atomic_store(&vm.suspended, false);
+    } else if (transition == 3 || transition == 4) {
+        /* Real guest suspend blocks only after releasing worker resources. */
+        assert(atomic_load(&vm.suspended) && audio_order < suspend_order && !resume_order);
+        if (transition == 3) atomic_store(&vm.suspend_requested, false);
+        else atomic_store(&vm.stop_requested, true);
+    }
     if (finish_during_wait && !atomic_load(&vm.done)) complete_worker();
 }
 static void esp_restart(void) { restarts++; longjmp(restarted, 1); }
 static void solar_os_input_release_keyboard(void *owner)
-{ assert(owner == vm_state && vm_ready()); release_order = ++sequence; }
+{ assert(owner == vm_state && (vm_ready() || atomic_load(&vm.suspended))); release_order = ++sequence; }
 static void solar_os_context_set_streaming_graphics_active(solar_os_context_t *ctx, bool active)
-{ assert(active ? !vm_ready() : vm_ready()); ctx->streaming = active; }
+{ assert(active ? !vm_ready() : (vm_ready() || atomic_load(&vm.suspended))); ctx->streaming = active; }
 static void *xQueueCreate(unsigned length, size_t item_size)
 { assert(length == 64 && item_size == sizeof(solar_os_native_vm_key_v1_t)); return &worker_token; }
 static int solar_os_task_create_pinned_internal(void (*task)(void *), const char *name,
@@ -175,11 +200,15 @@ static void setup(solar_os_context_t *ctx)
     memset(&state, 0, sizeof(state)); vm_state = &state;
     atomic_init(&vm.done, false); atomic_init(&vm.stop_requested, false);
     atomic_init(&vm.input_reset, false); atomic_store(&vm_worker_task, NULL);
+    atomic_init(&vm.redraw_requested, false);
+    atomic_init(&vm.resumable, false); atomic_init(&vm.suspend_requested, false);
+    atomic_init(&vm.suspended, false);
     current_task = &main_token; clock_us = 0;
     vm.presenter = &state; vm.worker_started = true;
     *ctx = (solar_os_context_t){.streaming = true};
     sequence = unload_order = audio_order = presenter_order = delete_order = release_order = 0;
     finish_during_wait = fail_presenter = false; sent_keys = 0;
+    suspend_order = resume_order = 0; transition = resume_result = 0;
 }
 
 int main(void)
@@ -188,6 +217,14 @@ int main(void)
     solar_os_event_t exit = {.type = SOLAR_OS_EVENT_KEY,
         .data.key = {.key = SOLAR_OS_KEY_APP_EXIT, .action = SOLAR_OS_NATIVE_VM_KEY_PRESS}};
     solar_os_event_t tick = {.type = SOLAR_OS_EVENT_TICK};
+    solar_os_event_t repaint = {.type = SOLAR_OS_EVENT_RESUME};
+    setup(&ctx);
+    vm_event(&ctx, &repaint); assert(redraws == 0 && atomic_load(&vm.redraw_requested));
+    assert(vm_stop_requested() && redraws == 0); /* Main task never accesses presenter. */
+    current_task = &worker_token; atomic_store(&vm_worker_task, current_task);
+    assert(!vm_stop_requested() && redraws == 1);
+    atomic_store(&vm.done, true);
+    vm_event(&ctx, &repaint); assert(redraws == 1);
     for (unsigned run = 0; run < 20; ++run) {
         setup(&ctx);
         /* Release alone must not request shutdown. Repeat must not extend it. */
@@ -265,6 +302,51 @@ int main(void)
     reject_launch = false;
     assert(solar_os_native_vm_launch(&ctx, 8, args) == 0 && !strcmp(ctx.launch_cwd, "/sdcard"));
     assert(solar_os_native_vm_launch(&ctx, 9, args) == ESP_ERR_INVALID_ARG);
+    for (unsigned run = 0; run < 20; ++run) {
+        setup(&ctx);
+        assert(vm_enable_suspend() == SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+        assert(!vm_suspend_requested());
+        current_task = &worker_token; atomic_store(&vm_worker_task, current_task);
+        assert(vm_guest_suspend() == SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+        assert(vm_enable_suspend() == 0 && atomic_load(&vm.resumable));
+        current_task = &main_token;
+        transition = 1; vm.keyboard_captured = true;
+        vm_suspend(&ctx);
+        assert(!ctx.streaming && !vm.keyboard_captured && atomic_load(&vm.suspended));
+        assert(!vm_ready() && !atomic_load(&vm.stop_requested) && atomic_load(&vm.input_reset));
+        assert(!unload_order && !delete_order);
+        ctx.gfx = &state; transition = 2; vm_resume(&ctx);
+        assert(ctx.streaming && !atomic_load(&vm.suspended) && vm.gfx == ctx.gfx);
+        assert(!atomic_load(&vm.suspend_requested) && !vm_ready());
+        /* Actual guest-side handshake retains state and resumes the presenter. */
+        current_task = &worker_token;
+        atomic_store(&vm.suspend_requested, true); transition = 3;
+        assert(vm_suspend_requested() && vm_guest_suspend() == 0);
+        assert(audio_order < suspend_order && suspend_order < resume_order);
+        assert(!atomic_load(&vm.suspended) && !unload_order && !delete_order);
+        atomic_store(&vm.suspend_requested, true); transition = 4; resume_order = 0;
+        assert(vm_guest_suspend() == 0 && vm_stop_requested() && !resume_order);
+        assert(!atomic_load(&vm.suspended)); /* Close wakes a parked guest. */
+    }
+    setup(&ctx); finish_during_wait = true;
+    vm_suspend(&ctx); /* Older modules keep shutdown-on-switch behavior. */
+    assert(vm_ready() && !ctx.streaming && atomic_load(&vm.stop_requested));
+    setup(&ctx); atomic_store(&vm.resumable, true);
+    finish_during_wait = true; vm_suspend(&ctx);
+    assert(vm_ready() && !ctx.streaming); /* Guest returning during pause. */
+    setup(&ctx); atomic_store(&vm.resumable, true);
+    if (!setjmp(restarted)) { vm_suspend(&ctx); assert(!"unresponsive suspension must restart"); }
+    assert(!vm_ready() && !release_order && ctx.streaming);
+    setup(&ctx); atomic_store(&vm.suspended, true); atomic_store(&vm.suspend_requested, true);
+    if (!setjmp(restarted)) { vm_resume(&ctx); assert(!"unresponsive resume must restart"); }
+    setup(&ctx); atomic_store(&vm.resumable, true); atomic_store(&vm.suspend_requested, true);
+    current_task = &worker_token; atomic_store(&vm_worker_task, current_task);
+    fail_presenter = true;
+    if (!setjmp(restarted)) { vm_guest_suspend(); assert(!"display join failure must restart"); }
+    assert(!atomic_load(&vm.suspended)); /* Never release a still-active display. */
+    fail_presenter = false; transition = 3; resume_result = ESP_ERR_NO_MEM;
+    assert(vm_guest_suspend() == SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
+    assert(!atomic_load(&vm.suspended));
     puts("Native VM lifecycle, colors and captured working directory tests passed");
     return 0;
 }

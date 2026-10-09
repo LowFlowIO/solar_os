@@ -1283,15 +1283,15 @@ static void dispatch_input_key(const solar_os_input_key_event_t *event)
         (event->modifiers & SOLAR_OS_INPUT_MOD_LEFT_ALT) != 0U) {
         session_switch_alt_held = true;
         solar_os_sessions_show_input_focus_overlay();
+        if (input_focus_accepts_key_events()) {
+            dispatch_key_to_input_focus(event);
+        }
         return;
     }
 
     if (session_switch_alt_held && !alt_active) {
         session_switch_alt_held = false;
         close_session_overlay();
-        if (event->key == 0U) {
-            return;
-        }
     }
 
     if (navigation_bit != 0U &&

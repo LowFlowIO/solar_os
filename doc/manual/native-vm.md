@@ -3,7 +3,7 @@ id = "native-vm"
 title = "Native virtual machines"
 section = "api"
 summary = "External emulator modules using SolarOS display, input, storage, timing and audio"
-keywords = "vm emulator apple2 reinette native elf restart"
+keywords = "vm emulator apple2 reinette native elf restart suspend resume foreground"
 packages_any = ["service_native_modules"]
 agent_reference_sections = true
 +++
@@ -28,11 +28,18 @@ modules use `resolve_path` for path arguments. Native packages use
 installed under `modules/vms` in the preferred storage volume and launch only
 on request. `pkg installed` and `pkg remove` include VM modules.
 
-Ctrl+Alt+Del, Ctrl+] or closing/suspending a VM requests cooperative shutdown.
+Ctrl+Alt+Del, Ctrl+] or closing a VM session requests cooperative shutdown.
 The host releases its resources and returns to the shell when the module returns.
 If shutdown does not finish within five seconds, the host restarts the device.
 Save guest disk changes before exiting. VM modules run trusted native code in
 the firmware's address space.
+
+Modules can opt in to foreground suspension. `Alt+Tab` or `Alt+Right` switches
+to the next session; `Alt+Left` switches to the previous session. Resume through
+the same shortcuts or `session fg ID`. A suspended VM retains its guest state,
+module code and allocated memory. Guest execution pauses, and display, keyboard
+and audio resources are released for other sessions. Only one VM is loaded at
+a time. Modules without suspension support shut down when switched away.
 
 ## Host interface
 
@@ -59,8 +66,9 @@ and press/release/repeat actions. The host captures the first ready keyboard
 with structured key events, including one connected after launch, before
 desktop shortcuts. A reset marker precedes subsequent keys after queue
 overflow or a captured keyboard disconnect; clear held guest controls on reset.
-The capture is released when the module returns. `time_us` is monotonic;
-`sleep_ms` always yields at least one scheduler tick and caps a request at one
+Session switching and display focus shortcuts pass through the VM keyboard
+capture. The capture is released on suspension and when the module returns.
+`time_us` is monotonic; `sleep_ms` always yields at least one scheduler tick and caps a request at one
 second. `restart` restarts the device.
 
 Storage calls accept absolute paths. `file_size` reports a regular file's size;
@@ -90,12 +98,33 @@ request the minimum table size needed through `get_service`. Modules using an
 older table can run, but must implement cooperative shutdown to return to the
 shell without a restart.
 
+### Foreground suspension
+
+Call `enable_suspend` to enable suspension for the current launch. Then poll
+`suspend_requested` at guest execution safe points, including while the guest is
+paused. When requested, stop generating guest audio and call `suspend`. The host
+closes audio, joins the presenter and acknowledges suspension before the session
+switch completes. `suspend` blocks until the session resumes or closes. Guest
+allocations and the ELF remain loaded throughout suspension.
+
+After `suspend` returns, check `stop_requested` first and clean up if closing.
+Otherwise, check its result: display reacquisition failures return an error.
+On successful resume, reopen optional audio, discard buffered audio and held
+guest controls, reset execution timing against `time_us`, and submit a complete
+frame. Suspension time must not become guest catch-up work. A keyboard reset
+marker precedes fresh input after resume. The host restarts if a suspension or
+resume handshake does not finish within five seconds, or the presenter cannot
+release the display safely.
+
 ## Apple II Plus
 
 The `apple2` module uses Reinette II Plus and its puce6502 CPU core. It emulates
 an Apple II Plus with 64 KiB RAM including the language card, 40-column text,
 lores/hires and mixed graphics, two Disk II drives, paddles and the speaker.
 It does not emulate an enhanced IIe. Undocumented CPU opcodes act as NOPs.
+Apple II supports foreground suspension, retaining RAM, CPU and disk state,
+including unsaved disk changes. F10 guest pause remains independent of session
+suspension.
 
 Supply these files in an asset directory:
 

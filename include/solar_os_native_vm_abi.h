@@ -43,7 +43,7 @@ typedef struct {
     void (*audio_close)(void);
     /* The loader cannot observe C main's return value. Set before returning. */
     void (*set_exit_code)(int code);
-    /* Append-only ABI extension. Exit/suspend requests cooperative shutdown. */
+    /* Append-only ABI extension. Exit requests cooperative shutdown. */
     bool (*stop_requested)(void);
     /* Effective terminal colors on color targets, black/white on mono targets.
      * Colors are RGB565; guest graphics palettes remain literal colors. */
@@ -55,4 +55,13 @@ typedef struct {
     /* Resolve using the launching shell's captured working directory and
      * normal SolarOS storage path rules. Arguments themselves remain literal. */
     int (*resolve_path)(const char *path, char *resolved, size_t resolved_size);
+    /* Opt in to cooperative foreground suspension for this launch. */
+    int (*enable_suspend)(void);
+    bool (*suspend_requested)(void);
+    /* Call at a guest safe point when suspension is requested. Closes audio,
+     * joins the presenter and blocks until resume or exit. Guest state and ELF
+     * remain allocated. On successful resume, reopen optional audio, reset
+     * timing/input/audio queues and submit a complete frame. On exit, return
+     * promptly after cleanup even if suspend returns successfully. */
+    int (*suspend)(void);
 } solar_os_native_vm_api_v1_t;

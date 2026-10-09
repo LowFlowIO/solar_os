@@ -785,6 +785,66 @@ int main(void)
     solar_os_input_release_keyboard(&capture_owner);
     assert(solar_os_input_capture_keyboard("replacement", &other_owner) == ESP_OK);
     solar_os_input_release_keyboard(&other_owner);
+    solar_os_input_key_event_t desktop_keys[4];
+    while (solar_os_input_read_events(desktop_keys, 4)) {}
+    assert(solar_os_input_write_key(capture_source, 0x4f, 0x4f, SOLAR_OS_KEY_CTRL_RIGHT,
+                                    SOLAR_OS_INPUT_MOD_LEFT_CTRL | SOLAR_OS_INPUT_MOD_LEFT_ALT,
+                                    SOLAR_OS_INPUT_KEY_PRESS) == ESP_OK);
+    assert(solar_os_input_read_events(desktop_keys, 4) == 1);
+    assert(solar_os_input_write_key(capture_source, 0x4f, 0x4f, SOLAR_OS_KEY_CTRL_RIGHT, 0,
+                                    SOLAR_OS_INPUT_KEY_RELEASE) == ESP_OK);
+    assert(solar_os_input_capture_keyboard_with_shortcuts("replacement", &capture_owner) == ESP_OK);
+    assert(solar_os_input_read_events(desktop_keys, 4) == 1);
+    assert(!solar_os_input_capture_key_event(&desktop_keys[0])); /* Pending focus shortcut release. */
+    captured.modifiers = 0; captured.key = '\t'; captured.action = SOLAR_OS_INPUT_KEY_RELEASE;
+    assert(!solar_os_input_capture_key_event(&captured)); /* Capture acquired midway through a shortcut. */
+    assert(solar_os_input_write_key(capture_source, 0x2b, 0x2b, '\t', SOLAR_OS_INPUT_MOD_LEFT_ALT,
+                                    SOLAR_OS_INPUT_KEY_PRESS) == ESP_OK);
+    assert(solar_os_input_write_key(capture_source, 0x2b, 0x2b, '\t', 0,
+                                    SOLAR_OS_INPUT_KEY_RELEASE) == ESP_OK);
+    assert(solar_os_input_read_events(desktop_keys, 4) == 2);
+    assert(!solar_os_input_capture_key_event(&desktop_keys[0]));
+    assert(!solar_os_input_capture_key_event(&desktop_keys[1]));
+    assert(!solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset));
+    captured.modifiers = SOLAR_OS_INPUT_MOD_LEFT_ALT;
+    captured.key = '\t'; captured.action = SOLAR_OS_INPUT_KEY_PRESS;
+    assert(!solar_os_input_capture_key_event(&captured));
+    captured.modifiers = 0; captured.action = SOLAR_OS_INPUT_KEY_RELEASE;
+    assert(!solar_os_input_capture_key_event(&captured));
+    assert(!solar_os_input_capture_key_event(&captured)); /* Both routing stages. */
+    captured.key = SOLAR_OS_KEY_RIGHT; captured.modifiers = SOLAR_OS_INPUT_MOD_RIGHT_ALT;
+    captured.action = SOLAR_OS_INPUT_KEY_PRESS;
+    assert(!solar_os_input_capture_key_event(&captured));
+    captured.key = SOLAR_OS_KEY_CTRL_UP;
+    captured.modifiers |= SOLAR_OS_INPUT_MOD_LEFT_CTRL;
+    assert(!solar_os_input_capture_key_event(&captured));
+    captured.key = 0; captured.usage = 0xe2; captured.modifiers = 0;
+    captured.action = SOLAR_OS_INPUT_KEY_RELEASE;
+    assert(!solar_os_input_capture_key_event(&captured));
+    assert(!solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset));
+    assert(solar_os_input_write_key(capture_source, 0xe2, 0xe2, 0,
+                                    SOLAR_OS_INPUT_MOD_LEFT_ALT, SOLAR_OS_INPUT_KEY_PRESS) == ESP_OK);
+    assert(solar_os_input_write_key(capture_source, 0xe2, 0xe2, 0,
+                                    0, SOLAR_OS_INPUT_KEY_RELEASE) == ESP_OK);
+    assert(solar_os_input_read_events(desktop_keys, 4) == 2);
+    for (unsigned i = 0; i < 2; ++i) {
+        assert(desktop_keys[i].usage == 0xe2 && desktop_keys[i].key == 0);
+        assert(!solar_os_input_capture_key_event(&desktop_keys[i]));
+    }
+    assert(!solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset));
+    captured.key = 'a'; captured.usage = 4; captured.action = SOLAR_OS_INPUT_KEY_PRESS;
+    assert(solar_os_input_capture_key_event(&captured));
+    assert(solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset));
+    assert(capture_read.key == 'a' && !reset);
+    captured.key = SOLAR_OS_KEY_RIGHT; captured.usage = 0x4f;
+    assert(solar_os_input_capture_key_event(&captured)); /* Ordinary guest arrow. */
+    solar_os_input_release_keyboard(&capture_owner);
+    assert(solar_os_input_capture_keyboard("replacement", &capture_owner) == ESP_OK);
+    captured.modifiers = SOLAR_OS_INPUT_MOD_LEFT_ALT; captured.key = '\t';
+    assert(solar_os_input_capture_key_event(&captured)); /* Full script capture remains exclusive. */
+    captured.key = 0; captured.modifiers = 0; captured.action = SOLAR_OS_INPUT_KEY_RELEASE;
+    assert(solar_os_input_capture_key_event(&captured));
+    solar_os_input_release_keyboard(&capture_owner);
     solar_os_input_source_close(capture_source);
 
     puts("input_test: ok");

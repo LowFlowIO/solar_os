@@ -25,6 +25,12 @@ static bool audio_live;
 static uint16_t text_foreground, text_background;
 static const char *expected_directory_arg, *resolved_directory, *expected_disk;
 static bool fail_resolve;
+static bool resumable, suspend_pending, suspend_exit;
+static unsigned suspends, audio_opens;
+static int resume_failure;
+static unsigned suspension_case;
+static uint64_t suspended_wall, suspend_cycles;
+static bool suspend_boot;
 static int resolve_path(const char *path, char *resolved, size_t size)
 {
     if (expected_directory_arg) assert(!strcmp(path, expected_directory_arg));
@@ -145,6 +151,18 @@ static int present(const uint8_t *pixels, size_t length)
         if (stop_case == 2) assert(apple2_machine->paused);
         if (stop_case == 4) assert(apple2_machine->show_help);
         if (stop_case == 5 && frames >= 3) assert(!apple2_machine->show_help);
+        if (suspension_case && frames == 2) {
+            suspend_pending = true;
+            apple2_machine->PB0 = 0x80;
+            apple2_machine->paddle[0] = 0;
+            apple2_machine->char_count = 4;
+            apple2_machine->disk[0].dirty = true;
+        }
+        if (suspension_case && suspends && frames == 3) {
+            assert(!apple2_machine->PB0 && apple2_machine->paddle[0] == 127);
+            assert(!apple2_machine->char_count && apple2_machine->disk[0].dirty);
+            assert(ticks - suspend_cycles < 101000U); /* One turbo slice with whole-instruction rounding. */
+        }
         return 0;
     }
     if (assets) {
@@ -166,7 +184,7 @@ static int present(const uint8_t *pixels, size_t length)
             assert(asset_frames < time_us / 40000U / 2U);
             return SOLAR_OS_NATIVE_ERROR_FAILED;
         }
-        assert(time_us < (sleep_quantum_us == 1000U ? 25000000U : 45000000U));
+        assert(time_us - suspended_wall < (sleep_quantum_us == 1000U ? 25000000U : 45000000U));
         return 0;
     }
     if (++frames == 4) {
@@ -181,6 +199,7 @@ static int read_key(solar_os_native_vm_key_v1_t *key, bool *available)
 {
     memset(key, 0, sizeof(*key));
     if (assets) {
+        if (suspend_boot && !suspends && time_us > 1000000U) suspend_pending = true;
         if (model_cpu_cost && time_us > 1100000U) {
             assert(apple2_machine->cpu_khz >= 9900U && apple2_machine->cpu_khz < 10200U);
             assert(apple2_machine->guest_khz > 0U &&
@@ -211,6 +230,7 @@ static int read_key(solar_os_native_vm_key_v1_t *key, bool *available)
 }
 static int audio_open(uint32_t *rate, uint8_t *channels)
 {
+    audio_opens++;
     if (stop_case) { *rate = 48000; *channels = 1; audio_live = true; return 0; }
     return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
 }
@@ -219,7 +239,26 @@ static int audio_write(const int16_t *samples, size_t count)
     assert(audio_live && samples && count); audio_writes++; return 0;
 }
 static void audio_close(void) { audio_live = false; closes++; }
-static bool stop_requested(void) { return stop_case && time_us >= 120000U; }
+static bool stop_requested(void) { return suspend_exit || (stop_case && time_us - suspended_wall >= 120000U); }
+static int enable_suspend(void) { resumable = true; return 0; }
+static bool suspend_requested(void) { return suspend_pending; }
+static int suspend_vm(void)
+{
+    assert(resumable && suspend_pending && allocations > frees);
+    uint64_t cycles = ticks;
+    apple2_machine_t *m = apple2_machine;
+    uint8_t memory_byte = m->ram[0x401];
+    unsigned before_reads = reads;
+    /* Model release/reacquisition by the host, with a long time in the shell. */
+    audio_close(); time_us += 30000000U; suspended_wall += 30000000U;
+    last_poll_us = time_us;
+    suspend_cycles = ticks;
+    assert(apple2_machine == m && ticks == cycles && reads == before_reads);
+    assert(m->ram[0x401] == memory_byte);
+    suspends++; suspend_pending = false;
+    if (suspension_case == 4) suspend_exit = true;
+    return resume_failure;
+}
 static void restart(void) { assert(!"module must not restart the device"); }
 static const solar_os_native_vm_api_v1_t vm_api = {
     .abi_version = 1, .struct_size = sizeof(vm_api),
@@ -230,6 +269,8 @@ static const solar_os_native_vm_api_v1_t vm_api = {
     .stop_requested = stop_requested, .restart = restart,
     .text_colors = text_colors, .video_open_ex = video_open_ex,
     .resolve_path = resolve_path,
+    .enable_suspend = enable_suspend, .suspend_requested = suspend_requested,
+    .suspend = suspend_vm,
 };
 static const solar_os_native_memory_api_v1_t memory_api = {
     .abi_version = 1, .struct_size = sizeof(memory_api), .alloc = allocate, .free = release,
@@ -293,6 +334,22 @@ int main(int argc, char **test_argv)
         assert(!strcmp(last_report, "apple2: stopped"));
     }
     stop_case = 0;
+    for (suspension_case = 1; suspension_case <= 5; ++suspension_case) {
+        stop_case = suspension_case <= 3 ? suspension_case : 1;
+        frames = 0; time_us = 0; suspended_wall = 0;
+        key_sent = stats_sent = false; suspend_exit = suspend_pending = resumable = false;
+        suspends = 0; resume_failure = suspension_case == 5 ? SOLAR_OS_NATIVE_ERROR_NO_MEMORY : 0;
+        unsigned before_reads = reads, before_opens = audio_opens;
+        int expected = resume_failure ? 1 : 0;
+        assert(apple2_vm_entry(3, argv) == expected && exit_code == expected);
+        assert(suspends == 1 && resumable && !audio_live && allocations == frees);
+        assert(reads == before_reads + 6); /* ROM and disks are loaded only once. */
+        assert(audio_opens == before_opens + (suspension_case >= 4 ? 1U : 2U));
+        if (suspension_case < 4) assert(frames >= 3);
+        else assert(frames == 2);
+    }
+    suspension_case = stop_case = 0; suspend_exit = false;
+    resume_failure = 0; suspended_wall = 0;
     /* The module delegates only its directory to the host. Disk names remain
      * relative to that resolved directory, including when launched with '.'. */
     static const char *const directories[] = {"vm/apple2", ".", "../apple2", "/vm/apple2", "/sdcard/vm/apple2"};
@@ -329,6 +386,12 @@ int main(int argc, char **test_argv)
             assert(longest_poll_gap_us < 25000U);
             assert(allocations == frees && apple2_machine == NULL);
         }
+        sleep_quantum_us = 1000U; suspend_boot = true;
+        time_us = observed_ticks = last_poll_us = longest_poll_gap_us = suspended_wall = 0;
+        booted = false; asset_frames = suspends = 0;
+        assert(apple2_vm_entry(3, argv) == 1 && booted && exit_code == 1);
+        assert(suspends == 1 && time_us > 30000000U && longest_poll_gap_us < 25000U);
+        assert(allocations == frees && apple2_machine == NULL);
     }
     puts("Apple II VM entry, chunked assets, input and cleanup tests passed");
     return 0;

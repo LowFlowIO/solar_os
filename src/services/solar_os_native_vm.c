@@ -30,7 +30,8 @@ typedef struct {
     solar_os_gfx_t *gfx;
     bool keyboard_captured;
     QueueHandle_t keys;
-    atomic_bool done, input_reset, stop_requested;
+    atomic_bool done, input_reset, stop_requested, redraw_requested;
+    atomic_bool resumable, suspend_requested, suspended;
     uint64_t stop_deadline_us;
     bool worker_started;
     solar_os_frame_presenter_t *presenter;
@@ -86,7 +87,11 @@ static void vm_sleep_ms(uint32_t ms)
 static void vm_restart(void) { if (vm_caller()) esp_restart(); }
 static bool vm_stop_requested(void)
 {
-    return !vm_caller() || atomic_load(&vm.stop_requested);
+    if (!vm_caller() || atomic_load(&vm.stop_requested)) return true;
+    /* The guest task owns presenter lifetime, including cleanup on return. */
+    if (atomic_exchange(&vm.redraw_requested, false) && vm.presenter)
+        (void)solar_os_frame_presenter_redraw(vm.presenter);
+    return false;
 }
 
 static uint16_t vm_rgb565(uint32_t rgb)
@@ -283,6 +288,38 @@ static int vm_audio_write(const int16_t *samples, size_t frames)
 
 static void vm_set_exit_code(int code) { if (vm_caller()) vm.exit_code = code; }
 
+static int vm_enable_suspend(void)
+{
+    if (!vm_caller() || atomic_load(&vm.suspend_requested))
+        return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    atomic_store(&vm.resumable, true);
+    return SOLAR_OS_NATIVE_OK;
+}
+
+static bool vm_suspend_requested(void)
+{
+    return vm_caller() && atomic_load(&vm.suspend_requested);
+}
+
+static int vm_guest_suspend(void)
+{
+    if (!vm_caller() || !atomic_load(&vm.resumable) ||
+        !atomic_load(&vm.suspend_requested)) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    vm_audio_close();
+    /* Publish the acknowledgement only after the display worker has joined.
+     * The main task can then release the graphics surface and keyboard. */
+    if (vm.presenter && solar_os_frame_presenter_suspend_checked(vm.presenter) != ESP_OK)
+        esp_restart();
+    atomic_store(&vm.suspended, true);
+    while (atomic_load(&vm.suspend_requested) && !atomic_load(&vm.stop_requested))
+        vm_sleep_ms(SOLAR_OS_TASK_STOP_POLL_MS);
+    int result = SOLAR_OS_NATIVE_OK;
+    if (!atomic_load(&vm.stop_requested) && vm.presenter)
+        result = vm_result(solar_os_frame_presenter_resume(vm.presenter));
+    atomic_store(&vm.suspended, false);
+    return result;
+}
+
 static const solar_os_native_vm_api_v1_t vm_api = {
     .abi_version = 1U, .struct_size = sizeof(vm_api),
     .time_us = vm_time_us, .sleep_ms = vm_sleep_ms, .restart = vm_restart,
@@ -293,6 +330,8 @@ static const solar_os_native_vm_api_v1_t vm_api = {
     .stop_requested = vm_stop_requested,
     .text_colors = vm_text_colors, .video_open_ex = vm_video_open_ex,
     .resolve_path = vm_resolve_path,
+    .enable_suspend = vm_enable_suspend, .suspend_requested = vm_suspend_requested,
+    .suspend = vm_guest_suspend,
 };
 
 const void *solar_os_native_vm_get_service(const char *name, uint32_t abi, uint32_t size)
@@ -339,6 +378,10 @@ static esp_err_t vm_start(solar_os_context_t *ctx)
     atomic_init(&vm.done, true);
     atomic_init(&vm.input_reset, false);
     atomic_init(&vm.stop_requested, false);
+    atomic_init(&vm.redraw_requested, false);
+    atomic_init(&vm.resumable, false);
+    atomic_init(&vm.suspend_requested, false);
+    atomic_init(&vm.suspended, false);
     vm.stop_deadline_us = 0;
     vm.worker_started = false;
     if (!ctx->gfx || ctx->argc < 1) return ESP_ERR_NOT_SUPPORTED;
@@ -383,10 +426,47 @@ static void vm_stop(solar_os_context_t *ctx)
         vm.worker_started = false;
     }
     solar_os_input_release_keyboard(vm_state);
+    vm.keyboard_captured = false;
     solar_os_context_set_streaming_graphics_active(ctx, false);
 }
 
-static void vm_suspend(solar_os_context_t *ctx) { vm_stop(ctx); }
+static void vm_suspend(solar_os_context_t *ctx)
+{
+    if (!atomic_load(&vm.resumable) || atomic_load(&vm.stop_requested)) {
+        vm_stop(ctx);
+        return;
+    }
+    atomic_store(&vm.suspend_requested, true);
+    const uint64_t deadline = vm_time_us() + VM_STOP_WAIT_US;
+    while (!atomic_load(&vm.suspended) && !atomic_load(&vm.done)) {
+        if (vm_time_us() >= deadline) esp_restart();
+        vTaskDelay(pdMS_TO_TICKS(SOLAR_OS_TASK_STOP_POLL_MS) ?
+            pdMS_TO_TICKS(SOLAR_OS_TASK_STOP_POLL_MS) : 1U);
+    }
+    solar_os_input_release_keyboard(vm_state);
+    vm.keyboard_captured = false;
+    xQueueReset(vm.keys);
+    atomic_store(&vm.input_reset, true);
+    solar_os_context_set_streaming_graphics_active(ctx, false);
+}
+
+static void vm_resume(solar_os_context_t *ctx)
+{
+    if (atomic_load(&vm.done)) return;
+    if (!atomic_load(&vm.suspended)) return;
+    /* Restore graphics ownership before allowing the guest/presenter to run. */
+    vm.gfx = ctx->gfx;
+    xQueueReset(vm.keys);
+    atomic_store(&vm.input_reset, true);
+    solar_os_context_set_streaming_graphics_active(ctx, true);
+    atomic_store(&vm.suspend_requested, false);
+    const uint64_t deadline = vm_time_us() + VM_STOP_WAIT_US;
+    while (atomic_load(&vm.suspended) && !atomic_load(&vm.done)) {
+        if (vm_time_us() >= deadline) esp_restart();
+        vTaskDelay(pdMS_TO_TICKS(SOLAR_OS_TASK_STOP_POLL_MS) ?
+            pdMS_TO_TICKS(SOLAR_OS_TASK_STOP_POLL_MS) : 1U);
+    }
+}
 static bool vm_ready(void) { return vm_state == NULL || atomic_load(&vm.done); }
 static void vm_cleanup(void)
 {
@@ -423,7 +503,7 @@ static void vm_poll_keyboard(void)
             if (solar_os_input_source_get(i, &source) && source.ready &&
                 source.source_class == SOLAR_OS_INPUT_SOURCE_KEYBOARD &&
                 (source.capabilities & SOLAR_OS_INPUT_CAP_KEY_EVENTS) &&
-                solar_os_input_capture_keyboard(source.name, vm_state) == ESP_OK) {
+                solar_os_input_capture_keyboard_with_shortcuts(source.name, vm_state) == ESP_OK) {
                 vm.keyboard_captured = true;
                 break;
             }
@@ -445,6 +525,11 @@ static void vm_poll_keyboard(void)
 
 static bool vm_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
+    if (event->type == SOLAR_OS_EVENT_RESUME) {
+        /* An overlay can hide frames that the guest considers unchanged. */
+        if (!atomic_load(&vm.done)) atomic_store(&vm.redraw_requested, true);
+        return true;
+    }
     if (event->type == SOLAR_OS_EVENT_TICK) {
         if (atomic_load(&vm.done)) solar_os_context_finish(ctx,
             vm.result == ESP_OK ? 0 : 1, vm.detail[0] ? vm.detail : "vm: module returned");
@@ -467,8 +552,8 @@ static bool vm_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 
 static const solar_os_app_t vm_app = {
     .name = "vm", .summary = "external virtual machine", .app_class = SOLAR_OS_APP_CLASS_GUI,
-    .flags = SOLAR_OS_APP_FLAG_KEY_EVENTS,
-    .start = vm_start, .stop = vm_stop, .suspend = vm_suspend, .event = vm_event,
+    .flags = SOLAR_OS_APP_FLAG_KEY_EVENTS | SOLAR_OS_APP_FLAG_RESUMABLE,
+    .start = vm_start, .stop = vm_stop, .suspend = vm_suspend, .resume = vm_resume, .event = vm_event,
     .state_slot = &vm_state, .state_size = sizeof(vm_state_t),
     .state_storage = SOLAR_OS_APP_STATE_EXTERNAL_REQUIRED,
     .state_release_ready = vm_ready, .state_release_cleanup = vm_cleanup,

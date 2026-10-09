@@ -24,13 +24,47 @@ def production_functions(source, names):
 
 
 class NativeVmLifecycleTest(unittest.TestCase):
+    def test_vm_capture_closes_focus_overlay(self):
+        source = (ROOT / "src/main.c").read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "vm_focus_dispatch.inc").write_text(production_functions(
+                source, ("dispatch_input_key",)))
+            binary = Path(tmp, "focus")
+            subprocess.run([
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-include", str(ROOT / "tests/host/compat.h"),
+                "-I", tmp, "-I", str(ROOT / "tests/host"),
+                "-I", str(ROOT / "src"), "-I", str(ROOT / "src/services"),
+                "-idirafter", str(ROOT / "include"),
+                str(ROOT / "tests/host/vm_focus_overlay_test.c"),
+                str(ROOT / "src/services/solar_os_input.c"),
+                str(ROOT / "src/services/solar_os_keys.c"),
+                "-o", str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_presenter_suspension_reports_join_and_policy_failures(self):
+        source = (ROOT / "src/services/solar_os_frame_presenter.c").read_text()
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "frame_lifecycle.inc").write_text(production_functions(
+                source, ("solar_os_frame_presenter_suspend_checked", "solar_os_frame_presenter_redraw")))
+            binary = Path(tmp, "presenter")
+            subprocess.run([
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-I", tmp, "-I", str(ROOT / "tests/host"),
+                str(ROOT / "tests/host/frame_presenter_lifecycle_test.c"),
+                "-o", str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_host_shutdown_and_timeout(self):
         # Compile the production lifecycle functions against deterministic task,
         # clock and presenter mocks; hardware wrappers are tested by board builds.
         source = (ROOT / "src/services/solar_os_native_vm.c").read_text()
         names = ("vm_caller", "vm_result", "vm_rgb565", "vm_text_colors",
-                 "vm_stop_requested", "vm_worker", "vm_request_stop",
-                 "vm_stop", "vm_ready", "vm_queue_key", "vm_event",
+                 "vm_stop_requested", "vm_enable_suspend", "vm_suspend_requested",
+                 "vm_guest_suspend", "vm_worker", "vm_request_stop",
+                 "vm_stop", "vm_suspend", "vm_resume", "vm_ready", "vm_queue_key", "vm_event",
                  "vm_resolve_path", "vm_start", "solar_os_native_vm_launch")
         functions = production_functions(source, names)
         storage = (ROOT / "src/services/solar_os_storage.c").read_text()
@@ -74,7 +108,10 @@ class NativeVmLifecycleTest(unittest.TestCase):
                 '#define PREFIX_END (offsetof(solar_os_native_vm_api_v1_t, set_exit_code) '
                 '+ sizeof(((solar_os_native_vm_api_v1_t *)0)->set_exit_code))\n'
                 'typedef char append_only[offsetof(solar_os_native_vm_api_v1_t, '
-                'stop_requested) == PREFIX_END ? 1 : -1];\n')
+                'stop_requested) == PREFIX_END ? 1 : -1];\n'
+                'typedef char suspend_append_only[offsetof(solar_os_native_vm_api_v1_t, '
+                'enable_suspend) == offsetof(solar_os_native_vm_api_v1_t, resolve_path) + '
+                'sizeof(((solar_os_native_vm_api_v1_t *)0)->resolve_path) ? 1 : -1];\n')
         with tempfile.TemporaryDirectory() as tmp:
             for compiler, suffix, standard in (("cc", "c", "c11"), ("c++", "cpp", "c++17")):
                 path = Path(tmp, "client." + suffix)

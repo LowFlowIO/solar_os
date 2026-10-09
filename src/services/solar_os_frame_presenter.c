@@ -37,6 +37,7 @@ struct solar_os_frame_presenter {
     TaskHandle_t task;
     volatile bool task_done;
     bool queued_ready;
+    bool presenting_valid;
     bool stop_requested;
     bool mono_fallback;
     bool high_refresh_active;
@@ -231,6 +232,7 @@ static void frame_presenter_worker(void *arg)
         presenter->presenting = presenter->queued;
         presenter->queued = swap;
         presenter->queued_ready = false;
+        presenter->presenting_valid = true;
         xSemaphoreGive(presenter->mutex);
 
         const int64_t started_us = esp_timer_get_time();
@@ -489,10 +491,10 @@ esp_err_t solar_os_frame_presenter_resume(
     return ESP_OK;
 }
 
-void solar_os_frame_presenter_suspend(solar_os_frame_presenter_t *presenter)
+esp_err_t solar_os_frame_presenter_suspend_checked(solar_os_frame_presenter_t *presenter)
 {
     if (presenter == NULL) {
-        return;
+        return ESP_OK;
     }
     TaskHandle_t task = presenter->task;
     if (task != NULL) {
@@ -504,7 +506,7 @@ void solar_os_frame_presenter_suspend(solar_os_frame_presenter_t *presenter)
         if (!solar_os_task_wait_done(task, &presenter->task_done,
                                      SOLAR_OS_TASK_STOP_WAIT_MS)) {
             SOLAR_OS_LOGW(TAG, "present worker stop timed out");
-            return;
+            return ESP_ERR_TIMEOUT;
         }
         presenter->task = NULL;
     }
@@ -516,8 +518,15 @@ void solar_os_frame_presenter_suspend(solar_os_frame_presenter_t *presenter)
         } else {
             SOLAR_OS_LOGW(TAG, "display policy restore failed: %s",
                           esp_err_to_name(err));
+            return err;
         }
     }
+    return ESP_OK;
+}
+
+void solar_os_frame_presenter_suspend(solar_os_frame_presenter_t *presenter)
+{
+    (void)solar_os_frame_presenter_suspend_checked(presenter);
 }
 
 esp_err_t solar_os_frame_presenter_deinit(solar_os_frame_presenter_t *presenter)
@@ -560,6 +569,26 @@ bool solar_os_frame_presenter_submit(solar_os_frame_presenter_t *presenter,
     }
     memcpy(presenter->queued, data, presenter->source_size);
     presenter->queued_ready = true;
+    xSemaphoreGive(presenter->mutex);
+    (void)xSemaphoreGive(presenter->requested);
+    return true;
+}
+
+bool solar_os_frame_presenter_redraw(solar_os_frame_presenter_t *presenter)
+{
+    if (presenter == NULL || presenter->task == NULL ||
+        xSemaphoreTake(presenter->mutex, portMAX_DELAY) != pdTRUE) return false;
+    if (presenter->stop_requested ||
+        (!presenter->queued_ready && !presenter->presenting_valid)) {
+        xSemaphoreGive(presenter->mutex);
+        return false;
+    }
+    /* Preserve a newer guest frame if one is already queued. Both buffer
+     * pointers are stable under the mutex; the worker only reads presenting. */
+    if (!presenter->queued_ready) {
+        memcpy(presenter->queued, presenter->presenting, presenter->source_size);
+        presenter->queued_ready = true;
+    }
     xSemaphoreGive(presenter->mutex);
     (void)xSemaphoreGive(presenter->requested);
     return true;

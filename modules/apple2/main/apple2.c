@@ -177,6 +177,26 @@ static void poll_keyboard(void)
     }
 }
 
+static void open_audio(apple2_machine_t *m)
+{
+    m->audio_active = false;
+    if (!apple2_vm->audio_open(&m->sample_rate, &m->channels)) {
+        if (m->sample_rate > APPLE2_CLOCK_HZ || !m->sample_rate || !m->channels || m->channels > 2U)
+            apple2_vm->audio_close();
+        else {
+            m->sample_step = APPLE2_CLOCK_HZ / m->sample_rate;
+            m->sample_remainder = APPLE2_CLOCK_HZ % m->sample_rate;
+            m->audio_active = true;
+        }
+    }
+    m->next_sample = ticks;
+    m->pcm_frames = m->sample_fraction = 0;
+    m->audio_error = 0;
+    m->audio_suspended = false;
+    m->speaker_input = m->speaker ? 6000 : 0;
+    m->speaker_filtered = 0;
+}
+
 int main(int argc, char **argv)
 {
     host = solar_os_native_host_v1();
@@ -229,16 +249,9 @@ int main(int argc, char **argv)
     result = apple2_vm->video_open_ex(APPLE2_WIDTH, APPLE2_HEIGHT, palette, 25U,
         APPLE2_TEXT_BACKGROUND);
     if (result) { report_display_error(result); goto done; }
-    int audio_result = apple2_vm->audio_open(&m->sample_rate, &m->channels);
-    if (!audio_result) {
-        if (m->sample_rate > APPLE2_CLOCK_HZ || !m->sample_rate || !m->channels || m->channels > 2U) {
-            apple2_vm->audio_close();
-        } else {
-            m->sample_step = APPLE2_CLOCK_HZ / m->sample_rate;
-            m->sample_remainder = APPLE2_CLOCK_HZ % m->sample_rate;
-            m->audio_active = true;
-        }
-    }
+    open_audio(m);
+    result = apple2_vm->enable_suspend();
+    if (result) { report("apple2: foreground switching unavailable"); goto done; }
     puce6502RST();
     m->next_sample = ticks;
     uint64_t wall = apple2_vm->time_us(), epoch_cycles = ticks;
@@ -252,6 +265,25 @@ int main(int argc, char **argv)
             result = SOLAR_OS_NATIVE_OK;
             report("apple2: stopped");
             break;
+        }
+        if (apple2_vm->suspend_requested()) {
+            m->audio_active = false;
+            result = apple2_vm->suspend();
+            if (apple2_vm->stop_requested()) {
+                result = SOLAR_OS_NATIVE_OK;
+                report("apple2: stopped");
+                break;
+            }
+            if (result) { report("apple2: display resume failed"); break; }
+            open_audio(m);
+            m->PB0 = m->PB1 = m->PB2 = 0;
+            m->char_read = m->char_count = 0;
+            m->paddle[0] = m->paddle[1] = 127;
+            m->video_valid = false;
+            wall = apple2_vm->time_us(); epoch_cycles = ticks;
+            next_frame = stats_wall = wall; stats_cycles = ticks;
+            cpu_us = video_us = 0;
+            was_paused = m->paused;
         }
         poll_keyboard();
         uint64_t now = apple2_vm->time_us();

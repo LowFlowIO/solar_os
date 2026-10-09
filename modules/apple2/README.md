@@ -38,6 +38,13 @@ Ctrl+Alt+Del or Ctrl+] exits to the SolarOS shell. Exit discards unsaved disk
 changes. The module requires firmware providing the VM `stop_requested` callback.
 See [native VM reference](../../doc/manual/native-vm.md).
 
+`Alt+Tab` or `Alt+Right` switches to the next SolarOS session; `Alt+Left`
+switches to the previous session. Resume with these shortcuts or `session fg ID`.
+Switching pauses the guest and releases display, keyboard and audio resources;
+CPU, RAM and disk state, including unsaved changes, remain allocated. F10 pause
+is retained across session switches. The firmware must provide `enable_suspend`,
+`suspend_requested` and `suspend`.
+
 The module uses the SolarOS VM host for display, keyboard, storage, timing
 and optional audio. Text and overlays follow terminal colors on color displays
 and use black on white on monochrome displays. Graphics retain their Apple II
