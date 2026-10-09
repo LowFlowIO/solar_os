@@ -1,5 +1,12 @@
 # PWM providers and servo bindings
 
+The PCA9685 implementation provides a concrete I2C example:
+`drivers/pca9685.c` owns register transfers and timing, and
+`services/solar_os_pca9685.c` adapts its channels to this provider contract.
+Its per-device metadata is allocated on attachment with external memory
+preferred. Its driver attachment mutex remains in internal memory; ordinary
+PWM calls use the provider mutex already owned by the generic service.
+
 `solar_os_pwm.h` defines the PWM provider contract. The generic service owns
 output reservations and protects driver lifetime. Providers own hardware
 allocation, frequency groups, precision, supported frequency ranges, and

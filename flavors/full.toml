@@ -113,6 +113,7 @@ st25r3916 = true
 bhi260ap = true
 qmi8658 = true
 drv2605 = true
+pca9685 = true
 bq25896 = true
 axp2101 = true
 tdeck_keyboard = true

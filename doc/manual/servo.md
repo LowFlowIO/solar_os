@@ -3,7 +3,7 @@ id = "servo"
 title = "Servo outputs"
 section = "hardware"
 summary = "Control calibrated positional servos with hardware PWM"
-keywords = "servo positional motor angle pulse pwm calibration python lua"
+keywords = "servo positional motor angle pulse pwm calibration pca9685 python lua"
 packages_any = ["service_servo"]
 +++
 # Servo outputs
@@ -117,6 +117,53 @@ Other runtimes can inspect it but cannot command or close it. Python and Lua
 close their servo outputs when the interpreter exits, including after an
 error or interruption. A hardware close failure is logged and retains the
 reservation for retry by the owning runtime.
+
+## PCA9685 expansion controller
+
+The optional `pca9685` package group adds an I2C controller with 16 PWM outputs.
+It is enabled in `full` on boards with expansion I2C. The expansion device name
+becomes the PWM provider name, and output numbers run from 0 through 15.
+With an existing `i2c0` bus and a controller at address `0x40`:
+
+```text
+expansion attach pca9685 servos0 i2c=i2c0 addr=0x40
+pwm providers
+servo open arm servos0:0 1000 2000 -45 45
+servo set arm 0
+servo close arm
+expansion detach servos0
+```
+
+`pwm set` and `pwm pulse` also accept these outputs. Python and Lua use the
+same names through `solaros.pwm` and `solaros.servo`. Attachment initializes
+every channel to full-off; opening a servo does not start pulses. Closing every
+servo and stopping every general PWM output permits detach. Disabled servos
+still reserve their channels and the shared frequency.
+
+All 16 channels share one prescaler. A frequency change is rejected while
+another channel is active or reserved, unless both requests select the same
+prescaler. Different PCA9685 devices have independent frequencies. With the
+nominal 25 MHz internal oscillator, requests from 24 through 1526 Hz are
+supported; the servo abstraction additionally limits requests to 1000 Hz.
+The hardware has 12-bit resolution, approximately 4.88 microseconds per tick
+at a requested 50 Hz. PWM status reports quantized timing.
+
+Optional `oe=<gpio-or-controller-line>` controls the active-low output-enable
+input. The driver holds it high during initialization and low after all outputs
+are off. Detach raises it before shutting down the chip. Without this binding,
+wire OE low. `osc_hz=<20000000..30000000>` changes the timing calculation to
+match a measured internal oscillator frequency; the default is 25000000.
+External-clock mode is not supported. Use an individual 7-bit address from
+`0x40` through `0x77`, excluding the shared All Call address `0x70`.
+
+Failed transfers attempt to restore the previous frequency and output values.
+If restoration also fails, further commands are rejected until outputs are
+closed and the controller is detached and reattached. Disable/close remain
+available for cleanup. If detach cannot complete its hardware shutdown, its
+context and expansion resources remain held; retry detach after restoring I2C.
+
+The controller supplies control signals. Supply servo power from a suitable
+rail and connect its ground to the controller and MCU ground.
 
 ## PWM resources
 

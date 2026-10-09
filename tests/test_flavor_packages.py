@@ -68,6 +68,23 @@ class FlavorPackagesTest(unittest.TestCase):
                 self.assertTrue(pruned["service_pwm"])
                 self.assertEqual(pruned["driver_pwm_native"], enabled)
 
+    def test_pca9685_is_optional_and_uses_i2c_without_native_pwm(self):
+        _, _, core_groups, core_packages = self.resolve("core")
+        self.assertFalse(core_groups["pca9685"])
+        self.assertFalse(core_packages["pca9685"])
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["pca9685"])
+        for target in ("esp32", "esp32s3"):
+            target_packages = generate_flavor_config.apply_target_pruning(self.catalog, packages, target)
+            _, supported = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, target_packages, {"i2c", "expansion_i2c"})
+            self.assertTrue(supported["pca9685"])
+            self.assertTrue(supported["service_pwm"])
+            self.assertFalse(supported["driver_pwm_native"])
+            _, unsupported = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, target_packages, {"i2c"})
+            self.assertFalse(unsupported["pca9685"])
+
     def test_odroid_runtime_i2c_survives_board_and_target_pruning(self):
         board = tomllib.loads(
             (REPOSITORY / "boards" / "manifests" / "odroid_go.toml").read_text()

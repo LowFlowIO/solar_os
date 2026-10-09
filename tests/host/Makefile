@@ -18,6 +18,7 @@ TARGETS += input_action_match_test gesture_completion_test
 TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
 TARGETS += frontlight_pwm_test epd_xteink_identify_test x4pro_expansion_test
 TARGETS += pwm_servo_test pwm_provider_test
+TARGETS += pca9685_test pca9685_expansion_test
 TARGETS += gt911_test
 TARGETS += sdmmc_expansion_test
 TARGETS += axp2101_service_test
@@ -635,6 +636,21 @@ http_server_test: http_server_test.c $(ROOT)/src/services/solar_os_http_server.c
 		-Ihttp_server_stubs -I. -I$(ROOT)/src/services \
 		http_server_test.c $(ROOT)/src/services/solar_os_http_server.c -o $@
 
+pca9685_test: pca9685_test.c $(ROOT)/src/drivers/pca9685.c $(ROOT)/src/drivers/pca9685.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
+		pca9685_test.c $(ROOT)/src/drivers/pca9685.c -o $@
+
+pca9685_expansion_test: pca9685_expansion_test.c $(ROOT)/src/drivers/pca9685.c $(ROOT)/src/drivers/pca9685.h \
+		$(ROOT)/src/services/solar_os_pca9685.c $(ROOT)/src/services/solar_os_pca9685.h \
+		$(ROOT)/src/services/solar_os_pca9685_driver.c $(ROOT)/src/services/solar_os_pwm.c \
+		$(ROOT)/src/services/solar_os_pwm.h $(ROOT)/src/services/solar_os_servo.c $(ROOT)/src/services/solar_os_servo.h \
+		pwm_stubs/freertos/semphr.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DESP_ERR_NOT_ALLOWED=0x10b -DSOLAR_OS_PACKAGE_DRIVER_PWM_NATIVE=0 \
+		-include compat.h -Ipwm_stubs -Iexpansion_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/drivers -I$(ROOT)/src/services \
+		pca9685_expansion_test.c $(ROOT)/src/drivers/pca9685.c $(ROOT)/src/services/solar_os_pca9685.c \
+		$(ROOT)/src/services/solar_os_pca9685_driver.c $(ROOT)/src/services/solar_os_pwm.c \
+		$(ROOT)/src/services/solar_os_servo.c -pthread -lm -o $@
+
 drv2605_test: drv2605_test.c $(ROOT)/src/drivers/drv2605.c $(ROOT)/src/drivers/drv2605.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
 		drv2605_test.c $(ROOT)/src/drivers/drv2605.c -o $@
@@ -1018,6 +1034,8 @@ test: $(TARGETS)
 	./frontlight_pwm_test
 	./pwm_servo_test
 	./pwm_provider_test
+	./pca9685_test
+	./pca9685_expansion_test
 	./epd_xteink_identify_test
 	./x4pro_expansion_test
 	./gt911_test
