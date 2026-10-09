@@ -22,8 +22,8 @@ load /sdcard/apple2.vm.elf /sdcard/vm/apple2 dos33.nib
 ```
 
 Run an installed VM by its module ID, or use `load` with a `.vm.elf` path,
-followed by up to seven module arguments. Module arguments are passed literally; use resolved
-absolute storage paths where the module requires them. Native packages use
+followed by up to seven module arguments. Module arguments are passed literally;
+modules use `resolve_path` for path arguments. Native packages use
 `type="vm"`, lifecycle ABI 1 and artifacts ending in `.vm.elf`. They are
 installed under `modules/vms` in the preferred storage volume and launch only
 on request. `pkg installed` and `pkg remove` include VM modules.
@@ -68,6 +68,12 @@ Storage calls accept absolute paths. `file_size` reports a regular file's size;
 `replace_file` writes a complete file of at most 1 MiB to a synced sibling and
 then replaces the destination using the storage service.
 
+`resolve_path` resolves relative paths against the launching shell's working
+directory, captured at launch. It uses normal SolarOS storage rules: `.` and
+`..` are normalized, explicit mount prefixes such as `/sdcard` and `/flash`
+are preserved, and paths starting with `/` without a mount prefix use the
+default storage volume.
+
 Audio is optional. `audio_open` returns the native sample rate and channel count
 for S16LE PCM, or reports unavailable/busy output. `audio_write` accepts up to
 4096 interleaved frames. Calls can block on output. Close audio on the opening
@@ -99,8 +105,11 @@ Supply these files in an asset directory:
 | `diskII.rom` | 256 bytes |
 | Optional `.nib` disk images | 232960 bytes each |
 
-ROMs and disk images are supplied separately. Disk names may be relative to
-the asset directory or absolute paths. Without a disk, press F11 to reach the
+ROMs and disk images are supplied separately. The asset directory may be
+absolute or relative to the launching shell's current directory. For example,
+from `/sdcard`, use `apple2 vm/apple2 dos33.nib`; from `/sdcard/vm/apple2`,
+use `apple2 . dos33.nib`. Disk names may be relative to the asset directory or
+absolute paths. Without a disk, press F11 to reach the
 ROM prompt. Guest text, mixed-mode text rows, status and help use the terminal
 colors on color displays. Monochrome displays use black-on-white text.
 Lores and hires graphics retain their Apple II palettes.

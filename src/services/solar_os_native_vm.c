@@ -17,6 +17,7 @@
 #include "solar_os_native_vm_abi.h"
 #include "solar_os_storage.h"
 #include "solar_os_task.h"
+#include "solar_os_shell.h"
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 #include "solar_os_audio.h"
 #endif
@@ -37,6 +38,7 @@ typedef struct {
     size_t frame_size;
     int argc;
     char args[SOLAR_OS_APP_ARG_MAX][SOLAR_OS_APP_ARG_LEN];
+    char cwd[SOLAR_OS_APP_ARG_LEN];
     char detail[160];
     esp_err_t result;
     int exit_code;
@@ -63,6 +65,7 @@ static int vm_result(esp_err_t err)
     switch (err) {
     case ESP_OK: return SOLAR_OS_NATIVE_OK;
     case ESP_ERR_INVALID_ARG: return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    case ESP_ERR_INVALID_SIZE: return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
     case ESP_ERR_INVALID_STATE: return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     case ESP_ERR_NO_MEM: return SOLAR_OS_NATIVE_ERROR_NO_MEMORY;
     case ESP_ERR_NOT_FOUND: return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
@@ -168,6 +171,13 @@ static bool vm_path_valid(const char *path)
 {
     return path && path[0] == '/' &&
         strnlen(path, SOLAR_OS_STORAGE_PATH_MAX) < SOLAR_OS_STORAGE_PATH_MAX;
+}
+
+static int vm_resolve_path(const char *path, char *resolved, size_t resolved_size)
+{
+    if (!vm_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!path || !resolved || !resolved_size) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    return vm_result(solar_os_storage_resolve_path_at(vm.cwd, path, resolved, resolved_size));
 }
 
 static int vm_file_size(const char *path, uint32_t *size)
@@ -282,6 +292,7 @@ static const solar_os_native_vm_api_v1_t vm_api = {
     .set_exit_code = vm_set_exit_code,
     .stop_requested = vm_stop_requested,
     .text_colors = vm_text_colors, .video_open_ex = vm_video_open_ex,
+    .resolve_path = vm_resolve_path,
 };
 
 const void *solar_os_native_vm_get_service(const char *name, uint32_t abi, uint32_t size)
@@ -334,6 +345,7 @@ static esp_err_t vm_start(solar_os_context_t *ctx)
     vm.gfx = ctx->gfx;
     vm.argc = ctx->argc;
     memcpy(vm.args, ctx->argv, sizeof(vm.args));
+    memcpy(vm.cwd, ctx->launch_cwd, sizeof(vm.cwd));
     atomic_store(&vm.done, false);
     vm.exit_code = 1;
     vm.keys = xQueueCreate(64U, sizeof(solar_os_native_vm_key_v1_t));
@@ -467,5 +479,14 @@ esp_err_t solar_os_native_vm_launch(solar_os_context_t *ctx, int argc, char **ar
 {
     if (!ctx || !ctx->gfx) return ESP_ERR_NOT_SUPPORTED;
     if (argc < 1 || argc > SOLAR_OS_APP_ARG_MAX) return ESP_ERR_INVALID_ARG;
-    return solar_os_context_request_launch(ctx, &vm_app, argc, argv);
+    char cwd[sizeof(ctx->launch_cwd)] = {0};
+    /* Snapshot before the runtime replaces the shell context with the VM's.
+     * The worker never accesses shell state, even if that shell later closes. */
+    esp_err_t err = ctx->shell_session ?
+        solar_os_shell_resolve_path(ctx, NULL, cwd, sizeof(cwd)) :
+        solar_os_storage_resolve_path_at(NULL, NULL, cwd, sizeof(cwd));
+    if (err != ESP_OK) return err;
+    err = solar_os_context_request_launch(ctx, &vm_app, argc, argv);
+    if (err == ESP_OK) memcpy(ctx->launch_cwd, cwd, sizeof(ctx->launch_cwd));
+    return err;
 }

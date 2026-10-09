@@ -52,4 +52,7 @@ typedef struct {
     int (*video_open_ex)(uint16_t width, uint16_t height,
         const uint16_t *palette_rgb565, uint16_t preferred_fps,
         uint8_t background_index);
+    /* Resolve using the launching shell's captured working directory and
+     * normal SolarOS storage path rules. Arguments themselves remain literal. */
+    int (*resolve_path)(const char *path, char *resolved, size_t resolved_size);
 } solar_os_native_vm_api_v1_t;

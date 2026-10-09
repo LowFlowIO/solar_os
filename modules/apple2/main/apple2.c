@@ -185,8 +185,14 @@ int main(int argc, char **argv)
     const solar_os_native_memory_api_v1_t *memory = host->get_service(
         SOLAR_OS_NATIVE_MEMORY_SERVICE, 1U, sizeof(*memory));
     if (!apple2_vm || !memory) { report("apple2: requires the VM host on compatible firmware"); return 1; }
-    if (argc < 2 || argc > 4 || argv[1][0] != '/') {
-        report("apple2: apple2 /sdcard/vm/apple2 [drive1.nib] [drive2.nib]");
+    if (argc < 2 || argc > 4) {
+        report("apple2: apple2 <asset-directory> [drive1.nib] [drive2.nib]");
+        apple2_vm->set_exit_code(1); return 1;
+    }
+    char directory[160];
+    int path_result = apple2_vm->resolve_path(argv[1], directory, sizeof(directory));
+    if (path_result) {
+        report("apple2: invalid asset directory");
         apple2_vm->set_exit_code(1); return 1;
     }
     apple2_machine_t *m = memory->alloc(sizeof(*m));
@@ -194,13 +200,13 @@ int main(int argc, char **argv)
     apple2_machine_init(m);
     char path[160];
     int result = SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
-    if (!asset_path(path, argv[1], "appleII+.rom")) {
+    if (!asset_path(path, directory, "appleII+.rom")) {
         report("apple2: invalid Apple II ROM path"); goto done;
     }
     result = load_exact(path, m->rom, sizeof(m->rom));
     if (result) goto done;
     result = SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
-    if (!asset_path(path, argv[1], "diskII.rom")) {
+    if (!asset_path(path, directory, "diskII.rom")) {
         report("apple2: invalid Disk II ROM path"); goto done;
     }
     result = load_exact(path, m->sl6, sizeof(m->sl6));
@@ -208,7 +214,7 @@ int main(int argc, char **argv)
     for (int i = 2; i < argc; ++i) {
         apple2_drive_t *drive = &m->disk[i - 2];
         result = SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
-        if (!asset_path(drive->filename, argv[1], argv[i])) {
+        if (!asset_path(drive->filename, directory, argv[i])) {
             report("apple2: invalid disk path"); goto done;
         }
         result = load_exact(drive->filename, drive->data, sizeof(drive->data));

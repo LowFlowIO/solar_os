@@ -23,6 +23,16 @@ static bool model_cpu_cost;
 static unsigned stop_case, audio_writes;
 static bool audio_live;
 static uint16_t text_foreground, text_background;
+static const char *expected_directory_arg, *resolved_directory, *expected_disk;
+static bool fail_resolve;
+static int resolve_path(const char *path, char *resolved, size_t size)
+{
+    if (expected_directory_arg) assert(!strcmp(path, expected_directory_arg));
+    if (fail_resolve) return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
+    const char *result = resolved_directory ? resolved_directory : path;
+    assert(result[0] == '/' && strlen(result) < size);
+    strcpy(resolved, result); return 0;
+}
 static FILE *asset_file(const char *path)
 {
     char resolved[1024];
@@ -55,6 +65,13 @@ static void sleep_ms(uint32_t ms)
 static void set_exit(int code) { exit_code = code; }
 static int file_size(const char *path, uint32_t *size)
 {
+    if (resolved_directory) {
+        if (expected_disk && !strstr(path, ".rom")) assert(!strcmp(path, expected_disk));
+        else {
+            assert(!strncmp(path, resolved_directory, strlen(resolved_directory)));
+            assert(path[strlen(resolved_directory)] == '/');
+        }
+    }
     if (assets) {
         FILE *file = asset_file(path); assert(file && !fseek(file, 0, SEEK_END));
         *size = (uint32_t)ftell(file); fclose(file); return 0;
@@ -212,6 +229,7 @@ static const solar_os_native_vm_api_v1_t vm_api = {
     .audio_write = audio_write, .set_exit_code = set_exit,
     .stop_requested = stop_requested, .restart = restart,
     .text_colors = text_colors, .video_open_ex = video_open_ex,
+    .resolve_path = resolve_path,
 };
 static const solar_os_native_memory_api_v1_t memory_api = {
     .abi_version = 1, .struct_size = sizeof(memory_api), .alloc = allocate, .free = release,
@@ -275,6 +293,27 @@ int main(int argc, char **test_argv)
         assert(!strcmp(last_report, "apple2: stopped"));
     }
     stop_case = 0;
+    /* The module delegates only its directory to the host. Disk names remain
+     * relative to that resolved directory, including when launched with '.'. */
+    static const char *const directories[] = {"vm/apple2", ".", "../apple2", "/vm/apple2", "/sdcard/vm/apple2"};
+    for (unsigned i = 0; i < sizeof(directories) / sizeof(directories[0]); ++i) {
+        expected_directory_arg = directories[i]; resolved_directory = "/sdcard/vm/apple2";
+        argv[1] = (char *)directories[i];
+        stop_case = 1; frames = 0; time_us = 0; key_sent = stats_sent = false;
+        assert(apple2_vm_entry(3, argv) == 0 && exit_code == 0);
+        assert(allocations == frees && apple2_machine == NULL);
+    }
+    argv[1] = "vm/apple2"; expected_directory_arg = argv[1];
+    argv[2] = "/flash/disks/disk.nib"; expected_disk = argv[2];
+    frames = 0; time_us = 0; key_sent = stats_sent = false;
+    assert(apple2_vm_entry(3, argv) == 0 && exit_code == 0);
+    unsigned before_allocations = allocations;
+    fail_resolve = true;
+    assert(apple2_vm_entry(3, argv) == 1 && exit_code == 1);
+    assert(allocations == before_allocations && !strcmp(last_report, "apple2: invalid asset directory"));
+    fail_resolve = false;
+    expected_directory_arg = resolved_directory = expected_disk = NULL;
+    stop_case = 0; argv[1] = "/assets"; argv[2] = "disk.nib";
     if (argc == 2) {
         assets = test_argv[1]; failure = 0; time_us = 0;
         asset_frames = 0;

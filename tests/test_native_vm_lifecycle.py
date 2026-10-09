@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 def production_functions(source, names):
     functions = []
     for name in names:
-        match = re.search(r"static [^\n]+\b" + name + r"\([^;]*?\)\s*\{", source)
+        match = re.search(r"^[A-Za-z_][^;{}\n]*\b" + name + r"\([^;]*?\)\s*\{", source, re.M)
         if not match:
             raise AssertionError(name)
         start = match.end() - 1
@@ -30,11 +30,16 @@ class NativeVmLifecycleTest(unittest.TestCase):
         source = (ROOT / "src/services/solar_os_native_vm.c").read_text()
         names = ("vm_caller", "vm_result", "vm_rgb565", "vm_text_colors",
                  "vm_stop_requested", "vm_worker", "vm_request_stop",
-                 "vm_stop", "vm_ready", "vm_queue_key", "vm_event")
+                 "vm_stop", "vm_ready", "vm_queue_key", "vm_event",
+                 "vm_resolve_path", "vm_start", "solar_os_native_vm_launch")
         functions = production_functions(source, names)
+        storage = (ROOT / "src/services/solar_os_storage.c").read_text()
+        paths = production_functions(storage, (
+            "storage_append_path_segment", "storage_pop_path_segment",
+            "solar_os_storage_normalize_path", "solar_os_storage_resolve_path_at"))
         timeout = re.search(r"^#define VM_STOP_WAIT_US .+$", source, re.M).group()
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "vm_lifecycle.inc").write_text(timeout + "\n" + functions)
+            Path(tmp, "vm_lifecycle.inc").write_text(timeout + "\n" + paths + "\n" + functions)
             binary = Path(tmp, "lifecycle")
             subprocess.run([
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
