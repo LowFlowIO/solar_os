@@ -600,6 +600,7 @@ static void pkg_print_installed(solar_os_shell_io_t *term)
         SOLAR_OS_MODULE_TYPE_APP,
         SOLAR_OS_MODULE_TYPE_JOB,
         SOLAR_OS_MODULE_TYPE_DRIVER,
+        SOLAR_OS_MODULE_TYPE_VM,
     };
     pkg_installed_print_t print = {
         .term = term,

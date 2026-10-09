@@ -41,6 +41,15 @@ TARGETS += messaging_service_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
 TARGETS += tab5_keyboard_test
+TARGETS += apple2_vm_test
+TARGETS += apple2_vm_entry_test
+
+APPLE2_DIR := $(ROOT)/modules/apple2/main
+apple2_vm_test: apple2_vm_test.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h $(APPLE2_DIR)/font.h
+	$(CC) $(CFLAGS) -I$(APPLE2_DIR) $(filter %.c,$^) -o $@
+
+apple2_vm_entry_test: apple2_vm_entry_test.c $(APPLE2_DIR)/apple2.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h
+	$(CC) $(CFLAGS) -I$(APPLE2_DIR) -Dmain=apple2_vm_entry $(filter %.c,$^) -o $@
 
 tab5_keyboard_test: tab5_keyboard_test.c $(wildcard $(ROOT)/src/services/solar_os_tab5_keyboard*) \
         $(ROOT)/src/drivers/tab5_keyboard.c $(ROOT)/src/drivers/tab5_keyboard.h \
@@ -889,6 +898,8 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 		rtc_pcf85063_test.c $(ROOT)/src/drivers/rtc_pcf85063.c -o $@
 
 test: $(TARGETS)
+	./apple2_vm_test
+	./apple2_vm_entry_test
 	./cw2017_test
 	./rtc_pcf8563_test
 	./axp2101_service_test

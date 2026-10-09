@@ -167,5 +167,5 @@ int main(int argc, char **argv)
 }
 ```
 
-`modules/vision-check` contains a standalone client of all six tables, including
+`modules/examples/vision-check` contains a standalone client of all six tables, including
 model reuse and leased video decoding.
