@@ -28,10 +28,11 @@ absolute storage paths where the module requires them. Native packages use
 installed under `modules/vms` in the preferred storage volume and launch only
 on request. `pkg installed` and `pkg remove` include VM modules.
 
-Ctrl+] or closing/suspending a running VM restarts the device into SolarOS.
-Startup failures and modules that return release host resources and return to
-the shell. Save guest disk changes before restarting. VM modules run trusted
-native code in the firmware's address space.
+Ctrl+Alt+Del, Ctrl+] or closing/suspending a VM requests cooperative shutdown.
+The host releases its resources and returns to the shell when the module returns.
+If shutdown does not finish within five seconds, the host restarts the device.
+Save guest disk changes before exiting. VM modules run trusted native code in
+the firmware's address space.
 
 ## Host interface
 
@@ -71,6 +72,12 @@ before returning. The host joins its presenter and closes audio before its
 foreground state is released. Call `set_exit_code` before returning because the
 underlying ELF loader does not propagate C `main`'s return value.
 
+Poll `stop_requested` regularly, including while paused, and return after
+cleanup when it reports true. The ABI-1 table grows by appending fields;
+request the minimum table size needed through `get_service`. Modules using an
+older table can run, but must implement cooperative shutdown to return to the
+shell without a restart.
+
 ## Apple II Plus
 
 The `apple2` module uses Reinette II Plus and its puce6502 CPU core. It emulates
@@ -98,12 +105,13 @@ ROM prompt. Guest text uses dark glyphs on a white background.
 | F4 | Toggle speaker mute |
 | F10 | Pause/resume guest execution |
 | F11 | Warm reset |
-| F12 / Ctrl+] | Restart into SolarOS |
+| F12 | Toggle help |
+| Ctrl+Alt+Del / Ctrl+] | Exit to SolarOS shell |
 | Keypad 1/3 and 5/2 | Paddle horizontal and vertical extremes |
 | Ctrl, Alt, Shift | Guest paddle buttons 0, 1, 2 |
 
-Guest writes modify the in-memory disk. F1 saves the complete image; restarting
-does not save it automatically. Unsupported or busy audio leaves the guest
+Guest writes modify the in-memory disk. F1 saves the complete image; exiting or
+restarting does not save it automatically. Unsupported or busy audio leaves the guest
 running silently.
 
 Disk acceleration is enabled by default. The guest runs without wall-clock

@@ -22,12 +22,15 @@
 
 #define VM_STACK_BYTES (16U * 1024U)
 #define VM_FILE_MAX (1024U * 1024U)
+#define VM_STOP_WAIT_US (5000000ULL)
 
 typedef struct {
     solar_os_gfx_t *gfx;
     bool keyboard_captured;
     QueueHandle_t keys;
-    atomic_bool done, input_reset;
+    atomic_bool done, input_reset, stop_requested;
+    uint64_t stop_deadline_us;
+    bool worker_started;
     solar_os_frame_presenter_t *presenter;
     uint16_t palette[256];
     size_t frame_size;
@@ -77,6 +80,10 @@ static void vm_sleep_ms(uint32_t ms)
     }
 }
 static void vm_restart(void) { if (vm_caller()) esp_restart(); }
+static bool vm_stop_requested(void)
+{
+    return !vm_caller() || atomic_load(&vm.stop_requested);
+}
 
 static int vm_video_open(uint16_t width, uint16_t height,
     const uint16_t *palette, uint16_t fps)
@@ -239,6 +246,7 @@ static const solar_os_native_vm_api_v1_t vm_api = {
     .file_size = vm_file_size, .read_file = vm_read_file, .replace_file = vm_replace_file,
     .audio_open = vm_audio_open, .audio_write = vm_audio_write, .audio_close = vm_audio_close,
     .set_exit_code = vm_set_exit_code,
+    .stop_requested = vm_stop_requested,
 };
 
 const void *solar_os_native_vm_get_service(const char *name, uint32_t abi, uint32_t size)
@@ -284,6 +292,9 @@ static esp_err_t vm_start(solar_os_context_t *ctx)
 {
     atomic_init(&vm.done, true);
     atomic_init(&vm.input_reset, false);
+    atomic_init(&vm.stop_requested, false);
+    vm.stop_deadline_us = 0;
+    vm.worker_started = false;
     if (!ctx->gfx || ctx->argc < 1) return ESP_ERR_NOT_SUPPORTED;
     vm.gfx = ctx->gfx;
     vm.argc = ctx->argc;
@@ -299,12 +310,31 @@ static esp_err_t vm_start(solar_os_context_t *ctx)
         atomic_store(&vm.done, true);
         return ESP_ERR_NO_MEM;
     }
+    vm.worker_started = true;
     return ESP_OK;
+}
+
+static void vm_request_stop(void)
+{
+    if (!atomic_exchange(&vm.stop_requested, true))
+        vm.stop_deadline_us = vm_time_us() + VM_STOP_WAIT_US;
 }
 
 static void vm_stop(solar_os_context_t *ctx)
 {
-    if (!atomic_load(&vm.done)) esp_restart();
+    vm_request_stop();
+    /* The context and graphics must remain alive until the worker has joined
+     * the presenter. Never delete a task executing module code forcibly. */
+    while (!atomic_load(&vm.done)) {
+        if (vm_time_us() >= vm.stop_deadline_us) esp_restart();
+        TickType_t delay = pdMS_TO_TICKS(SOLAR_OS_TASK_STOP_POLL_MS);
+        vTaskDelay(delay ? delay : 1U);
+    }
+    if (vm.worker_started) {
+        TickType_t delay = pdMS_TO_TICKS(SOLAR_OS_TASK_REAP_WAIT_MS);
+        vTaskDelay(delay ? delay : 1U);
+        vm.worker_started = false;
+    }
     solar_os_input_release_keyboard(vm_state);
     solar_os_context_set_streaming_graphics_active(ctx, false);
 }
@@ -320,7 +350,7 @@ static void vm_cleanup(void)
 static void vm_queue_key(solar_os_native_vm_key_v1_t *key)
 {
     if (key->key == SOLAR_OS_KEY_APP_EXIT || key->key == 0x1dU) {
-        esp_restart();
+        if (key->action != SOLAR_OS_NATIVE_VM_KEY_RELEASE) vm_request_stop();
         return;
     }
     if (!atomic_load(&vm.done) && xQueueSend(vm.keys, key, 0) != pdTRUE) {
@@ -371,7 +401,12 @@ static bool vm_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     if (event->type == SOLAR_OS_EVENT_TICK) {
         if (atomic_load(&vm.done)) solar_os_context_finish(ctx,
             vm.result == ESP_OK ? 0 : 1, vm.detail[0] ? vm.detail : "vm: module returned");
-        else vm_poll_keyboard();
+        else {
+            vm_poll_keyboard();
+            if (atomic_load(&vm.stop_requested) &&
+                vm_time_us() >= vm.stop_deadline_us && !atomic_load(&vm.done))
+                esp_restart();
+        }
         return true;
     }
     solar_os_native_vm_key_v1_t key = {0};

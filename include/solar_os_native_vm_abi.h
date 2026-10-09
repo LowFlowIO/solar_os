@@ -21,8 +21,9 @@ typedef struct {
  * Audio is optional, native S16LE interleaved PCM. close on the opening task.
  * Paths must be absolute resolved storage paths. read_file permits short reads;
  * replace_file atomically replaces a complete file after syncing a sibling.
- * Release module allocations before returning. Exit/suspend while running
- * restarts the device; returning from main releases host resources normally. */
+ * Poll stop_requested regularly, including while paused. Release module
+ * allocations and return when requested; the host then releases its resources.
+ * The host restarts the device if shutdown does not finish within five seconds. */
 typedef struct {
     uint32_t abi_version, struct_size;
     uint64_t (*time_us)(void);
@@ -42,4 +43,6 @@ typedef struct {
     void (*audio_close)(void);
     /* The loader cannot observe C main's return value. Set before returning. */
     void (*set_exit_code)(int code);
+    /* Append-only ABI extension. Exit/suspend requests cooperative shutdown. */
+    bool (*stop_requested)(void);
 } solar_os_native_vm_api_v1_t;

@@ -32,7 +32,7 @@ typedef struct {
     bool video_valid, video_flash;
     uint64_t video_status_us;
     uint8_t chars[64], char_read, char_count;
-    bool fast_disk, show_stats, audio_suspended;
+    bool fast_disk, show_stats, show_help, audio_suspended;
     uint32_t disk_reads;
     uint32_t guest_khz, cpu_khz;
     uint8_t video_percent;

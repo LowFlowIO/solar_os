@@ -331,8 +331,9 @@ maintainer-produced modules only.
 
 For `.vm.elf` files and installed paths under `modules/vms`, `load` launches
 the foreground [VM host](native-vm.md). Installed VMs also launch by module
-name, for example `apple2 /sdcard/vm/apple2 dos33.nib`. Exiting a running VM
-restarts the device.
+name, for example `apple2 /sdcard/vm/apple2 dos33.nib`. Ctrl+Alt+Del or Ctrl+]
+requests shutdown and returns to the shell after module cleanup. The host
+restarts the device if shutdown does not finish within five seconds.
 
 The ordinary `load` runner is for short-lived command-style modules. A module must stop
 all of its work and release every callback and resource before its entry point

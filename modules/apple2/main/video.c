@@ -57,6 +57,22 @@ static void status_overlay(apple2_machine_t *m)
     status_row(m, text, 176U);
 }
 
+static void help_overlay(apple2_machine_t *m)
+{
+    static const char *const lines[] = {
+        "REINETTE II PLUS", "", "F1 SAVE DRIVE 1 / ALT+F1 DRIVE 2",
+        "F2 STATUS   F3 FAST DISK   F4 MUTE", "F10 PAUSE   F11 WARM RESET",
+        "F12 CLOSE HELP", "", "CTRL+ALT+DEL RETURN TO SOLAROS",
+        "CTRL+] RETURN TO SOLAROS", "SAVE DISK CHANGES BEFORE EXIT",
+    };
+    for (unsigned i = 0; i < sizeof(lines) / sizeof(lines[0]); ++i) {
+        char text[40];
+        memset(text, ' ', sizeof(text));
+        memcpy(text, lines[i], strlen(lines[i]));
+        status_row(m, text, 48U + i * 8U);
+    }
+}
+
 static const uint8_t colors[32][3] = {
     {0,0,0}, {157,9,102}, {42,42,205}, {126,110,173},
     {31,129,128}, {137,130,122}, {86,168,228}, {144,178,223},
@@ -86,7 +102,7 @@ bool apple2_video_refresh(uint64_t cycle, uint64_t now_us)
 {
     apple2_machine_t *m = apple2_machine;
     uint8_t mode = m->TEXT | (m->MIXED << 1) | (m->HIRES << 2) |
-        (m->PAGE2 << 3) | (m->show_stats << 4);
+        (m->PAGE2 << 3) | (m->show_stats << 4) | (m->show_help << 5);
     unsigned graphics_base = m->HIRES ? (m->PAGE2 ? 0x4000 : 0x2000) :
         (m->PAGE2 ? 0x800 : 0x400);
     size_t graphics_size = m->TEXT ? 0U : (m->HIRES ? 8192U : 1024U);
@@ -162,4 +178,5 @@ void apple2_video(uint64_t cycle)
                 }
         }
     if (m->show_stats) status_overlay(m);
+    if (m->show_help) help_overlay(m);
 }

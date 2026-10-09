@@ -257,6 +257,10 @@ int main(void)
     assert(solar_os_input_translate_hid_usage(0x30,
                                               SOLAR_OS_INPUT_MOD_LEFT_CTRL,
                                               false) == SOLAR_OS_KEY_APP_EXIT);
+    assert(solar_os_input_translate_hid_usage(0x4c,
+               SOLAR_OS_INPUT_MOD_LEFT_CTRL | SOLAR_OS_INPUT_MOD_LEFT_ALT,
+               false) == SOLAR_OS_KEY_APP_EXIT);
+    assert(solar_os_input_translate_hid_usage(0x4c, 0, false) == SOLAR_OS_KEY_DELETE);
     assert(solar_os_input_set_keyboard_layout(SOLAR_OS_INPUT_KEYBOARD_LAYOUT_DE) == ESP_OK);
     assert(solar_os_input_translate_hid_usage(0x1c, 0, false) == 'z');
     assert(solar_os_input_translate_hid_usage(0x2b,

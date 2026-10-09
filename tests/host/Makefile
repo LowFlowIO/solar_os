@@ -27,6 +27,7 @@ TARGETS += rtsp_receiver_test
 TARGETS += rtsp_client_test
 TARGETS += gfx_mono_raster_test
 TARGETS += rgb565_raster_test
+TARGETS += indexed_raster_test
 TARGETS += rtspd_completion_test
 TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
@@ -267,6 +268,9 @@ script_media_test script_media_rtsp_test: $(SCRIPT_MEDIA_TEST_SOURCES)
 
 rtspd_completion_test: rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.h $(ROOT)/src/services/solar_os_stream.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services -I$(ROOT)/src/shell rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c -o $@
+
+indexed_raster_test: indexed_raster_test.c $(ROOT)/src/services/solar_os_indexed_raster.h $(ROOT)/src/services/solar_os_display_surface.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src/services indexed_raster_test.c -o $@
 
 rgb565_raster_test: rgb565_raster_test.c $(ROOT)/src/services/solar_os_rgb565.h $(ROOT)/src/services/solar_os_display_surface.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
@@ -969,6 +973,7 @@ test: $(TARGETS)
 	./rtsp_client_test
 	./gfx_mono_raster_test
 	./rgb565_raster_test
+	./indexed_raster_test
 	./rtspd_completion_test
 	./mjpeg_test
 	./http_server_test

@@ -62,3 +62,4 @@ tests/host/native_video_rtsp_api_test
 tests/host/tab5_keyboard_test
 tests/host/apple2_vm_test
 tests/host/apple2_vm_entry_test
+tests/host/indexed_raster_test

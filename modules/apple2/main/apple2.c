@@ -7,6 +7,21 @@ static const solar_os_native_host_api_v1_t *host;
 
 static void report(const char *message) { host->write_utf8(message, strlen(message)); }
 
+static void report_display_error(int result)
+{
+    const char *message;
+    switch (result) {
+    case SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED: message = "apple2: display frame format unsupported"; break;
+    case SOLAR_OS_NATIVE_ERROR_NO_MEMORY: message = "apple2: display setup ran out of memory"; break;
+    case SOLAR_OS_NATIVE_ERROR_NOT_FOUND: message = "apple2: display target not found"; break;
+    case SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT: message = "apple2: display rejected frame configuration"; break;
+    case SOLAR_OS_NATIVE_ERROR_INVALID_STATE: message = "apple2: display not ready or busy"; break;
+    case SOLAR_OS_NATIVE_ERROR_TIMEOUT: message = "apple2: display setup timed out"; break;
+    default: message = "apple2: display setup failed"; break;
+    }
+    report(message);
+}
+
 static void append_text(char message[160], const char *text)
 {
     size_t used = strlen(message), count = strlen(text);
@@ -127,7 +142,7 @@ static void handle_key(const solar_os_native_vm_key_v1_t *key)
     if (ch == 0x89 || key->usage == 0x3d) { m->muted = !m->muted; return; }
     if (ch == 0x8f || key->usage == 0x43) { m->paused = !m->paused; return; }
     if (ch == 0x90 || key->usage == 0x44) { puce6502RST(); return; }
-    if (ch == 0x91 || key->usage == 0x45) { apple2_vm->restart(); return; }
+    if (ch == 0x91 || key->usage == 0x45) { m->show_help = !m->show_help; return; }
     switch (ch) {
     case 0x80: ch = 11; break;
     case 0x81: ch = 10; break;
@@ -203,7 +218,7 @@ int main(int argc, char **argv)
     uint16_t palette[256];
     apple2_palette(palette);
     result = apple2_vm->video_open(APPLE2_WIDTH, APPLE2_HEIGHT, palette, 25U);
-    if (result) { report("apple2: display unavailable or busy"); goto done; }
+    if (result) { report_display_error(result); goto done; }
     int audio_result = apple2_vm->audio_open(&m->sample_rate, &m->channels);
     if (!audio_result) {
         if (m->sample_rate > APPLE2_CLOCK_HZ || !m->sample_rate || !m->channels || m->channels > 2U) {
@@ -221,8 +236,13 @@ int main(int argc, char **argv)
     uint64_t stats_wall = wall, stats_cycles = ticks;
     uint64_t cpu_us = 0, video_us = 0;
     bool was_paused = false;
-    report("apple2: F1 save; F2 status; F3 fast disk; F4 mute; F10 pause; F11 reset; Ctrl+] restart");
+    report("apple2: F1 save; F2 status; F3 fast disk; F4 mute; F10 pause; F11 reset; F12 help; Ctrl+Alt+Del exit");
     for (;;) {
+        if (apple2_vm->stop_requested()) {
+            result = SOLAR_OS_NATIVE_OK;
+            report("apple2: stopped");
+            break;
+        }
         poll_keyboard();
         uint64_t now = apple2_vm->time_us();
         if (m->paused || was_paused) {

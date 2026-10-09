@@ -20,6 +20,8 @@ static uint32_t sleep_quantum_us = 1000U;
 static uint64_t observed_ticks, last_poll_us, longest_poll_gap_us;
 static unsigned asset_frames;
 static bool model_cpu_cost;
+static unsigned stop_case, audio_writes;
+static bool audio_live;
 static FILE *asset_file(const char *path)
 {
     char resolved[1024];
@@ -29,7 +31,7 @@ static FILE *asset_file(const char *path)
     return fopen(resolved, "rb");
 }
 static void *allocate(size_t bytes) { allocations++; return malloc(bytes); }
-static void release(void *data) { frees++; free(data); }
+static void release(void *data) { assert(!audio_live); frees++; free(data); }
 static int report(const char *text, size_t length)
 {
     assert(text && length && length < sizeof(last_report));
@@ -87,7 +89,7 @@ static int read_file(const char *path, uint32_t offset, void *buffer,
             0xad, 0x00, 0xc0, 0x8d, 0x00, 0x03,
             0xad, 0x10, 0xc0, 0x4c, 0x00, 0xd0,
         };
-        if (failure == 8 || failure == 9) {
+        if (failure == 8 || failure == 9 || stop_case == 3) {
             static const uint8_t motor_on[] = {0xa9, 0x00, 0x8d, 0xe9, 0xc0};
             memcpy(buffer, motor_on, sizeof(motor_on));
             memcpy((uint8_t *)buffer + sizeof(motor_on), rom, sizeof(rom));
@@ -105,6 +107,13 @@ static int video_open(uint16_t width, uint16_t height, const uint16_t *palette, 
 static int present(const uint8_t *pixels, size_t length)
 {
     assert(pixels && length == 280U * 192U);
+    if (stop_case) {
+        frames++;
+        if (stop_case == 2) assert(apple2_machine->paused);
+        if (stop_case == 4) assert(apple2_machine->show_help);
+        if (stop_case == 5 && frames >= 3) assert(!apple2_machine->show_help);
+        return 0;
+    }
     if (assets) {
         asset_frames++;
         char screen[24 * 41 + 1]; size_t n = 0;
@@ -151,6 +160,15 @@ static int read_key(solar_os_native_vm_key_v1_t *key, bool *available)
     }
     /* Change visible RAM independently of the keyboard echo program. */
     apple2_machine->ram[0x401] = (uint8_t)(0x80U | (time_us / 40000U & 0x3fU));
+    if (stop_case && !key_sent) {
+        *available = true;
+        key->key = stop_case == 2 ? 0x8f : (stop_case >= 4 ? 0x91 : 'a');
+        key_sent = true;
+        return 0;
+    }
+    if (stop_case == 5 && time_us >= 80000U && !stats_sent) {
+        *available = true; key->usage = 0x45; stats_sent = true; return 0;
+    }
     if ((failure == 8 || failure == 9) && key_sent && !stats_sent) {
         *available = true; key->key = failure == 8 ? 0x87 : 0x88;
         stats_sent = true; return 0;
@@ -160,15 +178,23 @@ static int read_key(solar_os_native_vm_key_v1_t *key, bool *available)
 }
 static int audio_open(uint32_t *rate, uint8_t *channels)
 {
-    (void)rate; (void)channels; return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    if (stop_case) { *rate = 48000; *channels = 1; audio_live = true; return 0; }
+    return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
 }
-static void audio_close(void) { closes++; }
+static int audio_write(const int16_t *samples, size_t count)
+{
+    assert(audio_live && samples && count); audio_writes++; return 0;
+}
+static void audio_close(void) { audio_live = false; closes++; }
+static bool stop_requested(void) { return stop_case && time_us >= 120000U; }
+static void restart(void) { assert(!"module must not restart the device"); }
 static const solar_os_native_vm_api_v1_t vm_api = {
     .abi_version = 1, .struct_size = sizeof(vm_api),
     .time_us = now, .sleep_ms = sleep_ms, .video_open = video_open,
     .present = present, .read_key = read_key, .file_size = file_size,
     .read_file = read_file, .audio_open = audio_open, .audio_close = audio_close,
-    .set_exit_code = set_exit,
+    .audio_write = audio_write, .set_exit_code = set_exit,
+    .stop_requested = stop_requested, .restart = restart,
 };
 static const solar_os_native_memory_api_v1_t memory_api = {
     .abi_version = 1, .struct_size = sizeof(memory_api), .alloc = allocate, .free = release,
@@ -196,6 +222,7 @@ int main(int argc, char **test_argv)
         assert(allocations == frees && apple2_machine == NULL);
         if (failure == 3) assert(strstr(last_report, "got 1, expected 232960") &&
             strstr(last_report, "/assets/disk.nib"));
+        if (failure == 4) assert(strstr(last_report, "display setup ran out of memory"));
         if (failure == 5) assert(strstr(last_report, "file not found") &&
             strstr(last_report, "/assets/disk.nib"));
         if (failure == 6) assert(strstr(last_report, "read failed") &&
@@ -215,6 +242,22 @@ int main(int argc, char **test_argv)
     assert(apple2_vm_entry(3, argv) == 1 && ticks > 100000U && ticks < 140000U);
     assert(allocations == frees && closes == 10 && apple2_machine == NULL);
     sleep_quantum_us = 1000U;
+    /* Repeat real module entry/cleanup with active audio, pause, disk turbo,
+     * help open and help dismissed. Every stop must return successfully. */
+    failure = 0;
+    for (unsigned run = 0; run < 20; ++run) {
+        stop_case = run % 5U + 1U;
+        frames = 0; time_us = 0; key_sent = stats_sent = false; audio_writes = 0;
+        unsigned before_closes = closes;
+        exit_code = 1;
+        assert(apple2_vm_entry(3, argv) == 0 && exit_code == 0);
+        assert(allocations == frees && apple2_machine == NULL && !audio_live);
+        assert(closes == before_closes + 1U && frames >= 2U);
+        assert(time_us >= 120000U && time_us < 130000U);
+        if (stop_case == 1 || stop_case >= 4) assert(audio_writes);
+        assert(!strcmp(last_report, "apple2: stopped"));
+    }
+    stop_case = 0;
     if (argc == 2) {
         assets = test_argv[1]; failure = 0; time_us = 0;
         asset_frames = 0;

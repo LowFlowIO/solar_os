@@ -29,9 +29,10 @@ The asset directory requires `appleII+.rom` (12288 bytes) and `diskII.rom`
 (256 bytes). NIB images must be exactly 232960 bytes. A second disk is optional.
 
 F1 saves drive 1; Alt+F1 saves drive 2. F2 shows status, F3 toggles disk
-acceleration, F4 mutes, F10 pauses, F11 resets the guest, and F12 or Ctrl+]
-restarts the device. Restart discards unsaved disk
-changes. See [native VM reference](../../doc/manual/native-vm.md).
+acceleration, F4 mutes, F10 pauses, F11 resets the guest, and F12 shows help.
+Ctrl+Alt+Del or Ctrl+] exits to the SolarOS shell. Exit discards unsaved disk
+changes. The module requires firmware providing the VM `stop_requested` callback.
+See [native VM reference](../../doc/manual/native-vm.md).
 
 The module uses the SolarOS VM host for display, keyboard, storage, timing
 and optional audio. Changed frames are submitted asynchronously at up to 25 Hz.

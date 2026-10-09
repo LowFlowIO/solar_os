@@ -140,6 +140,17 @@ static void test_video_refresh(apple2_machine_t *m)
     m->show_stats = false;
     assert(apple2_video_refresh(0, 920000U));
     assert(!apple2_video_refresh(0, 960000U));
+    /* Help toggles redraw even with unchanged guest video, then restore it. */
+    uint8_t *guest = malloc(sizeof(m->pixels)); assert(guest);
+    memcpy(guest, m->pixels, sizeof(m->pixels));
+    m->show_help = true;
+    assert(apple2_video_refresh(0, 1000000U));
+    assert(memcmp(guest, m->pixels, sizeof(m->pixels)));
+    assert(!apple2_video_refresh(0, 1040000U));
+    m->show_help = false;
+    assert(apple2_video_refresh(0, 1080000U));
+    assert(!memcmp(guest, m->pixels, sizeof(m->pixels)));
+    free(guest);
 }
 
 static void test_audio(apple2_machine_t *m)
