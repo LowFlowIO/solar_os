@@ -45,4 +45,11 @@ typedef struct {
     void (*set_exit_code)(int code);
     /* Append-only ABI extension. Exit/suspend requests cooperative shutdown. */
     bool (*stop_requested)(void);
+    /* Effective terminal colors on color targets, black/white on mono targets.
+     * Colors are RGB565; guest graphics palettes remain literal colors. */
+    int (*text_colors)(uint16_t *foreground, uint16_t *background);
+    /* As video_open, with an explicit palette index for display margins. */
+    int (*video_open_ex)(uint16_t width, uint16_t height,
+        const uint16_t *palette_rgb565, uint16_t preferred_fps,
+        uint8_t background_index);
 } solar_os_native_vm_api_v1_t;

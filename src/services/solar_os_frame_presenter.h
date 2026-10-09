@@ -28,6 +28,8 @@ typedef struct {
     bool allow_mono_fallback;
     bool request_high_refresh;
     bool reverse_direct_palette;
+    /* Preserve supplied colors on direct targets; mono polarity still applies. */
+    bool literal_direct_palette;
     bool clear_background_on_resume;
     uint8_t background_index;
 } solar_os_frame_presenter_config_t;

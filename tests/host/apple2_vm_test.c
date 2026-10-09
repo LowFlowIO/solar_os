@@ -83,8 +83,22 @@ static void test_video(apple2_machine_t *m)
     memset(m->ram, 0xa0, sizeof(m->ram));
     m->TEXT = true; m->PAGE2 = false;
     apple2_video(0);
-    for (size_t i = 0; i < sizeof(m->pixels); ++i) assert(m->pixels[i] == 15);
-    m->ram[0x400] = 0; apple2_video(0); assert(m->pixels[0] == 0);
+    for (size_t i = 0; i < sizeof(m->pixels); ++i) assert(m->pixels[i] == APPLE2_TEXT_BACKGROUND);
+    uint8_t glyph[56];
+    m->ram[0x400] = 0xc1; apple2_video(0);
+    for (unsigned y = 0; y < 8; ++y) memcpy(glyph + y * 7, m->pixels + y * APPLE2_WIDTH, 7);
+    for (unsigned variant = 0; variant < 3; ++variant) {
+        m->ram[0x400] = variant == 0 ? 0x01 : 0x41;
+        apple2_video(variant == 2 ? APPLE2_CLOCK_HZ / 4U : 0);
+        for (unsigned y = 0; y < 8; ++y)
+            for (unsigned x = 0; x < 7; ++x) {
+                uint8_t normal = glyph[y * 7 + x];
+                uint8_t expected = variant == 1 ? normal :
+                    (normal == APPLE2_TEXT_FOREGROUND ? APPLE2_TEXT_BACKGROUND : APPLE2_TEXT_FOREGROUND);
+                assert(m->pixels[y * APPLE2_WIDTH + x] == expected);
+            }
+    }
+    m->ram[0x400] = 0; apple2_video(0); assert(m->pixels[0] == APPLE2_TEXT_FOREGROUND);
     m->TEXT = false; m->HIRES = false; m->MIXED = false;
     m->ram[0x400] = 0xf2; apple2_video(0);
     assert(m->pixels[0] == 2 && m->pixels[4 * APPLE2_WIDTH] == 15);
@@ -92,12 +106,15 @@ static void test_video(apple2_machine_t *m)
     assert(m->pixels[0] == 1 && m->pixels[4 * APPLE2_WIDTH] == 3);
     m->HIRES = true; m->MIXED = true;
     memset(m->ram + 0x4000, 0, 8192); apple2_video(0);
-    assert(m->pixels[0] == 16 && m->pixels[160 * APPLE2_WIDTH] <= 15);
+    assert(m->pixels[0] == 16 && m->pixels[160 * APPLE2_WIDTH] >= APPLE2_TEXT_FOREGROUND);
+    for (size_t i = 0; i < 160U * APPLE2_WIDTH; ++i) assert(m->pixels[i] < 32U);
+    for (size_t i = 160U * APPLE2_WIDTH; i < sizeof(m->pixels); ++i)
+        assert(m->pixels[i] == APPLE2_TEXT_FOREGROUND || m->pixels[i] == APPLE2_TEXT_BACKGROUND);
     uint64_t before = ticks;
     m->show_stats = true; apple2_video(0);
     assert(ticks == before);
     for (size_t i = 184U * APPLE2_WIDTH; i < sizeof(m->pixels); ++i)
-        assert(m->pixels[i] == 0 || m->pixels[i] == 15);
+        assert(m->pixels[i] == APPLE2_TEXT_FOREGROUND || m->pixels[i] == APPLE2_TEXT_BACKGROUND);
 }
 
 static void test_video_refresh(apple2_machine_t *m)
@@ -136,7 +153,7 @@ static void test_video_refresh(apple2_machine_t *m)
     assert(!apple2_video_refresh(0, 720000U));
     assert(apple2_video_refresh(0, 880000U));
     for (size_t i = 176U * APPLE2_WIDTH; i < sizeof(m->pixels); ++i)
-        assert(m->pixels[i] == 0 || m->pixels[i] == 15);
+        assert(m->pixels[i] == APPLE2_TEXT_FOREGROUND || m->pixels[i] == APPLE2_TEXT_BACKGROUND);
     m->show_stats = false;
     assert(apple2_video_refresh(0, 920000U));
     assert(!apple2_video_refresh(0, 960000U));

@@ -9,6 +9,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
 #include "solar_os_config.h"
+#include "solar_os_display.h"
 #include "solar_os_frame_presenter.h"
 #include "solar_os_input.h"
 #include "solar_os_keys.h"
@@ -85,8 +86,35 @@ static bool vm_stop_requested(void)
     return !vm_caller() || atomic_load(&vm.stop_requested);
 }
 
-static int vm_video_open(uint16_t width, uint16_t height,
-    const uint16_t *palette, uint16_t fps)
+static uint16_t vm_rgb565(uint32_t rgb)
+{
+    return (uint16_t)(((rgb >> 8U) & 0xf800U) |
+        ((rgb >> 5U) & 0x07e0U) | ((rgb >> 3U) & 0x001fU));
+}
+
+static int vm_text_colors(uint16_t *foreground, uint16_t *background)
+{
+    if (!vm_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!foreground || !background) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    char name[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
+    solar_os_display_target_t target;
+    if (!solar_os_gfx_display_target_name(vm.gfx, name, sizeof(name)) ||
+        !solar_os_display_find_target(name, &target)) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
+    *foreground = 0x0000U;
+    *background = 0xffffU;
+    if (target.frame_formats & SOLAR_OS_DISPLAY_FORMAT_INDEX8_BIT) {
+        uint32_t fg, bg;
+        esp_err_t err = solar_os_display_get_colors(&fg, &bg);
+        if (err != ESP_OK) return vm_result(err);
+        bool inverted = solar_os_gfx_palette_inverted(vm.gfx);
+        *foreground = vm_rgb565(inverted ? bg : fg);
+        *background = vm_rgb565(inverted ? fg : bg);
+    }
+    return SOLAR_OS_NATIVE_OK;
+}
+
+static int vm_video_open_ex(uint16_t width, uint16_t height,
+    const uint16_t *palette, uint16_t fps, uint8_t background_index)
 {
     if (!vm_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if (!width || !height || width > 1024U || height > 1024U ||
@@ -100,12 +128,18 @@ static int vm_video_open(uint16_t width, uint16_t height,
         .fit = SOLAR_OS_FRAME_FIT_HEIGHT,
         .preferred_fps = fps, .allow_mono_fallback = true,
         .request_high_refresh = true, .clear_background_on_resume = true,
-        .background_index = 15U,
+        .literal_direct_palette = true, .background_index = background_index,
     };
     esp_err_t err = solar_os_frame_presenter_init(&vm.presenter, &config);
     if (err == ESP_OK) err = solar_os_frame_presenter_resume(vm.presenter);
     if (err == ESP_OK) vm.frame_size = (size_t)width * height;
     return vm_result(err);
+}
+
+static int vm_video_open(uint16_t width, uint16_t height,
+    const uint16_t *palette, uint16_t fps)
+{
+    return vm_video_open_ex(width, height, palette, fps, 15U);
 }
 
 static int vm_present(const uint8_t *pixels, size_t length)
@@ -247,6 +281,7 @@ static const solar_os_native_vm_api_v1_t vm_api = {
     .audio_open = vm_audio_open, .audio_write = vm_audio_write, .audio_close = vm_audio_close,
     .set_exit_code = vm_set_exit_code,
     .stop_requested = vm_stop_requested,
+    .text_colors = vm_text_colors, .video_open_ex = vm_video_open_ex,
 };
 
 const void *solar_os_native_vm_get_service(const char *name, uint32_t abi, uint32_t size)

@@ -48,6 +48,12 @@ pixels before returning. The asynchronous presenter fits frames to the display
 while preserving their aspect ratio and supports monochrome fallback; emulated
 timing must remain independent of presentation.
 
+`video_open_ex` also accepts the palette index used for display margins;
+`video_open` uses index 15. Direct color presentation preserves the supplied
+palette. `text_colors` returns the terminal foreground and background in
+RGB565, including terminal inversion, for color targets. On monochrome targets
+it returns black and white; monochrome presentation applies terminal polarity.
+
 `read_key` provides SolarOS logical keys, USB HID usage when available, modifiers
 and press/release/repeat actions. The host captures the first ready keyboard
 with structured key events, including one connected after launch, before
@@ -95,7 +101,9 @@ Supply these files in an asset directory:
 
 ROMs and disk images are supplied separately. Disk names may be relative to
 the asset directory or absolute paths. Without a disk, press F11 to reach the
-ROM prompt. Guest text uses dark glyphs on a white background.
+ROM prompt. Guest text, mixed-mode text rows, status and help use the terminal
+colors on color displays. Monochrome displays use black-on-white text.
+Lores and hires graphics retain their Apple II palettes.
 
 | Key | Action |
 | --- | --- |

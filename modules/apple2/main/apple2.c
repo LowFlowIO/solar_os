@@ -217,7 +217,11 @@ int main(int argc, char **argv)
     }
     uint16_t palette[256];
     apple2_palette(palette);
-    result = apple2_vm->video_open(APPLE2_WIDTH, APPLE2_HEIGHT, palette, 25U);
+    result = apple2_vm->text_colors(&palette[APPLE2_TEXT_FOREGROUND],
+        &palette[APPLE2_TEXT_BACKGROUND]);
+    if (result) { report("apple2: display text colors unavailable"); goto done; }
+    result = apple2_vm->video_open_ex(APPLE2_WIDTH, APPLE2_HEIGHT, palette, 25U,
+        APPLE2_TEXT_BACKGROUND);
     if (result) { report_display_error(result); goto done; }
     int audio_result = apple2_vm->audio_open(&m->sample_rate, &m->channels);
     if (!audio_result) {

@@ -22,6 +22,7 @@ static unsigned asset_frames;
 static bool model_cpu_cost;
 static unsigned stop_case, audio_writes;
 static bool audio_live;
+static uint16_t text_foreground, text_background;
 static FILE *asset_file(const char *path)
 {
     char resolved[1024];
@@ -102,7 +103,22 @@ static int read_file(const char *path, uint32_t offset, void *buffer,
 static int video_open(uint16_t width, uint16_t height, const uint16_t *palette, uint16_t fps)
 {
     assert(width == 280 && height == 192 && palette[15] == 0xffff && fps == 25);
+    assert(palette[0] == 0 && palette[1] == 0x984cU);
+    assert(palette[APPLE2_TEXT_FOREGROUND] == text_foreground);
+    assert(palette[APPLE2_TEXT_BACKGROUND] == text_background);
     return failure == 4 ? SOLAR_OS_NATIVE_ERROR_NO_MEMORY : 0;
+}
+static int text_colors(uint16_t *foreground, uint16_t *background)
+{
+    text_foreground = stop_case > 1 ? 0x07e0U : 0x0000U;
+    text_background = stop_case > 1 ? 0x0000U : 0xffffU;
+    *foreground = text_foreground; *background = text_background; return 0;
+}
+static int video_open_ex(uint16_t width, uint16_t height, const uint16_t *palette,
+    uint16_t fps, uint8_t background_index)
+{
+    assert(background_index == APPLE2_TEXT_BACKGROUND);
+    return video_open(width, height, palette, fps);
 }
 static int present(const uint8_t *pixels, size_t length)
 {
@@ -195,6 +211,7 @@ static const solar_os_native_vm_api_v1_t vm_api = {
     .read_file = read_file, .audio_open = audio_open, .audio_close = audio_close,
     .audio_write = audio_write, .set_exit_code = set_exit,
     .stop_requested = stop_requested, .restart = restart,
+    .text_colors = text_colors, .video_open_ex = video_open_ex,
 };
 static const solar_os_native_memory_api_v1_t memory_api = {
     .abi_version = 1, .struct_size = sizeof(memory_api), .alloc = allocate, .free = release,

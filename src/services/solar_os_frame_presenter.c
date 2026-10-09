@@ -167,8 +167,9 @@ static esp_err_t frame_present(solar_os_frame_presenter_t *presenter)
         .height = presenter->output_height,
         .format = presenter->config.format,
         .palette_inverted =
-            solar_os_gfx_palette_inverted(presenter->config.gfx) !=
-            presenter->config.reverse_direct_palette,
+            !presenter->config.literal_direct_palette &&
+            (solar_os_gfx_palette_inverted(presenter->config.gfx) !=
+             presenter->config.reverse_direct_palette),
         .clear_background = presenter->clear_background_pending,
         .background_index = presenter->config.background_index,
     };

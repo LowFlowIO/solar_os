@@ -35,5 +35,8 @@ changes. The module requires firmware providing the VM `stop_requested` callback
 See [native VM reference](../../doc/manual/native-vm.md).
 
 The module uses the SolarOS VM host for display, keyboard, storage, timing
-and optional audio. Changed frames are submitted asynchronously at up to 25 Hz.
+and optional audio. Text and overlays follow terminal colors on color displays
+and use black on white on monochrome displays. Graphics retain their Apple II
+palettes. The firmware must provide `text_colors` and `video_open_ex`.
+Changed frames are submitted asynchronously at up to 25 Hz.
 F2 includes guest speed, interpreter throughput and frame-rendering time.

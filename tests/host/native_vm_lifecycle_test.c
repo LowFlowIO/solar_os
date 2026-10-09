@@ -6,12 +6,11 @@
 #include <string.h>
 #include "solar_os_native_vm_abi.h"
 #include "solar_os_keys.h"
+#include "solar_os_display_surface.h"
+#include "esp_err.h"
 
 typedef void *TaskHandle_t;
 typedef unsigned TickType_t;
-typedef int esp_err_t;
-#define ESP_OK 0
-#define ESP_FAIL -1
 #define pdTRUE 1
 #define pdMS_TO_TICKS(ms) ((ms) / 10U)
 #define SOLAR_OS_TASK_STOP_POLL_MS 20U
@@ -30,7 +29,7 @@ typedef struct {
     atomic_bool done, stop_requested, input_reset;
     uint64_t stop_deadline_us;
     bool worker_started;
-    void *presenter, *keys;
+    void *presenter, *keys, *gfx;
     int argc, exit_code;
     char args[8][160], detail[160];
     esp_err_t result;
@@ -46,6 +45,18 @@ static unsigned sequence, unload_order, audio_order, presenter_order, delete_ord
 static unsigned sent_keys, restarts;
 static bool finish_during_wait, fail_presenter;
 static jmp_buf restarted;
+static bool target_found = true, theme_inverted;
+static uint32_t target_formats = SOLAR_OS_DISPLAY_FORMAT_INDEX8_BIT;
+static unsigned color_reads;
+#define SOLAR_OS_DISPLAY_TARGET_NAME_MAX 16U
+typedef struct { uint32_t frame_formats; } solar_os_display_target_t;
+static bool solar_os_gfx_display_target_name(void *gfx, char *name, size_t size)
+{ (void)gfx; assert(size >= 9U); strcpy(name, "display0"); return true; }
+static bool solar_os_display_find_target(const char *name, solar_os_display_target_t *target)
+{ assert(!strcmp(name, "display0")); target->frame_formats = target_formats; return target_found; }
+static int solar_os_display_get_colors(uint32_t *fg, uint32_t *bg)
+{ color_reads++; *fg = 0x00ff00U; *bg = 0x123456U; return ESP_OK; }
+static bool solar_os_gfx_palette_inverted(void *gfx) { (void)gfx; return theme_inverted; }
 
 static bool vm_stop_requested(void);
 static void vm_worker(void *arg);
@@ -160,6 +171,20 @@ int main(void)
     assert(restarts == 3 && !vm_ready() && !delete_order && !release_order);
     current_task = &main_token; vm_state = NULL;
     assert(vm_stop_requested()); /* Foreign callers never dereference released state. */
-    puts("Native VM shutdown, cleanup ordering, relaunch and fallback tests passed");
+    setup(&ctx);
+    uint16_t fg, bg;
+    assert(vm_text_colors(&fg, &bg) == SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+    current_task = &worker_token; atomic_store(&vm_worker_task, current_task);
+    assert(vm_text_colors(NULL, &bg) == SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT);
+    assert(vm_text_colors(&fg, &bg) == 0 && fg == 0x07e0U && bg == 0x11aaU);
+    theme_inverted = true;
+    assert(vm_text_colors(&fg, &bg) == 0 && fg == 0x11aaU && bg == 0x07e0U);
+    unsigned reads = color_reads;
+    target_formats = SOLAR_OS_DISPLAY_FORMAT_MONO1_BIT;
+    assert(vm_text_colors(&fg, &bg) == 0 && fg == 0 && bg == 0xffffU);
+    assert(color_reads == reads); /* Monochrome is independent of color theme. */
+    target_found = false;
+    assert(vm_text_colors(&fg, &bg) == SOLAR_OS_NATIVE_ERROR_NOT_FOUND);
+    puts("Native VM lifecycle and display text colors tests passed");
     return 0;
 }

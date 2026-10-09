@@ -31,7 +31,8 @@ static void status_row(apple2_machine_t *m, const char text[40], unsigned top)
         for (unsigned y = 0; y < 8; ++y)
             for (unsigned x = 0; x < 7; ++x)
                 m->pixels[(top + y) * APPLE2_WIDTH + col * 7U + x] =
-                    (apple2_font[(uint8_t)text[col]][y] >> x) & 1U ? 0U : 15U;
+                    (apple2_font[(uint8_t)text[col]][y] >> x) & 1U ?
+                    APPLE2_TEXT_FOREGROUND : APPLE2_TEXT_BACKGROUND;
 }
 
 static void status_overlay(apple2_machine_t *m)
@@ -91,6 +92,8 @@ void apple2_palette(uint16_t palette[256])
         palette[i] = (uint16_t)(((uint16_t)(c[0] >> 3) << 11) |
             ((uint16_t)(c[1] >> 2) << 5) | (c[2] >> 3));
     }
+    palette[APPLE2_TEXT_FOREGROUND] = 0x0000U;
+    palette[APPLE2_TEXT_BACKGROUND] = 0xffffU;
 }
 
 static unsigned text_offset(unsigned row)
@@ -172,9 +175,8 @@ void apple2_video(uint64_t cycle)
             for (unsigned y = 0; y < 8; ++y)
                 for (unsigned x = 0; x < 7; ++x) {
                     bool dot = ((apple2_font[glyph][y] >> x) & 1U) != 0;
-                    /* Reflective-display-friendly text: dark glyphs on white. */
                     m->pixels[(row * 8 + y) * APPLE2_WIDTH + col * 7 + x] =
-                        (dot != inverse) ? 0U : 15U;
+                        (dot != inverse) ? APPLE2_TEXT_FOREGROUND : APPLE2_TEXT_BACKGROUND;
                 }
         }
     if (m->show_stats) status_overlay(m);
