@@ -1,0 +1,1454 @@
+diff --git a/doc/manual/apps.md b/doc/manual/apps.md
+index fcd9343..ea7f1ef 100644
+--- a/doc/manual/apps.md
++++ b/doc/manual/apps.md
+@@ -63,15 +63,27 @@ Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.
+ ```text
+ rtsp rtsp://192.168.1.238/media
+ rtsp 192.168.1.238/media
+-rtsp 192.168.1.192:8554/youtube
++rtsp user:secret@192.168.1.192:8554/youtube
+ rtsp --audio-only rtsp://192.168.1.113/media
+ rtsp --stats rtsp://192.168.1.192:8554/youtube
+ rtsp --audio-only --stats rtsp://192.168.1.192:8554/youtube
++rtsp-auth set 192.168.1.50 admin camera-password
++rtsp rtsp://192.168.1.50/media
+ ```
+ 
+ The `rtsp://` prefix is optional. The RTSP control connection uses TCP port 554
+ unless a port is supplied; RTP media uses negotiated UDP ports. Addresses without
+ a path are accepted; include the publisher's path when required.
++Inline credentials use `user:password@host`; percent-encoding is decoded for
++the username and password only. A stored account is used when the URL has no
++userinfo: `rtsp-auth set <host[:port]> <user> <password>` saves up to four
++accounts in NVS, `rtsp-auth` lists host, port, and username, and
++`rtsp-auth clear [host[:port]]` removes one or all. Passwords are not printed
++and are not sent in the request URI. On a 401 the client answers Basic or
++Digest MD5 (`qop=auth` or no qop) and retries that method. If the camera still
++returns 401, the same challenge is retried with an explicit port and then with
++the path alone, because cameras disagree on the Digest `uri`. The on-screen title
++shows `user@host`, never the password.
+ 
+ Graphical sessions show aspect-fit JPEG video when a video track is selected.
+ Audio-only sessions use the common audio GUI oscilloscope, fed by playback PCM,
+@@ -172,10 +184,12 @@ External-preferred buffers can consume internal memory on non-PSRAM targets.
+ Opening microphone capture while playback is active is not supported, including
+ on the Freenove duplex codec.
+ 
+-V1 supports unauthenticated IPv4 RTSP 1.0, one JPEG and one L16 track, and unicast
+-UDP. JPEG uses the publisher's explicit 8-bit quantization tables (Q=255), types
+-0/1 with optional restart markers. TCP interleaving, multicast, authentication,
+-encrypted RTSP, compressed audio, and redirects are not supported. Five seconds
++V1 supports IPv4 RTSP 1.0, one JPEG and one L16 track, and unicast UDP.
++Control authentication is Basic or Digest MD5, from inline URL userinfo or a
++stored `rtsp-auth` account. The publisher (`rtspd`) remains unauthenticated.
++JPEG uses the publisher's explicit 8-bit quantization tables (Q=255), types
++0/1 with optional restart markers. TCP interleaving, multicast, encrypted RTSP,
++compressed audio, and redirects are not supported. Five seconds
+ without media triggers the bounded reconnect policy; permanent failures or
+ retry exhaustion return a diagnostic to the shell. The publisher must have a
+ free receiver slot; `rtspd` is single-client.
+diff --git a/doc/manual/commands.md b/doc/manual/commands.md
+index 55058c8..31103dd 100644
+--- a/doc/manual/commands.md
++++ b/doc/manual/commands.md
+@@ -146,6 +146,9 @@ The display-shell app exit chord is `CTRL+ALT+DEL`. Port shells use `Ctrl+]`.
+ | `email` | `email configure <imaps://host[:port]> <user> <password> [mailbox]` | Save an IMAPS account; the default mailbox is `INBOX`. |
+ | `email` | `email sync` | Start a one-shot mailbox synchronization. |
+ | `email` | `email forget` | Remove the saved account and local email list. |
++| `rtsp-auth` | `rtsp-auth` | List stored RTSP client accounts (host, port, username; never the password). |
++| `rtsp-auth` | `rtsp-auth set <host[:port]> <user> <password>` | Save a Basic/Digest account used when an `rtsp` URL has no inline userinfo. Four accounts. |
++| `rtsp-auth` | `rtsp-auth clear [host[:port]]` | Remove one stored account, or every account when the host is omitted. |
+ | `pocsag` | `pocsag status` | Show POCSAG receiver configuration, counters, correction statistics, and RSSI. |
+ | `pocsag` | `pocsag send <radio> <frequency-hz> <baud> <ric> <message> [alpha\|numeric] [normal\|inverted] [function]` | Encode and transmit one POCSAG page. |
+ 
+diff --git a/doc/manual/lua.media.md b/doc/manual/lua.media.md
+index cf9c845..0ad804a 100644
+--- a/doc/manual/lua.media.md
++++ b/doc/manual/lua.media.md
+@@ -143,8 +143,10 @@ and release the frame. RTSP frame metadata includes `rtp_timestamp` (90 kHz)
+ and monotonic `arrived_us`; its `timestamp_us` is arrival time, not sender
+ wall-clock time. Local camera timestamps are capture timestamps.
+ 
+-Current RTSP restrictions are unchanged: trusted LAN, UDP media, JPEG/L16,
+-IPv4/hostnames, and no URL credentials/authentication or TCP-interleaved media.
++Current RTSP restrictions: trusted LAN, UDP media, JPEG/L16, IPv4/hostnames,
++and no TCP-interleaved media. Inline `user:pass@` or a stored `rtsp-auth`
++account answers Basic or Digest MD5 on the control connection. The request URI
++and error text never include the password.
+ Interpreters are never called from network/audio tasks.
+ 
+ ## Cleanup
+diff --git a/doc/manual/python.media.md b/doc/manual/python.media.md
+index 448a407..d8e3e5c 100644
+--- a/doc/manual/python.media.md
++++ b/doc/manual/python.media.md
+@@ -143,8 +143,10 @@ and release the frame. RTSP frame metadata includes `rtp_timestamp` (90 kHz)
+ and monotonic `arrived_us`; its `timestamp_us` is arrival time, not sender
+ wall-clock time. Local camera timestamps are capture timestamps.
+ 
+-Current RTSP restrictions are unchanged: trusted LAN, UDP media, JPEG/L16,
+-IPv4/hostnames, and no URL credentials/authentication or TCP-interleaved media.
++Current RTSP restrictions: trusted LAN, UDP media, JPEG/L16, IPv4/hostnames,
++and no TCP-interleaved media. Inline `user:pass@` or a stored `rtsp-auth`
++account answers Basic or Digest MD5 on the control connection. The request URI
++and error text never include the password.
+ Interpreters are never called from network/audio tasks.
+ 
+ ## Cleanup
+diff --git a/flavors/writerdeck.toml b/flavors/writerdeck.toml
+index cc7af00..e01c378 100644
+--- a/flavors/writerdeck.toml
++++ b/flavors/writerdeck.toml
+@@ -1,6 +1,6 @@
+ [flavor]
+ name = "writerdeck"
+-description = "SolarOS writing, reading, scripting, media, and file-transfer build."
++description = "SolarOS writing, reading, scripting, media, file-transfer, and RTSP viewer build."
+ 
+ [groups]
+ hardware_shell = true
+@@ -21,6 +21,7 @@ ssh = true
+ http_client = true
+ ftp = true
+ ntp = true
++rtsp = true
+ audio_commands = true
+ reader = true
+ writer = true
+diff --git a/packages/solar_os_packages.toml b/packages/solar_os_packages.toml
+index 8635457..c3e4371 100644
+--- a/packages/solar_os_packages.toml
++++ b/packages/solar_os_packages.toml
+@@ -2273,13 +2273,14 @@ capabilities = ["wifi"]
+ [packages.service_rtsp_client]
+ label = "service.rtsp-client"
+ depends = ["service_media", "service_audio", "service_net"]
+-sources = ["services/solar_os_rtsp_receiver.c", "services/solar_os_rtsp_client.c"]
++sources = ["services/solar_os_rtsp_receiver.c", "services/solar_os_rtsp_client.c", "services/solar_os_rtsp_auth.c"]
++requires = ["nvs_flash"]
+ capabilities = ["wifi"]
+ 
+ [packages.app_rtsp]
+ label = "app.rtsp"
+ depends = ["service_rtsp_client", "service_signal_widgets", "service_media_widgets"]
+-sources = ["apps/solar_os_rtsp_app.c"]
++sources = ["apps/solar_os_rtsp_app.c", "shell/solar_os_shell_rtsp_auth.c"]
+ requires = ["stb_image"]
+ capabilities = ["wifi"]
+ 
+diff --git a/src/apps/solar_os_app_registry.c b/src/apps/solar_os_app_registry.c
+index acb634d..057184c 100644
+--- a/src/apps/solar_os_app_registry.c
++++ b/src/apps/solar_os_app_registry.c
+@@ -202,7 +202,7 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
+     APP_ENTRY("webradio", "streaming internet radio", &solar_os_webradio_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "webradio [--tui] [URL] | webradio [--tui] <list | add NAME URL | remove NAME | reset>", 1, 5),
+ #endif
+ #if SOLAR_OS_PACKAGE_APP_RTSP
+-    APP_ENTRY("rtsp", "RTSP JPEG/L16 viewer", &solar_os_rtsp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "rtsp [--audio-only] [--stats] <[rtsp://]host[:port][/path]>", 2, 4),
++    APP_ENTRY("rtsp", "RTSP JPEG/L16 viewer", &solar_os_rtsp_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "rtsp [--audio-only] [--stats] <[rtsp://][user[:pass]@]host[:port][/path]>", 2, 4),
+ #endif
+ #if SOLAR_OS_PACKAGE_APP_PLAYER
+     APP_FILE_ENTRY("player", "playlist audio player", &solar_os_player_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "player [--tui] [file.wav|file.mp3]", 1, 3, ".wav .mp3"),
+diff --git a/src/apps/solar_os_rtsp_app.c b/src/apps/solar_os_rtsp_app.c
+index c198454..6c5f843 100644
+--- a/src/apps/solar_os_rtsp_app.c
++++ b/src/apps/solar_os_rtsp_app.c
+@@ -63,7 +63,7 @@ typedef struct {
+     int16_t pointer_x, pointer_y;
+     solar_os_rtsp_client_status_t last_status;
+     char display_target[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
+-    char url[SOLAR_OS_RTSP_URI_MAX];
++    char url[SOLAR_OS_RTSP_URL_MAX];
+     TaskHandle_t network_task, decode_task;
+     volatile bool network_done, decode_done, stop;
+     uint32_t last_port_ms;
+@@ -247,8 +247,9 @@ static void draw_controls(solar_os_gfx_t *gfx, int w, int h,
+     solar_os_gfx_fill_rect(gfx, 0, h - RTSP_CONTROLS_HEIGHT, w, RTSP_CONTROLS_HEIGHT);
+     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+     solar_os_gfx_line(gfx, 0, h - RTSP_CONTROLS_HEIGHT, w - 1, h - RTSP_CONTROLS_HEIGHT);
+-    char title[SOLAR_OS_RTSP_URI_MAX];
+-    snprintf(title, sizeof(title), "%s", rtsp.url + strlen("rtsp://"));
++    char title[SOLAR_OS_RTSP_URL_MAX];
++    if (solar_os_rtsp_url_redact(rtsp.url, title, sizeof(title)) != ESP_OK)
++        snprintf(title, sizeof(title), "%s", rtsp.url + strlen("rtsp://"));
+     solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_BOLD_16);
+     centered_text(gfx, w, h - 68, title);
+     char detail[96];
+@@ -483,7 +484,7 @@ static esp_err_t start_playback(solar_os_context_t *ctx)
+     if (err != ESP_OK) {
+         solar_os_context_finish(ctx, 1, err == ESP_ERR_NO_MEM ?
+             "RTSP: client allocation failed" :
+-            "RTSP: malformed/unsupported URL; use rtsp://host[:port]/path (no credentials or IPv6)");
++            "RTSP: malformed/unsupported URL; use rtsp://[user[:pass]@]host[:port]/path (no IPv6)");
+         return err;
+     }
+     rtsp.network_done = false;
+@@ -561,7 +562,7 @@ static esp_err_t start(solar_os_context_t *ctx)
+     esp_err_t err = solar_os_rtsp_url_normalize(url, rtsp.url, sizeof(rtsp.url));
+     if (err != ESP_OK) {
+         solar_os_context_finish(ctx, 1,
+-            "RTSP: malformed/unsupported address; use [rtsp://]host[:port][/path] (no credentials or IPv6)");
++            "RTSP: malformed/unsupported address; use [rtsp://][user[:pass]@]host[:port][/path] (no IPv6)");
+         return err;
+     }
+     rtsp.frame_diagnostics = rtsp.diagnostics;
+diff --git a/src/apps/solar_os_shell.c b/src/apps/solar_os_shell.c
+index ebdb6eb..55d9848 100644
+--- a/src/apps/solar_os_shell.c
++++ b/src/apps/solar_os_shell.c
+@@ -579,6 +579,9 @@ static const shell_command_t shell_builtin_commands[] = {
+ #if SOLAR_OS_PACKAGE_APP_EMAIL
+     {"email", "IMAP email client", solar_os_shell_cmd_email},
+ #endif
++#if SOLAR_OS_PACKAGE_APP_RTSP
++    {"rtsp-auth", "stored RTSP client accounts", solar_os_shell_cmd_rtsp_auth},
++#endif
+ #if SOLAR_OS_PACKAGE_JOB_MESHCORE
+     {"meshcore", "MeshCore identity and radio messaging",
+      solar_os_shell_cmd_meshcore},
+diff --git a/src/services/solar_os_rtsp_auth.c b/src/services/solar_os_rtsp_auth.c
+new file mode 100644
+index 0000000..e529e6e
+--- /dev/null
++++ b/src/services/solar_os_rtsp_auth.c
+@@ -0,0 +1,392 @@
++#include "solar_os_rtsp_auth.h"
++
++#include <ctype.h>
++#include <stdbool.h>
++#include <stdio.h>
++#include <string.h>
++#include <strings.h>
++
++#ifdef ESP_PLATFORM
++#include "nvs.h"
++#define RTSP_AUTH_NVS_NAMESPACE "rtsp_auth"
++#define RTSP_AUTH_NVS_KEY "accounts"
++#endif
++
++typedef struct {
++    char host[SOLAR_OS_RTSP_AUTH_HOST_MAX + 1U];
++    uint16_t port;
++    char user[SOLAR_OS_RTSP_AUTH_USER_MAX + 1U];
++    char password[SOLAR_OS_RTSP_AUTH_PASSWORD_MAX + 1U];
++} rtsp_auth_record_t;
++
++static rtsp_auth_record_t auth_records[SOLAR_OS_RTSP_AUTH_CAPACITY];
++static bool auth_loaded;
++
++void solar_os_rtsp_auth_wipe(void *buffer, size_t length)
++{
++    volatile uint8_t *bytes = buffer;
++    if (!bytes) return;
++    while (length--) *bytes++ = 0;
++}
++
++static void hex_encode(const uint8_t *in, size_t len, char *out)
++{
++    static const char digits[] = "0123456789abcdef";
++    for (size_t i = 0; i < len; i++) {
++        out[i * 2] = digits[in[i] >> 4];
++        out[i * 2 + 1] = digits[in[i] & 0x0f];
++    }
++    out[len * 2] = '\0';
++}
++
++static const char *strcasestr_local(const char *hay, const char *needle)
++{
++    if (!hay || !needle || !*needle) return hay;
++    size_t n = strlen(needle);
++    for (; *hay; hay++)
++        if (!strncasecmp(hay, needle, n)) return hay;
++    return NULL;
++}
++
++static uint32_t md5_rot(uint32_t x, uint32_t n) { return (x << n) | (x >> (32 - n)); }
++
++static void md5(const uint8_t *data, size_t len, uint8_t out[16])
++{
++    static const uint32_t s[] = {
++        7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22,
++        5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20,
++        4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23,
++        6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21
++    };
++    static const uint32_t k[] = {
++        0xd76aa478, 0xe8c7b756, 0x242070db, 0xc1bdceee, 0xf57c0faf, 0x4787c62a, 0xa8304613, 0xfd469501,
++        0x698098d8, 0x8b44f7af, 0xffff5bb1, 0x895cd7be, 0x6b901122, 0xfd987193, 0xa679438e, 0x49b40821,
++        0xf61e2562, 0xc040b340, 0x265e5a51, 0xe9b6c7aa, 0xd62f105d, 0x02441453, 0xd8a1e681, 0xe7d3fbc8,
++        0x21e1cde6, 0xc33707d6, 0xf4d50d87, 0x455a14ed, 0xa9e3e905, 0xfcefa3f8, 0x676f02d9, 0x8d2a4c8a,
++        0xfffa3942, 0x8771f681, 0x6d9d6122, 0xfde5380c, 0xa4beea44, 0x4bdecfa9, 0xf6bb4b60, 0xbebfbc70,
++        0x289b7ec6, 0xeaa127fa, 0xd4ef3085, 0x04881d05, 0xd9d4d039, 0xe6db99e5, 0x1fa27cf8, 0xc4ac5665,
++        0xf4292244, 0x432aff97, 0xab9423a7, 0xfc93a039, 0x655b59c3, 0x8f0ccc92, 0xffeff47d, 0x85845dd1,
++        0x6fa87e4f, 0xfe2ce6e0, 0xa3014314, 0x4e0811a1, 0xf7537e82, 0xbd3af235, 0x2ad7d2bb, 0xeb86d391
++    };
++    uint32_t h0 = 0x67452301, h1 = 0xefcdab89, h2 = 0x98badcfe, h3 = 0x10325476;
++    uint64_t bits = (uint64_t)len * 8;
++    size_t padded = len + 1;
++    while ((padded % 64) != 56) padded++;
++    padded += 8;
++    for (size_t off = 0; off < padded; off += 64) {
++        uint8_t block[64];
++        memset(block, 0, sizeof(block));
++        if (off < len) memcpy(block, data + off, len - off < 64 ? len - off : 64);
++        if (off <= len && len < off + 64) block[len - off] = 0x80;
++        if (off + 64 == padded) {
++            for (int i = 0; i < 8; i++) block[56 + i] = (uint8_t)(bits >> (8 * i));
++        }
++        uint32_t w[16];
++        for (int i = 0; i < 16; i++)
++            w[i] = (uint32_t)block[i * 4] | ((uint32_t)block[i * 4 + 1] << 8) |
++                   ((uint32_t)block[i * 4 + 2] << 16) | ((uint32_t)block[i * 4 + 3] << 24);
++        uint32_t a = h0, b = h1, c = h2, d = h3;
++        for (int i = 0; i < 64; i++) {
++            uint32_t f, g;
++            if (i < 16) { f = (b & c) | (~b & d); g = (uint32_t)i; }
++            else if (i < 32) { f = (d & b) | (~d & c); g = (5U * i + 1) % 16; }
++            else if (i < 48) { f = b ^ c ^ d; g = (3U * i + 5) % 16; }
++            else { f = c ^ (b | ~d); g = (7U * i) % 16; }
++            uint32_t next = d;
++            d = c; c = b;
++            b = b + md5_rot(a + f + k[i] + w[g], s[i]);
++            a = next;
++        }
++        h0 += a; h1 += b; h2 += c; h3 += d;
++    }
++    uint32_t words[] = {h0, h1, h2, h3};
++    for (int i = 0; i < 4; i++) {
++        out[i * 4] = (uint8_t)words[i];
++        out[i * 4 + 1] = (uint8_t)(words[i] >> 8);
++        out[i * 4 + 2] = (uint8_t)(words[i] >> 16);
++        out[i * 4 + 3] = (uint8_t)(words[i] >> 24);
++    }
++}
++
++static void md5_hex(const char *text, char out[33])
++{
++    uint8_t dig[16];
++    md5((const uint8_t *)text, strlen(text), dig);
++    hex_encode(dig, 16, out);
++}
++
++static size_t base64(const uint8_t *in, size_t len, char *out, size_t cap)
++{
++    static const char table[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
++    size_t need = 4 * ((len + 2) / 3) + 1;
++    if (need > cap) return 0;
++    size_t o = 0;
++    for (size_t i = 0; i < len; i += 3) {
++        uint32_t n = (uint32_t)in[i] << 16;
++        if (i + 1 < len) n |= (uint32_t)in[i + 1] << 8;
++        if (i + 2 < len) n |= in[i + 2];
++        out[o++] = table[(n >> 18) & 63];
++        out[o++] = table[(n >> 12) & 63];
++        out[o++] = i + 1 < len ? table[(n >> 6) & 63] : '=';
++        out[o++] = i + 2 < len ? table[n & 63] : '=';
++    }
++    out[o] = '\0';
++    return o;
++}
++
++static bool copy_token(char *dst, size_t cap, const char *src, size_t len)
++{
++    if (!dst || len >= cap) return false;
++    memcpy(dst, src, len);
++    dst[len] = '\0';
++    return true;
++}
++
++static const char *param(const char *header, const char *name, char *out, size_t cap, bool *quoted)
++{
++    size_t nlen = strlen(name);
++    const char *p = header;
++    if (quoted) *quoted = false;
++    while (p && *p) {
++        while (*p == ' ' || *p == '\t' || *p == ',') p++;
++        if (!strncasecmp(p, name, nlen) && (p[nlen] == '=' || p[nlen] == ' ')) {
++            p += nlen;
++            while (*p == ' ' || *p == '\t') p++;
++            if (*p != '=') return NULL;
++            p++;
++            while (*p == ' ' || *p == '\t') p++;
++            if (*p == '"') {
++                if (quoted) *quoted = true;
++                p++;
++                const char *end = p;
++                while (*end && *end != '"') {
++                    if (*end == '\\' && end[1]) end++;
++                    end++;
++                }
++                size_t o = 0;
++                for (const char *s = p; s < end && o + 1 < cap; s++) {
++                    if (*s == '\\' && s + 1 < end) s++;
++                    out[o++] = *s;
++                }
++                if (o + 1 >= cap) return NULL;
++                out[o] = '\0';
++                return out;
++            }
++            const char *end = p;
++            while (*end && *end != ',' && *end != ' ' && *end != '\t') end++;
++            return copy_token(out, cap, p, (size_t)(end - p)) ? out : NULL;
++        }
++        p = strchr(p, ',');
++        if (p) p++;
++    }
++    return NULL;
++}
++
++esp_err_t solar_os_rtsp_auth_challenge(const char *www, solar_os_rtsp_auth_challenge_t *c)
++{
++    if (!www || !c || !*www) return ESP_ERR_INVALID_ARG;
++    memset(c, 0, sizeof(*c));
++    const char *digest = strcasestr_local(www, "Digest");
++    const char *basic = strcasestr_local(www, "Basic");
++    if (digest) {
++        char qop[64] = "", algorithm[32] = "", stale[8] = "";
++        const char *fields = digest + 6;
++        c->digest = true;
++        if (!param(fields, "realm", c->realm, sizeof(c->realm), NULL) ||
++            !param(fields, "nonce", c->nonce, sizeof(c->nonce), NULL))
++            return ESP_ERR_INVALID_RESPONSE;
++        (void)param(fields, "opaque", c->opaque, sizeof(c->opaque), NULL);
++        if (param(fields, "algorithm", algorithm, sizeof(algorithm), NULL) &&
++            algorithm[0] && strcasecmp(algorithm, "MD5"))
++            return ESP_ERR_NOT_SUPPORTED;
++        if (param(fields, "qop", qop, sizeof(qop), NULL) && qop[0]) {
++            bool auth = false, other = false;
++            for (char *tok = qop; *tok;) {
++                while (*tok == ' ' || *tok == ',') tok++;
++                if (!*tok) break;
++                char *comma = strchr(tok, ',');
++                size_t n = comma ? (size_t)(comma - tok) : strlen(tok);
++                while (n && tok[n - 1] == ' ') n--;
++                if (n == 4 && !strncasecmp(tok, "auth", 4)) auth = true;
++                else other = true;
++                tok = comma ? comma + 1 : tok + n;
++                if (!comma) break;
++            }
++            if (!auth) return other ? ESP_ERR_NOT_SUPPORTED : ESP_ERR_INVALID_RESPONSE;
++            c->qop_auth = true;
++        }
++        if (param(fields, "stale", stale, sizeof(stale), NULL))
++            c->stale = !strcasecmp(stale, "true");
++        return ESP_OK;
++    }
++    if (basic) return ESP_OK;
++    return ESP_ERR_NOT_SUPPORTED;
++}
++
++esp_err_t solar_os_rtsp_authorization(const solar_os_rtsp_auth_challenge_t *c,
++                                     const char *method, const char *uri,
++                                     const char *user, const char *password,
++                                     char *header, size_t capacity)
++{
++    if (!c || !method || !uri || !user || !password || !header) return ESP_ERR_INVALID_ARG;
++    if (strchr(user, '"') || strchr(uri, '"')) return ESP_ERR_INVALID_ARG;
++    if (!c->digest) {
++        char raw[SOLAR_OS_RTSP_AUTH_USER_MAX + SOLAR_OS_RTSP_AUTH_PASSWORD_MAX + 2];
++        char encoded[160];
++        int n = snprintf(raw, sizeof(raw), "%s:%s", user, password);
++        if (n < 0 || (size_t)n >= sizeof(raw)) return ESP_ERR_INVALID_SIZE;
++        if (!base64((const uint8_t *)raw, (size_t)n, encoded, sizeof(encoded)))
++            return ESP_ERR_INVALID_SIZE;
++        solar_os_rtsp_auth_wipe(raw, sizeof(raw));
++        n = snprintf(header, capacity, "Basic %s", encoded);
++        solar_os_rtsp_auth_wipe(encoded, sizeof(encoded));
++        return n > 0 && (size_t)n < capacity ? ESP_OK : ESP_ERR_INVALID_SIZE;
++    }
++    char ha1[33], ha2[33], response[33], material[320];
++    int n = snprintf(material, sizeof(material), "%s:%s:%s", user, c->realm, password);
++    if (n < 0 || (size_t)n >= sizeof(material)) return ESP_ERR_INVALID_SIZE;
++    md5_hex(material, ha1);
++    solar_os_rtsp_auth_wipe(material, sizeof(material));
++    n = snprintf(material, sizeof(material), "%s:%s", method, uri);
++    if (n < 0 || (size_t)n >= sizeof(material)) return ESP_ERR_INVALID_SIZE;
++    md5_hex(material, ha2);
++    if (c->qop_auth) {
++        char nc[9];
++        snprintf(nc, sizeof(nc), "%08lx", (unsigned long)(c->nc ? c->nc : 1));
++        n = snprintf(material, sizeof(material), "%s:%s:%s:%s:auth:%s",
++                     ha1, c->nonce, nc, c->cnonce, ha2);
++    } else {
++        n = snprintf(material, sizeof(material), "%s:%s:%s", ha1, c->nonce, ha2);
++    }
++    if (n < 0 || (size_t)n >= sizeof(material)) return ESP_ERR_INVALID_SIZE;
++    md5_hex(material, response);
++    solar_os_rtsp_auth_wipe(material, sizeof(material));
++    solar_os_rtsp_auth_wipe(ha1, sizeof(ha1));
++    if (c->qop_auth) {
++        n = snprintf(header, capacity,
++            "Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", "
++            "algorithm=MD5, response=\"%s\", qop=auth, nc=%08lx, cnonce=\"%s\"%s%s%s",
++            user, c->realm, c->nonce, uri, response, (unsigned long)(c->nc ? c->nc : 1),
++            c->cnonce, c->opaque[0] ? ", opaque=\"" : "", c->opaque, c->opaque[0] ? "\"" : "");
++    } else {
++        n = snprintf(header, capacity,
++            "Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", "
++            "algorithm=MD5, response=\"%s\"%s%s%s",
++            user, c->realm, c->nonce, uri, response,
++            c->opaque[0] ? ", opaque=\"" : "", c->opaque, c->opaque[0] ? "\"" : "");
++    }
++    solar_os_rtsp_auth_wipe(response, sizeof(response));
++    return n > 0 && (size_t)n < capacity ? ESP_OK : ESP_ERR_INVALID_SIZE;
++}
++
++static bool host_equal(const char *a, const char *b)
++{
++    return a && b && !strcasecmp(a, b);
++}
++
++static int find_account(const char *host, uint16_t port)
++{
++    for (size_t i = 0; i < SOLAR_OS_RTSP_AUTH_CAPACITY; i++)
++        if (auth_records[i].host[0] && host_equal(auth_records[i].host, host) &&
++            auth_records[i].port == port)
++            return (int)i;
++    return -1;
++}
++
++#ifdef ESP_PLATFORM
++static esp_err_t persist(void)
++{
++    nvs_handle_t nvs;
++    esp_err_t err = nvs_open(RTSP_AUTH_NVS_NAMESPACE, NVS_READWRITE, &nvs);
++    if (err != ESP_OK) return err;
++    err = nvs_set_blob(nvs, RTSP_AUTH_NVS_KEY, auth_records, sizeof(auth_records));
++    if (err == ESP_OK) err = nvs_commit(nvs);
++    nvs_close(nvs);
++    return err;
++}
++
++static void load(void)
++{
++    if (auth_loaded) return;
++    auth_loaded = true;
++    nvs_handle_t nvs;
++    if (nvs_open(RTSP_AUTH_NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) return;
++    size_t len = sizeof(auth_records);
++    if (nvs_get_blob(nvs, RTSP_AUTH_NVS_KEY, auth_records, &len) != ESP_OK || len != sizeof(auth_records))
++        memset(auth_records, 0, sizeof(auth_records));
++    nvs_close(nvs);
++}
++#else
++static esp_err_t persist(void) { auth_loaded = true; return ESP_OK; }
++static void load(void) { auth_loaded = true; }
++#endif
++
++esp_err_t solar_os_rtsp_auth_set(const char *host, uint16_t port,
++                                const char *user, const char *password)
++{
++    if (!host || !*host || !user || !*user || !password || !port) return ESP_ERR_INVALID_ARG;
++    if (strlen(host) > SOLAR_OS_RTSP_AUTH_HOST_MAX ||
++        strlen(user) > SOLAR_OS_RTSP_AUTH_USER_MAX ||
++        strlen(password) > SOLAR_OS_RTSP_AUTH_PASSWORD_MAX)
++        return ESP_ERR_INVALID_SIZE;
++    load();
++    int slot = find_account(host, port);
++    if (slot < 0) {
++        for (size_t i = 0; i < SOLAR_OS_RTSP_AUTH_CAPACITY; i++)
++            if (!auth_records[i].host[0]) { slot = (int)i; break; }
++    }
++    if (slot < 0) return ESP_ERR_NO_MEM;
++    rtsp_auth_record_t *r = &auth_records[slot];
++    memset(r, 0, sizeof(*r));
++    snprintf(r->host, sizeof(r->host), "%s", host);
++    r->port = port;
++    snprintf(r->user, sizeof(r->user), "%s", user);
++    snprintf(r->password, sizeof(r->password), "%s", password);
++    return persist();
++}
++
++esp_err_t solar_os_rtsp_auth_clear(const char *host, uint16_t port)
++{
++    load();
++    if (!host || !*host) {
++        for (size_t i = 0; i < SOLAR_OS_RTSP_AUTH_CAPACITY; i++)
++            solar_os_rtsp_auth_wipe(&auth_records[i], sizeof(auth_records[i]));
++        return persist();
++    }
++    int slot = find_account(host, port ? port : 554);
++    if (slot < 0) return ESP_ERR_NOT_FOUND;
++    solar_os_rtsp_auth_wipe(&auth_records[slot], sizeof(auth_records[slot]));
++    return persist();
++}
++
++esp_err_t solar_os_rtsp_auth_lookup(const char *host, uint16_t port,
++                                   char *user, size_t user_cap,
++                                   char *password, size_t password_cap)
++{
++    if (!host || !port || !user || !password) return ESP_ERR_INVALID_ARG;
++    load();
++    int slot = find_account(host, port);
++    if (slot < 0) return ESP_ERR_NOT_FOUND;
++    if (strlen(auth_records[slot].user) >= user_cap ||
++        strlen(auth_records[slot].password) >= password_cap)
++        return ESP_ERR_INVALID_SIZE;
++    snprintf(user, user_cap, "%s", auth_records[slot].user);
++    snprintf(password, password_cap, "%s", auth_records[slot].password);
++    return ESP_OK;
++}
++
++size_t solar_os_rtsp_auth_list(solar_os_rtsp_auth_account_t *records, size_t max_records)
++{
++    load();
++    size_t n = 0;
++    for (size_t i = 0; i < SOLAR_OS_RTSP_AUTH_CAPACITY && n < max_records; i++) {
++        if (!auth_records[i].host[0]) continue;
++        if (records) {
++            memcpy(records[n].host, auth_records[i].host, sizeof(records[n].host));
++            records[n].port = auth_records[i].port;
++            memcpy(records[n].user, auth_records[i].user, sizeof(records[n].user));
++        }
++        n++;
++    }
++    return n;
++}
+diff --git a/src/services/solar_os_rtsp_auth.h b/src/services/solar_os_rtsp_auth.h
+new file mode 100644
+index 0000000..93eb36f
+--- /dev/null
++++ b/src/services/solar_os_rtsp_auth.h
+@@ -0,0 +1,52 @@
++#pragma once
++
++#include <stdbool.h>
++#include <stddef.h>
++#include <stdint.h>
++
++#include "esp_err.h"
++
++#define SOLAR_OS_RTSP_AUTH_HOST_MAX 63U
++#define SOLAR_OS_RTSP_AUTH_USER_MAX 64U
++#define SOLAR_OS_RTSP_AUTH_PASSWORD_MAX 64U
++#define SOLAR_OS_RTSP_AUTH_CAPACITY 4U
++#define SOLAR_OS_RTSP_AUTH_HEADER_MAX 384U
++
++typedef struct {
++    bool digest;
++    bool qop_auth;
++    bool stale;
++    char realm[64];
++    char nonce[128];
++    char opaque[128];
++    char cnonce[17];
++    uint32_t nc;
++} solar_os_rtsp_auth_challenge_t;
++
++typedef struct {
++    char host[SOLAR_OS_RTSP_AUTH_HOST_MAX + 1U];
++    uint16_t port;
++    char user[SOLAR_OS_RTSP_AUTH_USER_MAX + 1U];
++} solar_os_rtsp_auth_account_t;
++
++/* Parse one WWW-Authenticate value. Digest is preferred over Basic. */
++esp_err_t solar_os_rtsp_auth_challenge(const char *www_authenticate,
++                                      solar_os_rtsp_auth_challenge_t *challenge);
++/* Authorization header value, without the header name. cnonce/nc are used
++ * only for Digest qop=auth; pass NULL/0 to use the challenge copies. */
++esp_err_t solar_os_rtsp_authorization(const solar_os_rtsp_auth_challenge_t *challenge,
++                                     const char *method,
++                                     const char *uri,
++                                     const char *user,
++                                     const char *password,
++                                     char *header,
++                                     size_t capacity);
++
++esp_err_t solar_os_rtsp_auth_set(const char *host, uint16_t port,
++                                const char *user, const char *password);
++esp_err_t solar_os_rtsp_auth_clear(const char *host, uint16_t port);
++esp_err_t solar_os_rtsp_auth_lookup(const char *host, uint16_t port,
++                                   char *user, size_t user_cap,
++                                   char *password, size_t password_cap);
++size_t solar_os_rtsp_auth_list(solar_os_rtsp_auth_account_t *records, size_t max_records);
++void solar_os_rtsp_auth_wipe(void *buffer, size_t length);
+diff --git a/src/services/solar_os_rtsp_client.c b/src/services/solar_os_rtsp_client.c
+index 12329ce..84a5ae3 100644
+--- a/src/services/solar_os_rtsp_client.c
++++ b/src/services/solar_os_rtsp_client.c
+@@ -1,4 +1,5 @@
+ #include "solar_os_rtsp_client.h"
++#include "solar_os_rtsp_auth.h"
+ 
+ #include <errno.h>
+ #include <fcntl.h>
+@@ -45,6 +46,9 @@ typedef struct {
+ struct solar_os_rtsp_client {
+     solar_os_rtsp_client_options_t options;
+     char url[SOLAR_OS_RTSP_URI_MAX], session[SOLAR_OS_RTSP_CLIENT_SESSION_MAX];
++    char user[SOLAR_OS_RTSP_USER_MAX + 1U], password[SOLAR_OS_RTSP_PASSWORD_MAX + 1U];
++    solar_os_rtsp_auth_challenge_t auth;
++    bool auth_ready;
+     solar_os_rtsp_url_t parsed;
+     solar_os_rtsp_description_t description;
+     solar_os_rtsp_response_t response;
+@@ -127,48 +131,102 @@ static esp_err_t send_bytes(solar_os_rtsp_client_t *c, const char *text, size_t
+     return ESP_OK;
+ }
+ 
++static void auth_request_uri(const solar_os_rtsp_client_t *c, const char *original, int form,
++                             char *uri, size_t capacity)
++{
++    const char *path = strstr(original, "://") ? strchr(original + 7, '/') : strchr(original, '/');
++    if (!path || !*path) path = "/";
++    /* Cameras disagree on the Digest uri. Try the public request-URI, then an
++     * explicit port, then the path alone. The request line uses the same form. */
++    if (form == 1)
++        snprintf(uri, capacity, "rtsp://%s:%u%s", c->parsed.host,
++                 c->parsed.port ? c->parsed.port : 554, path);
++    else if (form == 2)
++        snprintf(uri, capacity, "%s", path);
++    else
++        snprintf(uri, capacity, "%s", original);
++}
++
+ static esp_err_t request(solar_os_rtsp_client_t *c, const char *method, const char *uri, const char *headers)
+ {
+-    int n = snprintf((char *)c->response_bytes, SOLAR_OS_RTSP_RESPONSE_MAX,
+-        "%s %s RTSP/1.0\r\nCSeq: %lu\r\nUser-Agent: SolarOS-RTSP\r\n%s%s%s%s\r\n",
+-        method, uri, (unsigned long)++c->cseq,
+-        c->session[0] ? "Session: " : "", c->session,
+-        c->session[0] ? "\r\n" : "", headers ? headers : "");
+-    if (n < 0 || (size_t)n >= SOLAR_OS_RTSP_RESPONSE_MAX)
+-        return fail(c, ESP_ERR_INVALID_SIZE, "%s: request exceeds control buffer", method);
+-    esp_err_t err = send_bytes(c, (const char *)c->response_bytes, n, method);
+-    if (err != ESP_OK) return err;
+-    size_t used = 0; uint64_t deadline = now_us() + CLIENT_TIMEOUT_US;
++    int auth_tries = 0;
++    int uri_form = 0;
++    char uri_buf[SOLAR_OS_RTSP_URI_MAX];
++    snprintf(uri_buf, sizeof(uri_buf), "%s", uri);
+     for (;;) {
+-        err = wait_socket(c, c->control, false, deadline, method);
++        char authorization[SOLAR_OS_RTSP_AUTH_HEADER_MAX];
++        authorization[0] = '\0';
++        if (c->auth_ready) {
++            c->auth.nc++;
++            esp_err_t err = solar_os_rtsp_authorization(&c->auth, method, uri_buf, c->user, c->password,
++                                                      authorization, sizeof(authorization));
++            if (err != ESP_OK)
++                return fail(c, err, "%s: cannot build RTSP Authorization header", method);
++        }
++        int n = snprintf((char *)c->response_bytes, SOLAR_OS_RTSP_RESPONSE_MAX,
++            "%s %s RTSP/1.0\r\nCSeq: %lu\r\nUser-Agent: SolarOS-RTSP\r\n%s%s%s%s%s%s%s\r\n",
++            method, uri_buf, (unsigned long)++c->cseq,
++            c->session[0] ? "Session: " : "", c->session,
++            c->session[0] ? "\r\n" : "",
++            authorization[0] ? "Authorization: " : "", authorization,
++            authorization[0] ? "\r\n" : "", headers ? headers : "");
++        if (n < 0 || (size_t)n >= SOLAR_OS_RTSP_RESPONSE_MAX)
++            return fail(c, ESP_ERR_INVALID_SIZE, "%s: request exceeds control buffer", method);
++        esp_err_t err = send_bytes(c, (const char *)c->response_bytes, n, method);
+         if (err != ESP_OK) return err;
+-        n = recv(c->control, c->response_bytes + used, SOLAR_OS_RTSP_RESPONSE_MAX - used, 0);
+-        if (n <= 0) {
+-            if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) continue;
+-            if (!n) c->retryable = true;
+-            return n == 0 ? fail(c, ESP_FAIL, "%s: server closed connection before response", method) :
+-                socket_fail(c, method, errno);
++        size_t used = 0; uint64_t deadline = now_us() + CLIENT_TIMEOUT_US;
++        for (;;) {
++            err = wait_socket(c, c->control, false, deadline, method);
++            if (err != ESP_OK) return err;
++            n = recv(c->control, c->response_bytes + used, SOLAR_OS_RTSP_RESPONSE_MAX - used, 0);
++            if (n <= 0) {
++                if (n < 0 && (errno == EAGAIN || errno == EWOULDBLOCK || errno == EINTR)) continue;
++                if (!n) c->retryable = true;
++                return n == 0 ? fail(c, ESP_FAIL, "%s: server closed connection before response", method) :
++                    socket_fail(c, method, errno);
++            }
++            used += n;
++            err = solar_os_rtsp_response_parse(c->response_bytes, used, &c->response);
++            if (err != ESP_ERR_TIMEOUT) break;
++            if (used == SOLAR_OS_RTSP_RESPONSE_MAX)
++                return fail(c, ESP_ERR_INVALID_SIZE, "%s: response exceeds control buffer", method);
+         }
+-        used += n;
+-        err = solar_os_rtsp_response_parse(c->response_bytes, used, &c->response);
+-        if (err != ESP_ERR_TIMEOUT) break;
+-        if (used == SOLAR_OS_RTSP_RESPONSE_MAX)
+-            return fail(c, ESP_ERR_INVALID_SIZE, "%s: response exceeds control buffer", method);
+-    }
+-    if (err != ESP_OK) return fail(c, err, "%s: malformed RTSP response (%s)", method, esp_err_to_name(err));
+-    if (c->response.cseq != c->cseq || used != c->response.header_length + c->response.body_length)
+-        return fail(c, ESP_ERR_INVALID_RESPONSE, "%s: response CSeq or body length mismatch", method);
+-    if (c->response.status != 200) {
+-        const unsigned status = c->response.status;
+-        c->retryable = status == 404 || status == 453 || status == 454 || status >= 500;
+-        const char *reason = status == 401 ? "authentication required; client authentication is not supported" :
+-            status == 403 ? "access denied" : status == 404 ? "stream/path not found" :
+-            status == 453 ? "server receiver capacity exhausted" : status == 454 ? "session not found" :
+-            status == 461 ? "server rejected UDP transport" : "server rejected request";
+-        return fail(c, status == 401 || status == 461 ? ESP_ERR_NOT_SUPPORTED : ESP_ERR_INVALID_RESPONSE,
+-            "%s: RTSP %u - %s", method, status, reason);
++        if (err != ESP_OK) return fail(c, err, "%s: malformed RTSP response (%s)", method, esp_err_to_name(err));
++        if (c->response.cseq != c->cseq || used != c->response.header_length + c->response.body_length)
++            return fail(c, ESP_ERR_INVALID_RESPONSE, "%s: response CSeq or body length mismatch", method);
++        if (c->response.status == 401 && auth_tries < 2 && c->user[0]) {
++            err = solar_os_rtsp_auth_challenge(c->response.www_authenticate, &c->auth);
++            if (err != ESP_OK)
++                return fail(c, err, "%s: unsupported RTSP authentication challenge", method);
++            bool stale = c->auth.stale;
++            if (!c->auth.cnonce[0]) {
++                uint32_t nonce = esp_random();
++                snprintf(c->auth.cnonce, sizeof(c->auth.cnonce), "%08lx", (unsigned long)nonce);
++            }
++            c->auth.nc = 0;
++            c->auth_ready = true;
++            auth_tries++;
++            if (auth_tries == 1 || stale) continue;
++            if (uri_form < 2) {
++                auth_request_uri(c, uri, ++uri_form, uri_buf, sizeof(uri_buf));
++                c->auth.nc = 0;
++                auth_tries = 1;
++                continue;
++            }
++        }
++        if (c->response.status != 200) {
++            const unsigned status = c->response.status;
++            c->retryable = status == 404 || status == 453 || status == 454 || status >= 500;
++            const char *reason = status == 401 ? (c->user[0] ? "authentication failed" :
++                "authentication required; use rtsp://user:pass@host or rtsp-auth set") :
++                status == 403 ? "access denied" : status == 404 ? "stream/path not found" :
++                status == 453 ? "server receiver capacity exhausted" : status == 454 ? "session not found" :
++                status == 461 ? "server rejected UDP transport" : "server rejected request";
++            return fail(c, status == 401 || status == 461 ? ESP_ERR_NOT_SUPPORTED : ESP_ERR_INVALID_RESPONSE,
++                "%s: RTSP %u - %s", method, status, reason);
++        }
++        return ESP_OK;
+     }
+-    return ESP_OK;
+ }
+ 
+ static void close_track(client_track_t *t)
+@@ -446,9 +504,22 @@ esp_err_t solar_os_rtsp_client_create(const char *url, const solar_os_rtsp_clien
+     solar_os_rtsp_url_t parsed;
+     esp_err_t err = solar_os_rtsp_url_parse(url, &parsed);
+     if (err != ESP_OK) return err;
++    char request_uri[SOLAR_OS_RTSP_URI_MAX];
++    err = solar_os_rtsp_url_request_uri(url, request_uri, sizeof(request_uri));
++    if (err != ESP_OK) return err;
++    if (!parsed.has_userinfo) {
++        err = solar_os_rtsp_auth_lookup(parsed.host, parsed.port, parsed.user, sizeof(parsed.user),
++                                       parsed.password, sizeof(parsed.password));
++        if (err == ESP_ERR_NOT_FOUND) err = ESP_OK;
++        if (err != ESP_OK) return err;
++    }
+     solar_os_rtsp_client_t *c = solar_os_memory_calloc(1, sizeof(*c), SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "rtsp.client");
+     if (!c) return ESP_ERR_NO_MEM;
+-    c->parsed = parsed; c->options = *options; strcpy(c->url, url);
++    c->parsed = parsed; c->options = *options; strcpy(c->url, request_uri);
++    snprintf(c->user, sizeof(c->user), "%s", parsed.user);
++    snprintf(c->password, sizeof(c->password), "%s", parsed.password);
++    solar_os_rtsp_auth_wipe(parsed.password, sizeof(parsed.password));
++    solar_os_rtsp_auth_wipe(c->parsed.password, sizeof(c->parsed.password));
+     c->control = c->video.rtp = c->video.rtcp = c->audio.rtp = c->audio.rtcp = -1;
+     c->audio_done = true;
+     c->mutex = xSemaphoreCreateMutex();
+@@ -497,9 +568,16 @@ static esp_err_t run_session(solar_os_rtsp_client_t *c)
+     }
+     /* Best-effort teardown is nonblocking even during cancellation. */
+     if (c->control >= 0 && c->session[0]) {
++        char authorization[SOLAR_OS_RTSP_AUTH_HEADER_MAX];
++        authorization[0] = '\0';
++        if (c->auth_ready)
++            (void)solar_os_rtsp_authorization(&c->auth, "TEARDOWN", c->description.aggregate,
++                                             c->user, c->password, authorization, sizeof(authorization));
+         int len = snprintf((char *)c->response_bytes, SOLAR_OS_RTSP_RESPONSE_MAX,
+-            "TEARDOWN %s RTSP/1.0\r\nCSeq: %lu\r\nSession: %s\r\n\r\n",
+-            c->description.aggregate, (unsigned long)++c->cseq, c->session);
++            "TEARDOWN %s RTSP/1.0\r\nCSeq: %lu\r\nSession: %s\r\n%s%s%s\r\n",
++            c->description.aggregate, (unsigned long)++c->cseq, c->session,
++            authorization[0] ? "Authorization: " : "", authorization,
++            authorization[0] ? "\r\n" : "");
+         if (len > 0) (void)send(c->control, c->response_bytes, len, 0);
+     }
+     c->audio_stop = true;
+@@ -567,6 +645,7 @@ esp_err_t solar_os_rtsp_client_run(solar_os_rtsp_client_t *c)
+         c->video.ssrc_known = c->audio.ssrc_known = false;
+         c->description = (solar_os_rtsp_description_t){0};
+         c->session[0] = 0; c->cseq = 0;
++        c->auth_ready = false; c->auth.nc = 0; c->auth.stale = false;
+         c->audio_played_us = c->frame_arrived_us = 0;
+         c->play_started_us = 0; c->received_media = false;
+         c->audio_timestamp = c->audio_frames = 0;
+@@ -653,6 +732,8 @@ esp_err_t solar_os_rtsp_client_destroy(solar_os_rtsp_client_t *c)
+     if (c->mutex) vSemaphoreDelete(c->mutex);
+     solar_os_memory_free(c->jpeg); solar_os_memory_free(c->jitter);
+     solar_os_memory_free(c->response_bytes); solar_os_memory_free(c->rx);
++    solar_os_rtsp_auth_wipe(c->password, sizeof(c->password));
++    solar_os_rtsp_auth_wipe(c->user, sizeof(c->user));
+     solar_os_memory_free(c);
+     return ESP_OK;
+ }
+diff --git a/src/services/solar_os_rtsp_receiver.c b/src/services/solar_os_rtsp_receiver.c
+index a1bf171..6771611 100644
+--- a/src/services/solar_os_rtsp_receiver.c
++++ b/src/services/solar_os_rtsp_receiver.c
+@@ -27,28 +27,106 @@ static bool decimal(const char *text, uint32_t *number)
+     return true;
+ }
+ 
++static int hex_nibble(int c)
++{
++    if (c >= '0' && c <= '9') return c - '0';
++    if (c >= 'a' && c <= 'f') return c - 'a' + 10;
++    if (c >= 'A' && c <= 'F') return c - 'A' + 10;
++    return -1;
++}
++
++static bool percent_decode(char *dst, size_t capacity, const char *src, size_t len)
++{
++    size_t o = 0;
++    for (size_t i = 0; i < len; i++) {
++        unsigned char c = (unsigned char)src[i];
++        if (c == '%') {
++            if (i + 2 >= len) return false;
++            int hi = hex_nibble(src[i + 1]), lo = hex_nibble(src[i + 2]);
++            if (hi < 0 || lo < 0) return false;
++            c = (unsigned char)((hi << 4) | lo);
++            i += 2;
++        }
++        if (c <= 32 || c == 127) return false;
++        if (o + 1 >= capacity) return false;
++        dst[o++] = (char)c;
++    }
++    if (!o) return false;
++    dst[o] = '\0';
++    return true;
++}
++
+ esp_err_t solar_os_rtsp_url_parse(const char *url, solar_os_rtsp_url_t *parsed)
+ {
+     if (url == NULL || parsed == NULL || strncmp(url, "rtsp://", 7) != 0)
+         return ESP_ERR_INVALID_ARG;
+-    const char *start = url + 7, *end = strchr(start, '/');
+-    if (end == NULL) end = start + strlen(start);
+-    const char *colon = memchr(start, ':', (size_t)(end - start));
+-    const char *host_end = colon != NULL ? colon : end;
+-    if (host_end == start || !copy_text(parsed->host, sizeof(parsed->host),
+-                                       start, (size_t)(host_end - start)))
+-        return ESP_ERR_INVALID_ARG;
++    memset(parsed, 0, sizeof(*parsed));
+     for (const char *p = url; *p; p++)
+-        if ((unsigned char)*p <= 32 || *p == '@' || *p == '#' || *p == '[' || *p == ']')
++        if ((unsigned char)*p <= 32 || *p == '#' || *p == '[' || *p == ']')
+             return ESP_ERR_NOT_SUPPORTED;
++    if (strlen(url) >= SOLAR_OS_RTSP_URL_MAX) return ESP_ERR_INVALID_SIZE;
++    const char *start = url + 7, *slash = strchr(start, '/');
++    const char *authority_end = slash != NULL ? slash : start + strlen(start);
++    const char *at = memchr(start, '@', (size_t)(authority_end - start));
++    const char *host_start = start;
++    if (at != NULL) {
++        const char *colon = memchr(start, ':', (size_t)(at - start));
++        const char *user_end = colon != NULL ? colon : at;
++        if (user_end == start ||
++            !percent_decode(parsed->user, sizeof(parsed->user), start, (size_t)(user_end - start)))
++            return ESP_ERR_INVALID_ARG;
++        if (colon != NULL && !percent_decode(parsed->password, sizeof(parsed->password),
++                                            colon + 1, (size_t)(at - colon - 1)) &&
++            at != colon + 1)
++            return ESP_ERR_INVALID_ARG;
++        parsed->has_userinfo = true;
++        host_start = at + 1;
++    }
++    const char *colon = memchr(host_start, ':', (size_t)(authority_end - host_start));
++    const char *host_end = colon != NULL ? colon : authority_end;
++    if (host_end == host_start || memchr(host_start, '@', (size_t)(authority_end - host_start)) ||
++        !copy_text(parsed->host, sizeof(parsed->host), host_start, (size_t)(host_end - host_start)))
++        return ESP_ERR_INVALID_ARG;
+     parsed->port = 554;
+     if (colon != NULL) {
+         char port[6]; uint32_t n;
+-        if (!copy_text(port, sizeof(port), colon + 1, (size_t)(end - colon - 1)) ||
++        if (!copy_text(port, sizeof(port), colon + 1, (size_t)(authority_end - colon - 1)) ||
+             !decimal(port, &n) || n == 0 || n > 65535) return ESP_ERR_INVALID_ARG;
+         parsed->port = (uint16_t)n;
+     }
+-    return strlen(url) < SOLAR_OS_RTSP_URI_MAX ? ESP_OK : ESP_ERR_INVALID_SIZE;
++    return ESP_OK;
++}
++
++esp_err_t solar_os_rtsp_url_request_uri(const char *url, char *uri, size_t capacity)
++{
++    solar_os_rtsp_url_t parsed;
++    esp_err_t err = solar_os_rtsp_url_parse(url, &parsed);
++    if (err != ESP_OK) return err;
++    const char *slash = strchr(url + 7, '/');
++    const char *path = slash ? slash : "";
++    int n = parsed.port == 554 ? snprintf(uri, capacity, "rtsp://%s%s", parsed.host, path) :
++        snprintf(uri, capacity, "rtsp://%s:%u%s", parsed.host, parsed.port, path);
++    if (n < 0 || (size_t)n >= capacity || (size_t)n >= SOLAR_OS_RTSP_URI_MAX)
++        return ESP_ERR_INVALID_SIZE;
++    return ESP_OK;
++}
++
++esp_err_t solar_os_rtsp_url_redact(const char *url, char *text, size_t capacity)
++{
++    solar_os_rtsp_url_t parsed;
++    esp_err_t err = solar_os_rtsp_url_parse(url, &parsed);
++    if (err != ESP_OK) return err;
++    const char *slash = strchr(url + 7, '/');
++    const char *path = slash ? slash : "";
++    int n;
++    if (parsed.has_userinfo && parsed.port != 554)
++        n = snprintf(text, capacity, "%s@%s:%u%s", parsed.user, parsed.host, parsed.port, path);
++    else if (parsed.has_userinfo)
++        n = snprintf(text, capacity, "%s@%s%s", parsed.user, parsed.host, path);
++    else if (parsed.port != 554)
++        n = snprintf(text, capacity, "%s:%u%s", parsed.host, parsed.port, path);
++    else n = snprintf(text, capacity, "%s%s", parsed.host, path);
++    return n > 0 && (size_t)n < capacity ? ESP_OK : ESP_ERR_INVALID_SIZE;
+ }
+ 
+ esp_err_t solar_os_rtsp_url_normalize(const char *address, char *url, size_t capacity)
+@@ -131,6 +209,11 @@ esp_err_t solar_os_rtsp_response_parse(const uint8_t *data, size_t length,
+             if (!copy_text(r->content_base, sizeof(r->content_base), colon, len)) return ESP_ERR_INVALID_SIZE;
+         } else if (!strcasecmp(line, "Transport")) {
+             if (!copy_text(r->transport, sizeof(r->transport), colon, len)) return ESP_ERR_INVALID_SIZE;
++        } else if (!strcasecmp(line, "WWW-Authenticate")) {
++            if (!r->www_authenticate[0] || !strncasecmp(colon, "Digest", 6)) {
++                if (!copy_text(r->www_authenticate, sizeof(r->www_authenticate), colon, len))
++                    return ESP_ERR_INVALID_SIZE;
++            }
+         }
+     }
+     if (!cseq) return ESP_ERR_INVALID_RESPONSE;
+diff --git a/src/services/solar_os_rtsp_receiver.h b/src/services/solar_os_rtsp_receiver.h
+index 9704f16..fd49ca6 100644
+--- a/src/services/solar_os_rtsp_receiver.h
++++ b/src/services/solar_os_rtsp_receiver.h
+@@ -9,10 +9,17 @@
+ /* Receiver limit, not the publisher's smaller packetization MTU. */
+ #define SOLAR_OS_RTSP_AUDIO_PAYLOAD_MAX 1460U
+ #define SOLAR_OS_RTSP_JITTER_US 80000U
++#define SOLAR_OS_RTSP_USER_MAX 64U
++#define SOLAR_OS_RTSP_PASSWORD_MAX 64U
++/* Input URL may carry userinfo; the request URI stays within SOLAR_OS_RTSP_URI_MAX. */
++#define SOLAR_OS_RTSP_URL_MAX 320U
+ 
+ typedef struct {
+     char host[128];
++    char user[SOLAR_OS_RTSP_USER_MAX + 1U];
++    char password[SOLAR_OS_RTSP_PASSWORD_MAX + 1U];
+     uint16_t port;
++    bool has_userinfo;
+ } solar_os_rtsp_url_t;
+ 
+ typedef struct {
+@@ -22,6 +29,7 @@ typedef struct {
+     char session[SOLAR_OS_RTSP_CLIENT_SESSION_MAX];
+     char content_base[SOLAR_OS_RTSP_URI_MAX];
+     char transport[256];
++    char www_authenticate[384];
+ } solar_os_rtsp_response_t;
+ 
+ typedef struct {
+@@ -58,6 +66,10 @@ typedef struct {
+ } solar_os_rtsp_audio_jitter_t;
+ 
+ esp_err_t solar_os_rtsp_url_parse(const char *url, solar_os_rtsp_url_t *parsed);
++/* Request-URI with userinfo removed. Digest uri= uses this same string. */
++esp_err_t solar_os_rtsp_url_request_uri(const char *url, char *uri, size_t capacity);
++/* Display form: user@host[:port]/path, never the password. */
++esp_err_t solar_os_rtsp_url_redact(const char *url, char *text, size_t capacity);
+ /* App address shorthand: add rtsp:// when omitted, preserving port and path.
+  * Validate the resulting URL; an omitted control port defaults to 554. */
+ esp_err_t solar_os_rtsp_url_normalize(const char *address, char *url, size_t capacity);
+diff --git a/src/shell/solar_os_shell_commands.h b/src/shell/solar_os_shell_commands.h
+index bbbf355..76870bd 100644
+--- a/src/shell/solar_os_shell_commands.h
++++ b/src/shell/solar_os_shell_commands.h
+@@ -29,6 +29,9 @@ void solar_os_shell_cmd_help(solar_os_context_t *ctx, int argc, char **argv);
+ #if SOLAR_OS_PACKAGE_APP_EMAIL
+ void solar_os_shell_cmd_email(solar_os_context_t *ctx, int argc, char **argv);
+ #endif
++#if SOLAR_OS_PACKAGE_APP_RTSP
++void solar_os_shell_cmd_rtsp_auth(solar_os_context_t *ctx, int argc, char **argv);
++#endif
+ #if SOLAR_OS_PACKAGE_APP_CONTACTS
+ void solar_os_shell_cmd_contacts(solar_os_context_t *ctx, int argc, char **argv);
+ #endif
+diff --git a/src/shell/solar_os_shell_rtsp_auth.c b/src/shell/solar_os_shell_rtsp_auth.c
+new file mode 100644
+index 0000000..54b197a
+--- /dev/null
++++ b/src/shell/solar_os_shell_rtsp_auth.c
+@@ -0,0 +1,81 @@
++#include "solar_os_shell_commands.h"
++
++#include <stdio.h>
++#include <stdlib.h>
++#include <string.h>
++
++#include "solar_os_rtsp_auth.h"
++#include "solar_os_shell_io.h"
++
++static void rtsp_auth_usage(solar_os_shell_io_t *io)
++{
++    solar_os_shell_io_writeln(io, "usage:");
++    solar_os_shell_io_writeln(io, "  rtsp-auth");
++    solar_os_shell_io_writeln(io, "  rtsp-auth set <host[:port]> <user> <password>");
++    solar_os_shell_io_writeln(io, "  rtsp-auth clear [host[:port]]");
++}
++
++static bool split_host(const char *text, char *host, size_t host_cap, uint16_t *port)
++{
++    if (!text || !*text || !host || !port) return false;
++    const char *colon = strrchr(text, ':');
++    *port = 554;
++    if (colon && colon != text && strchr(colon + 1, '.') == NULL) {
++        char *end = NULL;
++        unsigned long n = strtoul(colon + 1, &end, 10);
++        if (!end || *end || n == 0 || n > 65535) return false;
++        *port = (uint16_t)n;
++        if ((size_t)(colon - text) >= host_cap) return false;
++        memcpy(host, text, (size_t)(colon - text));
++        host[colon - text] = '\0';
++        return host[0] != '\0';
++    }
++    return snprintf(host, host_cap, "%s", text) > 0 && strlen(text) < host_cap;
++}
++
++void solar_os_shell_cmd_rtsp_auth(solar_os_context_t *ctx, int argc, char **argv)
++{
++    solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
++    if (!io) return;
++    if (argc == 1) {
++        solar_os_rtsp_auth_account_t records[SOLAR_OS_RTSP_AUTH_CAPACITY];
++        size_t count = solar_os_rtsp_auth_list(records, SOLAR_OS_RTSP_AUTH_CAPACITY);
++        if (!count) {
++            solar_os_shell_io_writeln(io, "No stored RTSP accounts.");
++            return;
++        }
++        for (size_t i = 0; i < count; i++)
++            solar_os_shell_io_printf(io, "%s:%u  %s\n", records[i].host, records[i].port, records[i].user);
++        return;
++    }
++    if (argc == 2 && !strcmp(argv[1], "clear")) {
++        esp_err_t err = solar_os_rtsp_auth_clear(NULL, 0);
++        solar_os_shell_io_writeln(io, err == ESP_OK ? "Cleared stored RTSP accounts." : "rtsp-auth: clear failed");
++        return;
++    }
++    if (argc == 3 && !strcmp(argv[1], "clear")) {
++        char host[SOLAR_OS_RTSP_AUTH_HOST_MAX + 1U];
++        uint16_t port = 554;
++        if (!split_host(argv[2], host, sizeof(host), &port)) {
++            rtsp_auth_usage(io);
++            return;
++        }
++        esp_err_t err = solar_os_rtsp_auth_clear(host, port);
++        solar_os_shell_io_printf(io, err == ESP_OK ? "Cleared %s:%u\n" : "rtsp-auth: no account for %s:%u\n", host, port);
++        return;
++    }
++    if (argc == 5 && !strcmp(argv[1], "set")) {
++        char host[SOLAR_OS_RTSP_AUTH_HOST_MAX + 1U];
++        uint16_t port = 554;
++        if (!split_host(argv[2], host, sizeof(host), &port)) {
++            rtsp_auth_usage(io);
++            return;
++        }
++        esp_err_t err = solar_os_rtsp_auth_set(host, port, argv[3], argv[4]);
++        if (err == ESP_OK) solar_os_shell_io_printf(io, "Stored RTSP account for %s:%u\n", host, port);
++        else if (err == ESP_ERR_NO_MEM) solar_os_shell_io_writeln(io, "rtsp-auth: account table full (4)");
++        else solar_os_shell_io_writeln(io, "rtsp-auth: could not store account");
++        return;
++    }
++    rtsp_auth_usage(io);
++}
+diff --git a/tests/host/Makefile b/tests/host/Makefile
+index 225ae06..3646922 100644
+--- a/tests/host/Makefile
++++ b/tests/host/Makefile
+@@ -22,6 +22,7 @@ TARGETS += http_server_test
+ TARGETS += rtspd_job_test rtspd_audio_only_test
+ TARGETS += rtsp_receiver_test
+ TARGETS += rtsp_client_test
++TARGETS += rtsp_auth_test
+ TARGETS += gfx_mono_raster_test
+ TARGETS += rgb565_raster_test
+ TARGETS += rtspd_completion_test
+@@ -162,10 +163,13 @@ rgb565_raster_test: rgb565_raster_test.c $(ROOT)/src/services/solar_os_rgb565.h
+ gfx_mono_raster_test: gfx_mono_raster_test.c $(ROOT)/src/services/solar_os_gfx_mono_raster.h $(ROOT)/src/services/solar_os_display_surface.h
+ 	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
+ 
+-RTSP_CLIENT_TEST_SOURCES := rtsp_client_test.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_rtp_jpeg.c $(ROOT)/src/services/solar_os_media.c $(ROOT)/src/services/solar_os_audio_pcm.c
++RTSP_CLIENT_TEST_SOURCES := rtsp_client_test.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_rtp_jpeg.c $(ROOT)/src/services/solar_os_media.c $(ROOT)/src/services/solar_os_audio_pcm.c $(ROOT)/src/services/solar_os_rtsp_auth.c
+ rtsp_client_test: $(RTSP_CLIENT_TEST_SOURCES) $(ROOT)/src/services/solar_os_rtsp_client.c $(wildcard rtsp_stubs/*.h) $(wildcard rtsp_stubs/freertos/*.h)
+ 	$(CC) $(CFLAGS) -D_DEFAULT_SOURCE -D_POSIX_C_SOURCE=200809L -pthread -Irtsp_stubs -Irtspd_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services $(RTSP_CLIENT_TEST_SOURCES) -o $@
+ 
++rtsp_auth_test: rtsp_auth_test.c $(ROOT)/src/services/solar_os_rtsp_auth.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_media.c
++	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -I. -I$(ROOT)/src/services $^ -o $@
++
+ rtsp_receiver_test: rtsp_receiver_test.c $(ROOT)/src/services/solar_os_rtsp_receiver.c $(ROOT)/src/services/solar_os_rtsp.c $(ROOT)/src/services/solar_os_rtp.c $(ROOT)/src/services/solar_os_media.c
+ 	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -I. -I$(ROOT)/src/services $^ -o $@
+ 
+@@ -780,6 +784,7 @@ test: $(TARGETS)
+ 	./rtspd_job_test
+ 	./rtspd_audio_only_test
+ 	./rtsp_receiver_test
++	./rtsp_auth_test
+ 	./rtsp_client_test
+ 	./gfx_mono_raster_test
+ 	./rgb565_raster_test
+diff --git a/tests/host/rtsp_auth_test.c b/tests/host/rtsp_auth_test.c
+new file mode 100644
+index 0000000..97269b0
+--- /dev/null
++++ b/tests/host/rtsp_auth_test.c
+@@ -0,0 +1,50 @@
++#include <assert.h>
++#include <stdio.h>
++#include <string.h>
++#include "solar_os_rtsp_auth.h"
++#include "solar_os_rtsp_receiver.h"
++
++static void test_digest_vector(void)
++{
++    solar_os_rtsp_auth_challenge_t c = {0};
++    const char *www = "Digest realm=\"testrealm@host.com\", nonce=\"dcd98b7102dd2f0e8b11d0f600bfb0c093\", "
++                      "qop=\"auth\", algorithm=MD5";
++    assert(solar_os_rtsp_auth_challenge(www, &c) == ESP_OK);
++    assert(c.digest && c.qop_auth);
++    snprintf(c.cnonce, sizeof(c.cnonce), "0a4f113b");
++    c.nc = 1;
++    char header[384];
++    assert(solar_os_rtsp_authorization(&c, "GET", "/dir/index.html", "Mufasa", "Circle Of Life",
++                                      header, sizeof(header)) == ESP_OK);
++    assert(strstr(header, "response=\"6629fae49393a05397450978507c4ef1\""));
++}
++
++static void test_basic_and_store(void)
++{
++    solar_os_rtsp_auth_challenge_t c = {0};
++    assert(solar_os_rtsp_auth_challenge("Basic realm=\"cam\"", &c) == ESP_OK && !c.digest);
++    char header[128];
++    assert(solar_os_rtsp_authorization(&c, "DESCRIBE", "rtsp://cam/media", "user", "pass",
++                                      header, sizeof(header)) == ESP_OK);
++    assert(!strcmp(header, "Basic dXNlcjpwYXNz"));
++    assert(solar_os_rtsp_auth_set("cam", 554, "user", "stored") == ESP_OK);
++    char user[65], password[65];
++    assert(solar_os_rtsp_auth_lookup("CAM", 554, user, sizeof(user), password, sizeof(password)) == ESP_OK);
++    assert(!strcmp(user, "user") && !strcmp(password, "stored"));
++    assert(solar_os_rtsp_auth_lookup("cam", 8554, user, sizeof(user), password, sizeof(password)) == ESP_ERR_NOT_FOUND);
++    solar_os_rtsp_auth_account_t listed[4];
++    assert(solar_os_rtsp_auth_list(listed, 4) == 1 && !strcmp(listed[0].user, "user"));
++    assert(solar_os_rtsp_auth_clear("cam", 554) == ESP_OK);
++    assert(solar_os_rtsp_auth_lookup("cam", 554, user, sizeof(user), password, sizeof(password)) == ESP_ERR_NOT_FOUND);
++    const char *text = "RTSP/1.0 401 Unauthorized\r\nCSeq: 1\r\nWWW-Authenticate: Digest realm=\"cam\", nonce=\"n\", qop=\"auth\"\r\n\r\n";
++    solar_os_rtsp_response_t r;
++    assert(solar_os_rtsp_response_parse((const uint8_t *)text, strlen(text), &r) == ESP_OK);
++    assert(strstr(r.www_authenticate, "nonce=\"n\""));
++}
++
++int main(void)
++{
++    test_digest_vector();
++    test_basic_and_store();
++    return 0;
++}
+diff --git a/tests/host/rtsp_client_test.c b/tests/host/rtsp_client_test.c
+index c795aab..3181982 100644
+--- a/tests/host/rtsp_client_test.c
++++ b/tests/host/rtsp_client_test.c
+@@ -7,6 +7,7 @@
+ #include <time.h>
+ #include <unistd.h>
+ #include <arpa/inet.h>
++#include "solar_os_rtsp_auth.h"
+ #include "../../src/services/solar_os_rtsp_client.c"
+ 
+ static atomic_uint allocations, allocation_calls, fail_allocation, live_tasks;
+@@ -106,7 +107,7 @@ void solar_os_audio_player_destroy(solar_os_audio_player_t *p)
+ typedef struct {
+     int listen, control;
+     uint16_t port, video_port, audio_port;
+-    bool offer_video, offer_audio, reject, stall, relay, close_on_play;
++    bool offer_video, offer_audio, reject, stall, relay, close_on_play, require_auth;
+     unsigned reject_status;
+     atomic_bool stop, playing, teardown;
+     unsigned setup_video, setup_audio;
+@@ -121,9 +122,10 @@ typedef struct {
+ static void send_response(test_server_t *s, uint32_t seq, const char *headers, const char *body)
+ {
+     char text[2048];
++    unsigned status = s->reject_status ? s->reject_status : s->reject ? 401U : 200U;
++    if (headers && strstr(headers, "WWW-Authenticate:")) status = 401;
+     int len = snprintf(text, sizeof(text), "RTSP/1.0 %u Test\r\nCSeq: %lu\r\n%sContent-Length: %zu\r\n\r\n%s",
+-        s->reject_status ? s->reject_status : s->reject ? 401U : 200U,
+-        (unsigned long)seq, headers ? headers : "", body ? strlen(body) : 0, body ? body : "");
++        status, (unsigned long)seq, headers ? headers : "", body ? strlen(body) : 0, body ? body : "");
+     assert(len > 0 && (size_t)len < sizeof(text));
+     /* Deliberately fragmented headers and SDP exercise streaming framing. */
+     for (int pos = 0; pos < len;) {
+@@ -141,10 +143,9 @@ static esp_err_t send_jpeg_packet(const uint8_t *data, size_t len, void *user)
+     return ESP_OK;
+ }
+ 
+-static void server_session(test_server_t *s)
++static bool server_session(test_server_t *s)
+ {
+     s->control = accept(s->listen, NULL, NULL); assert(s->control >= 0);
+-    atomic_fetch_add(&s->accepted, 1);
+     atomic_store(&s->playing, false);
+     s->setup_video = s->setup_audio = 0;
+     uint8_t input[2048]; size_t used = 0;
+@@ -164,9 +165,25 @@ static void server_session(test_server_t *s)
+             if (n <= 0) break;
+             used += n;
+             if (solar_os_rtsp_header_length(input, used)) {
++                if (used >= 4 && memcmp(input, "GET ", 4) == 0) {
++                    close(s->control); s->control = -1; return false;
++                }
+                 solar_os_rtsp_request_t r;
+-                assert(solar_os_rtsp_parse_request(input, used, &r) == ESP_OK); used = 0;
++                if (solar_os_rtsp_parse_request(input, used, &r) != ESP_OK) {
++                    fwrite(input, 1, used, stderr);
++                    assert(solar_os_rtsp_parse_request(input, used, &r) == ESP_OK);
++                }
++                bool authorized = false;
++                for (size_t i = 0; i + 14 <= used; i++)
++                    if (!memcmp(input + i, "Authorization:", 14)) authorized = true;
++                used = 0;
++                if (atomic_load(&s->accepted) == 0 || r.method == SOLAR_OS_RTSP_METHOD_DESCRIBE)
++                    atomic_fetch_add(&s->accepted, 1);
+                 if (r.method == SOLAR_OS_RTSP_METHOD_TEARDOWN) { atomic_store(&s->teardown, true); break; }
++                if (s->require_auth && !authorized) {
++                    send_response(s, r.cseq, "WWW-Authenticate: Digest realm=\"cam\", nonce=\"nonce\", qop=\"auth\"\r\n", "");
++                    continue;
++                }
+                 if (s->stall) continue;
+                 char headers[512] = "", body[1024] = "";
+                 if (r.method == SOLAR_OS_RTSP_METHOD_DESCRIBE) {
+@@ -229,19 +246,22 @@ static void server_session(test_server_t *s)
+         }
+     }
+     close(s->control);
++    s->control = -1;
++    return true;
+ }
+ 
+ static void *server_worker(void *arg)
+ {
+     test_server_t *s = arg;
+-    for (unsigned session = 0; session < (s->sessions ? s->sessions : 1); session++) {
++    for (unsigned session = 0; session < (s->sessions ? s->sessions : 1);) {
+         while (!atomic_load(&s->stop)) {
+             fd_set set; FD_ZERO(&set); FD_SET(s->listen, &set);
+             struct timeval timeout = {.tv_usec = 10000};
+             if (select(s->listen + 1, &set, NULL, NULL, &timeout) > 0) break;
+         }
+         if (atomic_load(&s->stop)) break;
+-        server_session(s);
++        if (!server_session(s)) continue;
++        session++;
+     }
+     return NULL;
+ }
+@@ -542,6 +562,43 @@ static int probe_stream(const char *url)
+     return status.error == ESP_OK && frames > 0 && atomic_load(&samples_played) > 0 ? 0 : 1;
+ }
+ 
++static void test_digest_auth(void)
++{
++    test_server_t server = {.offer_video = true, .require_auth = true};
++    server_start(&server);
++    char url[192];
++    snprintf(url, sizeof(url), "rtsp://user:secret@127.0.0.1:%u/media", server.port);
++    solar_os_rtsp_client_t *c;
++    solar_os_rtsp_client_options_t options = {.video = true};
++    assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
++    assert(!strstr(c->url, "secret") && strstr(c->url, "127.0.0.1"));
++    pthread_t thread; assert(!pthread_create(&thread, NULL, run_client, c));
++    solar_os_rtsp_client_status_t status;
++    uint64_t deadline = now_us() + 2000000;
++    do { vTaskDelay(5); solar_os_rtsp_client_status(c, &status); }
++    while (!status.playing && !c->cancel && now_us() < deadline);
++    assert(status.playing);
++    solar_os_rtsp_client_cancel(c); pthread_join(thread, NULL);
++    assert(solar_os_rtsp_client_destroy(c) == ESP_OK); server_stop(&server);
++    assert(!atomic_load(&allocations) && !atomic_load(&live_tasks));
++
++    server = (test_server_t){.offer_video = true};
++    server_start(&server);
++    assert(solar_os_rtsp_auth_set("127.0.0.1", server.port, "user", "secret") == ESP_OK);
++    snprintf(url, sizeof(url), "rtsp://127.0.0.1:%u/media", server.port);
++    server.require_auth = true;
++    assert(solar_os_rtsp_client_create(url, &options, &c) == ESP_OK);
++    assert(!strcmp(c->user, "user"));
++    assert(!pthread_create(&thread, NULL, run_client, c));
++    deadline = now_us() + 2000000;
++    do { vTaskDelay(5); solar_os_rtsp_client_status(c, &status); }
++    while (!status.playing && !c->cancel && now_us() < deadline);
++    assert(status.playing);
++    solar_os_rtsp_client_cancel(c); pthread_join(thread, NULL);
++    assert(solar_os_rtsp_client_destroy(c) == ESP_OK); server_stop(&server);
++    assert(solar_os_rtsp_auth_clear(NULL, 0) == ESP_OK);
++}
++
+ int main(int argc, char **argv)
+ {
+     if (argc == 2) return probe_stream(argv[1]);
+@@ -563,6 +620,7 @@ int main(int argc, char **argv)
+     test_failure(true, false, false, 0); test_failure(false, true, false, 0); test_failure(false, false, true, 0);
+     for (unsigned i = 1; i <= 3; i++) test_failure(false, false, false, i);
+     test_error_causes();
++    test_digest_auth();
+     test_reconnect();
+     puts("rtsp_client_test: OK"); return 0;
+ }
+diff --git a/tests/host/rtsp_receiver_test.c b/tests/host/rtsp_receiver_test.c
+index 88124ef..369532e 100644
+--- a/tests/host/rtsp_receiver_test.c
++++ b/tests/host/rtsp_receiver_test.c
+@@ -12,7 +12,11 @@ static void test_urls(void)
+     assert(solar_os_rtsp_url_parse("http://cam/media", &u) != ESP_OK);
+     assert(solar_os_rtsp_url_parse("rtsp://cam:0/media", &u) != ESP_OK);
+     assert(solar_os_rtsp_url_parse("rtsp://cam:99999/media", &u) != ESP_OK);
+-    assert(solar_os_rtsp_url_parse("rtsp://user:password@cam/media", &u) != ESP_OK);
++    assert(solar_os_rtsp_url_parse("rtsp://user:password@cam/media", &u) == ESP_OK);
++    assert(!strcmp(u.user, "user") && !strcmp(u.password, "password") && !strcmp(u.host, "cam"));
++    assert(solar_os_rtsp_url_parse("rtsp://user:p%40ss@cam:8554/media", &u) == ESP_OK);
++    assert(!strcmp(u.password, "p@ss") && u.port == 8554);
++    assert(solar_os_rtsp_url_parse("rtsp://@cam/media", &u) != ESP_OK);
+     assert(solar_os_rtsp_url_parse("rtsp://cam/media\r\nBad: header", &u) != ESP_OK);
+     char uri[192];
+     assert(solar_os_rtsp_url_normalize("192.168.1.238", uri, sizeof(uri)) == ESP_OK);
+@@ -30,7 +34,14 @@ static void test_urls(void)
+     assert(solar_os_rtsp_url_normalize("http://192.168.1.238/media", uri, sizeof(uri)) != ESP_OK);
+     assert(solar_os_rtsp_url_normalize("192.168.1.238:0/media", uri, sizeof(uri)) != ESP_OK);
+     assert(solar_os_rtsp_url_normalize("192.168.1.238:65536/media", uri, sizeof(uri)) != ESP_OK);
+-    assert(solar_os_rtsp_url_normalize("user:pass@192.168.1.238/media", uri, sizeof(uri)) != ESP_OK);
++    assert(solar_os_rtsp_url_normalize("user:pass@192.168.1.238/media", uri, sizeof(uri)) == ESP_OK);
++    assert(!strcmp(uri, "rtsp://user:pass@192.168.1.238/media"));
++    char request[192];
++    assert(solar_os_rtsp_url_request_uri(uri, request, sizeof(request)) == ESP_OK);
++    assert(!strcmp(request, "rtsp://192.168.1.238/media"));
++    char redacted[192];
++    assert(solar_os_rtsp_url_redact(uri, redacted, sizeof(redacted)) == ESP_OK);
++    assert(!strcmp(redacted, "user@192.168.1.238/media"));
+     assert(solar_os_rtsp_url_normalize("192.168.1.238/media\r\nBad: header", uri, sizeof(uri)) != ESP_OK);
+     assert(solar_os_rtsp_url_normalize("[::1]/media", uri, sizeof(uri)) != ESP_OK);
+     assert(solar_os_rtsp_url_normalize("", uri, sizeof(uri)) != ESP_OK);
+diff --git a/tests/test_flavor_packages.py b/tests/test_flavor_packages.py
+index f4c4ba7..6c3b1b4 100644
+--- a/tests/test_flavor_packages.py
++++ b/tests/test_flavor_packages.py
+@@ -599,6 +599,7 @@ class FlavorPackagesTest(unittest.TestCase):
+             "image_viewer",
+             "python",
+             "playground",
++            "rtsp",
+             "audio_pwm",
+             "pcm5102",
+         ):
+@@ -623,6 +624,8 @@ class FlavorPackagesTest(unittest.TestCase):
+             "app_playground",
+             "app_aplay",
+             "app_view",
++            "app_rtsp",
++            "job_rtspd",
+             "expansion_audio_pwm",
+             "expansion_pcm5102",
+         ):

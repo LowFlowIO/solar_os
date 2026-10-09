@@ -599,6 +599,7 @@ class FlavorPackagesTest(unittest.TestCase):
             "image_viewer",
             "python",
             "playground",
+            "rtsp",
             "audio_pwm",
             "pcm5102",
         ):
@@ -623,6 +624,8 @@ class FlavorPackagesTest(unittest.TestCase):
             "app_playground",
             "app_aplay",
             "app_view",
+            "app_rtsp",
+            "job_rtspd",
             "expansion_audio_pwm",
             "expansion_pcm5102",
         ):

@@ -1,6 +1,6 @@
 [flavor]
 name = "writerdeck"
-description = "SolarOS writing, reading, scripting, media, and file-transfer build."
+description = "SolarOS writing, reading, scripting, media, file-transfer, and RTSP viewer build."
 
 [groups]
 hardware_shell = true
@@ -21,6 +21,7 @@ ssh = true
 http_client = true
 ftp = true
 ntp = true
+rtsp = true
 audio_commands = true
 reader = true
 writer = true
