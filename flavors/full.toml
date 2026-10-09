@@ -28,6 +28,7 @@ spi = true
 uart = true
 adc = true
 pwm = true
+servo = true
 board_buttons = true
 adc_dpad = true
 documentation_sync = true

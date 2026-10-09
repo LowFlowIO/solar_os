@@ -146,6 +146,9 @@
 #if SOLAR_OS_PACKAGE_SERVICE_PWM
 #include "solar_os_pwm.h"
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_SERVO
+#include "solar_os_servo.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_SENSORS
 #include "solar_os_sensors.h"
 #endif
@@ -1071,12 +1074,20 @@ static void solua_push_adc_sample(lua_State *L, const solar_os_adc_sample_t *sam
 static void solua_push_pwm_info(lua_State *L, const solar_os_pwm_pin_info_t *info)
 {
     lua_newtable(L);
+    solua_set_str(L, -1, "provider", info->provider);
+    solua_set_int(L, -1, "output", info->output);
+    solua_set_int(L, -1, "frequency_group", info->frequency_group);
+    solua_set_str(L, -1, "owner", info->owner);
     solua_set_int(L, -1, "pin", info->pin);
     solua_set_bool(L, -1, "allowed", info->runtime_allowed);
     solua_set_bool(L, -1, "active", info->active);
     solua_set_int(L, -1, "channel", info->channel);
     solua_set_int(L, -1, "freq_hz", info->freq_hz);
     solua_set_int(L, -1, "duty_percent", info->duty_percent);
+    solua_set_bool(L, -1, "enabled", info->enabled);
+    solua_set_bool(L, -1, "reserved", info->reserved);
+    solua_set_int(L, -1, "resolution_bits", info->resolution_bits);
+    solua_set_int(L, -1, "pulse_width_us", info->pulse_width_us);
 }
 #endif
 
@@ -3596,14 +3607,42 @@ static int solua_osc_limits(lua_State *L)
 #endif
 
 #if SOLAR_OS_PACKAGE_SERVICE_PWM
+static solar_os_pwm_output_t solua_pwm_output(lua_State *L, int index)
+{
+    solar_os_pwm_output_t output;
+    if (lua_type(L, index) == LUA_TSTRING) {
+        if (!solar_os_pwm_parse_output(luaL_checkstring(L, index), &output)) {
+            luaL_error(L, "expected provider:output");
+        }
+    } else {
+        output = (solar_os_pwm_output_t){.provider = "native", .output = (uint16_t)solua_check_gpio_pin(L, index)};
+    }
+    return output;
+}
+
+static int solua_pwm_providers(lua_State *L)
+{
+    lua_newtable(L);
+    solar_os_pwm_provider_info_t info;
+    for (size_t i = 0; solar_os_pwm_get_provider(i, &info); i++) {
+        lua_newtable(L);
+        solua_set_str(L, -1, "name", info.name);
+        solua_set_str(L, -1, "driver", info.driver);
+        solua_set_int(L, -1, "outputs", info.output_count);
+        solua_set_bool(L, -1, "detachable", info.detachable);
+        lua_rawseti(L, -2, (lua_Integer)i + 1);
+    }
+    return 1;
+}
+
 static int solua_pwm_status(lua_State *L)
 {
     lua_newtable(L);
     const int list = lua_gettop(L);
     int out = 1;
-    for (size_t i = 0; i < solar_os_pwm_pin_count(); i++) {
+    for (size_t i = 0; i < solar_os_pwm_output_count(); i++) {
         solar_os_pwm_pin_info_t info;
-        if (solar_os_pwm_get_pin_info(i, &info)) {
+        if (solar_os_pwm_get_output_info(i, &info)) {
             solua_push_pwm_info(L, &info);
             lua_rawseti(L, list, out++);
         }
@@ -3617,15 +3656,96 @@ static int solua_pwm_set(lua_State *L)
     if (duty_percent > SOLAR_OS_PWM_DUTY_MAX_PERCENT) {
         return luaL_error(L, "expected duty 0..100");
     }
-    return solua_check_esp(L,
-                           solar_os_pwm_set(solua_check_gpio_pin(L, 1),
-                                            solua_check_u32(L, 2),
-                                            (uint8_t)duty_percent));
+    const solar_os_pwm_output_t output = solua_pwm_output(L, 1);
+    return solua_check_esp(L, solar_os_pwm_set_output(&output, solua_check_u32(L, 2), duty_percent, false));
 }
 
 static int solua_pwm_off(lua_State *L)
 {
-    return solua_check_esp(L, solar_os_pwm_stop(solua_check_gpio_pin(L, 1)));
+    const solar_os_pwm_output_t output = solua_pwm_output(L, 1);
+    return solua_check_esp(L, solar_os_pwm_stop_output(&output));
+}
+
+static int solua_pwm_pulse(lua_State *L)
+{
+    const solar_os_pwm_output_t output = solua_pwm_output(L, 1);
+    return solua_check_esp(L, solar_os_pwm_set_output(&output, solua_check_u32(L, 2), solua_check_u32(L, 3), true));
+}
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_SERVO
+static void solua_push_servo_info(lua_State *L, const solar_os_servo_info_t *info)
+{
+    lua_newtable(L);
+    solua_set_str(L, -1, "name", info->name);
+    solua_set_str(L, -1, "owner", info->owner);
+    char output[SOLAR_OS_PWM_ENDPOINT_MAX];
+    solar_os_pwm_format_output(&info->config.output, output, sizeof(output));
+    solua_set_str(L, -1, "output", output);
+    solua_set_int(L, -1, "freq_hz", info->config.freq_hz);
+    solua_set_int(L, -1, "pulse_min_us", info->config.pulse_min_us);
+    solua_set_int(L, -1, "pulse_max_us", info->config.pulse_max_us);
+    solua_set_num(L, -1, "angle_min_deg", info->config.angle_min_deg);
+    solua_set_num(L, -1, "angle_max_deg", info->config.angle_max_deg);
+    solua_set_bool(L, -1, "inverted", info->config.inverted);
+    solua_set_bool(L, -1, "enabled", info->enabled);
+    solua_set_bool(L, -1, "has_command", info->has_command);
+    solua_set_int(L, -1, "commanded_pulse_us", info->commanded_pulse_us);
+    solua_set_num(L, -1, "commanded_angle_deg", info->commanded_angle_deg);
+}
+
+static int solua_servo_list(lua_State *L)
+{
+    lua_newtable(L);
+    const int list = lua_gettop(L);
+    solar_os_servo_info_t info;
+    for (size_t i = 0; solar_os_servo_get(i, &info); i++) {
+        solua_push_servo_info(L, &info);
+        lua_rawseti(L, list, (lua_Integer)i + 1);
+    }
+    return 1;
+}
+
+static int solua_servo_status(lua_State *L)
+{
+    solar_os_servo_info_t info;
+    (void)solua_check_esp(L, solar_os_servo_status(luaL_checkstring(L, 1), &info));
+    solua_push_servo_info(L, &info);
+    return 1;
+}
+
+static int solua_servo_open(lua_State *L)
+{
+    const solar_os_servo_config_t config = {
+        .output = solua_pwm_output(L, 2),
+        .pulse_min_us = solua_check_u32(L, 3),
+        .pulse_max_us = solua_check_u32(L, 4),
+        .angle_min_deg = (float)luaL_checknumber(L, 5),
+        .angle_max_deg = (float)luaL_checknumber(L, 6),
+        .freq_hz = lua_isnoneornil(L, 7) ? SOLAR_OS_SERVO_FREQ_DEFAULT_HZ : solua_check_u32(L, 7),
+        .inverted = lua_toboolean(L, 8) != 0,
+    };
+    return solua_check_esp(L, solar_os_servo_open(luaL_checkstring(L, 1), "lua", &config));
+}
+
+static int solua_servo_set(lua_State *L)
+{
+    return solua_check_esp(L, solar_os_servo_set(luaL_checkstring(L, 1), "lua", (float)luaL_checknumber(L, 2)));
+}
+
+static int solua_servo_pulse(lua_State *L)
+{
+    return solua_check_esp(L, solar_os_servo_pulse(luaL_checkstring(L, 1), "lua", solua_check_u32(L, 2)));
+}
+
+static int solua_servo_disable(lua_State *L)
+{
+    return solua_check_esp(L, solar_os_servo_disable(luaL_checkstring(L, 1), "lua"));
+}
+
+static int solua_servo_close(lua_State *L)
+{
+    return solua_check_esp(L, solar_os_servo_close(luaL_checkstring(L, 1), "lua"));
 }
 #endif
 
@@ -8446,6 +8566,10 @@ esp_err_t solar_os_lua_run(const solar_os_script_run_request_t *request,
     solua_http_stream_destroy();
     solua_http_session_destroy();
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_SERVO
+    const esp_err_t servo_cleanup = solar_os_servo_release_owner("lua");
+    if (servo_cleanup != ESP_OK) SOLAR_OS_LOGW(TAG, "Servo cleanup: %s", esp_err_to_name(servo_cleanup));
+#endif
     solar_os_rtc_release_owner("lua");
     lua_close(L);
 
@@ -8553,6 +8677,10 @@ done:
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
         solua_http_stream_destroy();
         solua_http_session_destroy();
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_SERVO
+        const esp_err_t servo_cleanup = solar_os_servo_release_owner("lua");
+        if (servo_cleanup != ESP_OK) SOLAR_OS_LOGW(TAG, "Servo cleanup: %s", esp_err_to_name(servo_cleanup));
 #endif
         solar_os_rtc_release_owner("lua");
         lua_close(L);

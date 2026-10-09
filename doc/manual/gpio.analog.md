@@ -42,5 +42,8 @@ strings or integers.
 Inspect solaros.gpio.pins() and allowed(pin) before use; never invent safe GPIO
 numbers. GPIO offers mode or configure, read, write, and release plus INPUT,
 OUTPUT and pull constants. solaros.led offers status, set, on, off, toggle.
-solaros.adc offers pins and read. solaros.pwm offers status, set(pin,
-frequency, duty_percent), and off. APIs are package-gated.
+solaros.adc offers pins and read. solaros.pwm offers providers, status,
+set(output, frequency, duty_percent), pulse(output, frequency, pulse_us), and
+off. Outputs use provider:number; integers select native GPIOs. Providers
+enforce their shared-frequency constraints. For calibrated
+positional outputs, use [the servo service](servo.md). APIs are package-gated.

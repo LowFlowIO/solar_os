@@ -229,6 +229,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Expansion drivers and attached devices](expansion.md) — Discover, attach, and detach package-gated expansion devices
 - [Expansion hardware reference](expansion.reference.md) — Resource rules, workflows, drivers, bindings, and wiring examples
 - [GPIO, ADC, PWM, and LED APIs](gpio.analog.md) — Use runtime-safe digital and analog expansion pins
+- [Servo outputs](servo.md) — Control calibrated positional servos with hardware PWM
 - [Time, battery, and environment APIs](time.sensors.md) — Read clocks, battery state, temperature, and humidity
 
 ## Scripting APIs

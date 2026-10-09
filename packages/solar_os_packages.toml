@@ -139,7 +139,12 @@ members = ["service_adc"]
 [groups.pwm]
 label = "PWM"
 category = "Hardware interfaces"
-members = ["service_pwm"]
+members = ["service_pwm", "driver_pwm_native"]
+
+[groups.servo]
+label = "Servo"
+category = "Hardware interfaces"
+members = ["service_servo"]
 
 [groups.board_buttons]
 label = "Board buttons"
@@ -2262,8 +2267,18 @@ capabilities = ["adc", "gpio"]
 [packages.service_pwm]
 label = "service.pwm"
 sources = ["services/solar_os_pwm.c"]
+
+[packages.driver_pwm_native]
+label = "driver.pwm-native"
+depends = ["service_pwm", "service_gpio", "service_resources"]
+sources = ["services/solar_os_pwm_native.c", "drivers/pwm_port.c"]
 requires = ["esp_driver_gpio", "esp_driver_ledc"]
 capabilities = ["pwm", "gpio"]
+
+[packages.service_servo]
+label = "service.servo"
+depends = ["service_pwm"]
+sources = ["services/solar_os_servo.c", "shell/solar_os_shell_servo.c"]
 
 [packages.service_buttons]
 label = "service.buttons"

@@ -38,7 +38,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Time and scheduling](python.time.md) | `solaros.time`, `solaros.rtc`, `solaros.schedule` |
 | [Networking](python.network.md) | `solaros.wifi`, `solaros.mqtt`, `solaros.http`, `solaros.net`, `solaros.ftp`, `solaros.sftpsync`, `solaros.ssh_keys` |
 | [Bluetooth](python.ble.md) | `solaros.ble` |
-| [GPIO and peripherals](python.hardware.md) | `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.sensors`, `solaros.gnss`, `solaros.nfc` |
+| [GPIO and peripherals](python.hardware.md) | `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.servo`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.sensors`, `solaros.gnss`, `solaros.nfc` |
 | [Buses and expansion](python.buses.md) | `solaros.buses`, `solaros.expansion` |
 | [Audio and control](python.audio.md) | `solaros.audio`, `solaros.speech`, `solaros.synth`, `solaros.dsp`, `solaros.controls`, `solaros.parameters`, `solaros.midi`, `solaros.osc` |
 | [Input and clipboard](python.input.md) | `solaros.input`, `solaros.hid`, `solaros.clipboard` |
@@ -100,6 +100,7 @@ Optional API groups follow these package gates:
 - `service.hid`: `solaros.hid`
 - `service.gpio`: `solaros.gpio` and `solaros.led`
 - `service.onewire`: `solaros.onewire`
+- `service.servo`: `solaros.servo`
 - `service.messaging`: `solaros.contacts` and `solaros.messages`
 - `service.adc`, `service.pwm`, `service.i2c`, `service.spi`, and
   `service.uart`: their matching submodules

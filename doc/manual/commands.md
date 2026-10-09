@@ -1137,9 +1137,15 @@ available for the compiled board.
 | `dpad` | `dpad [status]` | Show ADC D-pad pins, raw values, zones, and calibration thresholds. |
 | `dpad` | `dpad calibrate [idle]` | Calibrate the current D-pad idle value. |
 | `dpad` | `dpad calibrate reset` | Restore the compiled D-pad calibration. |
-| `pwm` | `pwm status` | Show PWM state. |
-| `pwm` | `pwm set <pin> <freq-hz> <duty-percent>` | Start LEDC PWM on a runtime pin. |
-| `pwm` | `pwm off <pin>` | Stop PWM on a pin. |
+| `pwm` | `pwm providers` | List registered PWM controllers. |
+| `pwm` | `pwm status` | Show named outputs and their frequency groups. |
+| `pwm` | `pwm set <output> <freq-hz> <duty-percent>` | Start PWM on provider:number, or a native GPIO number. |
+| `pwm` | `pwm pulse <output> <freq-hz> <pulse-us>` | Command a pulse width in microseconds. |
+| `pwm` | `pwm off <output>` | Stop a general PWM output. |
+| `servo` | `servo list` / `servo status [name]` | Inspect calibrated servo outputs. |
+| `servo` | `servo open <name> <output> <min-us> <max-us> <min-deg> <max-deg> [freq-hz [inverted:0\|1]]` | Reserve an output without pulses; see [Servo outputs](servo.md). |
+| `servo` | `servo set <name> <angle-deg>` / `servo pulse <name> <pulse-us>` | Command a calibrated angle or pulse width. |
+| `servo` | `servo disable <name>` / `servo close <name>` | Stop pulses, retaining or releasing the reservation. |
 | `i2c` | `i2c [status [bus]]` | Show every named I2C bus, or one selected bus. |
 | `i2c` | `i2c speed [bus] [hz]` | Show or change a named bus clock; defaults to `i2c0` and accepts 1 through 1000000 Hz. |
 | `i2c` | `i2c scan [bus]` | Scan a named bus; defaults to `i2c0`. |

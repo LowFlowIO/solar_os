@@ -51,6 +51,9 @@
 #include "solar_os_flash.h"
 #endif
 #include "solar_os_gpio.h"
+#if SOLAR_OS_PACKAGE_SERVICE_PWM
+#include "solar_os_pwm.h"
+#endif
 #include "solar_os_identity.h"
 #include "solar_os_input.h"
 #if SOLAR_OS_PACKAGE_APP_INBOX
@@ -178,6 +181,7 @@ typedef enum {
     SHELL_COMPLETION_SOURCE_DISPLAY_MODES,
     SHELL_COMPLETION_SOURCE_INPUT_SOURCES,
     SHELL_COMPLETION_SOURCE_GPIO_PINS,
+    SHELL_COMPLETION_SOURCE_PWM_OUTPUTS,
     SHELL_COMPLETION_SOURCE_I2C_ARGUMENTS,
     SHELL_COMPLETION_SOURCE_ONEWIRE_BUSES,
     SHELL_COMPLETION_SOURCE_PS2_BUSES,
@@ -666,6 +670,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_PWM
     {"pwm", "expansion PWM output", solar_os_shell_cmd_pwm},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_SERVO
+    {"servo", "calibrated servo outputs", solar_os_shell_cmd_servo},
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_EXPANSION
     {"expansion", "manage expansion hardware", solar_os_shell_cmd_expansion},
@@ -1469,10 +1476,19 @@ static const char * const dpad_calibrate_subcommands[] = {
 };
 
 static const char * const pwm_subcommands[] = {
+    "providers",
     "status",
     "set",
+    "pulse",
     "off",
 };
+#if SOLAR_OS_PACKAGE_SERVICE_SERVO
+static const char * const servo_subcommands[] = {
+    "list", "status", "open", "set", "pulse", "disable", "close",
+};
+static const char * const path_servo[] = {"servo"};
+static const char * const path_servo_open_name[] = {"servo", "open", SHELL_COMPLETION_ANY};
+#endif
 static const char * const pwm_freq_values[] = {"100", "1000", "5000"};
 static const char * const pwm_duty_values[] = {"0", "25", "50", "75", "100"};
 
@@ -2485,6 +2501,7 @@ static const char * const path_pwm_set_freq[] = {
     SHELL_COMPLETION_ANY,
 };
 static const char * const path_pwm_off[] = {"pwm", "off"};
+static const char * const path_pwm_pulse[] = {"pwm", "pulse"};
 static const char * const path_expansion[] = {"expansion"};
 static const char * const path_expansion_layout[] = {"expansion", "layout"};
 static const char * const path_expansion_bus[] = {"expansion", "bus"};
@@ -2911,6 +2928,12 @@ static const char * const path_ota_boot[] = {"ota", "boot"};
         .path = path_array, \
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .source = SHELL_COMPLETION_SOURCE_GPIO_PINS, \
+    }
+#define SHELL_COMPLETION_PWM_OUTPUTS(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .source = SHELL_COMPLETION_SOURCE_PWM_OUTPUTS, \
     }
 #define SHELL_COMPLETION_I2C_ARGUMENTS(path_array) \
     { \
@@ -3536,10 +3559,15 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_dpad, dpad_subcommands),
     SHELL_COMPLETION_STATIC(path_dpad_calibrate, dpad_calibrate_subcommands),
     SHELL_COMPLETION_STATIC(path_pwm, pwm_subcommands),
-    SHELL_COMPLETION_GPIO_PINS(path_pwm_set),
+    SHELL_COMPLETION_PWM_OUTPUTS(path_pwm_set),
     SHELL_COMPLETION_STATIC(path_pwm_set_pin, pwm_freq_values),
     SHELL_COMPLETION_STATIC(path_pwm_set_freq, pwm_duty_values),
-    SHELL_COMPLETION_GPIO_PINS(path_pwm_off),
+    SHELL_COMPLETION_PWM_OUTPUTS(path_pwm_off),
+    SHELL_COMPLETION_PWM_OUTPUTS(path_pwm_pulse),
+#if SOLAR_OS_PACKAGE_SERVICE_SERVO
+    SHELL_COMPLETION_STATIC(path_servo, servo_subcommands),
+    SHELL_COMPLETION_PWM_OUTPUTS(path_servo_open_name),
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_EXPANSION
     SHELL_COMPLETION_STATIC(path_expansion, expansion_subcommands),
     SHELL_COMPLETION_CONNECTORS(path_expansion_layout),
@@ -3794,6 +3822,7 @@ static uint16_t shell_completion_rule_next(uint16_t index, const char *command)
 #undef SHELL_COMPLETION_DISPLAY_TARGETS
 #undef SHELL_COMPLETION_INPUT_SOURCES
 #undef SHELL_COMPLETION_GPIO_PINS
+#undef SHELL_COMPLETION_PWM_OUTPUTS
 #undef SHELL_COMPLETION_STREAMS
 #undef SHELL_COMPLETION_SCALAR_STREAMS
 #undef SHELL_COMPLETION_SPI_CS
@@ -6624,6 +6653,20 @@ static void shell_completion_emit_gpio_pins(shell_completion_match_t *state)
 #endif
 }
 
+static void shell_completion_emit_pwm_outputs(shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_PWM
+    solar_os_pwm_output_info_t info;
+    for (size_t i = 0; solar_os_pwm_get_output_info(i, &info); i++) {
+        char value[SOLAR_OS_PWM_ENDPOINT_MAX];
+        snprintf(value, sizeof(value), "%s:%u", info.provider, (unsigned)info.output);
+        shell_completion_emit(state, value);
+    }
+#else
+    (void)state;
+#endif
+}
+
 static void shell_completion_emit_spi_buses(shell_completion_match_t *state)
 {
 #if SOLAR_OS_PACKAGE_SERVICE_RESOURCES
@@ -8255,6 +8298,9 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
             break;
         case SHELL_COMPLETION_SOURCE_GPIO_PINS:
             shell_completion_emit_gpio_pins(state);
+            break;
+        case SHELL_COMPLETION_SOURCE_PWM_OUTPUTS:
+            shell_completion_emit_pwm_outputs(state);
             break;
         case SHELL_COMPLETION_SOURCE_I2C_ARGUMENTS:
             shell_completion_emit_i2c_arguments(state, tokens, token_count);

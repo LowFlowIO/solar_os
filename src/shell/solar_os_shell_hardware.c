@@ -65,7 +65,6 @@ static const char * const gpio_subcommands[] = {"status", "list", "mode", "read"
 static const char * const onewire_subcommands[] = {"status", "reset", "scan", "xfer"};
 static const char * const dpad_subcommands[] = {"status", "calibrate"};
 static const char * const adc_subcommands[] = {"status", "read"};
-static const char * const pwm_subcommands[] = {"status", "set", "off"};
 static const char * const i2c_subcommands[] = {"status", "speed", "scan", "probe", "read", "write"};
 static const char * const spi_subcommands[] = {"status", "xfer", "read", "write"};
 
@@ -3373,132 +3372,67 @@ void solar_os_shell_cmd_adc(solar_os_context_t *ctx, int argc, char **argv)
 #if SOLAR_OS_PACKAGE_SERVICE_PWM
 static void pwm_print_usage(solar_os_shell_io_t *term)
 {
-    solar_os_shell_io_writeln(term, "usage:");
-    solar_os_shell_io_writeln(term, "  pwm status");
-    solar_os_shell_io_writeln(term, "  pwm set <pin> <freq-hz> <duty-percent>");
-    solar_os_shell_io_writeln(term, "  pwm off <pin>");
+    solar_os_shell_io_writeln(term, "pwm providers | status");
+    solar_os_shell_io_writeln(term, "pwm set <output> <freq-hz> <duty-percent>");
+    solar_os_shell_io_writeln(term, "pwm pulse <output> <freq-hz> <pulse-us>");
+    solar_os_shell_io_writeln(term, "pwm off <output>");
+    solar_os_shell_io_writeln(term, "output is provider:number; a GPIO number selects native PWM");
 }
 
-static void pwm_print_error(solar_os_shell_io_t *term, const char *action, int pin, esp_err_t err)
+static void pwm_print_pin_info(solar_os_shell_io_t *term, const solar_os_pwm_output_info_t *info)
 {
-    if (err == ESP_ERR_NOT_SUPPORTED) {
-        solar_os_shell_io_writeln(term, "pwm: PWM hardware not available on this board");
-        return;
-    }
-    if (err == ESP_ERR_NOT_ALLOWED) {
-        solar_os_shell_io_printf(term, "pwm %s: GPIO%d is reserved\n", action, pin);
-        return;
-    }
-    if (err == ESP_ERR_NOT_FOUND) {
-        solar_os_shell_io_printf(term, "pwm %s: GPIO%d is not active\n", action, pin);
-        return;
-    }
-
-    solar_os_shell_io_printf(term,
-                             "pwm %s GPIO%d failed: %s\n",
-                             action,
-                             pin,
-                             solar_os_shell_error_text(err));
-}
-
-static void pwm_print_pin_info(solar_os_shell_io_t *term, const solar_os_pwm_pin_info_t *info)
-{
+    solar_os_shell_io_printf(term, "%s:%u group=%u", info->provider,
+        (unsigned)info->output, (unsigned)info->frequency_group);
     if (info->active) {
         solar_os_shell_io_printf(term,
-                                 "GPIO%-2d ch%d %" PRIu32 " Hz duty %u%%\n",
-                                 info->pin,
-                                 info->channel,
-                                 info->freq_hz,
-                                 (unsigned)info->duty_percent);
-    } else {
-        solar_os_shell_io_printf(term, "GPIO%-2d off\n", info->pin);
-    }
-}
-
-static void pwm_cmd_status(solar_os_shell_io_t *term)
-{
-    if (!solar_os_board_has(SOLAR_OS_BOARD_CAP_PWM)) {
-        solar_os_shell_io_writeln(term, "pwm: PWM hardware not available on this board");
-        return;
-    }
-    for (size_t i = 0; i < solar_os_pwm_pin_count(); i++) {
-        solar_os_pwm_pin_info_t info;
-        if (solar_os_pwm_get_pin_info(i, &info)) {
-            pwm_print_pin_info(term, &info);
-        }
-    }
-}
-
-static void pwm_cmd_set(solar_os_shell_io_t *term, int argc, char **argv)
-{
-    int pin = -1;
-    size_t freq_hz = 0;
-    size_t duty_percent = 0;
-
-    if (argc != 5 ||
-        !gpio_parse_pin(argv[2], &pin) ||
-        !parse_size_arg(argv[3], SOLAR_OS_PWM_FREQ_MIN_HZ, SOLAR_OS_PWM_FREQ_MAX_HZ, &freq_hz) ||
-        !parse_size_arg(argv[4], 0, SOLAR_OS_PWM_DUTY_MAX_PERCENT, &duty_percent)) {
-        solar_os_shell_diag_problem(term, "pwm set", "invalid pin, frequency, duty, or argument count",
-                                    "pwm set <pin> <freq-hz> <duty-percent>",
-                                    "frequency must be within the board PWM range; duty is 0..100");
-        return;
-    }
-
-    const esp_err_t err = solar_os_pwm_set(pin, (uint32_t)freq_hz, (uint8_t)duty_percent);
-    if (err != ESP_OK) {
-        pwm_print_error(term, "set", pin, err);
-        return;
-    }
-
-    solar_os_shell_io_printf(term,
-                             "GPIO%d PWM %" PRIu32 " Hz duty %u%%\n",
-                             pin,
-                             (uint32_t)freq_hz,
-                             (unsigned)duty_percent);
-}
-
-static void pwm_cmd_off(solar_os_shell_io_t *term, int argc, char **argv)
-{
-    int pin = -1;
-
-    if (argc != 3 || !gpio_parse_pin(argv[2], &pin)) {
-        solar_os_shell_diag_problem(term, "pwm off", "expected one GPIO pin from 0 to 48",
-                                    "pwm off <pin>", NULL);
-        return;
-    }
-
-    const esp_err_t err = solar_os_pwm_stop(pin);
-    if (err != ESP_OK) {
-        pwm_print_error(term, "off", pin, err);
-        return;
-    }
-
-    solar_os_shell_io_printf(term, "GPIO%d PWM off\n", pin);
+            " %" PRIu32 " Hz duty %u%% pulse %" PRIu32 " us %u-bit %s owner=%s\n",
+            info->freq_hz, (unsigned)info->duty_percent, info->pulse_width_us,
+            (unsigned)info->resolution_bits, info->enabled ? "enabled" : "disabled", info->owner);
+    } else solar_os_shell_io_writeln(term, " off");
 }
 
 void solar_os_shell_cmd_pwm(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
-
-    if (argc == 1 || strcmp(argv[1], "status") == 0) {
-        if (argc > 2) {
-            solar_os_shell_diag_unexpected(term, "pwm status", argv[2], "pwm status");
-            return;
-        }
-        pwm_cmd_status(term);
+    if (argc == 1 || (argc == 2 && strcmp(argv[1], "status") == 0)) {
+        solar_os_pwm_output_info_t info;
+        for (size_t i = 0; solar_os_pwm_get_output_info(i, &info); i++) pwm_print_pin_info(term, &info);
         return;
     }
-
-    if (strcmp(argv[1], "set") == 0) {
-        pwm_cmd_set(term, argc, argv);
-    } else if (strcmp(argv[1], "off") == 0) {
-        pwm_cmd_off(term, argc, argv);
+    if (argc == 2 && strcmp(argv[1], "providers") == 0) {
+        solar_os_pwm_provider_info_t info;
+        if (solar_os_pwm_provider_count() == 0) solar_os_shell_io_writeln(term, "no PWM providers");
+        for (size_t i = 0; solar_os_pwm_get_provider(i, &info); i++) {
+            solar_os_shell_io_printf(term, "%s driver=%s outputs=%u %s\n",
+                info.name, info.driver, (unsigned)info.output_count,
+                info.detachable ? "detachable" : "built-in");
+        }
+        return;
+    }
+    solar_os_pwm_output_t output;
+    if (argc < 3 || !solar_os_pwm_parse_output(argv[2], &output)) {
+        pwm_print_usage(term);
+        return;
+    }
+    esp_err_t ret = ESP_ERR_INVALID_ARG;
+    if (argc == 3 && strcmp(argv[1], "off") == 0) ret = solar_os_pwm_stop_output(&output);
+    else if (argc == 5 && (strcmp(argv[1], "set") == 0 || strcmp(argv[1], "pulse") == 0)) {
+        const bool pulse = strcmp(argv[1], "pulse") == 0;
+        size_t frequency, value;
+        if (!parse_size_arg(argv[3], 1U, UINT32_MAX, &frequency) ||
+            !parse_size_arg(argv[4], 0, pulse ? 999999U : 100U, &value)) {
+            pwm_print_usage(term);
+            return;
+        }
+        ret = solar_os_pwm_set_output(&output, (uint32_t)frequency, (uint32_t)value, pulse);
     } else {
-        solar_os_shell_diag_subcommand(term, "pwm", argc, argv,
-                                       "pwm [status|set|off] ...",
-                                       pwm_subcommands,
-                                       sizeof(pwm_subcommands) / sizeof(pwm_subcommands[0]));
+        pwm_print_usage(term);
+        return;
+    }
+    if (ret != ESP_OK) {
+        solar_os_shell_io_printf(term, "pwm %s %s: %s\n", argv[1], argv[2], solar_os_shell_error_text(ret));
+        if (ret == ESP_ERR_INVALID_STATE) solar_os_shell_io_writeln(term,
+            "output already owned or its shared timer has another frequency");
     }
 }
 #endif

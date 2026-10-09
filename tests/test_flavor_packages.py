@@ -50,6 +50,24 @@ class FlavorPackagesTest(unittest.TestCase):
             self.assertEqual(packages["app_gameboy"], expected,
                              flavor)
 
+    def test_servo_is_optional_and_native_backend_requires_pwm_gpio(self):
+        _, _, core_groups, core_packages = self.resolve("core")
+        self.assertFalse(core_groups["servo"])
+        self.assertFalse(core_packages["service_servo"])
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["servo"])
+        self.assertTrue(packages["service_servo"])
+        self.assertTrue(packages["service_resources"])
+        for capabilities, enabled in (({"pwm", "gpio"}, True),
+                                      ({"gpio"}, False), ({"pwm"}, False)):
+            with self.subTest(capabilities=capabilities):
+                _, pruned = generate_flavor_config.apply_board_capability_pruning(
+                    self.catalog, groups, packages, capabilities
+                )
+                self.assertTrue(pruned["service_servo"])
+                self.assertTrue(pruned["service_pwm"])
+                self.assertEqual(pruned["driver_pwm_native"], enabled)
+
     def test_odroid_runtime_i2c_survives_board_and_target_pruning(self):
         board = tomllib.loads(
             (REPOSITORY / "boards" / "manifests" / "odroid_go.toml").read_text()

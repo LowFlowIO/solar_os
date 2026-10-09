@@ -17,6 +17,7 @@ TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble
 TARGETS += input_action_match_test gesture_completion_test
 TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
 TARGETS += frontlight_pwm_test epd_xteink_identify_test x4pro_expansion_test
+TARGETS += pwm_servo_test pwm_provider_test
 TARGETS += gt911_test
 TARGETS += sdmmc_expansion_test
 TARGETS += axp2101_service_test
@@ -110,6 +111,21 @@ gt911_test: gt911_test.c $(ROOT)/src/drivers/gt911.c $(ROOT)/src/drivers/gt911.h
 
 frontlight_pwm_test: frontlight_pwm_test.c $(ROOT)/src/drivers/frontlight_pwm.c $(ROOT)/src/drivers/frontlight_pwm.h
 	$(CC) $(CFLAGS) -Ix4pro_stubs -Iepd_stubs -I. frontlight_pwm_test.c -o $@
+
+pwm_servo_test: $(ROOT)/src/services/solar_os_pwm_native.c pwm_servo_test.c $(ROOT)/src/drivers/pwm_port.c $(ROOT)/src/drivers/pwm_port.h $(ROOT)/src/services/solar_os_pwm.c $(ROOT)/src/services/solar_os_pwm.h $(ROOT)/src/services/solar_os_servo.c $(ROOT)/src/services/solar_os_servo.h $(ROOT)/src/services/solar_os_resources.c
+pwm_servo_test: $(wildcard pwm_stubs/*.h pwm_stubs/driver/*.h pwm_stubs/soc/*.h)
+pwm_servo_test: pwm_stubs/freertos/semphr.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DESP_ERR_NOT_ALLOWED=0x10b \
+		-DSOLAR_OS_BOARD_HAS_PWM=1 -include compat.h \
+		-Ipwm_stubs -I. -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		pwm_servo_test.c $(ROOT)/src/drivers/pwm_port.c $(ROOT)/src/services/solar_os_pwm.c \
+		$(ROOT)/src/services/solar_os_pwm_native.c \
+		$(ROOT)/src/services/solar_os_servo.c $(ROOT)/src/services/solar_os_resources.c -lm -o $@
+
+pwm_provider_test: pwm_provider_test.c $(ROOT)/src/services/solar_os_pwm.c $(ROOT)/src/services/solar_os_pwm.h $(ROOT)/src/services/solar_os_servo.c $(ROOT)/src/services/solar_os_servo.h pwm_stubs/freertos/semphr.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DESP_ERR_NOT_ALLOWED=0x10b -DSOLAR_OS_PACKAGE_DRIVER_PWM_NATIVE=0 \
+		-Ipwm_stubs -I. -I$(ROOT)/src/services pwm_provider_test.c \
+		$(ROOT)/src/services/solar_os_pwm.c $(ROOT)/src/services/solar_os_servo.c -pthread -lm -o $@
 
 epd_xteink_identify_test: epd_xteink_identify_test.c $(ROOT)/src/drivers/epd_xteink_identify.c $(ROOT)/src/drivers/epd_xteink_identify.h
 	$(CC) $(CFLAGS) -Iepd_stubs -I. epd_xteink_identify_test.c -o $@
@@ -1000,6 +1016,8 @@ test: $(TARGETS)
 	./axp2101_test
 	./epd_ssd1677_test
 	./frontlight_pwm_test
+	./pwm_servo_test
+	./pwm_provider_test
 	./epd_xteink_identify_test
 	./x4pro_expansion_test
 	./gt911_test
