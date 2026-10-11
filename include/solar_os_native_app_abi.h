@@ -23,6 +23,9 @@ typedef struct {
     uint32_t tick_interval_ms;
     char id[32];
     char summary[96];
+    /* Optional space-separated lowercase suffixes, e.g. ".gb". The app
+     * receives the opened file as its first argument. Empty means no opener. */
+    char file_extensions[64];
 } solar_os_native_app_manifest_v2_t;
 
 /* Export one const solar_os_native_app_manifest_v2_t with this declaration.

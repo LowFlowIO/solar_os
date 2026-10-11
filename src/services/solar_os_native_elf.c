@@ -142,12 +142,29 @@ static bool app_manifest_valid(const solar_os_native_app_manifest_v2_t *app)
         app->tick_interval_ms == 0U || app->tick_interval_ms > 1000U ||
         app->id[0] == '\0' || memchr(app->id, '\0', sizeof(app->id)) == NULL ||
         app->summary[0] == '\0' ||
-        memchr(app->summary, '\0', sizeof(app->summary)) == NULL) {
+        memchr(app->summary, '\0', sizeof(app->summary)) == NULL ||
+        memchr(app->file_extensions, '\0', sizeof(app->file_extensions)) == NULL) {
         return false;
     }
     for (const char *p = app->id; *p != '\0'; ++p) {
         if (!(*p >= 'a' && *p <= 'z') && !(*p >= '0' && *p <= '9') &&
             *p != '-' && *p != '_') return false;
+    }
+    const char *extension = app->file_extensions;
+    while (*extension) {
+        if (*extension++ != '.') return false;
+        size_t length = 0U;
+        while (*extension && *extension != ' ') {
+            if (!(*extension >= 'a' && *extension <= 'z') &&
+                !(*extension >= '0' && *extension <= '9')) return false;
+            extension++;
+            length++;
+        }
+        if (!length) return false;
+        if (*extension == ' ') {
+            extension++;
+            if (!*extension) return false;
+        }
     }
     return true;
 }
@@ -193,6 +210,7 @@ static esp_err_t read_app_manifest(const uint8_t *data, size_t data_len,
             };
             memcpy(app->id, record + 40U, sizeof(app->id));
             memcpy(app->summary, record + 72U, sizeof(app->summary));
+            memcpy(app->file_extensions, record + 168U, sizeof(app->file_extensions));
             if (!app_manifest_valid(app)) return ESP_ERR_INVALID_RESPONSE;
             found = true;
         }

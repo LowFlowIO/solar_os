@@ -19,9 +19,9 @@ state belong to their modules.
 
 ```text
 pkg installed
-apple2 /sdcard/vm/apple2 dos33.nib
-session create apple2 display0 /sdcard/vm/apple2 dos33.nib
-load /sdcard/apple2.app.elf /sdcard/vm/apple2 dos33.nib
+apple2 /sdcard/apple2 dos33.nib
+session create apple2 display0 /sdcard/apple2 dos33.nib
+load /sdcard/apple2.app.elf /sdcard/apple2 dos33.nib
 ```
 
 ## Installation and launch
@@ -47,7 +47,9 @@ The package catalog has application, job and driver categories.
 `solar_os_native_app_abi.h` defines the exported, pointer-free
 `solar_os_native_app_manifest` record. It declares the app ID, summary, GUI or
 TUI class, resumable flag, worker stack and priority, internal-memory and PSRAM
-minima, and event tick interval. The host validates this record before executing
+minima, event tick interval, and optional file extensions. File extensions are
+space-separated lowercase suffixes such as `.gb`; opening a matching file passes
+its path as the first argument. The host validates this record before executing
 module code and checks it again when loading the session worker. Catalog
 lifecycle and ID must match the ELF metadata.
 
@@ -107,7 +109,7 @@ See the [Apple II Plus module](../../modules/apple2/README.md) for ROM and NIB
 requirements and controls. For example, with the asset directory populated:
 
 ```text
-apple2 /sdcard/vm/apple2 dos33.nib
+apple2 /sdcard/apple2 dos33.nib
 ```
 
 F1 saves drive 1; Alt+F1 saves drive 2. F10 pauses the guest and F11 resets it.

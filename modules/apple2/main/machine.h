@@ -49,7 +49,7 @@ typedef struct {
 } apple2_machine_t;
 
 extern apple2_machine_t *apple2_machine;
-extern const solar_os_native_foreground_api_v1_t *apple2_vm;
+extern const solar_os_native_foreground_api_v1_t *apple2_app;
 static inline bool apple2_disk_accelerated(void)
 {
     return apple2_machine->fast_disk &&

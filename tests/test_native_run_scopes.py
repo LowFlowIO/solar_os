@@ -12,8 +12,9 @@ ROOT = Path(__file__).resolve().parents[1]
 class NativeRunScopesTest(unittest.TestCase):
     def test_app_manifest_has_the_same_layout_and_export_in_c_and_cpp(self):
         code = ('#include <stddef.h>\n#include "solar_os_native_app_abi.h"\n'
-                'typedef char size_check[sizeof(solar_os_native_app_manifest_v2_t)==168?1:-1];\n'
+                'typedef char size_check[sizeof(solar_os_native_app_manifest_v2_t)==232?1:-1];\n'
                 'typedef char id_check[offsetof(solar_os_native_app_manifest_v2_t,id)==40?1:-1];\n'
+                'typedef char ext_check[offsetof(solar_os_native_app_manifest_v2_t,file_extensions)==168?1:-1];\n'
                 'SOLAR_OS_NATIVE_APP_MANIFEST = {0};\n')
         with tempfile.TemporaryDirectory() as tmp:
             for compiler, language in (("cc", "c"), ("c++", "c++")):

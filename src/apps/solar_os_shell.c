@@ -1817,9 +1817,6 @@ static const char * const path_view_after_option[] = {"view", SHELL_COMPLETION_A
 static const char * const path_vplay[] = {"vplay"};
 static const char * const path_vplay_after_option[] = {"vplay", SHELL_COMPLETION_ANY};
 #endif
-#if SOLAR_OS_PACKAGE_APP_GAMEBOY
-static const char * const path_gameboy[] = {"gameboy"};
-#endif
 #if SOLAR_OS_PACKAGE_APP_FILES
 static const char * const path_files[] = {"files"};
 static const char * const path_files_launcher[] = {"files", "--launcher"};
@@ -3146,9 +3143,6 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #if SOLAR_OS_PACKAGE_APP_VPLAY
     SHELL_COMPLETION_OPTIONS(path_vplay, vplay_options),
     SHELL_COMPLETION_PATH(path_vplay_after_option, false),
-#endif
-#if SOLAR_OS_PACKAGE_APP_GAMEBOY
-    SHELL_COMPLETION_PATH(path_gameboy, false),
 #endif
 #if SOLAR_OS_PACKAGE_APP_FILES
     SHELL_COMPLETION_OPTIONS(path_files, files_options),
@@ -5334,6 +5328,8 @@ static bool shell_wildcard_match(const char *pattern, const char *text)
 
 static bool shell_is_path_command(const char *command)
 {
+    const solar_os_app_registry_entry_t *app = solar_os_app_registry_find(command);
+    if (app && app->file_extensions && app->file_extensions[0]) return true;
     return strcmp(command, "cd") == 0 ||
            strcmp(command, "ls") == 0 ||
            strcmp(command, "cat") == 0 ||

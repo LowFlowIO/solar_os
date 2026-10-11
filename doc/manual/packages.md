@@ -205,7 +205,7 @@ matrix.
 
 Groups are the user-facing feature units shared by flavor TOML files and the
 configurator. They are deliberately granular: examples include `http_client`,
-`ftp`, `logging`, `gameboy`, `pcm1808`, and `st7305`. Categories such as
+`ftp`, `logging`, `invaders`, `pcm1808`, and `st7305`. Categories such as
 Networking, Maintenance, Games, and Expansion hardware only organize the
 configurator; categories cannot be selected and do not appear in a flavor.
 Dormant engineering packages such as USB HID are not exposed as groups.
@@ -228,12 +228,10 @@ shared storage browser are package dependencies, while mutable app and canvas
 state remain cold until the app starts. The four-shade canvas is converted into
 a cold-allocated monochrome XBM buffer for one opaque graphics blit per redraw.
 
-The separate `invaders` and `gameboy` groups select those games independently.
-Game Boy additionally requires PSRAM, SD storage, and the `streaming_display`
-board capability. Its
-fixed-frequency emulator submits compact INDEX2 frames to the shared bounded-
-cadence presenter. When `service.synth` is present, Game Boy also uses the
-MiniGB APU through the shared synth and audio services.
+The `invaders` group selects the built-in Invaders game. Game Boy and Apple II
+are installed as [external foreground apps](native-app.md) through the module
+catalog and require native-module support in the firmware. They do not add
+firmware flavor groups.
 
 The `writerdeck` flavor targets the Elecrow e-paper boards with editing,
 pagination, Files, Reader, Writer, Notes, View, Python, Playground, audio

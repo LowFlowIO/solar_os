@@ -4,6 +4,7 @@ CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Werror
 ROOT := ../..
 override CFLAGS += -idirafter $(ROOT)/include
 WRITER_DIR := $(ROOT)/src/apps
+GAMEBOY_DIR := $(ROOT)/modules/gameboy/main
 TARGETS := writer_buffer_test writer_files_test file_shortcuts_test sketch_canvas_test launcher_layout_test display_layout_test gfx_icons_test text_search_test doc_layout_test shell_parse_test shell_launch_test shell_line_test shell_completion_test shell_diag_test shell_startup_policy_test scheduler_test schedule_test script_lifecycle_test app_file_types_test gameboy_support_test storage_mounts_test json_scan_test native_elf_test keys_test input_test unistroke_test graffiti_test board_caps_test hid_keyboard_report_test ble_keyboard_scan_policy_test ps2_keyboard_test ps2_mouse_test cardkb_codec_test inputronic_keyboard_test matrix_keyboard_test input_keymap_service_test cl32_keyboard_test battery_service_test battery_trend_test charger_service_test sensors_service_test midi_codec_test midi_service_test parameters_test controls_test osc_test dsp_test stream_test resources_test gpio_controller_test expansion_registry_test expansion_command_test audio_codec_test webradio_catalog_test gif_decode_stack_test nvs_backup_test agent_reference_test manual_external_metadata_test terminal_geometry_test app_exit_result_test terminal_preferences_test tui_widgets_test wireguard_crypto_test meshcore_channel_key_test meshcore_stream_codec_test meshcore_ble_protocol_test link_repeater_test time_timezone_test rtc_service_test rtc_pcf85063_test ubx_test gnss_service_test modem_service_test haptic_service_test imu_service_test bhi260ap_codec_test qmi8658_test drv2605_test bq25896_test axp2101_test max17048_test mgc3130_test sim7670_test xl9555_test st25r3916_test nfc_service_test
 
 MANUAL_GENERATED_DIR := generated/solar_os
@@ -46,15 +47,15 @@ TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
 TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
-TARGETS += apple2_vm_test
-TARGETS += apple2_vm_entry_test
+TARGETS += apple2_app_test
+TARGETS += apple2_app_entry_test
 
 APPLE2_DIR := $(ROOT)/modules/apple2/main
-apple2_vm_test: apple2_vm_test.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h $(APPLE2_DIR)/font.h
+apple2_app_test: apple2_app_test.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h $(APPLE2_DIR)/font.h
 	$(CC) $(CFLAGS) -I$(APPLE2_DIR) $(filter %.c,$^) -o $@
 
-apple2_vm_entry_test: apple2_vm_entry_test.c $(APPLE2_DIR)/apple2.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h
-	$(CC) $(CFLAGS) -I$(APPLE2_DIR) -Dmain=apple2_vm_entry $(filter %.c,$^) -o $@
+apple2_app_entry_test: apple2_app_entry_test.c $(APPLE2_DIR)/apple2.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h
+	$(CC) $(CFLAGS) -I$(APPLE2_DIR) -Dmain=apple2_app_entry $(filter %.c,$^) -o $@
 
 tab5_keyboard_test: tab5_keyboard_test.c $(wildcard $(ROOT)/src/services/solar_os_tab5_keyboard*) \
         $(ROOT)/src/drivers/tab5_keyboard.c $(ROOT)/src/drivers/tab5_keyboard.h \
@@ -499,12 +500,12 @@ app_file_types_test: app_file_types_test.c $(ROOT)/src/apps/solar_os_app_file_ty
 	$(CC) $(CFLAGS) -I$(ROOT)/src/apps \
 		app_file_types_test.c $(ROOT)/src/apps/solar_os_app_file_types.c -o $@
 
-gameboy_support_test: gameboy_support_test.c $(WRITER_DIR)/solar_os_gameboy_rom.c $(WRITER_DIR)/solar_os_gameboy_rom.h $(WRITER_DIR)/solar_os_gameboy_video.c $(WRITER_DIR)/solar_os_gameboy_video.h $(WRITER_DIR)/solar_os_gameboy_apu.c $(ROOT)/src/vendor/peanut_gb/peanut_gb.h $(ROOT)/src/vendor/peanut_gb/minigb_apu.c $(ROOT)/src/vendor/peanut_gb/minigb_apu.h
+gameboy_support_test: gameboy_support_test.c $(GAMEBOY_DIR)/solar_os_gameboy_rom.c $(GAMEBOY_DIR)/solar_os_gameboy_rom.h $(GAMEBOY_DIR)/solar_os_gameboy_video.c $(GAMEBOY_DIR)/solar_os_gameboy_video.h $(GAMEBOY_DIR)/apu.c $(GAMEBOY_DIR)/vendor/peanut_gb/peanut_gb.h $(GAMEBOY_DIR)/vendor/peanut_gb/minigb_apu.c $(GAMEBOY_DIR)/vendor/peanut_gb/minigb_apu.h
 	$(CC) $(CFLAGS) -Wno-unused-function -Wno-unused-variable \
-		-DSOLAR_OS_GAMEBOY_APU_HOST_TEST -I$(ROOT)/src -I$(WRITER_DIR) \
-		gameboy_support_test.c $(WRITER_DIR)/solar_os_gameboy_rom.c \
-		$(WRITER_DIR)/solar_os_gameboy_video.c \
-		$(WRITER_DIR)/solar_os_gameboy_apu.c -o $@
+		-I$(GAMEBOY_DIR) \
+		gameboy_support_test.c $(GAMEBOY_DIR)/solar_os_gameboy_rom.c \
+		$(GAMEBOY_DIR)/solar_os_gameboy_video.c \
+		$(GAMEBOY_DIR)/apu.c -o $@
 
 storage_mounts_test: storage_mounts_test.c $(ROOT)/src/services/solar_os_storage.c $(ROOT)/src/services/solar_os_storage.h esp_log.h ff.h solar_os_board.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -ffunction-sections -fdata-sections -include compat.h \
@@ -961,8 +962,8 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 
 test: $(TARGETS)
 	./i2c_buses_test
-	./apple2_vm_test
-	./apple2_vm_entry_test
+	./apple2_app_test
+	./apple2_app_entry_test
 	./cw2017_test
 	./rtc_pcf8563_test
 	./axp2101_service_test

@@ -94,7 +94,6 @@ image_viewer = true
 vplay = true
 sketch = true
 invaders = true
-gameboy = true
 python = true
 lua = true
 playground = true

@@ -39,9 +39,9 @@ int main(void)
 {
     assert(solar_os_input_init() == ESP_OK);
     solar_os_input_source_t source;
-    assert(solar_os_input_keyboard_source_open("vm-keyboard", true, &source) == ESP_OK);
+    assert(solar_os_input_keyboard_source_open("app-keyboard", true, &source) == ESP_OK);
     int owner;
-    assert(solar_os_input_capture_keyboard_with_shortcuts("vm-keyboard", &owner) == ESP_OK);
+    assert(solar_os_input_capture_keyboard_with_shortcuts("app-keyboard", &owner) == ESP_OK);
     assert(solar_os_input_write_key(source, 0xe2, 0xe2, 0,
         SOLAR_OS_INPUT_MOD_LEFT_ALT, SOLAR_OS_INPUT_KEY_PRESS) == ESP_OK);
     dispatch_desktop_queue();
@@ -58,7 +58,7 @@ int main(void)
         SOLAR_OS_INPUT_MOD_LEFT_ALT, SOLAR_OS_INPUT_KEY_PRESS) == ESP_OK);
     dispatch_desktop_queue();
     assert(overlay_active && session_switch_alt_held);
-    assert(solar_os_input_capture_keyboard_with_shortcuts("vm-keyboard", &owner) == ESP_OK);
+    assert(solar_os_input_capture_keyboard_with_shortcuts("app-keyboard", &owner) == ESP_OK);
     assert(solar_os_input_write_key(source, 0xe2, 0xe2, 0, 0, SOLAR_OS_INPUT_KEY_RELEASE) == ESP_OK);
     dispatch_desktop_queue();
     assert(!overlay_active && overlay_closes == 2 && guest_modifiers == 0);
@@ -69,7 +69,7 @@ int main(void)
         SOLAR_OS_INPUT_MOD_LEFT_ALT, SOLAR_OS_INPUT_KEY_PRESS) == ESP_OK);
     dispatch_desktop_queue();
     assert(solar_os_input_write_key(source, 0xe2, 0xe2, 0, 0, SOLAR_OS_INPUT_KEY_RELEASE) == ESP_OK);
-    assert(solar_os_input_capture_keyboard_with_shortcuts("vm-keyboard", &owner) == ESP_OK);
+    assert(solar_os_input_capture_keyboard_with_shortcuts("app-keyboard", &owner) == ESP_OK);
     dispatch_desktop_queue();
     assert(!overlay_active && overlay_closes == 3 && guest_modifiers == 0);
     solar_os_input_release_keyboard(&owner);

@@ -7,7 +7,7 @@
 #include "machine.h"
 #include "vendor/puce6502.h"
 
-extern int apple2_vm_entry(int argc, char **argv);
+extern int apple2_app_entry(int argc, char **argv);
 static unsigned allocations, frees, reads, frames, closes;
 static int failure, exit_code;
 static uint64_t time_us;
@@ -294,7 +294,7 @@ int main(int argc, char **test_argv)
     char *argv[] = {"apple2", "/assets", "disk.nib"};
     for (failure = 1; failure <= 7; ++failure) {
         exit_code = 0;
-        assert(apple2_vm_entry(3, argv) == 1 && exit_code == 1);
+        assert(apple2_app_entry(3, argv) == 1 && exit_code == 1);
         assert(allocations == frees && apple2_machine == NULL);
         if (failure == 3) assert(strstr(last_report, "got 1, expected 232960") &&
             strstr(last_report, "/assets/disk.nib"));
@@ -307,15 +307,15 @@ int main(int argc, char **test_argv)
             strstr(last_report, "got 65535, expected 65536"));
     }
     failure = 0; reads = 0;
-    assert(apple2_vm_entry(3, argv) == 1 && exit_code == 1);
+    assert(apple2_app_entry(3, argv) == 1 && exit_code == 1);
     assert(reads == 6 && frames == 4 && key_sent && time_us >= 120000);
     assert(allocations == frees && closes == 8 && apple2_machine == NULL);
     failure = 8; frames = 0; time_us = 0; key_sent = false;
-    assert(apple2_vm_entry(3, argv) == 1 && ticks > 500000U);
+    assert(apple2_app_entry(3, argv) == 1 && ticks > 500000U);
     assert(allocations == frees && closes == 9 && apple2_machine == NULL);
     failure = 9; frames = 0; time_us = 0; key_sent = stats_sent = false;
     sleep_quantum_us = 10000U;
-    assert(apple2_vm_entry(3, argv) == 1 && ticks > 100000U && ticks < 140000U);
+    assert(apple2_app_entry(3, argv) == 1 && ticks > 100000U && ticks < 140000U);
     assert(allocations == frees && closes == 10 && apple2_machine == NULL);
     sleep_quantum_us = 1000U;
     /* Repeat real module entry/cleanup with active audio, pause, disk turbo,
@@ -326,7 +326,7 @@ int main(int argc, char **test_argv)
         frames = 0; time_us = 0; key_sent = stats_sent = false; audio_writes = 0;
         unsigned before_closes = closes;
         exit_code = 1;
-        assert(apple2_vm_entry(3, argv) == 0 && exit_code == 0);
+        assert(apple2_app_entry(3, argv) == 0 && exit_code == 0);
         assert(allocations == frees && apple2_machine == NULL && !audio_live);
         assert(closes == before_closes + 1U && frames >= 2U);
         assert(time_us >= 120000U && time_us < 130000U);
@@ -341,7 +341,7 @@ int main(int argc, char **test_argv)
         suspends = 0; resume_failure = suspension_case == 5 ? SOLAR_OS_NATIVE_ERROR_NO_MEMORY : 0;
         unsigned before_reads = reads, before_opens = audio_opens;
         int expected = resume_failure ? 1 : 0;
-        assert(apple2_vm_entry(3, argv) == expected && exit_code == expected);
+        assert(apple2_app_entry(3, argv) == expected && exit_code == expected);
         assert(suspends == 1 && resumable && !audio_live && allocations == frees);
         assert(reads == before_reads + 6); /* ROM and disks are loaded only once. */
         assert(audio_opens == before_opens + (suspension_case >= 4 ? 1U : 2U));
@@ -352,21 +352,21 @@ int main(int argc, char **test_argv)
     resume_failure = 0; suspended_wall = 0;
     /* The module delegates only its directory to the host. Disk names remain
      * relative to that resolved directory, including when launched with '.'. */
-    static const char *const directories[] = {"vm/apple2", ".", "../apple2", "/vm/apple2", "/sdcard/vm/apple2"};
+    static const char *const directories[] = {"apple2", ".", "../apple2", "/apple2", "/sdcard/apple2"};
     for (unsigned i = 0; i < sizeof(directories) / sizeof(directories[0]); ++i) {
-        expected_directory_arg = directories[i]; resolved_directory = "/sdcard/vm/apple2";
+        expected_directory_arg = directories[i]; resolved_directory = "/sdcard/apple2";
         argv[1] = (char *)directories[i];
         stop_case = 1; frames = 0; time_us = 0; key_sent = stats_sent = false;
-        assert(apple2_vm_entry(3, argv) == 0 && exit_code == 0);
+        assert(apple2_app_entry(3, argv) == 0 && exit_code == 0);
         assert(allocations == frees && apple2_machine == NULL);
     }
-    argv[1] = "vm/apple2"; expected_directory_arg = argv[1];
+    argv[1] = "apple2"; expected_directory_arg = argv[1];
     argv[2] = "/flash/disks/disk.nib"; expected_disk = argv[2];
     frames = 0; time_us = 0; key_sent = stats_sent = false;
-    assert(apple2_vm_entry(3, argv) == 0 && exit_code == 0);
+    assert(apple2_app_entry(3, argv) == 0 && exit_code == 0);
     unsigned before_allocations = allocations;
     fail_resolve = true;
-    assert(apple2_vm_entry(3, argv) == 1 && exit_code == 1);
+    assert(apple2_app_entry(3, argv) == 1 && exit_code == 1);
     assert(allocations == before_allocations && !strcmp(last_report, "apple2: invalid asset directory"));
     fail_resolve = false;
     expected_directory_arg = resolved_directory = expected_disk = NULL;
@@ -374,14 +374,14 @@ int main(int argc, char **test_argv)
     if (argc == 2) {
         assets = test_argv[1]; failure = 0; time_us = 0;
         asset_frames = 0;
-        assert(apple2_vm_entry(3, argv) == 1 && booted && exit_code == 1);
+        assert(apple2_app_entry(3, argv) == 1 && booted && exit_code == 1);
         assert(allocations == frees && apple2_machine == NULL);
         assert(time_us < 8000000U);
         for (sleep_quantum_us = 1000U; sleep_quantum_us <= 10000U; sleep_quantum_us *= 10U) {
             time_us = observed_ticks = last_poll_us = longest_poll_gap_us = 0;
             booted = false; model_cpu_cost = true;
             asset_frames = 0;
-            assert(apple2_vm_entry(3, argv) == 1 && booted && exit_code == 1);
+            assert(apple2_app_entry(3, argv) == 1 && booted && exit_code == 1);
             assert(time_us < (sleep_quantum_us == 1000U ? 25000000U : 45000000U));
             assert(longest_poll_gap_us < 25000U);
             assert(allocations == frees && apple2_machine == NULL);
@@ -389,10 +389,10 @@ int main(int argc, char **test_argv)
         sleep_quantum_us = 1000U; suspend_boot = true;
         time_us = observed_ticks = last_poll_us = longest_poll_gap_us = suspended_wall = 0;
         booted = false; asset_frames = suspends = 0;
-        assert(apple2_vm_entry(3, argv) == 1 && booted && exit_code == 1);
+        assert(apple2_app_entry(3, argv) == 1 && booted && exit_code == 1);
         assert(suspends == 1 && time_us > 30000000U && longest_poll_gap_us < 25000U);
         assert(allocations == frees && apple2_machine == NULL);
     }
-    puts("Apple II VM entry, chunked assets, input and cleanup tests passed");
+    puts("Apple II app entry, chunked assets, input and cleanup tests passed");
     return 0;
 }

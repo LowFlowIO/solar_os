@@ -23,15 +23,15 @@ Launch admission checks its internal-memory and PSRAM requirements.
 Artifact: `build/solaros_native_apple2.app.elf`. Copy it to storage and run:
 
 ```text
-load /sdcard/solaros_native_apple2.app.elf /sdcard/vm/apple2 dos33.nib
+load /sdcard/solaros_native_apple2.app.elf /sdcard/apple2 dos33.nib
 ```
 
 Use `pkg install apple2` to install from the module catalog, then
-`apple2 /sdcard/vm/apple2 dos33.nib` to start the installed module.
+`apple2 /sdcard/apple2 dos33.nib` to start the installed module.
 The asset directory requires `appleII+.rom` (12288 bytes) and `diskII.rom`
 (256 bytes). NIB images must be exactly 232960 bytes. A second disk is optional.
 The asset directory can be relative to the launching shell's current directory:
-from `/sdcard`, use `apple2 vm/apple2 dos33.nib`; from `/sdcard/vm/apple2`,
+from `/sdcard`, use `apple2 apple2 dos33.nib`; from `/sdcard/apple2`,
 use `apple2 . dos33.nib`. Relative disk names use the resolved asset directory.
 The firmware must provide the foreground `resolve_path` callback.
 

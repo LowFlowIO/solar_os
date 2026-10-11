@@ -173,7 +173,7 @@ static void test_video_refresh(apple2_machine_t *m)
 static void test_audio(apple2_machine_t *m)
 {
     static const solar_os_native_foreground_api_v1_t api = {.audio_write = audio_write};
-    apple2_vm = &api;
+    apple2_app = &api;
     m->audio_active = true; m->channels = 2; m->sample_rate = 44100;
     m->sample_step = APPLE2_CLOCK_HZ / m->sample_rate;
     m->sample_remainder = APPLE2_CLOCK_HZ % m->sample_rate;
@@ -254,5 +254,5 @@ int main(int argc, char **argv)
     test_video_refresh(m);
     apple2_machine_init(m); test_audio(m);
     if (argc == 2) test_boot(m, argv[1]);
-    free(m); puts("Apple II VM core tests passed"); return 0;
+    free(m); puts("Apple II app core tests passed"); return 0;
 }

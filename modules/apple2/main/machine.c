@@ -30,7 +30,7 @@
 #include <string.h>
 
 apple2_machine_t *apple2_machine;
-const solar_os_native_foreground_api_v1_t *apple2_vm;
+const solar_os_native_foreground_api_v1_t *apple2_app;
 
 void apple2_machine_init(apple2_machine_t *machine) {
     memset(machine, 0, sizeof(*machine));
@@ -85,7 +85,7 @@ void apple2_audio_until(uint64_t cycle) {
     if (apple2_disk_accelerated()) {
         if (!m->audio_suspended) {
             memset(m->pcm, 0, sizeof(m->pcm));
-            m->audio_error = apple2_vm->audio_write(m->pcm, 512U);
+            m->audio_error = apple2_app->audio_write(m->pcm, 512U);
             m->audio_suspended = true;
         }
         m->next_sample = cycle;
@@ -115,7 +115,7 @@ void apple2_audio_until(uint64_t cycle) {
             m->next_sample++;
         }
         if (m->pcm_frames == 512U) {
-            m->audio_error = apple2_vm->audio_write(m->pcm, m->pcm_frames);
+            m->audio_error = apple2_app->audio_write(m->pcm, m->pcm_frames);
             m->pcm_frames = 0;
             if (m->audio_error) return;
         }

@@ -17,8 +17,8 @@ def main() -> int:
     table = shell_text.split("static const shell_command_t shell_builtin_commands[] = {", 1)[1]
     table = table.split("};", 1)[0]
     builtins = re.findall(r'^\s*\{"([a-z][a-z0-9-]*)",', table, re.MULTILINE)
-    if len(builtins) != 86:
-        raise SystemExit(f"expected 86 built-in command declarations, found {len(builtins)}")
+    if len(builtins) != 108:
+        raise SystemExit(f"expected 108 built-in command declarations, found {len(builtins)}")
     duplicates = sorted({name for name in builtins if builtins.count(name) > 1})
     if duplicates:
         raise SystemExit(f"duplicate built-in commands: {', '.join(duplicates)}")
@@ -29,8 +29,8 @@ def main() -> int:
         r'"([^"]+)",\s*(\d+),\s*(\d+)(?:,\s*"[^"]+")?\),'
     )
     entries = entry_pattern.findall(registry_text)
-    if len(entries) != 37:
-        raise SystemExit(f"expected 37 registered app launch schemas, found {len(entries)}")
+    if len(entries) != 47:
+        raise SystemExit(f"expected 47 registered app launch schemas, found {len(entries)}")
     for name, usage, min_argc_text, max_argc_text in entries:
         min_argc = int(min_argc_text)
         max_argc = int(max_argc_text)
@@ -48,9 +48,6 @@ def main() -> int:
         if not values or any(not value.startswith(".") or value.lower() != value
                              for value in values):
             raise SystemExit(f"{name}: invalid file extensions: {extensions}")
-    if file_entries.get("gameboy") != ".gb":
-        raise SystemExit("gameboy: expected .gb file association")
-
     forbidden = []
     for path in sorted((ROOT / "src/shell").glob("*.c")) + [SHELL_APP]:
         if path.name == "solar_os_shell_common.c":

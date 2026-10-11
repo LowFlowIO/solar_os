@@ -138,9 +138,6 @@
 #if SOLAR_OS_PACKAGE_APP_INVADERS
 #include "solar_os_invaders.h"
 #endif
-#if SOLAR_OS_PACKAGE_APP_GAMEBOY
-#include "solar_os_gameboy.h"
-#endif
 #if SOLAR_OS_PACKAGE_APP_PYTHON
 #include "solar_os_python.h"
 #endif
@@ -290,9 +287,6 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #if SOLAR_OS_PACKAGE_APP_INVADERS
     APP_ENTRY("invaders", "arcade shooter", &solar_os_invaders_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "invaders", 1, 1),
 #endif
-#if SOLAR_OS_PACKAGE_APP_GAMEBOY
-    APP_FILE_ENTRY("gameboy", "original Game Boy emulator", &solar_os_gameboy_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "gameboy <file.gb>", 2, 2, ".gb"),
-#endif
 #if SOLAR_OS_PACKAGE_APP_PYTHON
     APP_FILE_ENTRY("python", "MicroPython runtime", &solar_os_python_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "python [script.py [args...]]", 1, 0, ".py .pyw .mpy"),
 #endif
@@ -418,14 +412,11 @@ const solar_os_app_registry_entry_t *solar_os_app_registry_find_opener(const cha
     if (path == NULL) {
         return NULL;
     }
-    for (size_t i = 0; i < registered_app_count; i++) {
-        const solar_os_app_registry_entry_t *entry = &registered_apps[i];
-        if (entry->app != NULL &&
+    const size_t count = solar_os_app_registry_count();
+    for (size_t i = 0; i < count; i++) {
+        const solar_os_app_registry_entry_t *entry = solar_os_app_registry_get(i);
+        if (entry != NULL && entry->app != NULL &&
             solar_os_app_file_types_match(entry->file_extensions, path)) {
-#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
-            const solar_os_app_registry_entry_t *external = solar_os_native_foreground_find(entry->name);
-            if (external) return external;
-#endif
             return entry;
         }
     }

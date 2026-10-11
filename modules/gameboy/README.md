@@ -1,8 +1,8 @@
 # Game Boy foreground app
 
-External SolarOS app using the same vendored Peanut-GB CPU core, ROM validator,
-packed video conversion and MiniGB APU as the built-in Game Boy app. The original
-licenses are in `src/vendor/peanut_gb`. No ROM images are bundled.
+External SolarOS app using the vendored Peanut-GB CPU core, ROM validator,
+packed video conversion and MiniGB APU. The original licenses are in
+`main/vendor/peanut_gb`. No ROM images are bundled.
 
 Build with ESP-IDF 5.5 for ESP32-S3:
 
@@ -20,7 +20,7 @@ catalog with `pkg install gameboy`, or copy the artifact to
 gameboy /sdcard/roms/game.gb
 ```
 
-An installed module takes precedence over the built-in app. You can also use
+You can also use
 `session create gameboy display0 /sdcard/roms/game.gb` or
 `load /sdcard/gameboy.app.elf /sdcard/roms/game.gb`.
 

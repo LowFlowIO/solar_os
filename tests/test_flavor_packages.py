@@ -44,11 +44,10 @@ class FlavorPackagesTest(unittest.TestCase):
         for flavor in built_in_flavors:
             _, _, groups, packages = self.resolve(flavor)
             expected = flavor == "full"
-            self.assertEqual(groups["gameboy"], expected, flavor)
             self.assertEqual(packages["app_invaders"], expected,
                              flavor)
-            self.assertEqual(packages["app_gameboy"], expected,
-                             flavor)
+            self.assertNotIn("gameboy", groups, flavor)
+            self.assertNotIn("app_gameboy", packages, flavor)
 
     def test_servo_is_optional_and_native_backend_requires_pwm_gpio(self):
         _, _, core_groups, core_packages = self.resolve("core")
@@ -567,10 +566,6 @@ class FlavorPackagesTest(unittest.TestCase):
             ("job_meshcore_ble",),
         )
         self.assertEqual(
-            self.catalog.group_defs["gameboy"].members,
-            ("app_gameboy",),
-        )
-        self.assertEqual(
             self.catalog.group_defs["pcm1808"].members,
             ("expansion_pcm1808",),
         )
@@ -755,10 +750,6 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertEqual(
             self.catalog.package_defs["job_espnow_link"].capabilities,
             ("wifi",),
-        )
-        self.assertEqual(
-            self.catalog.package_defs["app_gameboy"].depends,
-            (),
         )
 
     def test_writerdeck_selects_writing_media_scripting_and_file_transfer(self):
@@ -1080,9 +1071,7 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertFalse(rover_packages["job_sump"])
         self.assertFalse(rover_packages["app_agent"])
         self.assertFalse(rover_packages["app_logic"])
-        self.assertFalse(rover_groups["gameboy"])
         self.assertFalse(rover_packages["app_invaders"])
-        self.assertFalse(rover_packages["app_gameboy"])
         self.assertFalse(rover_packages["app_python"])
         self.assertFalse(rover_packages["app_lua"])
 
@@ -1110,7 +1099,7 @@ class FlavorPackagesTest(unittest.TestCase):
         for package in ("app_reader", "app_writer", "app_files", "app_notes"):
             self.assertTrue(full_packages[package], package)
 
-    def test_gameboy_requires_a_streaming_display(self):
+    def test_gameboy_is_external_to_all_firmware_packages(self):
         _, _, groups, packages = self.resolve("full")
         _, pruned = generate_flavor_config.apply_board_capability_pruning(
             self.catalog,
@@ -1119,7 +1108,7 @@ class FlavorPackagesTest(unittest.TestCase):
             {"gfx", "psram", "sd"},
         )
         self.assertTrue(pruned["app_invaders"])
-        self.assertFalse(pruned["app_gameboy"])
+        self.assertNotIn("app_gameboy", pruned)
 
         _, capable = generate_flavor_config.apply_board_capability_pruning(
             self.catalog,
@@ -1127,7 +1116,9 @@ class FlavorPackagesTest(unittest.TestCase):
             packages,
             {"gfx", "psram", "sd", "streaming_display"},
         )
-        self.assertTrue(capable["app_gameboy"])
+        self.assertNotIn("app_gameboy", capable)
+        sources = generate_flavor_config.collect_sources(self.catalog, groups, capable)
+        self.assertFalse(any("gameboy" in source for source in sources))
 
 if __name__ == "__main__":
     unittest.main()

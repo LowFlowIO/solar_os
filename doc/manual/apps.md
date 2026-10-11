@@ -903,12 +903,13 @@ directory the startup menu, add a line such as this to `/.shell/startup`:
 files --launcher /apps
 ```
 
-File associations come from the installed app registry. Only apps compiled in
-the active firmware can be selected. Associations include images to `view`,
+File associations come from the app registry, including installed external
+foreground apps. Associations include images to `view`,
 WAV/MP3 to `player`, MPEG-1 `.mpg`/`.mpeg` files to `vplay`, CSV to `sheet`,
 Python and Lua scripts to their runtimes,
 documents to `reader` (or `writer` when Reader is unavailable), and `.gb` ROMs
-to `gameboy`. Unknown files fall back to `less` or `edit`. A `.sh` file runs
+to the installed [Game Boy module](app.gameboy.md). Unknown files fall back to
+`less` or `edit`. A `.sh` file runs
 through the built-in SolarOS shell. In launcher mode, documents associated with
 Reader open as `reader --pager` for row-aware page navigation.
 
@@ -1194,66 +1195,6 @@ Controls:
 - `Left`/`Right` move the ship.
 - `Space` or `f` fires.
 - `Esc` or app-exit key exits.
-
-## gameboy
-
-On ESP32-S3 firmware with native modules, an installed
-[Game Boy foreground module](native-app.md) takes precedence over the integrated
-app. Use `pkg install gameboy` with a compatible catalog or copy its `.app.elf`
-artifact to `modules/apps/gameboy.elf` in the preferred storage volume. The
-module retains its guest worker and state across session switches. Targets
-without an installed module use the integrated app described below.
-
-Original Game Boy (DMG) emulator selected by the `gameboy` group on boards with
-PSRAM, SD storage, graphics, and a streaming display. Current integrated
-targets are SolarTerm, Freenove IPS, CL-32, T-LoRa-Pager, T-Deck Plus,
-ODROID-GO, Freenove PAL, and TTGO VGA32. The application loads a user-supplied
-ROM into PSRAM and writes battery-backed cartridge RAM beside it as a `.sav`
-file. Game Boy Color-only ROMs and ROMs larger than 4 MiB are rejected.
-
-The emulator runs Peanut-GB at its fixed native frame frequency in a dedicated
-worker. Peanut-GB renders alternate LCD frames, producing a compact 160x144
-INDEX2 raster at about 30 frames per second while still emulating every frame.
-A shared frame presenter owns display cadence, retains the newest submitted
-frame, and replaces stale pending frames instead of blocking emulation. TFT
-targets scale the four-color raster directly to RGB565. One-bit targets convert
-the latest frame through ordered dithering, then use their scan-synchronized
-mono path. The target selects a bounded presentation rate of 25 or 30 frames
-per second and reduces output scale when the driver's pixel-rate budget cannot
-sustain the larger raster. Runtime logs report emulation, presentation,
-replacement, timing rebase, audio block, peak level, and transfer timing.
-
-Audio rendering runs in its own bounded worker, applies a Game Boy-local
-bounded gain for low-resolution DAC outputs, and holds exclusive speaker output
-while Game Boy is active. The Waveshare presenter temporarily requests
-the panel's 25.5 Hz HPM profile. Pausing, suspending, or exiting stops the
-workers and restores the previous display and audio policies. PAL builds run
-without audio because composite scanout owns I2S0; both the 384x288 raster and
-the centered 320x200 safe-area mode can fit the scaled Game Boy frame.
-
-Usage:
-
-```text
-gameboy <file.gb>
-```
-
-Controls:
-
-- Arrows control the D-pad.
-- The physical US-Z key position is A; on a German QWERTZ keyboard this key is
-  labeled `Y`. The physical X key is B.
-- `Enter` is Start; `Backspace` or `Delete` is Select.
-- On ODROID-GO, A and B are the Game Boy A and B buttons, Menu is Start,
-  Select is Select, and Menu+Select exits.
-- `p` pauses and `r` resets.
-- `q`, `Esc`, or the app-exit key exits.
-
-Game Boy reads the generic SolarOS held-key state. BLE/PS/2 keyboards, fixed board
-buttons, `gpio-keys`, and ADC D-pads therefore remain active until
-release, and combinations such as diagonal movement or direction plus A/B work
-simultaneously. USB HID usages preserve the physical Z/X positions across
-keyboard layouts. Character-only inputs such as port-shell input retain the
-short button-pulse fallback. Analog joystick axes do not become Game Boy keys.
 
 ## less
 

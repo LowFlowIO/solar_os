@@ -905,6 +905,7 @@ static esp_err_t foreground_prepare_slot(const char *path,
         .capabilities = SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_TEXT |
             (manifest.app_class == SOLAR_OS_NATIVE_APP_CLASS_GUI ? SOLAR_OS_APP_CAP_GRAPHICS : 0U),
         .min_argc = 1U, .max_argc = SOLAR_OS_APP_ARG_MAX,
+        .file_extensions = slot->manifest.file_extensions,
     };
     /* Recheck after allocation: another shell can discover the same module. */
     portENTER_CRITICAL(&foreground_slots_lock);

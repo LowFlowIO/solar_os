@@ -147,6 +147,7 @@ static void make_foreground_elf(uint8_t data[TEST_FILE_SIZE])
         .flags = SOLAR_OS_NATIVE_APP_RESUMABLE, .worker_stack_bytes = 4096U,
         .worker_priority = 2U, .minimum_psram_bytes = 65536U, .tick_interval_ms = 5U,
         .id = "test-app", .summary = "foreground fixture",
+        .file_extensions = ".gb .nib",
     };
     memcpy(data + 512U, &app, sizeof(app));
 }
@@ -158,7 +159,19 @@ static void test_foreground_manifest(void)
     make_foreground_elf(data);
     assert(solar_os_native_elf_validate(data, sizeof(data), 94U, &info, NULL, 0U) == ESP_OK);
     assert(info.foreground && !strcmp(info.app.id, "test-app"));
+    assert(!strcmp(info.app.file_extensions, ".gb .nib"));
     assert(info.app.worker_stack_bytes == 4096U && info.app.worker_priority == 2U);
+    const char *bad_extensions[] = {"gb", ".", ".GB", ".gb/", ".gb ", ".gb  .nib"};
+    for (size_t i = 0U; i < sizeof(bad_extensions) / sizeof(bad_extensions[0]); ++i) {
+        make_foreground_elf(data);
+        strcpy((char *)data + 680U, bad_extensions[i]);
+        assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    }
+    make_foreground_elf(data); memset(data + 680U, 'x', 64U);
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    make_foreground_elf(data); data[680U] = 0U;
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, &info, NULL, 0U) == ESP_OK);
+    assert(info.app.file_extensions[0] == 0);
     const size_t corruptions[] = {512U, 516U, 520U, 524U, 528U, 532U, 536U, 540U, 544U, 548U};
     for (size_t i = 0U; i < sizeof(corruptions) / sizeof(corruptions[0]); ++i) {
         make_foreground_elf(data);

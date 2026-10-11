@@ -854,8 +854,8 @@ class RuntimeBoundaryTest(unittest.TestCase):
         self.assertIn("info.axis != axis", sessions)
         self.assertIn("session_store_input_focus(targets[next_index]);", sessions)
 
-    def test_gameboy_presents_clean_first_resume_frame(self):
-        gameboy = (ROOT / "src/apps/solar_os_gameboy_presenter.c").read_text(
+    def test_foreground_modules_present_clean_first_resume_frame(self):
+        foreground = (ROOT / "src/services/solar_os_native_foreground.c").read_text(
             encoding="utf-8"
         )
         presenter = (ROOT / "src/services/solar_os_frame_presenter.c").read_text(
@@ -863,8 +863,7 @@ class RuntimeBoundaryTest(unittest.TestCase):
         )
         tft = (ROOT / "src/drivers/tft_ili9341.c").read_text(encoding="utf-8")
 
-        self.assertIn(".clear_background_on_resume = true", gameboy)
-        self.assertIn(".background_index = 0U", gameboy)
+        self.assertIn(".clear_background_on_resume = true", foreground)
         self.assertIn("presenter->clear_background_pending", presenter)
         self.assertIn(".clear_background = presenter->clear_background_pending", presenter)
         self.assertIn("if (lines->frame->clear_background)", tft)

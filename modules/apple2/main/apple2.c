@@ -95,7 +95,7 @@ static bool asset_path(char path[160], const char *directory, const char *name)
 static int load_exact(const char *path, void *buffer, size_t length)
 {
     uint32_t size = 0;
-    int result = apple2_vm->file_size(path, &size);
+    int result = apple2_app->file_size(path, &size);
     if (result) { report_file_error(path, "file lookup failed", result); return result; }
     if (size != length) {
         report_size_error(path, "wrong file size", size, (uint32_t)length);
@@ -104,7 +104,7 @@ static int load_exact(const char *path, void *buffer, size_t length)
     for (size_t offset = 0; offset < length;) {
         size_t count = length - offset, actual = 0;
         if (count > 65536U) count = 65536U;
-        result = apple2_vm->read_file(path, (uint32_t)offset, (uint8_t *)buffer + offset, count, &actual);
+        result = apple2_app->read_file(path, (uint32_t)offset, (uint8_t *)buffer + offset, count, &actual);
         if (result) { report_file_error(path, "read failed", result); return result; }
         if (actual != count) {
             report_size_error(path, "short read", (uint32_t)actual, (uint32_t)count);
@@ -119,7 +119,7 @@ static int save_drive(unsigned index)
 {
     apple2_drive_t *drive = &apple2_machine->disk[index];
     if (!drive->mounted || !drive->dirty) return SOLAR_OS_NATIVE_OK;
-    int result = apple2_vm->replace_file(drive->filename, drive->data, sizeof(drive->data));
+    int result = apple2_app->replace_file(drive->filename, drive->data, sizeof(drive->data));
     if (!result) drive->dirty = false;
     report(result ? "apple2: disk save failed" : "apple2: disk saved");
     return result;
@@ -179,7 +179,7 @@ static void poll_keyboard(void)
     bool available;
     /* Bound work per slice even if another task continually injects keys. */
     for (unsigned i = 0; i < 64U; ++i) {
-        if (apple2_vm->read_key(&key, &available) || !available) break;
+        if (apple2_app->read_key(&key, &available) || !available) break;
         handle_key(&key);
     }
     apple2_machine_t *m = apple2_machine;
@@ -193,9 +193,9 @@ static void poll_keyboard(void)
 static void open_audio(apple2_machine_t *m)
 {
     m->audio_active = false;
-    if (!apple2_vm->audio_open(&m->sample_rate, &m->channels)) {
+    if (!apple2_app->audio_open(&m->sample_rate, &m->channels)) {
         if (m->sample_rate > APPLE2_CLOCK_HZ || !m->sample_rate || !m->channels || m->channels > 2U)
-            apple2_vm->audio_close();
+            apple2_app->audio_close();
         else {
             m->sample_step = APPLE2_CLOCK_HZ / m->sample_rate;
             m->sample_remainder = APPLE2_CLOCK_HZ % m->sample_rate;
@@ -214,22 +214,22 @@ int main(int argc, char **argv)
 {
     host = solar_os_native_host_v1();
     if (!host || host->abi_version != 1U || host->struct_size < sizeof(*host) || !host->get_service) return 1;
-    apple2_vm = host->get_service(SOLAR_OS_NATIVE_FOREGROUND_SERVICE, 1U, sizeof(*apple2_vm));
+    apple2_app = host->get_service(SOLAR_OS_NATIVE_FOREGROUND_SERVICE, 1U, sizeof(*apple2_app));
     const solar_os_native_memory_api_v1_t *memory = host->get_service(
         SOLAR_OS_NATIVE_MEMORY_SERVICE, 1U, sizeof(*memory));
-    if (!apple2_vm || !memory) { report("apple2: requires the foreground app host on compatible firmware"); return 1; }
+    if (!apple2_app || !memory) { report("apple2: requires the foreground app host on compatible firmware"); return 1; }
     if (argc < 2 || argc > 4) {
         report("apple2: apple2 <asset-directory> [drive1.nib] [drive2.nib]");
-        apple2_vm->set_exit_code(1); return 1;
+        apple2_app->set_exit_code(1); return 1;
     }
     char directory[160];
-    int path_result = apple2_vm->resolve_path(argv[1], directory, sizeof(directory));
+    int path_result = apple2_app->resolve_path(argv[1], directory, sizeof(directory));
     if (path_result) {
         report("apple2: invalid asset directory");
-        apple2_vm->set_exit_code(1); return 1;
+        apple2_app->set_exit_code(1); return 1;
     }
     apple2_machine_t *m = memory->alloc(sizeof(*m));
-    if (!m) { report("apple2: insufficient PSRAM"); apple2_vm->set_exit_code(1); return 1; }
+    if (!m) { report("apple2: insufficient PSRAM"); apple2_app->set_exit_code(1); return 1; }
     apple2_machine_init(m);
     char path[160];
     int result = SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -256,33 +256,33 @@ int main(int argc, char **argv)
     }
     uint16_t palette[256];
     apple2_palette(palette);
-    result = apple2_vm->text_colors(&palette[APPLE2_TEXT_FOREGROUND],
+    result = apple2_app->text_colors(&palette[APPLE2_TEXT_FOREGROUND],
         &palette[APPLE2_TEXT_BACKGROUND]);
     if (result) { report("apple2: display text colors unavailable"); goto done; }
-    result = apple2_vm->video_open_ex(APPLE2_WIDTH, APPLE2_HEIGHT, palette, 25U,
+    result = apple2_app->video_open_ex(APPLE2_WIDTH, APPLE2_HEIGHT, palette, 25U,
         APPLE2_TEXT_BACKGROUND);
     if (result) { report_display_error(result); goto done; }
     open_audio(m);
-    result = apple2_vm->enable_suspend();
+    result = apple2_app->enable_suspend();
     if (result) { report("apple2: foreground switching unavailable"); goto done; }
     puce6502RST();
     m->next_sample = ticks;
-    uint64_t wall = apple2_vm->time_us(), epoch_cycles = ticks;
+    uint64_t wall = apple2_app->time_us(), epoch_cycles = ticks;
     uint64_t next_frame = wall;
     uint64_t stats_wall = wall, stats_cycles = ticks;
     uint64_t cpu_us = 0, video_us = 0;
     bool was_paused = false;
     report("apple2: F1 save; F2 status; F3 fast disk; F4 mute; F10 pause; F11 reset; F12 help; Ctrl+Alt+Del exit");
     for (;;) {
-        if (apple2_vm->stop_requested()) {
+        if (apple2_app->stop_requested()) {
             result = SOLAR_OS_NATIVE_OK;
             report("apple2: stopped");
             break;
         }
-        if (apple2_vm->suspend_requested()) {
+        if (apple2_app->suspend_requested()) {
             m->audio_active = false;
-            result = apple2_vm->suspend();
-            if (apple2_vm->stop_requested()) {
+            result = apple2_app->suspend();
+            if (apple2_app->stop_requested()) {
                 result = SOLAR_OS_NATIVE_OK;
                 report("apple2: stopped");
                 break;
@@ -293,13 +293,13 @@ int main(int argc, char **argv)
             m->char_read = m->char_count = 0;
             m->paddle[0] = m->paddle[1] = 127;
             m->video_valid = false;
-            wall = apple2_vm->time_us(); epoch_cycles = ticks;
+            wall = apple2_app->time_us(); epoch_cycles = ticks;
             next_frame = stats_wall = wall; stats_cycles = ticks;
             cpu_us = video_us = 0;
             was_paused = m->paused;
         }
         poll_keyboard();
-        uint64_t now = apple2_vm->time_us();
+        uint64_t now = apple2_app->time_us();
         if (m->paused || was_paused) {
             wall = now; epoch_cycles = ticks; m->next_sample = ticks;
             m->pcm_frames = 0; was_paused = m->paused;
@@ -312,8 +312,8 @@ int main(int argc, char **argv)
                 do {
                     puce6502Exec(5000U);
                 } while (apple2_disk_accelerated() && ++batches < 20U &&
-                    apple2_vm->time_us() - now < 4000U);
-                wall = apple2_vm->time_us(); epoch_cycles = ticks;
+                    apple2_app->time_us() - now < 4000U);
+                wall = apple2_app->time_us(); epoch_cycles = ticks;
             } else {
                 uint64_t target = epoch_cycles + ((now - wall) * APPLE2_CLOCK_HZ) / 1000000U;
                 /* Limit catch-up work; keep input/driver tasks schedulable. */
@@ -326,23 +326,23 @@ int main(int argc, char **argv)
                     puce6502Exec(budget);
                 }
             }
-            cpu_us += apple2_vm->time_us() - now;
+            cpu_us += apple2_app->time_us() - now;
             apple2_audio_until(ticks);
         }
         if (m->audio_error) {
-            apple2_vm->audio_close(); m->audio_active = false; m->audio_error = 0;
+            apple2_app->audio_close(); m->audio_active = false; m->audio_error = 0;
             report("apple2: audio stopped after output failure");
         }
-        now = apple2_vm->time_us();
+        now = apple2_app->time_us();
         if (now >= next_frame) {
             if (apple2_video_refresh(ticks, now)) {
-                result = apple2_vm->present(m->pixels, sizeof(m->pixels));
+                result = apple2_app->present(m->pixels, sizeof(m->pixels));
                 if (result) { report("apple2: frame presentation failed"); break; }
             }
-            video_us += apple2_vm->time_us() - now;
+            video_us += apple2_app->time_us() - now;
             next_frame = now + 40000U;
         }
-        now = apple2_vm->time_us();
+        now = apple2_app->time_us();
         if (now - stats_wall >= 1000000U) {
             uint64_t cycles = ticks - stats_cycles, duration = now - stats_wall;
             m->guest_khz = (uint32_t)(cycles * 1000U / duration);
@@ -352,12 +352,12 @@ int main(int argc, char **argv)
             stats_wall = now; stats_cycles = ticks;
             cpu_us = video_us = 0;
         }
-        apple2_vm->sleep_ms(1U);
+        apple2_app->sleep_ms(1U);
     }
 done:
-    apple2_vm->audio_close();
+    apple2_app->audio_close();
     memory->free(m);
     apple2_machine = NULL;
-    apple2_vm->set_exit_code(result ? 1 : 0);
+    apple2_app->set_exit_code(result ? 1 : 0);
     return result ? 1 : 0;
 }

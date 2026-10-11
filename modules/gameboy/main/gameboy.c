@@ -59,6 +59,7 @@ SOLAR_OS_NATIVE_APP_MANIFEST = {
     .tick_interval_ms = 5U,
     .id = "gameboy",
     .summary = "original Game Boy emulator",
+    .file_extensions = ".gb",
 };
 
 static void report(const char *text) { host->write_utf8(text, strlen(text)); }
