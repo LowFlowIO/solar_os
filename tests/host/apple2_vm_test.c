@@ -172,7 +172,7 @@ static void test_video_refresh(apple2_machine_t *m)
 
 static void test_audio(apple2_machine_t *m)
 {
-    static const solar_os_native_vm_api_v1_t api = {.audio_write = audio_write};
+    static const solar_os_native_foreground_api_v1_t api = {.audio_write = audio_write};
     apple2_vm = &api;
     m->audio_active = true; m->channels = 2; m->sample_rate = 44100;
     m->sample_step = APPLE2_CLOCK_HZ / m->sample_rate;

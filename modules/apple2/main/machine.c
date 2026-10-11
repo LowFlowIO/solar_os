@@ -30,7 +30,7 @@
 #include <string.h>
 
 apple2_machine_t *apple2_machine;
-const solar_os_native_vm_api_v1_t *apple2_vm;
+const solar_os_native_foreground_api_v1_t *apple2_vm;
 
 void apple2_machine_init(apple2_machine_t *machine) {
     memset(machine, 0, sizeof(*machine));

@@ -864,6 +864,7 @@ sources = [
   "services/solar_os_native.c",
   "services/solar_os_native_media.c",
   "services/solar_os_native_vm.c",
+  "services/solar_os_native_foreground.c",
   "services/solar_os_native_elf.c",
   "shell/solar_os_shell_native.c",
   "shell/solar_os_shell_pkg_tui.c",

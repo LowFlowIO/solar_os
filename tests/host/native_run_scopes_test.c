@@ -61,9 +61,6 @@ static int esp_elf_request(esp_elf_t *, int, int, char **);
 static void esp_elf_deinit(esp_elf_t *elf) {
     assert(elf->live); assert(cleanup_count >= 1); elf->live = false; active_images--;
 }
-static const void *solar_os_native_vm_get_service(const char *s, uint32_t a, uint32_t n) {
-    (void)s; (void)a; (void)n; return NULL;
-}
 static const void *solar_os_native_media_get_service(const char *s, uint32_t a, uint32_t n) {
     (void)s; (void)a; (void)n; return NULL;
 }

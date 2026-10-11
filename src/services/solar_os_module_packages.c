@@ -21,6 +21,7 @@
 #include "solar_os_native_abi.h"
 #include "solar_os_native_driver_abi.h"
 #include "solar_os_native_job_abi.h"
+#include "solar_os_native_foreground.h"
 #include "solar_os_ota_key.h"
 #include "solar_os_log.h"
 #include "solar_os_storage.h"
@@ -358,7 +359,8 @@ static esp_err_t module_parse_package(const solar_os_json_value_t *value,
         host_api_size = sizeof(solar_os_native_host_api_v1_t);
         break;
     case SOLAR_OS_MODULE_TYPE_APP:
-        supported_lifecycle_abi = SOLAR_OS_MODULE_APP_LIFECYCLE_ABI;
+        supported_lifecycle_abi = package->lifecycle_abi == SOLAR_OS_MODULE_FOREGROUND_LIFECYCLE_ABI ?
+            SOLAR_OS_MODULE_FOREGROUND_LIFECYCLE_ABI : SOLAR_OS_MODULE_APP_LIFECYCLE_ABI;
         host_api_size = sizeof(solar_os_native_host_api_v1_t);
         break;
     case SOLAR_OS_MODULE_TYPE_JOB:
@@ -857,6 +859,7 @@ static esp_err_t module_download_event(const solar_os_http_event_t *event, void 
 
 static esp_err_t module_validate_download(const char *path,
                                           uint32_t size,
+                                          const solar_os_module_package_t *package,
                                           char *detail,
                                           size_t detail_len)
 {
@@ -872,12 +875,19 @@ static esp_err_t module_validate_download(const char *path,
         err = ESP_ERR_INVALID_SIZE;
     }
     if (err == ESP_OK) {
+        solar_os_native_elf_info_t info;
         err = solar_os_native_elf_validate(data,
                                            size,
                                            SOLAR_OS_NATIVE_ELF_MACHINE_XTENSA,
-                                           NULL,
+                                           &info,
                                            detail,
                                            detail_len);
+        if (err == ESP_OK && package->type == SOLAR_OS_MODULE_TYPE_APP &&
+            ((package->lifecycle_abi == SOLAR_OS_MODULE_FOREGROUND_LIFECYCLE_ABI) != info.foreground ||
+             (info.foreground && strcmp(info.app.id, package->id) != 0))) {
+            module_set_detail(detail, detail_len, "ELF app identity or lifecycle differs from the signed catalog");
+            err = ESP_ERR_INVALID_RESPONSE;
+        }
     }
     solar_os_memory_free(data);
     return err;
@@ -928,6 +938,11 @@ esp_err_t solar_os_module_package_install(const char *id,
     if (!package->compatible) {
         module_set_detail(detail, detail_len, package->incompatibility);
         err = ESP_ERR_NOT_SUPPORTED;
+        goto done;
+    }
+    if (package->type == SOLAR_OS_MODULE_TYPE_APP && solar_os_native_foreground_active(id)) {
+        module_set_detail(detail, detail_len, "close the app session before replacing its module");
+        err = ESP_ERR_INVALID_STATE;
         goto done;
     }
     if (package->type != SOLAR_OS_MODULE_TYPE_APP &&
@@ -1069,6 +1084,7 @@ esp_err_t solar_os_module_package_install(const char *id,
     bool resident_activated = false;
     err = module_validate_download(staged_path,
                                    package->artifact_size,
+                                   package,
                                    detail,
                                    detail_len);
     if (err == ESP_OK && (package->type == SOLAR_OS_MODULE_TYPE_JOB ||
@@ -1183,6 +1199,11 @@ esp_err_t solar_os_module_package_remove(const char *id,
     if (matches == 0U) {
         module_set_detail(detail, detail_len, "module is not installed");
         err = ESP_ERR_NOT_FOUND;
+        goto done;
+    }
+    if (matched_type == SOLAR_OS_MODULE_TYPE_APP && solar_os_native_foreground_active(id)) {
+        module_set_detail(detail, detail_len, "close the app session before removing its module");
+        err = ESP_ERR_INVALID_STATE;
         goto done;
     }
     if (matched_type != SOLAR_OS_MODULE_TYPE_APP &&

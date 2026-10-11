@@ -1,6 +1,6 @@
-# Apple II Plus VM module
+# Apple II Plus foreground app
 
-External SolarOS VM based on [Reinette II Plus](https://github.com/ArthurFerreira2/reinette-II-plus).
+External SolarOS foreground app based on [Reinette II Plus](https://github.com/ArthurFerreira2/reinette-II-plus).
 Upstream snapshot: `b272efd` (2023-09-10). MIT notices and the license are retained
 under `main/vendor`. No Apple ROMs or game/disk images are bundled.
 
@@ -17,10 +17,13 @@ idf.py build
 cmake --build build --target typed_elf
 ```
 
-Artifact: `build/solaros_native_apple2.vm.elf`. Copy it to storage and run:
+The manifest declares a resumable GUI app, a 16 KiB worker stack and priority 1.
+Launch admission checks its internal-memory and PSRAM requirements.
+
+Artifact: `build/solaros_native_apple2.app.elf`. Copy it to storage and run:
 
 ```text
-load /sdcard/solaros_native_apple2.vm.elf /sdcard/vm/apple2 dos33.nib
+load /sdcard/solaros_native_apple2.app.elf /sdcard/vm/apple2 dos33.nib
 ```
 
 Use `pkg install apple2` to install from the module catalog, then
@@ -30,13 +33,13 @@ The asset directory requires `appleII+.rom` (12288 bytes) and `diskII.rom`
 The asset directory can be relative to the launching shell's current directory:
 from `/sdcard`, use `apple2 vm/apple2 dos33.nib`; from `/sdcard/vm/apple2`,
 use `apple2 . dos33.nib`. Relative disk names use the resolved asset directory.
-The firmware must provide the VM `resolve_path` callback.
+The firmware must provide the foreground `resolve_path` callback.
 
 F1 saves drive 1; Alt+F1 saves drive 2. F2 shows status, F3 toggles disk
 acceleration, F4 mutes, F10 pauses, F11 resets the guest, and F12 shows help.
 Ctrl+Alt+Del or Ctrl+] exits to the SolarOS shell. Exit discards unsaved disk
-changes. The module requires firmware providing the VM `stop_requested` callback.
-See [native VM reference](../../doc/manual/native-vm.md).
+changes. The module requires firmware providing the foreground `stop_requested` callback.
+See [native app reference](../../doc/manual/native-vm.md).
 
 `Alt+Tab` or `Alt+Right` switches to the next SolarOS session; `Alt+Left`
 switches to the previous session. Resume with these shortcuts or `session fg ID`.
@@ -45,7 +48,7 @@ CPU, RAM and disk state, including unsaved changes, remain allocated. F10 pause
 is retained across session switches. The firmware must provide `enable_suspend`,
 `suspend_requested` and `suspend`.
 
-The module uses the SolarOS VM host for display, keyboard, storage, timing
+The module uses the SolarOS foreground app service for display, keyboard, storage, timing
 and optional audio. Text and overlays follow terminal colors on color displays
 and use black on white on monochrome displays. Graphics retain their Apple II
 palettes. The firmware must provide `text_colors` and `video_open_ex`.

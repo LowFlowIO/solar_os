@@ -101,6 +101,8 @@ typedef struct {
     char argv[SOLAR_OS_APP_ARG_MAX][SOLAR_OS_APP_ARG_LEN];
     /* Optional launch metadata. Apps copy it at start, like argc/argv. */
     char launch_cwd[SOLAR_OS_APP_ARG_LEN];
+    /* Descriptor of the app whose lifecycle callback owns this context. */
+    const solar_os_app_t *app;
 } solar_os_context_t;
 
 typedef enum {

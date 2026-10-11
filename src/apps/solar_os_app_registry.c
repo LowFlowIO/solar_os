@@ -11,6 +11,9 @@
 #include "solar_os_task.h"
 #include "solar_os_app_file_types.h"
 #include "solar_os_storage.h"
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+#include "solar_os_native_foreground.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_PLAYGROUND
 #include "solar_os_playground.h"
 #endif
@@ -350,6 +353,10 @@ const solar_os_app_registry_entry_t *solar_os_app_registry_find(const char *name
     if (name == NULL) {
         return NULL;
     }
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    const solar_os_app_registry_entry_t *external = solar_os_native_foreground_find(name);
+    if (external != NULL) return external;
+#endif
 
     for (size_t i = 0; i < registered_app_count; i++) {
         if (registered_apps[i].name != NULL && strcmp(registered_apps[i].name, name) == 0) {
@@ -362,6 +369,10 @@ const solar_os_app_registry_entry_t *solar_os_app_registry_find(const char *name
 
 const solar_os_app_registry_entry_t *solar_os_app_registry_find_by_app(const solar_os_app_t *app)
 {
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    const solar_os_app_registry_entry_t *external = solar_os_native_foreground_entry(app);
+    if (external) return external;
+#endif
     const int index = app_registry_index_by_app(app);
     return index >= 0 ? &registered_apps[index] : NULL;
 }
@@ -635,7 +646,11 @@ bool solar_os_app_registry_owner(const solar_os_app_t *app, char *owner, size_t 
         owner[0] = '\0';
     }
     if (index < 0) {
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+        return solar_os_native_foreground_owner(app, owner, owner_len);
+#else
         return false;
+#endif
     }
 
     portENTER_CRITICAL(&app_owner_lock);
@@ -663,6 +678,10 @@ esp_err_t solar_os_app_registry_claim(const solar_os_app_t *app,
         current_owner[0] = '\0';
     }
     if (index < 0) {
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+        if (solar_os_native_foreground_entry(app))
+            return solar_os_native_foreground_claim(app, owner, current_owner, current_owner_len);
+#endif
         return ESP_OK;
     }
     if (owner == NULL || owner[0] == '\0') {
@@ -696,6 +715,9 @@ void solar_os_app_registry_release(const solar_os_app_t *app, const char *owner)
     const int index = app_registry_index_by_app(app);
 
     if (index < 0 || owner == NULL || owner[0] == '\0') {
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+        if (index < 0) solar_os_native_foreground_release(app, owner);
+#endif
         return;
     }
 

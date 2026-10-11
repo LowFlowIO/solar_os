@@ -5,6 +5,19 @@
 
 static const solar_os_native_host_api_v1_t *host;
 
+SOLAR_OS_NATIVE_APP_MANIFEST = {
+    .magic = SOLAR_OS_NATIVE_APP_MANIFEST_MAGIC,
+    .lifecycle_abi = SOLAR_OS_NATIVE_APP_LIFECYCLE_ABI,
+    .struct_size = sizeof(solar_os_native_app_manifest_v2_t),
+    .app_class = SOLAR_OS_NATIVE_APP_CLASS_GUI,
+    .flags = SOLAR_OS_NATIVE_APP_RESUMABLE,
+    .worker_stack_bytes = 16U * 1024U, .worker_priority = 1U,
+    .minimum_internal_bytes = 8U * 1024U,
+    .minimum_psram_bytes = sizeof(apple2_machine_t) + 128U * 1024U,
+    .tick_interval_ms = 5U,
+    .id = "apple2", .summary = "Apple II Plus emulator",
+};
+
 static void report(const char *message) { host->write_utf8(message, strlen(message)); }
 
 static void report_display_error(int result)
@@ -112,7 +125,7 @@ static int save_drive(unsigned index)
     return result;
 }
 
-static void handle_key(const solar_os_native_vm_key_v1_t *key)
+static void handle_key(const solar_os_native_foreground_key_v1_t *key)
 {
     apple2_machine_t *m = apple2_machine;
     if (key->reset) {
@@ -124,7 +137,7 @@ static void handle_key(const solar_os_native_vm_key_v1_t *key)
     m->PB0 = (key->modifiers & 0x11U) ? 0x80 : 0;
     m->PB1 = (key->modifiers & 0x44U) ? 0x80 : 0;
     m->PB2 = (key->modifiers & 0x22U) ? 0x80 : 0;
-    bool release = key->action == SOLAR_OS_NATIVE_VM_KEY_RELEASE;
+    bool release = key->action == SOLAR_OS_NATIVE_FOREGROUND_KEY_RELEASE;
     /* USB HID keypad 1/3/5/2 control paddles without sending guest characters. */
     if (key->usage == 0x59 || key->usage == 0x5b) {
         m->paddle[0] = release ? 127 : (key->usage == 0x59 ? 0 : 255); return;
@@ -162,7 +175,7 @@ static void handle_key(const solar_os_native_vm_key_v1_t *key)
 
 static void poll_keyboard(void)
 {
-    solar_os_native_vm_key_v1_t key;
+    solar_os_native_foreground_key_v1_t key;
     bool available;
     /* Bound work per slice even if another task continually injects keys. */
     for (unsigned i = 0; i < 64U; ++i) {
@@ -201,10 +214,10 @@ int main(int argc, char **argv)
 {
     host = solar_os_native_host_v1();
     if (!host || host->abi_version != 1U || host->struct_size < sizeof(*host) || !host->get_service) return 1;
-    apple2_vm = host->get_service(SOLAR_OS_NATIVE_VM_SERVICE, 1U, sizeof(*apple2_vm));
+    apple2_vm = host->get_service(SOLAR_OS_NATIVE_FOREGROUND_SERVICE, 1U, sizeof(*apple2_vm));
     const solar_os_native_memory_api_v1_t *memory = host->get_service(
         SOLAR_OS_NATIVE_MEMORY_SERVICE, 1U, sizeof(*memory));
-    if (!apple2_vm || !memory) { report("apple2: requires the VM host on compatible firmware"); return 1; }
+    if (!apple2_vm || !memory) { report("apple2: requires the foreground app host on compatible firmware"); return 1; }
     if (argc < 2 || argc > 4) {
         report("apple2: apple2 <asset-directory> [drive1.nib] [drive2.nib]");
         apple2_vm->set_exit_code(1); return 1;

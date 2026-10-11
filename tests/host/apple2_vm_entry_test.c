@@ -195,7 +195,7 @@ static int present(const uint8_t *pixels, size_t length)
     }
     return 0;
 }
-static int read_key(solar_os_native_vm_key_v1_t *key, bool *available)
+static int read_key(solar_os_native_foreground_key_v1_t *key, bool *available)
 {
     memset(key, 0, sizeof(*key));
     if (assets) {
@@ -260,7 +260,7 @@ static int suspend_vm(void)
     return resume_failure;
 }
 static void restart(void) { assert(!"module must not restart the device"); }
-static const solar_os_native_vm_api_v1_t vm_api = {
+static const solar_os_native_foreground_api_v1_t vm_api = {
     .abi_version = 1, .struct_size = sizeof(vm_api),
     .time_us = now, .sleep_ms = sleep_ms, .video_open = video_open,
     .present = present, .read_key = read_key, .file_size = file_size,
@@ -278,7 +278,7 @@ static const solar_os_native_memory_api_v1_t memory_api = {
 static const void *get_service(const char *name, uint32_t abi, uint32_t size)
 {
     assert(abi == 1);
-    if (!strcmp(name, "vm")) { assert(size == sizeof(vm_api)); return &vm_api; }
+    if (!strcmp(name, "foreground")) { assert(size == sizeof(vm_api)); return &vm_api; }
     assert(!strcmp(name, "memory") && size == sizeof(memory_api)); return &memory_api;
 }
 const solar_os_native_host_api_v1_t *solar_os_native_host_v1(void)
