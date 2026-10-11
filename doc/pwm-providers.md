@@ -18,6 +18,11 @@ IDs are GPIO numbers, independent of the LEDC channel allocated when opened.
 GPIO-oriented C helpers remain wrappers around that provider. The generic
 service and servo service can be built without the native backend.
 
+`driver.pwm-port` supplies the low-level ESP32 LEDC and GPIO drivers used by
+backlights and the native backend. Backlight drivers depend on this package
+directly; they do not require a board to expose the `native` PWM provider.
+`driver.pwm-native` retains the board PWM and GPIO capability requirements.
+
 ## Expansion attachment
 
 An expansion driver follows this sequence:

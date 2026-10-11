@@ -85,6 +85,49 @@ class FlavorPackagesTest(unittest.TestCase):
                 self.catalog, groups, target_packages, {"i2c"})
             self.assertFalse(unsupported["pca9685"])
 
+    def test_backlight_drivers_link_pwm_without_native_pwm_capability(self):
+        board = tomllib.loads(
+            (REPOSITORY / "boards" / "manifests" /
+             "waveshare_esp32_s3_epaper_3_97.toml").read_text()
+        )
+        _, _, groups, packages = self.resolve("full")
+        cases = (
+            (board["target"]["mcu"], set(board["build"]["capabilities"]),
+             ("expansion_lilygo_pager_keyboard", "driver_display_ili9341",
+              "driver_display_st7796", "driver_display_st7789")),
+            ("esp32", {"gfx", "spi", "expansion_gpio"},
+             ("driver_display_ili9341", "driver_display_st7796")),
+        )
+        for target, capabilities, consumers in cases:
+            with self.subTest(target=target, capabilities=capabilities):
+                target_packages = generate_flavor_config.apply_target_pruning(
+                    self.catalog, packages, target
+                )
+                pruned_groups, pruned = generate_flavor_config.apply_board_capability_pruning(
+                    self.catalog, groups, target_packages, capabilities
+                )
+                self.assertFalse(pruned["driver_pwm_native"])
+                for consumer in consumers:
+                    self.assertTrue(pruned[consumer], consumer)
+                    selected = generate_flavor_config.enable_required_packages(
+                        self.catalog, dict.fromkeys(packages, False), {consumer}
+                    )
+                    _, selected = generate_flavor_config.apply_board_capability_pruning(
+                        self.catalog, groups, selected, capabilities
+                    )
+                    self.assertIn("drivers/pwm_port.c", generate_flavor_config.collect_sources(
+                        self.catalog, groups, selected
+                    ), consumer)
+                sources = generate_flavor_config.collect_sources(
+                    self.catalog, pruned_groups, pruned
+                )
+                self.assertIn("drivers/pwm_port.c", sources)
+                self.assertIn("drivers/gpio_port.c", sources)
+                self.assertNotIn("services/solar_os_pwm_native.c", sources)
+                self.assertIn("esp_driver_ledc", generate_flavor_config.collect_requires(
+                    self.catalog, pruned_groups, pruned
+                ))
+
     def test_odroid_runtime_i2c_survives_board_and_target_pruning(self):
         board = tomllib.loads(
             (REPOSITORY / "boards" / "manifests" / "odroid_go.toml").read_text()

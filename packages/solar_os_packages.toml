@@ -1677,7 +1677,7 @@ capabilities = ["expansion_i2c"]
 label = "expansion.stc8h-keyboard"
 targets = ["esp32s3"]
 expansion_drivers = ["solar_os_stc8h_keyboard_expansion_driver"]
-depends = ["service_expansion", "service_i2c", "service_pwm"]
+depends = ["service_expansion", "service_i2c", "driver_pwm_port"]
 sources = [
   "services/solar_os_cardkb_codec.c",
   "services/solar_os_stc8h_keyboard.c",
@@ -1852,7 +1852,7 @@ capabilities = ["expansion_i2c"]
 label = "expansion.lilygo-pager-keyboard"
 targets = ["esp32", "esp32s3"]
 expansion_drivers = ["solar_os_lilygo_pager_keyboard_expansion_driver"]
-depends = ["service_tca8418", "service_pwm"]
+depends = ["service_tca8418", "driver_pwm_port"]
 sources = [
   "services/solar_os_lilygo_pager_keyboard.c",
   "services/solar_os_lilygo_pager_keyboard_driver.c",
@@ -2120,7 +2120,7 @@ capabilities = ["gfx", "expansion_gpio"]
 label = "driver.display-ili9341"
 targets = ["esp32", "esp32s3"]
 expansion_drivers = ["solar_os_ili9341_expansion_driver"]
-depends = ["service_expansion", "service_spi", "service_pwm"]
+depends = ["service_expansion", "service_spi", "driver_pwm_port"]
 sources = [
   "board/solar_os_board_display_expansion.c",
   "drivers/tft_ili9341.c",
@@ -2133,7 +2133,7 @@ capabilities = ["gfx", "expansion_gpio"]
 label = "driver.display-st7796"
 targets = ["esp32", "esp32s3"]
 expansion_drivers = ["solar_os_st7796_expansion_driver"]
-depends = ["service_expansion", "service_spi", "service_pwm"]
+depends = ["service_expansion", "service_spi", "driver_pwm_port"]
 sources = [
   "board/solar_os_board_display_expansion.c",
   "drivers/tft_ili9341.c",
@@ -2146,7 +2146,7 @@ capabilities = ["gfx", "expansion_gpio"]
 label = "driver.display-st7789"
 targets = ["esp32s3"]
 expansion_drivers = ["solar_os_st7789_expansion_driver"]
-depends = ["service_expansion", "service_spi", "service_pwm"]
+depends = ["service_expansion", "service_spi", "driver_pwm_port"]
 sources = [
   "board/solar_os_board_display_expansion.c",
   "drivers/tft_ili9341.c",
@@ -2324,10 +2324,16 @@ sources = ["services/solar_os_pwm.c"]
 
 [packages.driver_pwm_native]
 label = "driver.pwm-native"
-depends = ["service_pwm", "service_gpio", "service_resources"]
-sources = ["services/solar_os_pwm_native.c", "drivers/pwm_port.c"]
-requires = ["esp_driver_gpio", "esp_driver_ledc"]
+depends = ["service_pwm", "service_gpio", "service_resources", "driver_pwm_port"]
+sources = ["services/solar_os_pwm_native.c"]
 capabilities = ["pwm", "gpio"]
+
+# Backlights use chip PWM even when the board exposes no native PWM provider.
+[packages.driver_pwm_port]
+label = "driver.pwm-port"
+targets = ["esp32", "esp32s3"]
+sources = ["drivers/pwm_port.c", "drivers/gpio_port.c"]
+requires = ["esp_driver_gpio", "esp_driver_ledc"]
 
 [packages.service_servo]
 label = "service.servo"
