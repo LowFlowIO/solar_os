@@ -2,7 +2,7 @@
 #include "solar_os.h"
 #include "solar_os_app_registry.h"
 
-esp_err_t solar_os_native_foreground_resolve(const char *path, bool legacy,
+esp_err_t solar_os_native_foreground_resolve(const char *path,
     const solar_os_app_t **app, char *detail, size_t detail_size);
 esp_err_t solar_os_native_foreground_launch(solar_os_context_t *ctx,
     const solar_os_app_t *app, int argc, char **argv);

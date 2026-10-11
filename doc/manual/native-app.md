@@ -40,9 +40,7 @@ session. Different external apps can remain loaded in suspended sessions.
 Installing or removing a running or suspended foreground app is refused.
 Resource declaration changes to an app already discovered require a restart.
 
-Legacy `.vm.elf` files and paths under `modules/vms` can still be opened with
-`load`. They use this foreground runtime with a 16 KiB worker and the `vm`
-service alias. The package catalog has application, job and driver categories.
+The package catalog has application, job and driver categories.
 
 ## Resource declaration
 

@@ -26,7 +26,7 @@ static bool solar_os_sessions_cycle_input_focus_previous(void) { return true; }
 static void dispatch_input_chars(const char *chars, size_t count)
 { (void)chars; (void)count; assert(!"structured guest keys expected"); }
 
-#include "vm_focus_dispatch.inc"
+#include "foreground_focus_dispatch.inc"
 
 static void dispatch_desktop_queue(void)
 {
@@ -53,7 +53,7 @@ int main(void)
     assert(guest_events == 2 && guest_modifiers == 0); /* Guest Alt button is released too. */
 
     solar_os_input_release_keyboard(&owner);
-    /* Switching into the VM while Alt is held must not swallow the release. */
+    /* Switching into the foreground app while Alt is held must not swallow the release. */
     assert(solar_os_input_write_key(source, 0xe2, 0xe2, 0,
         SOLAR_OS_INPUT_MOD_LEFT_ALT, SOLAR_OS_INPUT_KEY_PRESS) == ESP_OK);
     dispatch_desktop_queue();
@@ -63,7 +63,7 @@ int main(void)
     dispatch_desktop_queue();
     assert(!overlay_active && overlay_closes == 2 && guest_modifiers == 0);
     solar_os_input_release_keyboard(&owner);
-    /* Alt release can already be in the desktop queue when a resumed VM claims it. */
+    /* Alt release can already be queued when a resumed foreground app claims it. */
     session_switch_alt_held = overlay_active = true;
     assert(solar_os_input_write_key(source, 0xe2, 0xe2, 0,
         SOLAR_OS_INPUT_MOD_LEFT_ALT, SOLAR_OS_INPUT_KEY_PRESS) == ESP_OK);
@@ -74,6 +74,6 @@ int main(void)
     assert(!overlay_active && overlay_closes == 3 && guest_modifiers == 0);
     solar_os_input_release_keyboard(&owner);
     solar_os_input_source_close(source);
-    puts("VM capture closes the desktop overlay and releases guest modifiers");
+    puts("Foreground capture closes the desktop overlay and releases guest modifiers");
     return 0;
 }

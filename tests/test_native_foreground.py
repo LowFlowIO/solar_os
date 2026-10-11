@@ -2,7 +2,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
-from test_native_vm_lifecycle import production_functions
+from test_foreground_presenter import production_functions
 
 ROOT = Path(__file__).resolve().parents[1]
 

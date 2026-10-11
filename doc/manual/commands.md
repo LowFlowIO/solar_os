@@ -331,7 +331,7 @@ maintainer-produced modules only.
 
 ELFs declaring lifecycle-2 app metadata launch through the
 [foreground app runtime](native-app.md), retaining their image while suspended.
-Installed apps launch by module name. Legacy `.vm.elf` paths also use this runtime.
+Installed apps launch by module name.
 Ctrl+Alt+Del, Ctrl+] or closing the session requests cooperative shutdown.
 The host restarts the device if shutdown does not finish within five seconds.
 

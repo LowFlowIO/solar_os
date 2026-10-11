@@ -75,7 +75,6 @@ struct foreground_slot {
     solar_os_app_t app;
     solar_os_app_registry_entry_t registry;
     void *state;
-    bool legacy;
     atomic_bool active;
     char owner[SOLAR_OS_APP_OWNER_MAX];
     char path[SOLAR_OS_STORAGE_PATH_MAX];
@@ -530,8 +529,7 @@ static int foreground_enable_suspend(void)
     foreground_state_t *state = foreground_current();
     if (!foreground_caller() || atomic_load(&state->suspend_requested))
         return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
-    if (!state->slot->legacy &&
-        !(state->slot->manifest.flags & SOLAR_OS_NATIVE_APP_RESUMABLE))
+    if (!(state->slot->manifest.flags & SOLAR_OS_NATIVE_APP_RESUMABLE))
         return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
     atomic_store(&state->resumable, true);
     return SOLAR_OS_NATIVE_OK;
@@ -589,7 +587,7 @@ static const void *foreground_get_service(const char *name, uint32_t abi,
                                            uint32_t size, void *user)
 {
     return user == foreground_current() && foreground_caller() && name &&
-        (!strcmp(name, SOLAR_OS_NATIVE_FOREGROUND_SERVICE) || !strcmp(name, "vm")) &&
+        !strcmp(name, SOLAR_OS_NATIVE_FOREGROUND_SERVICE) &&
         abi == SOLAR_OS_NATIVE_FOREGROUND_ABI && size <= sizeof(foreground_api) ?
         &foreground_api : NULL;
 }
@@ -636,7 +634,7 @@ static void foreground_worker(void *arg)
         .write = foreground_write, .write_user = state,
         .get_service = foreground_get_service, .service_user = state,
         .cleanup = foreground_worker_cleanup,
-        .expected_manifest = state->slot->legacy ? NULL : &state->slot->manifest,
+        .expected_manifest = &state->slot->manifest,
     };
     char detail[160];
     state->result = solar_os_native_run(state->slot->path, state->argc, argv,
@@ -675,7 +673,7 @@ static esp_err_t foreground_start(solar_os_context_t *ctx)
     atomic_init(&state->input_reset, false);
     atomic_init(&state->stop_requested, false);
     atomic_init(&state->redraw_requested, false);
-    atomic_init(&state->resumable, !state->slot->legacy &&
+    atomic_init(&state->resumable,
         (state->slot->manifest.flags & SOLAR_OS_NATIVE_APP_RESUMABLE));
     atomic_init(&state->suspend_requested, false);
     atomic_init(&state->suspended, false);
@@ -865,29 +863,15 @@ static bool foreground_event(solar_os_context_t *ctx, const solar_os_event_t *ev
 }
 
 static esp_err_t foreground_prepare_slot(const char *path,
-    const solar_os_native_elf_info_t *info, bool legacy, const solar_os_app_t **app)
+    const solar_os_native_elf_info_t *info, const solar_os_app_t **app)
 {
     solar_os_native_app_manifest_v2_t manifest = info->app;
-    if (legacy) {
-        manifest = (solar_os_native_app_manifest_v2_t){
-            .app_class = SOLAR_OS_NATIVE_APP_CLASS_GUI,
-            .flags = SOLAR_OS_NATIVE_APP_RESUMABLE,
-            .worker_stack_bytes = 16U * 1024U, .worker_priority = 1U,
-            .tick_interval_ms = 5U,
-        };
-        const char *name = strrchr(path, '/'); name = name ? name + 1 : path;
-        if (!strncmp(name, "solaros_native_", 15U)) name += 15U;
-        size_t n = strcspn(name, ".");
-        if (!n || n >= sizeof(manifest.id)) return ESP_ERR_INVALID_ARG;
-        memcpy(manifest.id, name, n);
-        strlcpy(manifest.summary, "external foreground application", sizeof(manifest.summary));
-    }
     portENTER_CRITICAL(&foreground_slots_lock);
     size_t count = 0U;
     for (foreground_slot_t *slot = foreground_slots; slot; slot = slot->next) {
         count++;
         if (!strcmp(slot->manifest.id, manifest.id)) {
-            const bool same = !strcmp(slot->path, path) && slot->legacy == legacy &&
+            const bool same = !strcmp(slot->path, path) &&
                 !memcmp(&slot->manifest, &manifest, sizeof(manifest));
             *app = same ? &slot->app : NULL;
             portEXIT_CRITICAL(&foreground_slots_lock);
@@ -902,7 +886,6 @@ static esp_err_t foreground_prepare_slot(const char *path,
         SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "native.app.slot");
     if (!slot) return ESP_ERR_NO_MEM;
     slot->manifest = manifest;
-    slot->legacy = legacy;
     atomic_init(&slot->active, false);
     strlcpy(slot->path, path, sizeof(slot->path));
     slot->app = (solar_os_app_t){
@@ -929,7 +912,7 @@ static esp_err_t foreground_prepare_slot(const char *path,
     for (foreground_slot_t *other = foreground_slots; other; other = other->next) {
         count++;
         if (!strcmp(other->manifest.id, manifest.id)) {
-            const bool same = !strcmp(other->path, path) && other->legacy == legacy &&
+            const bool same = !strcmp(other->path, path) &&
                 !memcmp(&other->manifest, &manifest, sizeof(manifest));
             *app = same ? &other->app : NULL;
             portEXIT_CRITICAL(&foreground_slots_lock);
@@ -949,7 +932,7 @@ static esp_err_t foreground_prepare_slot(const char *path,
     return ESP_OK;
 }
 
-esp_err_t solar_os_native_foreground_resolve(const char *path, bool legacy,
+esp_err_t solar_os_native_foreground_resolve(const char *path,
     const solar_os_app_t **app, char *detail, size_t detail_size)
 {
     if (!path || !app || strlen(path) >= SOLAR_OS_STORAGE_PATH_MAX) return ESP_ERR_INVALID_ARG;
@@ -970,8 +953,8 @@ esp_err_t solar_os_native_foreground_resolve(const char *path, bool legacy,
         SOLAR_OS_NATIVE_ELF_MACHINE_XTENSA, &info, detail, detail_size);
     solar_os_memory_free(data);
     if (err != ESP_OK) return err;
-    if (!info.foreground && !legacy) return ESP_OK; /* lifecycle-1 command */
-    return foreground_prepare_slot(path, &info, !info.foreground, app);
+    if (!info.foreground) return ESP_OK; /* lifecycle-1 command */
+    return foreground_prepare_slot(path, &info, app);
 }
 
 esp_err_t solar_os_native_foreground_launch(solar_os_context_t *ctx,
@@ -998,7 +981,7 @@ const solar_os_app_registry_entry_t *solar_os_native_foreground_find(const char 
     foreground_slot_t *cached = NULL;
     portENTER_CRITICAL(&foreground_slots_lock);
     for (foreground_slot_t *slot = foreground_slots; slot; slot = slot->next) {
-        if (!slot->legacy && !strcmp(slot->manifest.id, id) && !strcmp(slot->path, path)) {
+        if (!strcmp(slot->manifest.id, id) && !strcmp(slot->path, path)) {
             cached = slot; break;
         }
     }
@@ -1008,7 +991,7 @@ const solar_os_app_registry_entry_t *solar_os_native_foreground_find(const char 
     bool exists = false;
     if (cached) return solar_os_storage_exists(path, &exists) == ESP_OK && exists ?
         &cached->registry : NULL;
-    if (solar_os_native_foreground_resolve(path, false, &app, NULL, 0U) != ESP_OK || !app)
+    if (solar_os_native_foreground_resolve(path, &app, NULL, 0U) != ESP_OK || !app)
         return NULL;
     foreground_slot_t *slot = foreground_find_slot(app);
     return slot && !strcmp(slot->manifest.id, id) ? &slot->registry : NULL;

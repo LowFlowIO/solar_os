@@ -23,11 +23,11 @@ def production_functions(source, names):
     return "\n".join(functions)
 
 
-class NativeVmLifecycleTest(unittest.TestCase):
-    def test_vm_capture_closes_focus_overlay(self):
+class ForegroundPresenterTest(unittest.TestCase):
+    def test_foreground_capture_closes_focus_overlay(self):
         source = (ROOT / "src/main.c").read_text()
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "vm_focus_dispatch.inc").write_text(production_functions(
+            Path(tmp, "foreground_focus_dispatch.inc").write_text(production_functions(
                 source, ("dispatch_input_key",)))
             binary = Path(tmp, "focus")
             subprocess.run([
@@ -36,7 +36,7 @@ class NativeVmLifecycleTest(unittest.TestCase):
                 "-I", tmp, "-I", str(ROOT / "tests/host"),
                 "-I", str(ROOT / "src"), "-I", str(ROOT / "src/services"),
                 "-idirafter", str(ROOT / "include"),
-                str(ROOT / "tests/host/vm_focus_overlay_test.c"),
+                str(ROOT / "tests/host/foreground_focus_overlay_test.c"),
                 str(ROOT / "src/services/solar_os_input.c"),
                 str(ROOT / "src/services/solar_os_keys.c"),
                 "-o", str(binary),
@@ -76,15 +76,15 @@ class NativeVmLifecycleTest(unittest.TestCase):
             ], check=True)
             subprocess.run([str(binary)], check=True)
 
-    def test_vm_abi_headers_compile_in_c_and_cpp(self):
-        code = ('#include <stddef.h>\n#include "solar_os_native_vm_abi.h"\n'
-                '#define PREFIX_END (offsetof(solar_os_native_vm_api_v1_t, set_exit_code) '
-                '+ sizeof(((solar_os_native_vm_api_v1_t *)0)->set_exit_code))\n'
-                'typedef char append_only[offsetof(solar_os_native_vm_api_v1_t, '
+    def test_foreground_abi_headers_compile_in_c_and_cpp(self):
+        code = ('#include <stddef.h>\n#include "solar_os_native_app_abi.h"\n'
+                '#define PREFIX_END (offsetof(solar_os_native_foreground_api_v1_t, set_exit_code) '
+                '+ sizeof(((solar_os_native_foreground_api_v1_t *)0)->set_exit_code))\n'
+                'typedef char append_only[offsetof(solar_os_native_foreground_api_v1_t, '
                 'stop_requested) == PREFIX_END ? 1 : -1];\n'
-                'typedef char suspend_append_only[offsetof(solar_os_native_vm_api_v1_t, '
-                'enable_suspend) == offsetof(solar_os_native_vm_api_v1_t, resolve_path) + '
-                'sizeof(((solar_os_native_vm_api_v1_t *)0)->resolve_path) ? 1 : -1];\n')
+                'typedef char suspend_append_only[offsetof(solar_os_native_foreground_api_v1_t, '
+                'enable_suspend) == offsetof(solar_os_native_foreground_api_v1_t, resolve_path) + '
+                'sizeof(((solar_os_native_foreground_api_v1_t *)0)->resolve_path) ? 1 : -1];\n')
         with tempfile.TemporaryDirectory() as tmp:
             for compiler, suffix, standard in (("cc", "c", "c11"), ("c++", "cpp", "c++17")):
                 path = Path(tmp, "client." + suffix)

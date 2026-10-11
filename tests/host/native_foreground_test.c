@@ -16,7 +16,7 @@ typedef unsigned TickType_t;
 typedef struct { void **state_slot; } solar_os_app_t;
 typedef struct { solar_os_app_t *app; void *gfx; bool streaming; } solar_os_context_t;
 typedef struct { int unused; } solar_os_app_registry_entry_t;
-typedef struct { solar_os_native_app_manifest_v2_t manifest; bool legacy; atomic_bool active;
+typedef struct { solar_os_native_app_manifest_v2_t manifest; atomic_bool active;
     solar_os_app_registry_entry_t registry; char owner[32]; } foreground_slot_t;
 #define portENTER_CRITICAL(lock) ((void)(lock))
 #define portEXIT_CRITICAL(lock) ((void)(lock))
@@ -143,6 +143,7 @@ int main(void) {
     assert(!foreground_get_service("foreground", 2, sizeof(foreground_api), &second));
     assert(!foreground_get_service("foreground", 1, sizeof(foreground_api)+1, &second));
     assert(!foreground_get_service("bogus", 1, 0, &second));
+    assert(!foreground_get_service("vm", 1, 0, &second));
     slots[1].manifest.flags=0; assert(foreground_enable_suspend()==SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED);
     setup(); current=&token[2]; mode=1;
     foreground_suspend(&contexts[0]);

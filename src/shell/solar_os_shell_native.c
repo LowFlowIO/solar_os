@@ -37,15 +37,6 @@ static esp_err_t native_shell_launch_foreground(solar_os_context_t *ctx,
     return err;
 }
 
-static bool native_shell_legacy_foreground_path(const char *path)
-{
-    size_t length = strlen(path);
-    static const char suffix[] = ".vm.elf";
-    return (length >= sizeof(suffix) - 1U &&
-        !strcmp(path + length - (sizeof(suffix) - 1U), suffix)) ||
-        strstr(path, "/modules/vms/") != NULL;
-}
-
 static esp_err_t native_shell_run(solar_os_shell_io_t *io,
                                   const char *command,
                                   const char *path,
@@ -110,7 +101,7 @@ void solar_os_shell_cmd_load(solar_os_context_t *ctx, int argc, char **argv)
     const solar_os_app_t *app = NULL;
     char detail[160] = {0};
     const esp_err_t inspected = solar_os_native_foreground_resolve(path,
-        native_shell_legacy_foreground_path(path), &app, detail, sizeof(detail));
+        &app, detail, sizeof(detail));
     if (inspected != ESP_OK) {
         solar_os_shell_diag_esp(io, "load", inspected, detail, NULL);
         return;
@@ -165,7 +156,7 @@ bool solar_os_shell_try_native_module(solar_os_context_t *ctx,
     const solar_os_app_t *app = NULL;
     char detail[160] = {0};
     const esp_err_t inspected = solar_os_native_foreground_resolve(path,
-        false, &app, detail, sizeof(detail));
+        &app, detail, sizeof(detail));
     if (inspected != ESP_OK) {
         solar_os_shell_diag_esp(solar_os_shell_command_io(ctx), argv[0], inspected, detail, NULL);
         return true;
