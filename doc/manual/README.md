@@ -256,6 +256,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Named runtime buses](buses.md) — Create and use resource-owned I2C, SPI, UART, MIDI, OneWire, and PS/2 buses
 - [Native image pipelines](pipelines.md) — OS-owned QR and model processing jobs with bounded latest results and frame timings
 - [Native media and inference](native-media.md) — Versioned image, camera/RTSP, QR, imlib and resident-model interfaces for ELF modules
+- [Native virtual machines](native-vm.md) — External emulator modules, host interfaces and Apple II Plus controls
 - [Python API overview](python.md) — Runtime basics, conventions, and service API topic index
 - [Python apps, jobs, and identity API](python.system.md) — Apps, jobs, and identity: identity, jobs, sessions, apps
 - [Python audio and control API](python.audio.md) — Audio and control: audio, synth, dsp, controls, parameters, midi, osc

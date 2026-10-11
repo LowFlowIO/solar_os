@@ -29,6 +29,7 @@ TARGETS += rtsp_receiver_test
 TARGETS += rtsp_client_test
 TARGETS += gfx_mono_raster_test
 TARGETS += rgb565_raster_test
+TARGETS += indexed_raster_test
 TARGETS += rtspd_completion_test
 TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
@@ -45,6 +46,15 @@ TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
 TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
+TARGETS += apple2_vm_test
+TARGETS += apple2_vm_entry_test
+
+APPLE2_DIR := $(ROOT)/modules/apple2/main
+apple2_vm_test: apple2_vm_test.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h $(APPLE2_DIR)/font.h
+	$(CC) $(CFLAGS) -I$(APPLE2_DIR) $(filter %.c,$^) -o $@
+
+apple2_vm_entry_test: apple2_vm_entry_test.c $(APPLE2_DIR)/apple2.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h
+	$(CC) $(CFLAGS) -I$(APPLE2_DIR) -Dmain=apple2_vm_entry $(filter %.c,$^) -o $@
 
 tab5_keyboard_test: tab5_keyboard_test.c $(wildcard $(ROOT)/src/services/solar_os_tab5_keyboard*) \
         $(ROOT)/src/drivers/tab5_keyboard.c $(ROOT)/src/drivers/tab5_keyboard.h \
@@ -290,6 +300,9 @@ script_media_test script_media_rtsp_test: $(SCRIPT_MEDIA_TEST_SOURCES)
 
 rtspd_completion_test: rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.h $(ROOT)/src/services/solar_os_stream.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services -I$(ROOT)/src/shell rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c -o $@
+
+indexed_raster_test: indexed_raster_test.c $(ROOT)/src/services/solar_os_indexed_raster.h $(ROOT)/src/services/solar_os_display_surface.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src/services indexed_raster_test.c -o $@
 
 rgb565_raster_test: rgb565_raster_test.c $(ROOT)/src/services/solar_os_rgb565.h $(ROOT)/src/services/solar_os_display_surface.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
@@ -948,6 +961,8 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 
 test: $(TARGETS)
 	./i2c_buses_test
+	./apple2_vm_test
+	./apple2_vm_entry_test
 	./cw2017_test
 	./rtc_pcf8563_test
 	./axp2101_service_test
@@ -1017,6 +1032,7 @@ test: $(TARGETS)
 	./rtsp_client_test
 	./gfx_mono_raster_test
 	./rgb565_raster_test
+	./indexed_raster_test
 	./rtspd_completion_test
 	./mjpeg_test
 	./http_server_test

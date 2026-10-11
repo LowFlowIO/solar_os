@@ -68,6 +68,7 @@ int main(void)
 {
     solar_os_context_t ctx;
     solar_os_context_init(&ctx, NULL, NULL);
+    assert(!ctx.launch_cwd[0]);
     assert(solar_os_context_app_class(&ctx) ==
            SOLAR_OS_APP_CLASS_UNSPECIFIED);
 
@@ -109,6 +110,11 @@ int main(void)
     assert(solar_os_context_take_exit_result(&ctx, &exit_code));
     assert(exit_code == 0);
 
+    static const solar_os_app_t app = {.name = "test", .app_class = SOLAR_OS_APP_CLASS_COMMAND};
+    char *args[] = {"test"};
+    strcpy(ctx.launch_cwd, "/flash");
+    assert(solar_os_context_request_launch(&ctx, &app, 1, args) == ESP_OK);
+    assert(!ctx.launch_cwd[0]);
     puts("app exit result tests passed");
     return 0;
 }

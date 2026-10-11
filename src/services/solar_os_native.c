@@ -15,6 +15,7 @@
 #include "solar_os_native_ble_abi.h"
 #include "solar_os_native_job_abi.h"
 #include "solar_os_native_media.h"
+#include "solar_os_native_vm.h"
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
 #include "solar_os_ble.h"
 #endif
@@ -349,6 +350,9 @@ static const void *native_job_get_service(const char *name,
                                           uint32_t abi_version,
                                           uint32_t minimum_struct_size)
 {
+    const void *vm_service = solar_os_native_vm_get_service(name, abi_version,
+                                                          minimum_struct_size);
+    if (vm_service != NULL) return vm_service;
     const void *service = solar_os_native_media_get_service(name, abi_version,
                                                            minimum_struct_size);
     if (service != NULL) return service;

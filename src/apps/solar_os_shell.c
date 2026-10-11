@@ -5490,6 +5490,10 @@ static void shell_print_builtin_command_matches(solar_os_context_t *ctx, const c
         SOLAR_OS_MODULE_TYPE_APP,
         shell_native_module_print_callback,
         &native_print);
+    (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_VM,
+        shell_native_module_print_callback,
+        &native_print);
 #endif
 
     shell_prompt(ctx);
@@ -5538,6 +5542,10 @@ static void shell_complete_builtin_command(solar_os_context_t *ctx, bool show_ma
     };
     (void)solar_os_module_package_foreach_installed(
         SOLAR_OS_MODULE_TYPE_APP,
+        shell_native_module_complete_callback,
+        &native_complete);
+    (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_VM,
         shell_native_module_complete_callback,
         &native_complete);
 #endif
@@ -5980,6 +5988,10 @@ static void shell_completion_emit_commands(shell_completion_match_t *state)
         SOLAR_OS_MODULE_TYPE_APP,
         shell_completion_native_module_emit_callback,
         state);
+    (void)solar_os_module_package_foreach_installed(
+        SOLAR_OS_MODULE_TYPE_VM,
+        shell_completion_native_module_emit_callback,
+        state);
 #endif
 }
 
@@ -6200,6 +6212,7 @@ static void shell_completion_emit_installed_modules(
         SOLAR_OS_MODULE_TYPE_APP,
         SOLAR_OS_MODULE_TYPE_JOB,
         SOLAR_OS_MODULE_TYPE_DRIVER,
+        SOLAR_OS_MODULE_TYPE_VM,
     };
     for (size_t i = 0U; i < SHELL_ARRAY_COUNT(types); i++) {
         (void)solar_os_module_package_foreach_installed(

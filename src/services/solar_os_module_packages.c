@@ -88,6 +88,8 @@ const char *solar_os_module_type_name(solar_os_module_type_t type)
         return "job";
     case SOLAR_OS_MODULE_TYPE_DRIVER:
         return "driver";
+    case SOLAR_OS_MODULE_TYPE_VM:
+        return "vm";
     default:
         return "invalid";
     }
@@ -102,6 +104,8 @@ static const char *module_type_directory(solar_os_module_type_t type)
         return "jobs";
     case SOLAR_OS_MODULE_TYPE_DRIVER:
         return "drivers";
+    case SOLAR_OS_MODULE_TYPE_VM:
+        return "vms";
     default:
         return NULL;
     }
@@ -127,6 +131,9 @@ static esp_err_t module_legacy_app_path(const char *id,
 
 static solar_os_module_type_t module_type_parse(const char *name)
 {
+    if (name != NULL && strcmp(name, "vm") == 0) {
+        return SOLAR_OS_MODULE_TYPE_VM;
+    }
     if (name != NULL && strcmp(name, "app") == 0) {
         return SOLAR_OS_MODULE_TYPE_APP;
     }
@@ -346,6 +353,10 @@ static esp_err_t module_parse_package(const solar_os_json_value_t *value,
     uint32_t supported_lifecycle_abi = 0U;
     size_t host_api_size = 0U;
     switch (package->type) {
+    case SOLAR_OS_MODULE_TYPE_VM:
+        supported_lifecycle_abi = SOLAR_OS_MODULE_VM_LIFECYCLE_ABI;
+        host_api_size = sizeof(solar_os_native_host_api_v1_t);
+        break;
     case SOLAR_OS_MODULE_TYPE_APP:
         supported_lifecycle_abi = SOLAR_OS_MODULE_APP_LIFECYCLE_ABI;
         host_api_size = sizeof(solar_os_native_host_api_v1_t);
@@ -1060,7 +1071,8 @@ esp_err_t solar_os_module_package_install(const char *id,
                                    package->artifact_size,
                                    detail,
                                    detail_len);
-    if (err == ESP_OK && package->type != SOLAR_OS_MODULE_TYPE_APP) {
+    if (err == ESP_OK && (package->type == SOLAR_OS_MODULE_TYPE_JOB ||
+                         package->type == SOLAR_OS_MODULE_TYPE_DRIVER)) {
         err = solar_os_native_module_activate(package->type,
                                               package->id,
                                               staged_path,
@@ -1136,6 +1148,7 @@ esp_err_t solar_os_module_package_remove(const char *id,
         SOLAR_OS_MODULE_TYPE_APP,
         SOLAR_OS_MODULE_TYPE_JOB,
         SOLAR_OS_MODULE_TYPE_DRIVER,
+        SOLAR_OS_MODULE_TYPE_VM,
     };
     for (size_t i = 0U; i < sizeof(types) / sizeof(types[0]); i++) {
         char candidate[SOLAR_OS_STORAGE_PATH_MAX];

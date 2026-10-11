@@ -99,6 +99,8 @@ typedef struct {
     solar_os_app_class_t app_class;
     int argc;
     char argv[SOLAR_OS_APP_ARG_MAX][SOLAR_OS_APP_ARG_LEN];
+    /* Optional launch metadata. Apps copy it at start, like argc/argv. */
+    char launch_cwd[SOLAR_OS_APP_ARG_LEN];
 } solar_os_context_t;
 
 typedef enum {

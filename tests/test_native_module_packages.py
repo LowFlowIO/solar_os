@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class NativeModulePackagesTest(unittest.TestCase):
     def test_hello_is_an_official_versioned_module(self):
-        module = ROOT / "modules" / "hello"
+        module = ROOT / "modules" / "examples" / "hello"
         with (module / "module.toml").open("rb") as stream:
             manifest = tomllib.load(stream)
 
@@ -28,7 +28,7 @@ class NativeModulePackagesTest(unittest.TestCase):
             "hello-driver": ("driver", "solar_os_native_driver_host_v1"),
         }
         for module_id, (module_type, symbol) in expected.items():
-            module = ROOT / "modules" / module_id
+            module = ROOT / "modules" / "examples" / module_id
             with (module / "module.toml").open("rb") as stream:
                 manifest = tomllib.load(stream)
             self.assertEqual(manifest["type"], module_type)

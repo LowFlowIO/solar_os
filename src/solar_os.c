@@ -159,6 +159,7 @@ void solar_os_context_init(solar_os_context_t *ctx,
     ctx->status_message[0] = '\0';
     ctx->app_class = SOLAR_OS_APP_CLASS_UNSPECIFIED;
     ctx->argc = 0;
+    ctx->launch_cwd[0] = '\0';
     memset(ctx->argv, 0, sizeof(ctx->argv));
 }
 
@@ -395,6 +396,7 @@ esp_err_t solar_os_context_request_launch_ex(solar_os_context_t *ctx,
         strlcpy(ctx->argv[i], argv[i], sizeof(ctx->argv[i]));
     }
     ctx->argc = argc;
+    ctx->launch_cwd[0] = '\0';
     ctx->requested_app = app;
     ctx->launch_policy = policy;
     ctx->exit_requested = false;
