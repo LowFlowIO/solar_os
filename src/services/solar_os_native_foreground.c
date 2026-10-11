@@ -177,6 +177,17 @@ static int foreground_text_colors(uint16_t *foreground, uint16_t *background)
     return SOLAR_OS_NATIVE_OK;
 }
 
+static int foreground_video_dimensions(uint16_t *width, uint16_t *height)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller() || !state->gfx) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!width || !height) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    size_t w = solar_os_gfx_width(state->gfx), h = solar_os_gfx_height(state->gfx);
+    if (!w || !h || w > UINT16_MAX || h > UINT16_MAX) return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    *width = (uint16_t)w; *height = (uint16_t)h;
+    return SOLAR_OS_NATIVE_OK;
+}
+
 static int foreground_video_open_ex(uint16_t width, uint16_t height,
     const uint16_t *palette, uint16_t fps, uint8_t background_index)
 {
@@ -579,6 +590,7 @@ static const solar_os_native_foreground_api_v1_t foreground_api = {
     .synth_unlock = foreground_synth_unlock, .synth_close = foreground_synth_close,
     .rtc_read = foreground_rtc_read, .buttons_source = foreground_buttons_source,
     .video_stats = foreground_video_stats,
+    .video_dimensions = foreground_video_dimensions,
 };
 
 

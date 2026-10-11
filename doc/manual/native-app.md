@@ -94,6 +94,13 @@ presenter, audio ownership and retained state. OS session shortcuts pass through
 captured keyboards. Modules must not leave callbacks or tasks running after
 `main` returns.
 
+The appended `video_dimensions(&width, &height)` method reports the calling
+app's rotated foreground graphics dimensions before video is opened. Modules
+that render text or other display-sized content can allocate a matching frame
+instead of assuming a board's resolution. Request a service table large enough
+to include this method. Fixed-resolution emulators can still submit their own
+frame size and use the presenter's aspect-preserving fit.
+
 Packed INDEX2 frames use four shades of the current display theme. The appended
 synth methods accept a bounded block size and required sample rate. Callbacks
 render signed 16-bit stereo PCM under a host mutex. The module uses

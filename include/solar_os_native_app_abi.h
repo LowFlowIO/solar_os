@@ -105,4 +105,7 @@ typedef struct {
     int (*rtc_read)(uint8_t registers[5]);
     uint8_t (*buttons_source)(void);
     int (*video_stats)(solar_os_native_foreground_video_stats_v1_t *stats);
+    /* Rotated foreground surface. Valid before video_open; dimensions
+     * describe the caller's selected display. */
+    int (*video_dimensions)(uint16_t *width, uint16_t *height);
 } solar_os_native_foreground_api_v1_t;

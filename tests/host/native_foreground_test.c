@@ -40,6 +40,8 @@ static solar_os_context_t contexts[2];
 static foreground_state_t *scope, *wait_state;
 static TaskHandle_t current;
 static int token[3], mode;
+static size_t solar_os_gfx_width(const void *gfx) { return gfx == &token[0] ? 480 : 400; }
+static size_t solar_os_gfx_height(const void *gfx) { return gfx == &token[0] ? 304 : 288; }
 static uint64_t clock_us;
 static unsigned sequence, audio_order, presenter_order, release_order, deletions;
 static bool presenter_fail;
@@ -99,7 +101,7 @@ static void setup(void) {
     for (unsigned i = 0; i < 2; ++i) {
         states[i] = s[i]; apps[i].state_slot = &states[i];
         contexts[i] = (solar_os_context_t){.app=&apps[i], .gfx=&token[i], .streaming=true};
-        s[i]->slot=&slots[i]; s[i]->keys=&token[i]; s[i]->presenter=&token[i]; s[i]->audio=&token[i];
+        s[i]->slot=&slots[i]; s[i]->gfx=&token[i]; s[i]->keys=&token[i]; s[i]->presenter=&token[i]; s[i]->audio=&token[i];
         slots[i].manifest.flags=SOLAR_OS_NATIVE_APP_RESUMABLE;
         atomic_store(&slots[i].active, true); atomic_store(&s[i]->resumable, true);
         atomic_store(&s[i]->worker, &token[i]); s[i]->worker_started=true;
@@ -110,6 +112,17 @@ static void setup(void) {
 }
 int main(void) {
     setup(); char busy[32];
+    uint16_t width = 0, height = 0;
+    first.presenter = NULL;
+    assert(foreground_video_dimensions(&width, &height) == SOLAR_OS_NATIVE_OK);
+    assert(width == 480 && height == 304);
+    assert(foreground_video_dimensions(NULL, &height) == SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT);
+    scope = &second; current = &token[1];
+    assert(foreground_video_dimensions(&width, &height) == SOLAR_OS_NATIVE_OK);
+    assert(width == 400 && height == 288);
+    current = &token[0];
+    assert(foreground_video_dimensions(&width, &height) == SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+    setup();
     slots[0].manifest.worker_stack_bytes=8192;
     slots[0].manifest.minimum_internal_bytes=16384;
     slots[0].manifest.minimum_psram_bytes=262144;
