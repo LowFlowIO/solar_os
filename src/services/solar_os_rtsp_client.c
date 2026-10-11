@@ -570,9 +570,11 @@ static esp_err_t run_session(solar_os_rtsp_client_t *c)
     if (c->control >= 0 && c->session[0]) {
         char authorization[SOLAR_OS_RTSP_AUTH_HEADER_MAX];
         authorization[0] = '\0';
-        if (c->auth_ready)
+        if (c->auth_ready) {
+            c->auth.nc++;
             (void)solar_os_rtsp_authorization(&c->auth, "TEARDOWN", c->description.aggregate,
                                              c->user, c->password, authorization, sizeof(authorization));
+        }
         int len = snprintf((char *)c->response_bytes, SOLAR_OS_RTSP_RESPONSE_MAX,
             "TEARDOWN %s RTSP/1.0\r\nCSeq: %lu\r\nSession: %s\r\n%s%s%s\r\n",
             c->description.aggregate, (unsigned long)++c->cseq, c->session,
