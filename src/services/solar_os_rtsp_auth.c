@@ -232,7 +232,7 @@ esp_err_t solar_os_rtsp_authorization(const solar_os_rtsp_auth_challenge_t *c,
     if (strchr(user, '"') || strchr(uri, '"')) return ESP_ERR_INVALID_ARG;
     if (!c->digest) {
         char raw[SOLAR_OS_RTSP_AUTH_USER_MAX + SOLAR_OS_RTSP_AUTH_PASSWORD_MAX + 2];
-        char encoded[160];
+        char encoded[256];
         int n = snprintf(raw, sizeof(raw), "%s:%s", user, password);
         if (n < 0 || (size_t)n >= sizeof(raw)) return ESP_ERR_INVALID_SIZE;
         if (!base64((const uint8_t *)raw, (size_t)n, encoded, sizeof(encoded)))
