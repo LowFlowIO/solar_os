@@ -47,4 +47,14 @@ typedef struct VGATextOps {
 
 void vga_set_text_ops(VGAState *s, VGATextOps *ops, void *o);
 
+/* SolarOS: expose text geometry and the guest font without a bitmap resize. */
+typedef struct VGATextFrame {
+    const uint8_t *ram, *font[2];
+    const uint32_t *palette;
+    unsigned columns, rows, glyph_height, line_offset, start_address;
+    unsigned cursor_address, cursor_start, cursor_end;
+    bool cursor_visible;
+} VGATextFrame;
+bool vga_get_text_frame(VGAState *s, VGATextFrame *frame);
+
 #endif /* VGA_H */

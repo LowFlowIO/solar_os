@@ -6,8 +6,11 @@ notices are retained in `main/vendor`. The port uses SolarOS memory, timing,
 display, input and file services; it initializes no board peripherals.
 
 The app emulates a 386 PC with 2 MiB RAM, 256 KiB VGA RAM, PS/2 keyboard,
-timer, RTC and floppy drive. The display is rendered at 640x400 and fitted to
-the SolarOS display. This version has no guest networking, mouse or audio.
+timer, RTC and floppy drive. The app queries the foreground display dimensions
+and submits a matching indexed frame. Text cells use the guest's VGA font and
+palette, with coverage sampling to retain thin strokes at smaller cell sizes.
+Graphics use a 640x400 VGA buffer and an aspect-preserving fit. This version
+has no guest networking, mouse or audio.
 Guest RTC starts at 2000-01-01. It supports 720 KiB, 1.2 MiB, 1.44 MiB and
 2.88 MiB raw floppy images. Each image is loaded into PSRAM. Guest writes remain
 in RAM until the app closes, when the image is atomically replaced. A save error
@@ -25,7 +28,8 @@ cmake --build build --target typed_elf
 ```
 
 The BIOS and VGA BIOS are embedded in the ELF; no separate ROM files are
-required. Copy `build/solaros_native_tiny386.app.elf` to storage and run:
+required. The firmware must provide the appended foreground `video_dimensions`
+method. Copy `build/solaros_native_tiny386.app.elf` to storage and run:
 
 ```text
 load /sdcard/solaros_native_tiny386.app.elf /sdcard/tiny386/dos.img
@@ -48,6 +52,8 @@ guest timers, and releases foreground resources. Resume clears held keys and
 redraws the guest screen. Ctrl+] or `session close ID` closes the app and saves
 floppy changes before releasing allocations.
 
+See the [Tiny386 application manual](../../doc/manual/app.tiny386.md).
+
 ## BIOS source and licenses
 
 The bundled ROMs use [SeaBIOS](https://github.com/coreboot/seabios) revision
@@ -56,6 +62,11 @@ configuration under `bios/`. `bios/seabios-source.tar.xz` contains the
 corresponding unmodified source; `bios/tiny386.patch` contains the changes.
 SeaBIOS license texts are included as `bios/COPYING` and `bios/COPYING.LESSER`.
 Distribute these sources, patches, configuration and notices with the ROMs.
+
+SolarOS changes to the vendored core provide bounded stepping, service-backed
+allocation, files and timing, trapped failures, and a VGA text-frame snapshot
+for rendering at the selected display's resolution. Guest fonts remain in VGA
+RAM; no replacement font or guest disk image is bundled.
 
 Rebuild the ROMs with a native x86 GCC/binutils toolchain, Python 3 and make:
 

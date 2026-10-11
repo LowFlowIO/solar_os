@@ -119,11 +119,14 @@ are exported for synchronous interpreter error handling.
 
 See [Apple II Plus](app.apple2.md) for ROM and NIB requirements, controls, and
 explicit disk saves. See [Game Boy](app.gameboy.md) for cartridge compatibility,
-controls, and automatic cartridge RAM saves. For example, with assets present:
+controls, and automatic cartridge RAM saves. See [Tiny386](app.tiny386.md) for
+bootable PC floppy images, embedded BIOS, and display requirements. For example,
+with assets present:
 
 ```text
 apple2 /sdcard/apple2 dos33.nib
 gameboy /sdcard/roms/game.gb
+tiny386 /sdcard/tiny386/dos.img
 ```
 
 Apple II disk writes remain in memory until explicitly saved. Session switches

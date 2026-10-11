@@ -2,7 +2,7 @@ set(core_sources vendor/i386.c vendor/i8042.c vendor/i8254.c vendor/i8259.c
     vendor/ide.c vendor/pc.c vendor/misc.c vendor/pci.c vendor/vga.c
     vendor/vgafont.c vendor/i8257.c vendor/sb16.c vendor/pcspk.c vendor/adlib.c)
 set(bios_source "${CMAKE_CURRENT_BINARY_DIR}/bios_data.c")
-idf_component_register(SRCS tiny386.c port.c "${bios_source}" ${core_sources}
+idf_component_register(SRCS tiny386.c port.c text.c "${bios_source}" ${core_sources}
     INCLUDE_DIRS "." "../../../include")
 add_custom_command(OUTPUT "${bios_source}"
     COMMAND ${PYTHON} "${CMAKE_CURRENT_SOURCE_DIR}/../scripts/embed_bios.py"

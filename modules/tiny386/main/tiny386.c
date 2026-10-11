@@ -1,5 +1,7 @@
 #include "port.h"
 #include "vendor/pc.h"
+#include "text.h"
+#include "solar_os_key_codes.h"
 
 #define WIDTH 640U
 #define HEIGHT 400U
@@ -8,8 +10,22 @@ extern const size_t tiny_bios_size, tiny_vgabios_size;
 static PC *machine;
 static uint16_t *rgb;
 static uint8_t *indexed;
+static uint16_t *text_scratch;
+static unsigned present_width, present_height;
 static bool changed;
 static bool held[256];
+
+static void fail_display(int result)
+{
+    switch (result) {
+    case SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT: tiny_failure = "display rejected frame dimensions"; break;
+    case SOLAR_OS_NATIVE_ERROR_NO_MEMORY: tiny_failure = "display setup ran out of memory"; break;
+    case SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED: tiny_failure = "display frame format unsupported"; break;
+    case SOLAR_OS_NATIVE_ERROR_INVALID_STATE: tiny_failure = "display is busy or not ready"; break;
+    default: tiny_failure = "display setup failed"; break;
+    }
+    tiny_abort();
+}
 
 SOLAR_OS_NATIVE_APP_MANIFEST = {
     .magic = SOLAR_OS_NATIVE_APP_MANIFEST_MAGIC,
@@ -73,11 +89,27 @@ static void keyboard(void)
         static const uint8_t mods[8] = {29,42,56,125,97,54,100,126};
         for (unsigned m = 0; m < 8; ++m) set_key(mods[m], (k.modifiers & (1U << m)) != 0);
         unsigned code = usage_code(k.usage);
-        if (code) { set_key(code, k.action != SOLAR_OS_NATIVE_FOREGROUND_KEY_RELEASE); continue; }
+        if (code) {
+            if (k.action != SOLAR_OS_NATIVE_FOREGROUND_KEY_RELEASE && held[code])
+                ps2_put_keycode(machine->kbd, true, (int)code);
+            else set_key(code, k.action != SOLAR_OS_NATIVE_FOREGROUND_KEY_RELEASE);
+            continue;
+        }
         if (k.action == SOLAR_OS_NATIVE_FOREGROUND_KEY_RELEASE) continue;
         /* Logical events (including shell injection) have no physical release. */
         uint8_t ch = k.key;
-        bool shift = false;
+        bool shift = false, control = false;
+        if (ch >= SOLAR_OS_KEY_F1 && ch <= SOLAR_OS_KEY_F12)
+            code = ch <= SOLAR_OS_KEY_F10 ? 59 + ch - SOLAR_OS_KEY_F1 : 87 + ch - SOLAR_OS_KEY_F11;
+        else if (ch >= SOLAR_OS_KEY_UP && ch <= SOLAR_OS_KEY_PAGE_DOWN) {
+            static const uint8_t codes[] = {103,108,105,106,104,109};
+            code = codes[ch - SOLAR_OS_KEY_UP];
+        } else if (ch == SOLAR_OS_KEY_HOME) code = 102;
+        else if (ch == SOLAR_OS_KEY_END) code = 107;
+        else if (ch == SOLAR_OS_KEY_DELETE) code = 111;
+        else if (ch > 0 && ch < 27 && ch != '\t' && ch != '\b' && ch != '\n' && ch != '\r') {
+            control = true; ch += 'a' - 1;
+        }
         if (ch >= 'A' && ch <= 'Z') { shift = true; ch += 'a' - 'A'; }
         if (ch >= 'a' && ch <= 'z') code = usage_code(4 + ch - 'a');
         else if (ch >= '1' && ch <= '9') code = 2 + ch - '1';
@@ -94,23 +126,61 @@ static void keyboard(void)
             case '-': code = 12; break;
             case '=': code = 13; break;
             case ':': code = 39; shift = true; break;
+            case ';': code = 39; break;
+            case ',': code = 51; break;
+            case '<': code = 51; shift = true; break;
+            case '>': code = 52; shift = true; break;
+            case '?': code = 53; shift = true; break;
+            case '_': code = 12; shift = true; break;
+            case '+': code = 13; shift = true; break;
+            case '[': code = 26; break;
+            case ']': code = 27; break;
+            case '{': code = 26; shift = true; break;
+            case '}': code = 27; shift = true; break;
+            case '\'': code = 40; break;
+            case '"': code = 40; shift = true; break;
+            case '`': code = 41; break;
+            case '~': code = 41; shift = true; break;
+            case '|': code = 43; shift = true; break;
+            case '!': code = 2; shift = true; break;
+            case '@': code = 3; shift = true; break;
+            case '#': code = 4; shift = true; break;
+            case '$': code = 5; shift = true; break;
+            case '%': code = 6; shift = true; break;
+            case '^': code = 7; shift = true; break;
+            case '&': code = 8; shift = true; break;
+            case '*': code = 9; shift = true; break;
+            case '(': code = 10; shift = true; break;
+            case ')': code = 11; shift = true; break;
             case '\\': code = 43; break;
             default: break;
             }
         }
         if (shift) set_key(42, true);
+        if (control) set_key(29, true);
         set_key(code, true); set_key(code, false);
+        if (control) set_key(29, false);
         if (shift) set_key(42, false);
     }
 }
 static void present(void)
 {
     if (!changed) return;
-    for (size_t i = 0; i < WIDTH * HEIGHT; ++i) {
-        uint16_t c = rgb[i];
-        indexed[i] = (uint8_t)(((c >> 8) & 0xe0) | ((c >> 6) & 0x1c) | ((c >> 3) & 3));
+    VGATextFrame text;
+    if (!vga_get_text_frame(machine->vga, &text) ||
+        !tiny_render_text(&text, indexed, present_width, present_height, text_scratch)) {
+        unsigned w = present_width, h = w * HEIGHT / WIDTH;
+        if (h > present_height) { h = present_height; w = h * WIDTH / HEIGHT; }
+        unsigned left = (present_width - w) / 2, top = (present_height - h) / 2;
+        memset(indexed, 0, present_width * present_height);
+        for (size_t y = 0; y < h; ++y)
+            for (size_t x = 0; x < w; ++x) {
+                uint16_t c = rgb[(y * HEIGHT / h) * WIDTH + x * WIDTH / w];
+                indexed[(top + y) * present_width + left + x] =
+                    (uint8_t)(((c >> 8) & 0xe0) | ((c >> 6) & 0x1c) | ((c >> 3) & 3));
+            }
     }
-    if (tiny_app->present(indexed, WIDTH * HEIGHT)) {
+    if (tiny_app->present(indexed, present_width * present_height)) {
         tiny_failure = "display submission failed"; tiny_abort();
     }
     changed = false;
@@ -120,7 +190,7 @@ int main(int argc, char **argv)
     tiny_host = solar_os_native_host_v1();
     if (!tiny_host || !tiny_host->get_service) return 1;
     tiny_app = tiny_host->get_service("foreground", 1,
-        offsetof(solar_os_native_foreground_api_v1_t, suspend) + sizeof(tiny_app->suspend));
+        offsetof(solar_os_native_foreground_api_v1_t, video_dimensions) + sizeof(tiny_app->video_dimensions));
     tiny_memory = tiny_host->get_service("memory", 1, offsetof(solar_os_native_memory_api_v1_t, alloc_internal));
     if (!tiny_app || !tiny_memory) { tiny_report("tiny386: foreground services unavailable"); return 1; }
     if (argc != 2) { tiny_report("usage: tiny386 /path/floppy.img"); tiny_app->set_exit_code(1); return 1; }
@@ -136,7 +206,6 @@ int main(int argc, char **argv)
     if (setjmp(tiny_trap)) { result = 1; goto done; }
     tiny_clock_reset();
     rgb = tiny_calloc(WIDTH * HEIGHT, sizeof(*rgb));
-    indexed = tiny_malloc(WIDTH * HEIGHT);
     PCConfig config = {0};
     config.mem_size = 2 * 1024 * 1024; config.vga_mem_size = 256 * 1024;
     config.cpu_gen = 3; config.width = WIDTH; config.height = HEIGHT;
@@ -147,9 +216,15 @@ int main(int argc, char **argv)
         unsigned r = (i >> 5) * 31 / 7, g = ((i >> 2) & 7) * 63 / 7, b = (i & 3) * 31 / 3;
         palette[i] = (uint16_t)((r << 11) | (g << 5) | b);
     }
-    if (tiny_app->video_open_ex(WIDTH, HEIGHT, palette, 15, 0) || tiny_app->enable_suspend()) {
-        tiny_failure = "display or suspend setup failed"; tiny_abort();
-    }
+    uint16_t display_width, display_height;
+    int video_result = tiny_app->video_dimensions(&display_width, &display_height);
+    if (video_result) fail_display(video_result);
+    present_width = display_width; present_height = display_height;
+    video_result = tiny_app->video_open_ex(display_width, display_height, palette, 15, 0);
+    if (video_result) fail_display(video_result);
+    indexed = tiny_malloc(present_width * present_height);
+    text_scratch = tiny_malloc(TINY_TEXT_SCRATCH_BYTES);
+    if (tiny_app->enable_suspend()) { tiny_failure = "suspend setup failed"; tiny_abort(); }
     load_bios_and_reset(machine);
     tiny_report("tiny386: 386, 2 MiB RAM; booting floppy with SeaBIOS");
     uint64_t next_frame = 0;

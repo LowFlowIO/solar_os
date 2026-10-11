@@ -20,7 +20,8 @@ class Tiny386ModuleTest(unittest.TestCase):
             objects = []
             sources = [(p, ["-include", str(source / "port.h")])
                        for p in sorted((source / "vendor").glob("*.c"))]
-            sources += [(source / "port.c", []), (source / "tiny386.c", ["-Dmain=tiny386_main"]),
+            sources += [(source / "port.c", []), (source / "text.c", []),
+                        (source / "tiny386.c", ["-Dmain=tiny386_main"]),
                         (bios, []), (ROOT / "tests/host/tiny386_module_test.c", [])]
             for index, (path, options) in enumerate(sources):
                 obj = stage / f"{index}.o"

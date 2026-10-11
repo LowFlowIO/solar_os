@@ -1341,6 +1341,27 @@ void vga_refresh(VGAState *s,
     }
 }
 
+bool vga_get_text_frame(VGAState *s, VGATextFrame *frame)
+{
+    if (s->graphic_mode != 1) return false;
+    unsigned map = s->sr[3];
+    frame->ram = s->vga_ram;
+    frame->font[0] = s->vga_ram + (((map >> 4) & 1) | ((map << 1) & 6)) * 8192 * 4 + 2;
+    frame->font[1] = s->vga_ram + (((map >> 5) & 1) | ((map >> 1) & 6)) * 8192 * 4 + 2;
+    frame->palette = s->last_palette;
+    frame->columns = s->cr[1] + 1;
+    frame->glyph_height = (s->cr[9] & 0x1f) + 1;
+    unsigned height = s->cr[0x12] | ((s->cr[7] & 2) << 7) | ((s->cr[7] & 0x40) << 3);
+    frame->rows = (height + 1) / frame->glyph_height;
+    frame->line_offset = s->cr[0x13] << 3;
+    frame->start_address = (s->cr[0x0d] | (s->cr[0x0c] << 8)) * 4;
+    frame->cursor_address = (s->cr[0x0f] | (s->cr[0x0e] << 8)) * 4;
+    frame->cursor_start = s->cr[0x0a] & 0x1f;
+    frame->cursor_end = s->cr[0x0b] & 0x1f;
+    frame->cursor_visible = !(s->cr[0x0a] & 0x20) && s->cursor_visible_phase;
+    return true;
+}
+
 /* force some bits to zero */
 static const uint8_t sr_mask[8] = {
     (uint8_t)~0xfc,
