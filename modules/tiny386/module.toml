@@ -1,0 +1,12 @@
+schema_version = 2
+type = "app"
+id = "tiny386"
+name = "Tiny386"
+version = "0.1.0"
+description = "386 PC emulator with embedded SeaBIOS, VGA and DOS floppy images."
+target = "esp32s3"
+native_abi = 1
+lifecycle_abi = 2
+minimum_host_api_size = 24
+required_capabilities = ["psram", "gfx"]
+artifact = "solaros_native_tiny386.app.elf"
