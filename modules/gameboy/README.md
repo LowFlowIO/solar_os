@@ -24,7 +24,10 @@ You can also use
 `session create gameboy display0 /sdcard/roms/game.gb` or
 `load /sdcard/gameboy.app.elf /sdcard/roms/game.gb`.
 
-Arrow keys control the directional pad. Physical Z and X are A and B, Enter is
+Files opens `.gb` ROMs through the installed app's file association.
+
+Arrow keys control the directional pad. The physical US-Z key position and X
+are A and B; the US-Z key is labeled Y on German QWERTZ keyboards. Enter is
 Start, and Backspace/Delete is Select. Character-only input pulses buttons for
 140 ms. P pauses, R resets, and Q, Escape or Ctrl+] exits. On boards with a
 buttons input source, Enter is A, Space is B, the app-exit button is Start and
@@ -47,3 +50,5 @@ memory and 256 KiB of PSRAM for admission. ROM and cartridge allocations are
 checked at launch. Hot core/APU state prefers internal RAM and can fall back to
 PSRAM. Two optional 16 KiB internal ROM caches preserve the OS reserve.
 See the [foreground app contract](../../doc/manual/native-app.md).
+The [Game Boy user guide](../../doc/manual/app.gameboy.md) covers installation,
+controls, and save files.

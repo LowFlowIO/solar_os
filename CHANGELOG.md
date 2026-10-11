@@ -2,6 +2,20 @@
 
 ## 4.x
 
+- **4.16.7** — 2026-10-11 — Added resumable external foreground apps on
+  ESP32-S3 devices with PSRAM. Installed apps appear in the app registry and
+  launch by name, through `session create`, or directly with `load`.
+  Apps declare their worker and memory requirements before launch; switching
+  sessions retains their state while releasing display and audio ownership.
+  Added the Apple II Plus module with text and graphics, two NIB disk drives,
+  keyboard, paddles, speaker, and explicit disk saves. Game Boy is now an
+  external app with cartridge saves, held-button input, four-shade video, and
+  optional stereo audio. Files opens `.gb` ROMs through the installed module.
+  ROM and disk images are supplied separately. The module catalog contains
+  apps, jobs, and drivers; both emulators use the common foreground app
+  lifecycle. Foreground modules gain asynchronous indexed video, joined audio
+  callbacks, and input release/reset events. Corrected PWM dependencies for
+  display backlight drivers in focused builds.
 - **4.16.6** — 2026-10-11 — Added calibrated positional servo control
   through the `servo` command and `solaros.servo` in Python and Lua, with
   explicit angle/pulse limits, optional inversion, and named outputs.

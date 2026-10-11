@@ -26,7 +26,8 @@ Artifact: `build/solaros_native_apple2.app.elf`. Copy it to storage and run:
 load /sdcard/solaros_native_apple2.app.elf /sdcard/apple2 dos33.nib
 ```
 
-Use `pkg install apple2` to install from the module catalog, then
+Use `pkg install apple2` to install from the module catalog, or copy the artifact
+to `/sdcard/modules/apps/apple2.elf`, then
 `apple2 /sdcard/apple2 dos33.nib` to start the installed module.
 The asset directory requires `appleII+.rom` (12288 bytes) and `diskII.rom`
 (256 bytes). NIB images must be exactly 232960 bytes. A second disk is optional.
@@ -39,7 +40,8 @@ F1 saves drive 1; Alt+F1 saves drive 2. F2 shows status, F3 toggles disk
 acceleration, F4 mutes, F10 pauses, F11 resets the guest, and F12 shows help.
 Ctrl+Alt+Del or Ctrl+] exits to the SolarOS shell. Exit discards unsaved disk
 changes. The module requires firmware providing the foreground `stop_requested` callback.
-See [native app reference](../../doc/manual/native-app.md).
+See the [Apple II Plus user guide](../../doc/manual/app.apple2.md) and
+[native app reference](../../doc/manual/native-app.md).
 
 `Alt+Tab` or `Alt+Right` switches to the next SolarOS session; `Alt+Left`
 switches to the previous session. Resume with these shortcuts or `session fg ID`.

@@ -9,17 +9,19 @@ agent_reference_sections = true
 +++
 # Native foreground apps
 
-
 Native foreground apps are trusted ESP32-S3 modules. They use the same sessions,
 display ownership, keyboard shortcuts and cold-state lifecycle as built-in apps.
-Emulators such as Apple II Plus are foreground apps. Their CPU cores and guest
-state belong to their modules.
+Emulators such as [Apple II Plus](app.apple2.md) and [Game Boy](app.gameboy.md)
+are foreground apps. Their CPU cores and guest state belong to their modules.
 
 ## Quick reference
 
 ```text
 pkg installed
+pkg install apple2
+pkg install gameboy
 apple2 /sdcard/apple2 dos33.nib
+gameboy /sdcard/roms/game.gb
 session create apple2 display0 /sdcard/apple2 dos33.nib
 load /sdcard/apple2.app.elf /sdcard/apple2 dos33.nib
 ```
@@ -103,15 +105,16 @@ also provides the current RTC register values, board-button source identity,
 and presenter statistics. Standard compiler helpers and `setjmp`/`longjmp`
 are exported for synchronous interpreter error handling.
 
-## Apple II Plus
+## Emulator apps
 
-See the [Apple II Plus module](../../modules/apple2/README.md) for ROM and NIB
-requirements and controls. For example, with the asset directory populated:
+See [Apple II Plus](app.apple2.md) for ROM and NIB requirements, controls, and
+explicit disk saves. See [Game Boy](app.gameboy.md) for cartridge compatibility,
+controls, and automatic cartridge RAM saves. For example, with assets present:
 
 ```text
 apple2 /sdcard/apple2 dos33.nib
+gameboy /sdcard/roms/game.gb
 ```
 
-F1 saves drive 1; Alt+F1 saves drive 2. F10 pauses the guest and F11 resets it.
-Disk writes remain in memory until explicitly saved. Session switches retain
-unsaved disk changes and the guest's pause state.
+Apple II disk writes remain in memory until explicitly saved. Session switches
+retain unsaved disk changes and each emulator's pause state.
