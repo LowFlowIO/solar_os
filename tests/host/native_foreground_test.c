@@ -29,7 +29,7 @@ typedef struct {
     _Atomic(TaskHandle_t) worker;
     atomic_bool done, resumable, stop_requested, suspend_requested, suspended, input_reset;
     uint64_t stop_deadline_us;
-    bool worker_started, keyboard_captured;
+    bool worker_started, keyboard_captured, themed_index2;
     void *gfx, *keys, *presenter, *audio;
 } foreground_state_t;
 static foreground_state_t first, second;
@@ -48,6 +48,7 @@ static const solar_os_native_foreground_api_v1_t foreground_api = {0};
 static void *solar_os_native_run_service_user(void) { return scope; }
 static TaskHandle_t xTaskGetCurrentTaskHandle(void) { return current; }
 static uint64_t foreground_time_us(void) { return clock_us; }
+static void foreground_refresh_index2_palette(foreground_state_t *s) { (void)s; }
 static void foreground_audio_close(void) { scope->audio = NULL; audio_order = ++sequence; }
 static void solar_os_audio_stream_close(void *audio) { assert(audio); audio_order = ++sequence; }
 static int solar_os_frame_presenter_deinit(void *presenter) {

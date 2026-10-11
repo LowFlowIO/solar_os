@@ -27,6 +27,7 @@ class NativeVisionServicesTest(unittest.TestCase):
                               '#include "solar_os_memory.h"\n'
                               'void *solar_os_memory_alloc(size_t n, solar_os_memory_class_t k, const char *t) { (void)n; (void)k; (void)t; return 0; }\n'
                               'void solar_os_memory_free(void *p) { (void)p; }\n'
+                              'bool solar_os_memory_is_external(const void *p) { (void)p; return false; }\n'
                               'int main(void) { assert(!solar_os_native_media_get_service("image", 1, 0)); }\n')
             binary = Path(tmp) / "disabled"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",

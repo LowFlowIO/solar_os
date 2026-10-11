@@ -5,6 +5,8 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+#include "solar_os_log.h"
 #include "esp_system.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
@@ -23,8 +25,12 @@
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
 #include "solar_os_audio.h"
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+#include "solar_os_synth.h"
+#include "freertos/semphr.h"
+#endif
 
-#define FOREGROUND_FILE_MAX (1024U * 1024U)
+#define FOREGROUND_FILE_MAX (4U * 1024U * 1024U)
 #define FOREGROUND_STOP_WAIT_US (5000000ULL)
 
 typedef struct foreground_slot foreground_slot_t;
@@ -42,6 +48,8 @@ typedef struct {
     solar_os_frame_presenter_t *presenter;
     uint16_t palette[256];
     size_t frame_size;
+    bool themed_index2;
+    uint8_t buttons_source;
     int argc;
     char args[SOLAR_OS_APP_ARG_MAX][SOLAR_OS_APP_ARG_LEN];
     char cwd[SOLAR_OS_APP_ARG_LEN];
@@ -51,6 +59,12 @@ typedef struct {
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     solar_os_audio_stream_t *audio;
     solar_os_audio_stream_format_t audio_format;
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+    SemaphoreHandle_t synth_mutex;
+    bool synth_running;
+    solar_os_native_foreground_audio_render_v1_t synth_render;
+    void *synth_user;
 #endif
 } foreground_state_t;
 
@@ -194,6 +208,168 @@ static int foreground_video_open(uint16_t width, uint16_t height,
     return foreground_video_open_ex(width, height, palette, fps, 15U);
 }
 
+static void foreground_refresh_index2_palette(foreground_state_t *state)
+{
+    uint32_t fg = 0U, bg = 0xffffffU;
+    (void)solar_os_display_get_colors(&fg, &bg);
+    for (uint32_t i = 0U; i < 4U; ++i) {
+        uint32_t color = 0U;
+        for (unsigned shift = 0U; shift <= 16U; shift += 8U)
+            color |= (((((fg >> shift) & 255U) * i) +
+                       (((bg >> shift) & 255U) * (3U - i)) + 1U) / 3U) << shift;
+        state->palette[i] = foreground_rgb565(color);
+    }
+}
+
+static int foreground_video_open_index2(uint16_t width, uint16_t height, uint16_t fps)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!width || !height || width > 1024U || height > 1024U || width % 4U || fps > 60U)
+        return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    if (state->presenter) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    foreground_refresh_index2_palette(state);
+    const solar_os_frame_presenter_config_t config = {
+        .gfx = state->gfx, .format = SOLAR_OS_DISPLAY_FORMAT_INDEX2,
+        .width = width, .height = height, .stride = width / 4U,
+        .palette_rgb565 = state->palette, .palette_size = 4U,
+        .fit = SOLAR_OS_FRAME_FIT_HEIGHT, .preferred_fps = fps,
+        .allow_mono_fallback = true, .request_high_refresh = true,
+        .reverse_direct_palette = true, .clear_background_on_resume = true,
+    };
+    esp_err_t err = solar_os_frame_presenter_init(&state->presenter, &config);
+    if (err == ESP_OK) err = solar_os_frame_presenter_resume(state->presenter);
+    if (err == ESP_OK) {
+        state->frame_size = (size_t)(width / 4U) * height;
+        state->themed_index2 = true;
+    }
+    return foreground_result(err);
+}
+
+static int foreground_video_stats(solar_os_native_foreground_video_stats_v1_t *stats)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller() || !state->presenter) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!stats) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    solar_os_frame_presenter_stats_t present;
+    solar_os_frame_presenter_take_stats(state->presenter, &present);
+    *stats = (solar_os_native_foreground_video_stats_v1_t){
+        .present_us = present.present_us, .frames = present.presented_frames,
+        .replaced_frames = present.replaced_frames,
+    };
+    return foreground_result(present.last_error);
+}
+
+static int foreground_rtc_read(uint8_t registers[5])
+{
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!registers) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    time_t now = time(NULL);
+    struct tm local;
+    if (now <= 0 || !localtime_r(&now, &local)) return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    registers[0] = local.tm_sec; registers[1] = local.tm_min; registers[2] = local.tm_hour;
+    registers[3] = local.tm_yday & 255U; registers[4] = (unsigned)local.tm_yday >> 8U;
+    return SOLAR_OS_NATIVE_OK;
+}
+
+static uint8_t foreground_buttons_source(void)
+{
+    if (!foreground_caller()) return 0U;
+    foreground_state_t *state = foreground_current();
+    for (size_t i = 0U; i < solar_os_input_source_count(); ++i) {
+        solar_os_input_source_info_t source;
+        if (solar_os_input_source_get(i, &source) && source.ready &&
+            source.source_class == SOLAR_OS_INPUT_SOURCE_BUTTONS) {
+            state->buttons_source = source.source;
+            break;
+        }
+    }
+    return state->buttons_source;
+}
+
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+static void foreground_synth_render(int16_t *samples, size_t frames, uint32_t rate, void *user)
+{
+    foreground_state_t *state = user;
+    (void)xSemaphoreTake(state->synth_mutex, portMAX_DELAY);
+    if (state->synth_render) state->synth_render(samples, frames, rate, state->synth_user);
+    (void)xSemaphoreGive(state->synth_mutex);
+}
+
+static void foreground_synth_close_state(foreground_state_t *state)
+{
+    if (!state->synth_running) return;
+    /* stop joins the audio worker before it can release a callback's ELF. */
+    if (solar_os_synth_stop(state->slot->manifest.id) != ESP_OK) esp_restart();
+    state->synth_running = false;
+    state->synth_render = NULL;
+    state->synth_user = NULL;
+}
+#endif
+
+static void foreground_synth_close(void)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+    if (foreground_caller()) foreground_synth_close_state(foreground_current());
+#endif
+}
+
+static bool foreground_synth_lock(void)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+    foreground_state_t *state = foreground_current();
+    return foreground_caller() && state->synth_mutex &&
+        xSemaphoreTake(state->synth_mutex, portMAX_DELAY) == pdTRUE;
+#else
+    return false;
+#endif
+}
+
+static void foreground_synth_unlock(void)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+    foreground_state_t *state = foreground_current();
+    if (foreground_caller() && state->synth_mutex) (void)xSemaphoreGive(state->synth_mutex);
+#endif
+}
+
+static int foreground_synth_open(solar_os_native_foreground_audio_render_v1_t render,
+    void *user, size_t frames, uint32_t rate)
+{
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!render || frames < 16U || frames > 4096U || rate < 8000U || rate > 96000U)
+        return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+    foreground_state_t *state = foreground_current();
+    if (state->synth_running) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+#if SOLAR_OS_PACKAGE_SERVICE_AUDIO
+    if (state->audio) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+#endif
+    if (!state->synth_mutex) state->synth_mutex = xSemaphoreCreateMutex();
+    if (!state->synth_mutex) return SOLAR_OS_NATIVE_ERROR_NO_MEMORY;
+    state->synth_render = render; state->synth_user = user;
+    const solar_os_synth_config_t config = {
+        .owner = state->slot->manifest.id, .render = foreground_synth_render,
+        .user = state, .block_frames = frames,
+    };
+    esp_err_t err = solar_os_synth_start(&config);
+    if (err == ESP_OK) {
+        state->synth_running = true;
+        solar_os_synth_status_t status;
+        solar_os_synth_get_status(&status);
+        if (status.sample_rate != rate) {
+            foreground_synth_close_state(state);
+            err = ESP_ERR_NOT_SUPPORTED;
+        }
+    }
+    if (err != ESP_OK) { state->synth_render = NULL; state->synth_user = NULL; }
+    return foreground_result(err);
+#else
+    (void)user;
+    return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+#endif
+}
+
 static int foreground_present(const uint8_t *pixels, size_t length)
 {
     foreground_state_t *state = foreground_current();
@@ -292,6 +468,7 @@ static int foreground_replace_file(const char *path, const void *buffer, size_t 
 
 static void foreground_audio_close(void)
 {
+    foreground_synth_close();
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     foreground_state_t *state = foreground_current();
     if (foreground_caller() && state->audio) {
@@ -308,6 +485,9 @@ static int foreground_audio_open(uint32_t *rate, uint8_t *channels)
     if (!rate || !channels) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     if (state->audio) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+    if (state->synth_running) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+#endif
     esp_err_t err = solar_os_audio_stream_open(state->slot->manifest.id, 0, &state->audio, &state->audio_format);
     if (err == ESP_OK && (state->audio_format.sample_format != SOLAR_OS_STREAM_AUDIO_S16_LE ||
         state->audio_format.bits_per_sample != 16U || state->audio_format.channels > 2U ||
@@ -372,6 +552,7 @@ static int foreground_guest_suspend(void)
     while (atomic_load(&state->suspend_requested) && !atomic_load(&state->stop_requested))
         foreground_sleep_ms(SOLAR_OS_TASK_STOP_POLL_MS);
     int result = SOLAR_OS_NATIVE_OK;
+    if (state->themed_index2) foreground_refresh_index2_palette(state);
     if (!atomic_load(&state->stop_requested) && state->presenter)
         result = foreground_result(solar_os_frame_presenter_resume(state->presenter));
     atomic_store(&state->suspended, false);
@@ -390,6 +571,11 @@ static const solar_os_native_foreground_api_v1_t foreground_api = {
     .resolve_path = foreground_resolve_path,
     .enable_suspend = foreground_enable_suspend, .suspend_requested = foreground_suspend_requested,
     .suspend = foreground_guest_suspend,
+    .video_open_index2 = foreground_video_open_index2,
+    .synth_open = foreground_synth_open, .synth_lock = foreground_synth_lock,
+    .synth_unlock = foreground_synth_unlock, .synth_close = foreground_synth_close,
+    .rtc_read = foreground_rtc_read, .buttons_source = foreground_buttons_source,
+    .video_stats = foreground_video_stats,
 };
 
 
@@ -411,12 +597,18 @@ static esp_err_t foreground_write(const char *text, size_t length, void *user)
     if (length >= sizeof(state->detail)) length = sizeof(state->detail) - 1U;
     memcpy(state->detail, text, length);
     state->detail[length] = '\0';
+    SOLAR_OS_LOGI(state->slot->manifest.id, "%s", state->detail);
     return ESP_OK;
 }
 
 static void foreground_worker_cleanup(void *user)
 {
     foreground_state_t *state = user;
+#if SOLAR_OS_PACKAGE_SERVICE_SYNTH
+    foreground_synth_close_state(state);
+    if (state->synth_mutex) vSemaphoreDelete(state->synth_mutex);
+    state->synth_mutex = NULL;
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     if (state->audio) {
         solar_os_audio_stream_close(state->audio);
@@ -590,7 +782,8 @@ static void foreground_resume(solar_os_context_t *ctx)
 
 static void foreground_queue_key(foreground_state_t *state, solar_os_native_foreground_key_v1_t *key)
 {
-    if (key->key == SOLAR_OS_KEY_APP_EXIT || key->key == 0x1dU) {
+    if ((key->key == SOLAR_OS_KEY_APP_EXIT &&
+         (!state->buttons_source || key->source != state->buttons_source)) || key->key == 0x1dU) {
         if (key->action != SOLAR_OS_NATIVE_FOREGROUND_KEY_RELEASE) foreground_request_stop(state);
         return;
     }

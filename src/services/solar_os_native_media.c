@@ -10,9 +10,16 @@
 
 static void *native_memory_alloc(size_t bytes)
 { return bytes ? solar_os_memory_alloc(bytes, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "native.buffer") : NULL; }
+static void *native_memory_alloc_internal(size_t bytes)
+{
+    if (!bytes) return NULL;
+    void *buffer = solar_os_memory_alloc(bytes, SOLAR_OS_MEMORY_INTERNAL_PREFERRED, "native.hot");
+    if (buffer && solar_os_memory_is_external(buffer)) { solar_os_memory_free(buffer); return NULL; }
+    return buffer;
+}
 static const solar_os_native_memory_api_v1_t memory_api = {
     .abi_version = SOLAR_OS_NATIVE_MEMORY_ABI, .struct_size = sizeof(memory_api),
-    .alloc = native_memory_alloc, .free = solar_os_memory_free,
+    .alloc = native_memory_alloc, .free = solar_os_memory_free, .alloc_internal = native_memory_alloc_internal,
 };
 
 #if SOLAR_OS_PACKAGE_SERVICE_IMAGE || SOLAR_OS_PACKAGE_SERVICE_SCRIPT_MEDIA || \

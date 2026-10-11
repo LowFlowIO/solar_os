@@ -3,6 +3,7 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <setjmp.h>
 
 #include "esp_elf.h"
 #include "freertos/FreeRTOS.h"
@@ -453,6 +454,8 @@ static const struct esp_elfsym native_symbols[] = {
     ESP_ELFSYM_EXPORT(memmove),
     ESP_ELFSYM_EXPORT(memcmp),
     ESP_ELFSYM_EXPORT(strlen),
+    ESP_ELFSYM_EXPORT(setjmp),
+    ESP_ELFSYM_EXPORT(longjmp),
     ESP_ELFSYM_END,
 };
 

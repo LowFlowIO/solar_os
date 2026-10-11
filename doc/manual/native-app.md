@@ -89,6 +89,20 @@ and cooperative suspend and stop. Each app has its own input queue, presenter,
 audio ownership and retained state. OS session shortcuts pass through captured
 keyboards. Modules must not leave callbacks or tasks running after `main` returns.
 
+Packed INDEX2 frames use four shades of the current display theme. The appended
+synth methods accept a bounded block size and required sample rate. Callbacks
+render signed 16-bit stereo PCM under a host mutex. The module uses
+`synth_lock` and `synth_unlock` when accessing shared synthesizer state; the host
+joins synth callbacks on suspend and close. The mutex remains available while
+suspended. Failed synth startup leaves video and emulation usable without audio.
+
+The memory service provides PSRAM allocation and optional `alloc_internal` for
+hot state or caches. Internal allocation preserves the OS reserve and returns
+NULL when unavailable; modules can omit caches or fall back to PSRAM. The host
+also provides the current RTC register values, board-button source identity,
+and presenter statistics. Standard compiler helpers and `setjmp`/`longjmp`
+are exported for synchronous interpreter error handling.
+
 ## Apple II Plus
 
 See the [Apple II Plus module](../../modules/apple2/README.md) for ROM and NIB

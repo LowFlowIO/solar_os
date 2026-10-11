@@ -49,6 +49,13 @@ typedef struct {
     bool reset;
 } solar_os_native_foreground_key_v1_t;
 
+typedef void (*solar_os_native_foreground_audio_render_v1_t)(int16_t *samples,
+    size_t frames, uint32_t sample_rate, void *user);
+typedef struct {
+    uint64_t present_us;
+    uint32_t frames, replaced_frames;
+} solar_os_native_foreground_video_stats_v1_t;
+
 /* Calls belong to the app's worker. Presentation copies submitted pixels;
  * audio closes on its opening task. Poll stop and suspend at guest safe
  * points, including while paused. suspend quiesces host-owned foreground
@@ -81,4 +88,17 @@ typedef struct {
     int (*enable_suspend)(void);
     bool (*suspend_requested)(void);
     int (*suspend)(void);
+    /* Appended methods. INDEX2 uses four shades of the current display theme.
+     * Synth callbacks run under the host mutex on the audio worker. The app
+     * uses synth_lock/unlock around shared synth state. close joins callbacks;
+     * the mutex survives suspend and is deleted before module unload. */
+    int (*video_open_index2)(uint16_t width, uint16_t height, uint16_t fps);
+    int (*synth_open)(solar_os_native_foreground_audio_render_v1_t render,
+        void *user, size_t block_frames, uint32_t sample_rate);
+    bool (*synth_lock)(void);
+    void (*synth_unlock)(void);
+    void (*synth_close)(void);
+    int (*rtc_read)(uint8_t registers[5]);
+    uint8_t (*buttons_source)(void);
+    int (*video_stats)(solar_os_native_foreground_video_stats_v1_t *stats);
 } solar_os_native_foreground_api_v1_t;
