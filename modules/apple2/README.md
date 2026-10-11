@@ -39,7 +39,7 @@ F1 saves drive 1; Alt+F1 saves drive 2. F2 shows status, F3 toggles disk
 acceleration, F4 mutes, F10 pauses, F11 resets the guest, and F12 shows help.
 Ctrl+Alt+Del or Ctrl+] exits to the SolarOS shell. Exit discards unsaved disk
 changes. The module requires firmware providing the foreground `stop_requested` callback.
-See [native app reference](../../doc/manual/native-vm.md).
+See [native app reference](../../doc/manual/native-app.md).
 
 `Alt+Tab` or `Alt+Right` switches to the next SolarOS session; `Alt+Left`
 switches to the previous session. Resume with these shortcuts or `session fg ID`.

@@ -37,7 +37,7 @@ static esp_err_t native_shell_launch_foreground(solar_os_context_t *ctx,
     return err;
 }
 
-static bool native_shell_vm_path(const char *path)
+static bool native_shell_legacy_foreground_path(const char *path)
 {
     size_t length = strlen(path);
     static const char suffix[] = ".vm.elf";
@@ -110,7 +110,7 @@ void solar_os_shell_cmd_load(solar_os_context_t *ctx, int argc, char **argv)
     const solar_os_app_t *app = NULL;
     char detail[160] = {0};
     const esp_err_t inspected = solar_os_native_foreground_resolve(path,
-        native_shell_vm_path(path), &app, detail, sizeof(detail));
+        native_shell_legacy_foreground_path(path), &app, detail, sizeof(detail));
     if (inspected != ESP_OK) {
         solar_os_shell_diag_esp(io, "load", inspected, detail, NULL);
         return;
@@ -153,16 +153,10 @@ bool solar_os_shell_try_native_module(solar_os_context_t *ctx,
     if (ctx == NULL || argc < 1 || argv == NULL || argv[0] == NULL) {
         return true;
     }
-    const solar_os_module_type_t types[] = { SOLAR_OS_MODULE_TYPE_APP, SOLAR_OS_MODULE_TYPE_VM };
-    solar_os_module_type_t type = SOLAR_OS_MODULE_TYPE_APP;
-    bool found = false;
-    for (size_t i = 0; i < sizeof(types) / sizeof(types[0]); ++i) {
-        if (solar_os_module_package_path(types[i], argv[0], path, sizeof(path)) == ESP_OK &&
-            solar_os_storage_stat(path, &metadata) == ESP_OK &&
-            metadata.type == SOLAR_OS_STORAGE_ENTRY_FILE) {
-            type = types[i]; found = true; break;
-        }
-    }
+    const bool found = solar_os_module_package_path(SOLAR_OS_MODULE_TYPE_APP,
+        argv[0], path, sizeof(path)) == ESP_OK &&
+        solar_os_storage_stat(path, &metadata) == ESP_OK &&
+        metadata.type == SOLAR_OS_STORAGE_ENTRY_FILE;
     if (!found) return true;
 
     if (matched != NULL) {
@@ -171,7 +165,7 @@ bool solar_os_shell_try_native_module(solar_os_context_t *ctx,
     const solar_os_app_t *app = NULL;
     char detail[160] = {0};
     const esp_err_t inspected = solar_os_native_foreground_resolve(path,
-        type == SOLAR_OS_MODULE_TYPE_VM, &app, detail, sizeof(detail));
+        false, &app, detail, sizeof(detail));
     if (inspected != ESP_OK) {
         solar_os_shell_diag_esp(solar_os_shell_command_io(ctx), argv[0], inspected, detail, NULL);
         return true;

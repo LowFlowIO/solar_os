@@ -13,6 +13,7 @@
 #include "solar_os_storage.h"
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
 #include "solar_os_native_foreground.h"
+#include "solar_os_module_packages.h"
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_PLAYGROUND
 #include "solar_os_playground.h"
@@ -334,17 +335,52 @@ static int app_registry_index_by_app(const solar_os_app_t *app)
     return -1;
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+typedef struct {
+    size_t index, seen;
+    const solar_os_app_registry_entry_t *entry;
+} app_registry_external_scan_t;
+
+static bool app_registry_external_visit(const char *id, void *user)
+{
+    app_registry_external_scan_t *scan = user;
+    /* An installed app with a built-in name replaces that entry. */
+    for (size_t i = 0U; i < registered_app_count; ++i)
+        if (!strcmp(id, registered_apps[i].name)) return true;
+    const solar_os_app_registry_entry_t *entry = solar_os_native_foreground_find(id);
+    if (entry && scan->seen++ == scan->index) { scan->entry = entry; return false; }
+    return true;
+}
+
+static app_registry_external_scan_t app_registry_external_scan(size_t index)
+{
+    app_registry_external_scan_t scan = {.index = index};
+    (void)solar_os_module_package_foreach_installed(SOLAR_OS_MODULE_TYPE_APP,
+        app_registry_external_visit, &scan);
+    return scan;
+}
+#endif
+
 size_t solar_os_app_registry_count(void)
 {
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    return registered_app_count + app_registry_external_scan(SIZE_MAX).seen;
+#else
     return registered_app_count;
+#endif
 }
 
 const solar_os_app_registry_entry_t *solar_os_app_registry_get(size_t index)
 {
-    if (index >= registered_app_count) {
-        return NULL;
-    }
-
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    if (index >= registered_app_count)
+        return app_registry_external_scan(index - registered_app_count).entry;
+    const solar_os_app_registry_entry_t *external =
+        solar_os_native_foreground_find(registered_apps[index].name);
+    if (external) return external;
+#else
+    if (index >= registered_app_count) return NULL;
+#endif
     return &registered_apps[index];
 }
 
@@ -386,6 +422,10 @@ const solar_os_app_registry_entry_t *solar_os_app_registry_find_opener(const cha
         const solar_os_app_registry_entry_t *entry = &registered_apps[i];
         if (entry->app != NULL &&
             solar_os_app_file_types_match(entry->file_extensions, path)) {
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+            const solar_os_app_registry_entry_t *external = solar_os_native_foreground_find(entry->name);
+            if (external) return external;
+#endif
             return entry;
         }
     }

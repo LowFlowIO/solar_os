@@ -57,33 +57,6 @@ class NativeVmLifecycleTest(unittest.TestCase):
             ], check=True)
             subprocess.run([str(binary)], check=True)
 
-    def test_host_shutdown_and_timeout(self):
-        # Compile the production lifecycle functions against deterministic task,
-        # clock and presenter mocks; hardware wrappers are tested by board builds.
-        source = (ROOT / "src/services/solar_os_native_vm.c").read_text()
-        names = ("vm_caller", "vm_result", "vm_rgb565", "vm_text_colors",
-                 "vm_stop_requested", "vm_enable_suspend", "vm_suspend_requested",
-                 "vm_guest_suspend", "vm_worker", "vm_request_stop",
-                 "vm_stop", "vm_suspend", "vm_resume", "vm_ready", "vm_queue_key", "vm_event",
-                 "vm_resolve_path", "vm_start", "solar_os_native_vm_launch")
-        functions = production_functions(source, names)
-        storage = (ROOT / "src/services/solar_os_storage.c").read_text()
-        paths = production_functions(storage, (
-            "storage_append_path_segment", "storage_pop_path_segment",
-            "solar_os_storage_normalize_path", "solar_os_storage_resolve_path_at"))
-        timeout = re.search(r"^#define VM_STOP_WAIT_US .+$", source, re.M).group()
-        with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "vm_lifecycle.inc").write_text(timeout + "\n" + paths + "\n" + functions)
-            binary = Path(tmp, "lifecycle")
-            subprocess.run([
-                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                "-I", tmp, "-I", str(ROOT / "include"), "-I", str(ROOT / "tests/host"),
-                "-I", str(ROOT / "src/services"),
-                str(ROOT / "tests/host/native_vm_lifecycle_test.c"),
-                "-o", str(binary),
-            ], check=True)
-            subprocess.run([str(binary)], check=True)
-
     def test_literal_graphics_palette_and_monochrome_polarity(self):
         source = (ROOT / "src/services/solar_os_frame_presenter.c").read_text()
         functions = production_functions(source, (

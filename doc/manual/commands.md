@@ -236,7 +236,7 @@ job for periodic polling.
 | `pkg` | `pkg` | Open the native-module package manager. |
 | `pkg` | `pkg system` | Print compiled package groups and build units. |
 | `pkg` | `pkg available` | Verify the signed native-module catalog and print its compact module list. |
-| `pkg` | `pkg installed` | List installed application, job, driver, and VM modules. |
+| `pkg` | `pkg installed` | List installed application, job, and driver modules. |
 | `pkg` | `pkg install <module>` | Download, verify, validate, and atomically install a native module; Ctrl+C, Esc, or the app-exit key cancels. |
 | `pkg` | `pkg remove <module>` | Remove an installed native module. |
 | `load` | `load <file.elf> [args...]` | Validate, relocate, run, and unload one native ELF module from storage. |
@@ -329,11 +329,11 @@ using the original output-only prefix remain compatible. Arbitrary SolarOS
 internals are not exported through this interface. Native ELF code is not sandboxed; `load` is for trusted,
 maintainer-produced modules only.
 
-For `.vm.elf` files and installed paths under `modules/vms`, `load` launches
-the foreground [VM host](native-vm.md). Installed VMs also launch by module
-name, for example `apple2 /sdcard/vm/apple2 dos33.nib`. Ctrl+Alt+Del or Ctrl+]
-requests shutdown and returns to the shell after module cleanup. The host
-restarts the device if shutdown does not finish within five seconds.
+ELFs declaring lifecycle-2 app metadata launch through the
+[foreground app runtime](native-app.md), retaining their image while suspended.
+Installed apps launch by module name. Legacy `.vm.elf` paths also use this runtime.
+Ctrl+Alt+Del, Ctrl+] or closing the session requests cooperative shutdown.
+The host restarts the device if shutdown does not finish within five seconds.
 
 The ordinary `load` runner is for short-lived command-style modules. A module must stop
 all of its work and release every callback and resource before its entry point
@@ -349,17 +349,17 @@ and native ABI match the running firmware. Each downloaded ELF must match the
 signed size and SHA-256, pass the same ELF validation as `load`, and is staged
 before atomic activation. The signed type selects the storage and lifecycle
 boundary: application modules use `/modules/apps/<module>.elf`, jobs use
-`/modules/jobs`, drivers use `/modules/drivers`, and VMs use `/modules/vms`. Every entry separately
+`/modules/jobs`, drivers use `/modules/drivers`. Every entry separately
 declares its lifecycle ABI and its type-specific native host API size.
 Application lifecycle ABI 1 is the synchronous `main(argc, argv)`
 run-and-unload contract. Job lifecycle ABI 1 registers start, stop, and tick
 callbacks and keeps the ELF resident until the stopped job is removed. Driver
 lifecycle ABI 1 registers a zero-binding utility driver contract and keeps the
 ELF resident until all devices are detached and the module is removed.
-VM lifecycle ABI 1 runs `main(argc, argv)` on the foreground VM worker with
-versioned display, input, storage, timing and optional audio services. VMs launch
-only on request. Installed jobs and drivers are reactivated during boot. The default repository is
-`https://solar-os.eu/ota/modules`.
+Application lifecycle ABI 2 declares a foreground app manifest and runs
+`main(argc, argv)` on its declared worker. Display, input, storage, timing and
+optional audio are provided by the versioned foreground service. Resumable apps
+retain their ELF and guest state across session switches.
 
 Run `pkg` without arguments to open the package manager. It refreshes the
 signed catalog in a worker, marks installed entries with `*`, and lets you
