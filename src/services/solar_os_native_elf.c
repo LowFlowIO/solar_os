@@ -127,6 +127,79 @@ static bool section_is_symbol_table(uint32_t type)
     return type == ELF_SECTION_SYMTAB || type == ELF_SECTION_DYNSYM;
 }
 
+static bool app_manifest_valid(const solar_os_native_app_manifest_v2_t *app)
+{
+    if (app->magic != SOLAR_OS_NATIVE_APP_MANIFEST_MAGIC ||
+        app->lifecycle_abi != SOLAR_OS_NATIVE_APP_LIFECYCLE_ABI ||
+        app->struct_size != sizeof(*app) ||
+        (app->app_class != SOLAR_OS_NATIVE_APP_CLASS_TUI &&
+         app->app_class != SOLAR_OS_NATIVE_APP_CLASS_GUI) ||
+        (app->flags & ~SOLAR_OS_NATIVE_APP_RESUMABLE) != 0U ||
+        app->worker_stack_bytes < 2048U || app->worker_stack_bytes > 65536U ||
+        app->worker_priority < 1U || app->worker_priority > 4U ||
+        app->minimum_internal_bytes > 512U * 1024U ||
+        app->minimum_psram_bytes > 16U * 1024U * 1024U ||
+        app->tick_interval_ms == 0U || app->tick_interval_ms > 1000U ||
+        app->id[0] == '\0' || memchr(app->id, '\0', sizeof(app->id)) == NULL ||
+        app->summary[0] == '\0' ||
+        memchr(app->summary, '\0', sizeof(app->summary)) == NULL) {
+        return false;
+    }
+    for (const char *p = app->id; *p != '\0'; ++p) {
+        if (!(*p >= 'a' && *p <= 'z') && !(*p >= '0' && *p <= '9') &&
+            *p != '-' && *p != '_') return false;
+    }
+    return true;
+}
+
+/* All section, symbol and string bounds have already passed ELF validation.
+ * Metadata must be a defined object fully contained in file-backed data;
+ * a similarly named import, BSS object, or pointer cannot describe an app. */
+static esp_err_t read_app_manifest(const uint8_t *data, size_t data_len,
+                                   uint32_t section_offset, uint16_t section_count,
+                                   solar_os_native_app_manifest_v2_t *app)
+{
+    bool found = false;
+    for (uint16_t i = 0U; i < section_count; ++i) {
+        const native_section_t symbols = read_section(data, section_offset, i);
+        if (symbols.type != ELF_SECTION_DYNSYM) continue;
+        const native_section_t strings =
+            read_section(data, section_offset, (uint16_t)symbols.link);
+        for (uint32_t n = 0U; n < symbols.size / ELF_SYMBOL_SIZE; ++n) {
+            const uint8_t *symbol = data + symbols.offset + n * ELF_SYMBOL_SIZE;
+            const char *name = (const char *)data + strings.offset + read_u32(symbol);
+            if (strcmp(name, SOLAR_OS_NATIVE_APP_MANIFEST_SYMBOL) != 0) continue;
+            const uint16_t index = read_u16(symbol + 14U);
+            if (found || symbol[12U] != 0x11U || index == 0U ||
+                index >= section_count || read_u32(symbol + 8U) != sizeof(*app))
+                return ESP_ERR_INVALID_RESPONSE;
+            const native_section_t section = read_section(data, section_offset, index);
+            const uint32_t address = read_u32(symbol + 4U);
+            if (section.type != ELF_SECTION_PROGBITS ||
+                (section.flags & ELF_SECTION_FLAG_ALLOC) == 0U ||
+                (section.flags & ELF_SECTION_FLAG_EXEC) != 0U || address < section.address ||
+                !range_valid(address - section.address, sizeof(*app), section.size) ||
+                !range_valid(section.offset, section.size, data_len))
+                return ESP_ERR_INVALID_RESPONSE;
+            const uint8_t *record = data + section.offset + address - section.address;
+            *app = (solar_os_native_app_manifest_v2_t){
+                .magic = read_u32(record), .lifecycle_abi = read_u32(record + 4U),
+                .struct_size = read_u32(record + 8U), .app_class = read_u32(record + 12U),
+                .flags = read_u32(record + 16U), .worker_stack_bytes = read_u32(record + 20U),
+                .worker_priority = read_u32(record + 24U),
+                .minimum_internal_bytes = read_u32(record + 28U),
+                .minimum_psram_bytes = read_u32(record + 32U),
+                .tick_interval_ms = read_u32(record + 36U),
+            };
+            memcpy(app->id, record + 40U, sizeof(app->id));
+            memcpy(app->summary, record + 72U, sizeof(app->summary));
+            if (!app_manifest_valid(app)) return ESP_ERR_INVALID_RESPONSE;
+            found = true;
+        }
+    }
+    return found ? ESP_OK : ESP_ERR_NOT_FOUND;
+}
+
 static esp_err_t validate_program_headers(const uint8_t *data,
                                           size_t data_len,
                                           uint32_t offset,
@@ -397,6 +470,13 @@ esp_err_t solar_os_native_elf_validate(const uint8_t *data,
         return ESP_ERR_INVALID_RESPONSE;
     }
 
+    solar_os_native_app_manifest_v2_t app = {0};
+    const esp_err_t app_err = read_app_manifest(data, data_len, section_offset,
+                                               section_count, &app);
+    if (app_err != ESP_OK && app_err != ESP_ERR_NOT_FOUND) {
+        set_detail(detail, detail_len, "invalid foreground application manifest");
+        return app_err;
+    }
     if (info != NULL) {
         *info = (solar_os_native_elf_info_t){
             .file_size = data_len,
@@ -404,6 +484,8 @@ esp_err_t solar_os_native_elf_validate(const uint8_t *data,
             .machine = machine,
             .program_count = program_count,
             .section_count = section_count,
+            .foreground = app_err == ESP_OK,
+            .app = app,
         };
     }
     return ESP_OK;
