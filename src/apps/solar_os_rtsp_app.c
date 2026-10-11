@@ -594,7 +594,10 @@ static esp_err_t start(solar_os_context_t *ctx)
     err = start_playback(ctx);
     if (err != ESP_OK) return err;
     rtsp.ui_started = true;
-    if (!rtsp.graphical) solar_os_shell_io_printf(io, "RTSP %s (audio only on port shell)\r\n", rtsp.url);
+    char redacted[SOLAR_OS_RTSP_URL_MAX];
+    if (solar_os_rtsp_url_redact(rtsp.url, redacted, sizeof(redacted)) != ESP_OK)
+        snprintf(redacted, sizeof(redacted), "%s", rtsp.url);
+    if (!rtsp.graphical) solar_os_shell_io_printf(io, "RTSP %s (audio only on port shell)\r\n", redacted);
     render(ctx, true);
     return ESP_OK;
 }
