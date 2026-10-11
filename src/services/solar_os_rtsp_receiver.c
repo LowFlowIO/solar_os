@@ -47,7 +47,7 @@ static bool percent_decode(char *dst, size_t capacity, const char *src, size_t l
             c = (unsigned char)((hi << 4) | lo);
             i += 2;
         }
-        if (c <= 32 || c == 127) return false;
+        if (c < 32 || c == 127) return false;
         if (o + 1 >= capacity) return false;
         dst[o++] = (char)c;
     }
