@@ -300,7 +300,12 @@ static void foreground_synth_close_state(foreground_state_t *state)
 {
     if (!state->synth_running) return;
     /* stop joins the audio worker before it can release a callback's ELF. */
-    if (solar_os_synth_stop(state->slot->manifest.id) != ESP_OK) esp_restart();
+    solar_os_synth_status_t status;
+    solar_os_synth_get_status(&status);
+    /* A global synth stop may already have joined this callback. A different
+     * owner can appear only after the preceding worker has finished. */
+    if (!strcmp(status.owner, state->slot->manifest.id) &&
+        solar_os_synth_stop(state->slot->manifest.id) != ESP_OK) esp_restart();
     state->synth_running = false;
     state->synth_render = NULL;
     state->synth_user = NULL;
@@ -988,8 +993,23 @@ const solar_os_app_registry_entry_t *solar_os_native_foreground_find(const char 
 {
     char path[SOLAR_OS_STORAGE_PATH_MAX];
     const solar_os_app_t *app = NULL;
-    if (solar_os_module_package_path(SOLAR_OS_MODULE_TYPE_APP, id, path, sizeof(path)) != ESP_OK ||
-        solar_os_native_foreground_resolve(path, false, &app, NULL, 0U) != ESP_OK || !app) return NULL;
+    if (solar_os_module_package_path(SOLAR_OS_MODULE_TYPE_APP, id, path, sizeof(path)) != ESP_OK)
+        return NULL;
+    foreground_slot_t *cached = NULL;
+    portENTER_CRITICAL(&foreground_slots_lock);
+    for (foreground_slot_t *slot = foreground_slots; slot; slot = slot->next) {
+        if (!slot->legacy && !strcmp(slot->manifest.id, id) && !strcmp(slot->path, path)) {
+            cached = slot; break;
+        }
+    }
+    portEXIT_CRITICAL(&foreground_slots_lock);
+    /* Discovery is called repeatedly by menus and completion. Descriptors
+     * stay immutable; load still validates the current ELF against metadata. */
+    bool exists = false;
+    if (cached) return solar_os_storage_exists(path, &exists) == ESP_OK && exists ?
+        &cached->registry : NULL;
+    if (solar_os_native_foreground_resolve(path, false, &app, NULL, 0U) != ESP_OK || !app)
+        return NULL;
     foreground_slot_t *slot = foreground_find_slot(app);
     return slot && !strcmp(slot->manifest.id, id) ? &slot->registry : NULL;
 }

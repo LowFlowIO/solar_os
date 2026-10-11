@@ -1197,6 +1197,13 @@ Controls:
 
 ## gameboy
 
+On ESP32-S3 firmware with native modules, an installed
+[Game Boy foreground module](native-app.md) takes precedence over the integrated
+app. Use `pkg install gameboy` with a compatible catalog or copy its `.app.elf`
+artifact to `modules/apps/gameboy.elf` in the preferred storage volume. The
+module retains its guest worker and state across session switches. Targets
+without an installed module use the integrated app described below.
+
 Original Game Boy (DMG) emulator selected by the `gameboy` group on boards with
 PSRAM, SD storage, graphics, and a streaming display. Current integrated
 targets are SolarTerm, Freenove IPS, CL-32, T-LoRa-Pager, T-Deck Plus,

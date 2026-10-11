@@ -82,6 +82,15 @@ static void vQueueDelete(void *queue) { assert(queue); deletions++; }
 static foreground_slot_t *foreground_find_slot(const solar_os_app_t *app) {
     return app == &apps[0] ? &slots[0] : app == &apps[1] ? &slots[1] : NULL;
 }
+typedef struct {size_t free;} memory_region_t;
+typedef struct {memory_region_t internal, external; size_t internal_reserve;} solar_os_memory_status_t;
+static solar_os_memory_status_t memory_status;
+static bool task_admitted;
+#define SOLAR_OS_TASK_ROLE_FOREGROUND 1
+static void solar_os_memory_get_status(solar_os_memory_status_t *out) {*out=memory_status;}
+static bool solar_os_task_admit(const char *id, size_t stack, int role, bool external) {
+    assert(id && stack==8192 && role==1 && !external);return task_admitted;
+}
 #include "foreground.inc"
 static void setup(void) {
     memset(&first, 0, sizeof(first)); memset(&second, 0, sizeof(second));
@@ -101,6 +110,17 @@ static void setup(void) {
 }
 int main(void) {
     setup(); char busy[32];
+    slots[0].manifest.worker_stack_bytes=8192;
+    slots[0].manifest.minimum_internal_bytes=16384;
+    slots[0].manifest.minimum_psram_bytes=262144;
+    memory_status=(solar_os_memory_status_t){.internal={65536},.external={1048576},.internal_reserve=32768};
+    task_admitted=true;assert(foreground_admit(&slots[0])==ESP_OK);
+    memory_status.internal.free=32768+16384+8192-1;
+    assert(foreground_admit(&slots[0])==ESP_ERR_NO_MEM);
+    memory_status.internal.free=65536;memory_status.external.free=262143;
+    assert(foreground_admit(&slots[0])==ESP_ERR_NO_MEM);
+    memory_status.external.free=1048576;task_admitted=false;
+    assert(foreground_admit(&slots[0])==ESP_ERR_NO_MEM);
     assert(solar_os_native_foreground_entry(&apps[0]) == &slots[0].registry);
     assert(solar_os_native_foreground_claim(&apps[0], "session1", busy, sizeof(busy)) == ESP_OK);
     assert(solar_os_native_foreground_claim(&apps[1], "session2", busy, sizeof(busy)) == ESP_OK);

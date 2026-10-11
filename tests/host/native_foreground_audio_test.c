@@ -29,7 +29,8 @@ typedef struct {
     void *user;
     size_t block_frames;
 } solar_os_synth_config_t;
-typedef struct { uint32_t sample_rate; } solar_os_synth_status_t;
+typedef struct { uint32_t sample_rate; char owner[32]; } solar_os_synth_status_t;
+static char synth_owner[32];
 static foreground_state_t state, other;
 static foreground_slot_t slot;
 static solar_os_synth_config_t config;
@@ -54,7 +55,7 @@ static int solar_os_synth_stop(const char *owner) {
     if(stop_fail)return ESP_ERR_TIMEOUT;
     int16_t samples[32]={0};config.render(samples,16,16000,config.user);return ESP_OK;
 }
-static void solar_os_synth_get_status(solar_os_synth_status_t *s) {s->sample_rate=sample_rate;}
+static void solar_os_synth_get_status(solar_os_synth_status_t *s) {s->sample_rate=sample_rate;strcpy(s->owner,synth_owner);}
 static void solar_os_audio_stream_close(void *s) {(void)s;assert(!state.synth_running);}
 static int solar_os_frame_presenter_deinit(void *p) {assert(p && !state.synth_running && deleted);presented++;return ESP_OK;}
 static void esp_restart(void) {longjmp(restarted,1);}
@@ -66,7 +67,7 @@ static void setup(void) {
     memset(&state,0,sizeof(state));memset(&other,0,sizeof(other));memset(&slot,0,sizeof(slot));
     strcpy(slot.manifest.id,"gameboy");state.slot=&slot;
     atomic_store(&state.worker,&token[0]);atomic_store(&other.worker,&token[1]);
-    scope=&state;current=&token[0];mutex_fail=start_fail=stop_fail=false;image_live=true;
+    strcpy(synth_owner,"gameboy");scope=&state;current=&token[0];mutex_fail=start_fail=stop_fail=false;image_live=true;
     starts=stops=deleted=presented=calls=depth=0;sample_rate=16000;
 }
 int main(void) {
@@ -86,6 +87,9 @@ int main(void) {
     state.presenter=&token[2];foreground_worker_cleanup(&state);
     assert(stops==2 && deleted==1 && presented==1 && !state.synth_mutex && !state.synth_render);
     image_live=false;
+    setup();assert(foreground_synth_open(guest_render,&state,16,16000)==SOLAR_OS_NATIVE_OK);
+    strcpy(synth_owner,"other");image_live=false;foreground_worker_cleanup(&state);
+    assert(!stops && deleted==1 && !state.synth_render);
     setup();mutex_fail=true;assert(foreground_synth_open(guest_render,&state,16,16000)==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
     assert(!starts && !state.synth_render);
     setup();start_fail=true;assert(foreground_synth_open(guest_render,&state,16,16000)==SOLAR_OS_NATIVE_ERROR_FAILED);
