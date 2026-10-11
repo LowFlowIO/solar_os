@@ -12,7 +12,7 @@ static int path_arg(int argc, char *argv[])
 int main(void)
 {
     static const char *const first_path_apps[] = {
-        "edit", "hexedit", "notes", "writer", "sheet", "gameboy",
+        "edit", "hexedit", "notes", "writer", "sheet",
         "python", "lua", "files",
     };
     char *first_path[] = {NULL, "relative/file"};

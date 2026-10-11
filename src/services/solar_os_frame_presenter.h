@@ -28,6 +28,8 @@ typedef struct {
     bool allow_mono_fallback;
     bool request_high_refresh;
     bool reverse_direct_palette;
+    /* Preserve supplied colors on direct targets; mono polarity still applies. */
+    bool literal_direct_palette;
     bool clear_background_on_resume;
     uint8_t background_index;
 } solar_os_frame_presenter_config_t;
@@ -45,10 +47,12 @@ esp_err_t solar_os_frame_presenter_init(
 esp_err_t solar_os_frame_presenter_resume(
     solar_os_frame_presenter_t *presenter);
 void solar_os_frame_presenter_suspend(solar_os_frame_presenter_t *presenter);
+esp_err_t solar_os_frame_presenter_suspend_checked(solar_os_frame_presenter_t *presenter);
 esp_err_t solar_os_frame_presenter_deinit(solar_os_frame_presenter_t *presenter);
 bool solar_os_frame_presenter_submit(solar_os_frame_presenter_t *presenter,
                                      const uint8_t *data,
                                      size_t data_size);
+bool solar_os_frame_presenter_redraw(solar_os_frame_presenter_t *presenter);
 void solar_os_frame_presenter_take_stats(
     solar_os_frame_presenter_t *presenter,
     solar_os_frame_presenter_stats_t *stats);

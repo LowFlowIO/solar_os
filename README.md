@@ -69,6 +69,23 @@ See [Computer vision](doc/manual/vision.md),
 [Model bundles and pipelines](doc/manual/model-bundles.md) for Python/Lua
 examples, package requirements, and model compatibility.
 
+## External native modules
+
+On ESP32-S3 devices with PSRAM, SolarOS supports trusted external apps, jobs,
+and drivers. Use `pkg` to browse a compatible module catalog and install
+modules on storage. Foreground apps appear in the app registry and launch by
+name or through `session create`; resumable apps retain their state when
+switching sessions and release display and audio for the selected app.
+
+[Apple II Plus](doc/manual/app.apple2.md) and
+[Game Boy](doc/manual/app.gameboy.md) are external foreground apps. Install
+them with `pkg install apple2` and `pkg install gameboy`, or copy their built
+ELFs into `modules/apps/` on the preferred storage volume. Supply ROMs and disk
+images separately. Files opens `.gb` ROMs with the installed Game Boy module.
+
+See [Native foreground apps](doc/manual/native-app.md) for installation,
+resource declarations, and the suspend/resume contract.
+
 ## Build
 
 SolarOS requires PlatformIO Core 6.2.0 or newer and uses ESP-IDF 5.5.5 through
@@ -216,6 +233,7 @@ components remain applicable and must be preserved in redistributions.
 | [U8g2 `e4a5822`](https://github.com/olikraus/u8g2/commit/e4a582214cd4489307917e5decc8d3ee9597eb4a) | Monochrome graphics, text rendering, and selected display drivers | BSD-2-Clause; olikraus and contributors. See the retained [`LICENSE`](components/u8g2/LICENSE), including its separate font notices. |
 | [libwebp `3757b8a`](https://github.com/webmproject/libwebp/commit/3757b8afeb54e305eaef18502812a9a88b7ed662) | WebP decoding | BSD-3-Clause; Google and contributors. See the retained [`AUTHORS`](components/webp_decoder/libwebp/AUTHORS), [`COPYING`](components/webp_decoder/libwebp/COPYING), and [`PATENTS`](components/webp_decoder/libwebp/PATENTS). |
 | [MeshCore `03b6ef4`](https://github.com/meshcore-dev/MeshCore/commit/03b6ef4b0de98fc70b49ef10a6d0d61f8381fb7a) | Mesh packet, identity, contact, channel, and chat protocol subset | Separate notices are retained for MeshCore, `rweather/Crypto`, and Ed25519. See the [provenance and notice index](src/vendor/meshcore/README.solaros.md). |
-| [Peanut-GB `8e65698`](https://github.com/deltabeard/Peanut-GB/commit/8e656982f08663785794b84823d3e27f856fdb7f) | Game Boy emulation and `minigb_apu` audio | MIT; Mahyar Koshkouei, Alex Baines, and contributors. See the retained [provenance and notices](src/vendor/peanut_gb/README.solaros.md). |
+| [Peanut-GB `8e65698`](https://github.com/deltabeard/Peanut-GB/commit/8e656982f08663785794b84823d3e27f856fdb7f) | External Game Boy module emulation and `minigb_apu` audio | MIT; Mahyar Koshkouei, Alex Baines, and contributors. See the retained [provenance and notices](modules/gameboy/main/vendor/peanut_gb/README.solaros.md). |
+| [Reinette II Plus `b272efd`](modules/apple2/README.md) | External Apple II Plus module and 6502 interpreter | MIT; Arthur Ferreira and contributors. See the retained [license and notices](modules/apple2/main/vendor/LICENSE). |
 
  _Third-party code is adapted and modified it where needed, and integrated it into a shared system designed for constrained hardware by the authors of SolarOS._

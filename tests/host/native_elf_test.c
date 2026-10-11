@@ -7,7 +7,7 @@
 #include "solar_os_native_elf.h"
 
 enum {
-    TEST_FILE_SIZE = 512,
+    TEST_FILE_SIZE = 1024,
     TEST_SECTION_OFFSET = 52,
     TEST_SECTION_COUNT = 5,
     TEST_DYNSYM_OFFSET = 256,
@@ -116,6 +116,80 @@ static void test_valid_elf(void)
     assert(info.entry == 0x1000U);
     assert(info.machine == SOLAR_OS_NATIVE_ELF_MACHINE_XTENSA);
     assert(info.section_count == TEST_SECTION_COUNT);
+    assert(!info.foreground);
+}
+
+static void make_foreground_elf(uint8_t data[TEST_FILE_SIZE])
+{
+    static const char names[] = "\0.dynsym\0.dynstr\0.text\0.shstrtab\0.rodata\0";
+    static const char strings[] = "\0solar_os_native_host_v1\0solar_os_native_app_manifest";
+    make_valid_elf(data);
+    put_u16(data, 48U, 6U);
+    set_section(data, 1U, 1U, 11U, 2U, 0U, 768U, 48U, 2U, 4U, 16U);
+    set_section(data, 2U, 9U, 3U, 2U, 0U, 832U, sizeof(strings), 0U, 1U, 0U);
+    set_section(data, 3U, 17U, 1U, 6U, 0x1000U, 924U, 4U, 0U, 4U, 0U);
+    set_section(data, 4U, 23U, 3U, 0U, 0U, 928U, sizeof(names), 0U, 1U, 0U);
+    set_section(data, 5U, 33U, 1U, 2U, 0x2000U, 512U,
+                sizeof(solar_os_native_app_manifest_v2_t), 0U, 4U, 0U);
+    memset(data + 768U, 0, 48U);
+    put_u32(data, 784U, 1U);
+    data[796U] = 0x12U;
+    put_u32(data, 800U, sizeof("\0solar_os_native_host_v1"));
+    put_u32(data, 804U, 0x2000U);
+    put_u32(data, 808U, sizeof(solar_os_native_app_manifest_v2_t));
+    data[812U] = 0x11U;
+    put_u16(data, 814U, 5U);
+    memcpy(data + 832U, strings, sizeof(strings));
+    memcpy(data + 928U, names, sizeof(names));
+    const solar_os_native_app_manifest_v2_t app = {
+        .magic = SOLAR_OS_NATIVE_APP_MANIFEST_MAGIC,
+        .lifecycle_abi = 2U, .struct_size = sizeof(app), .app_class = 3U,
+        .flags = SOLAR_OS_NATIVE_APP_RESUMABLE, .worker_stack_bytes = 4096U,
+        .worker_priority = 2U, .minimum_psram_bytes = 65536U, .tick_interval_ms = 5U,
+        .id = "test-app", .summary = "foreground fixture",
+        .file_extensions = ".gb .nib",
+    };
+    memcpy(data + 512U, &app, sizeof(app));
+}
+
+static void test_foreground_manifest(void)
+{
+    uint8_t data[TEST_FILE_SIZE];
+    solar_os_native_elf_info_t info;
+    make_foreground_elf(data);
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, &info, NULL, 0U) == ESP_OK);
+    assert(info.foreground && !strcmp(info.app.id, "test-app"));
+    assert(!strcmp(info.app.file_extensions, ".gb .nib"));
+    assert(info.app.worker_stack_bytes == 4096U && info.app.worker_priority == 2U);
+    const char *bad_extensions[] = {"gb", ".", ".GB", ".gb/", ".gb ", ".gb  .nib"};
+    for (size_t i = 0U; i < sizeof(bad_extensions) / sizeof(bad_extensions[0]); ++i) {
+        make_foreground_elf(data);
+        strcpy((char *)data + 680U, bad_extensions[i]);
+        assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    }
+    make_foreground_elf(data); memset(data + 680U, 'x', 64U);
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    make_foreground_elf(data); data[680U] = 0U;
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, &info, NULL, 0U) == ESP_OK);
+    assert(info.app.file_extensions[0] == 0);
+    const size_t corruptions[] = {512U, 516U, 520U, 524U, 528U, 532U, 536U, 540U, 544U, 548U};
+    for (size_t i = 0U; i < sizeof(corruptions) / sizeof(corruptions[0]); ++i) {
+        make_foreground_elf(data);
+        put_u32(data, corruptions[i], UINT32_MAX);
+        assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    }
+    make_foreground_elf(data); memset(data + 552U, 'x', 32U);
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    make_foreground_elf(data); data[552U] = '/';
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    make_foreground_elf(data); memset(data + 584U, 'x', 96U);
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    make_foreground_elf(data); put_u32(data, 804U, 0x2001U);
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    make_foreground_elf(data); put_u16(data, 814U, 0U);
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
+    make_foreground_elf(data); put_u32(data, section_offset(5U) + 4U, 8U);
+    assert(solar_os_native_elf_validate(data, sizeof(data), 94U, NULL, NULL, 0U) == ESP_ERR_INVALID_RESPONSE);
 }
 
 static void test_rejects_wrong_machine(void)
@@ -215,6 +289,7 @@ int main(int argc, char **argv)
 {
     assert(argc == 1 || argc == 2);
     test_valid_elf();
+    test_foreground_manifest();
     test_rejects_wrong_machine();
     test_rejects_truncated_section_table();
     test_rejects_entry_outside_text();

@@ -329,12 +329,18 @@ using the original output-only prefix remain compatible. Arbitrary SolarOS
 internals are not exported through this interface. Native ELF code is not sandboxed; `load` is for trusted,
 maintainer-produced modules only.
 
-The `load` runner is for short-lived command-style modules. A module must stop
+ELFs declaring lifecycle-2 app metadata launch through the
+[foreground app runtime](native-app.md), retaining their image while suspended.
+Installed apps launch by module name.
+Ctrl+Alt+Del, Ctrl+] or closing the session requests cooperative shutdown.
+The host restarts the device if shutdown does not finish within five seconds.
+
+The ordinary `load` runner is for short-lived command-style modules. A module must stop
 all of its work and release every callback and resource before its entry point
 returns, because the runner immediately unloads its code and data. Installed
 jobs and drivers use separate resident lifecycle ABIs instead of this runner.
 
-The standalone `modules/hello` ESP-IDF project builds a small acceptance
+The standalone `modules/examples/hello` ESP-IDF project builds a small acceptance
 module.
 
 Official native-module catalogs are versioned with the host firmware. `pkg`
@@ -343,15 +349,17 @@ and native ABI match the running firmware. Each downloaded ELF must match the
 signed size and SHA-256, pass the same ELF validation as `load`, and is staged
 before atomic activation. The signed type selects the storage and lifecycle
 boundary: application modules use `/modules/apps/<module>.elf`, jobs use
-`/modules/jobs`, and drivers use `/modules/drivers`. Every entry separately
+`/modules/jobs`, drivers use `/modules/drivers`. Every entry separately
 declares its lifecycle ABI and its type-specific native host API size.
 Application lifecycle ABI 1 is the synchronous `main(argc, argv)`
 run-and-unload contract. Job lifecycle ABI 1 registers start, stop, and tick
 callbacks and keeps the ELF resident until the stopped job is removed. Driver
 lifecycle ABI 1 registers a zero-binding utility driver contract and keeps the
 ELF resident until all devices are detached and the module is removed.
-Installed jobs and drivers are reactivated during boot. The default repository is
-`https://solar-os.eu/ota/modules`.
+Application lifecycle ABI 2 declares a foreground app manifest and runs
+`main(argc, argv)` on its declared worker. Display, input, storage, timing and
+optional audio are provided by the versioned foreground service. Resumable apps
+retain their ELF and guest state across session switches.
 
 Run `pkg` without arguments to open the package manager. It refreshes the
 signed catalog in a worker, marks installed entries with `*`, and lets you

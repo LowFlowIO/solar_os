@@ -33,7 +33,8 @@ class RtspAppTest(unittest.TestCase):
                 "cc", "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
                 "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                 f"-I{tmp}", f"-I{ROOT / 'tests/host'}", f"-I{ROOT / 'src'}",
-                f"-I{ROOT / 'src/services'}", str(ROOT / "tests/host/rtsp_app_ui_test.c"),
+                f"-I{ROOT / 'src/services'}", "-idirafter", str(ROOT / "include"),
+                str(ROOT / "tests/host/rtsp_app_ui_test.c"),
                 "-o", str(binary),
             ], check=True)
             subprocess.run([str(binary)], check=True, timeout=10)

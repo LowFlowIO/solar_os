@@ -10,8 +10,6 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 
 ## Shell and storage
 
-- [Source keymaps](input.keymap.md) — Inspect mapping capabilities and customize registered input sources
-
 - [Shell command reference](commands.md) — Complete syntax, behavior, and examples for built-in shell commands
 - [Storage and shell paths](storage.md) — Use SolarOS volumes, files, directories, and shell-style paths
 
@@ -93,7 +91,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [pocsag command](commands.md) — Show POCSAG receiver configuration, counters, correction statistics, and RSSI.
 - [port command](commands.md) — List byte-stream ports.
 - [power command](commands.md) — Show the selected and effective profiles, suspend state, sleep policy, and wake statistics.
-- [pwm command](commands.md) — Show PWM state.
+- [pwm command](commands.md) — List registered PWM controllers.
 - [radio command](commands.md) — Open the packet-radio TUI with live status and editable common config.
 - [ramfs command](commands.md) — List PSRAM-backed volatile filesystem mounts.
 - [reboot command](commands.md) — Restart the board.
@@ -101,6 +99,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [rtc command](commands.md) — Show the RTC provider, capabilities, interrupt wiring, and alarm/timer owners. Reports unavailable when no RTC is present.
 - [say command](commands.md) — Queue text for offline speech, or stream a plain UTF-8 text file aloud with live progress. Pitch and speed default to 100. File mode submits bounded chunks through one continuous PicoTTS/audio session, completes paths with Tab, and remains responsive; press Esc or Ctrl+C to stop. Start speechd with a PicoTTS voice directory first.
 - [schedule command](commands.md) — List persistent alarms and scheduled shell scripts. Entries show their enabled state, trigger, and action.
+- [servo command](servo.md) — Show names, outputs, enabled state, and owners in a compact list.
 - [session command](commands.md) — List display sessions, port shells, and retained port-owned application sessions with their owner.
 - [sessions command](commands.md) — List display app sessions, display shell sessions, and port shell sessions.
 - [setterm command](commands.md) — Open the terminal settings TUI from the display shell.
@@ -130,6 +129,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [agent application](apps.md#agent) — Native Responses/Chat-Completions LLM client and SolarOS agent control plane. It streams model text directly to the active shell and exposes typed system-status, storage-listing, job-listing, display-discovery, and optional Python/Lua execution tools. agent tools shows risk, policy, and runtime availability.
 - [Agent service and tool reference](agent.service.md) — Provider contract, typed tools, policy, resource bounds, and roadmap
 - [aplay application](apps.md#aplay) — Play audio files through the default registered playback endpoint. WAV and MP3 are supported when an output device is present. MP3 decoding is provided by the shared, device-independent audio codec service. aplay prints the source details, plays the file once through the shared background audio player, and then returns to the prompt without clearing existing terminal output. It can be launched from display, UART, USB CDC, Telnet, and other port shells.
+- [Apple II Plus application](app.apple2.md) — Run Apple II Plus software with the external foreground module
 - [Application reference](apps.md) — Usage, controls, and examples for every foreground application
 - [arecord application](apps.md#arecord) — Record a registered capture endpoint to a WAV file. The default is the first compatible input; -i selects a specific stream such as adc0.capture. This requires a registered input device, but not built-in board audio. With -d, recording stops after the specified number of seconds. Without -d, recording continues until app-exit, the storage fills, or the WAV size limit is reached. It can be launched from display, UART, USB CDC, Telnet, and other port shells.
 - [calc application](apps.md#calc) — Scientific calculator and function plotter. On a graphical display, calc opens an expression list beside a Cartesian plot. From UART, USB CDC, Telnet, or any other text-only shell, the same command opens a scientific REPL without the plot pane. calc --tui forces that REPL even when graphics are available.
@@ -145,7 +145,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [flash application](apps.md#flash) — Download verified SolarOS factory artifacts to SD and program another supported ESP board over UART. The browser refreshes the signed catalog on request and shows which board, flavor, and version artifacts are already cached. Its tree starts folded and retains its selection and fold state after operations. Delete removes a selected cached artifact after confirmation. The shell form accepts a named UART plus optional boot and reset GPIO pins.
 - [ftp application](apps.md#ftp) — Two-pane FTP file manager. The left pane is local mounted storage. The right pane is a remote FTP server. The app uses unencrypted IPv4 FTP and passive data connections.
 - [funcgen application](apps.md#funcgen) — Audio-only function generator built on the shared real-time Synth service. It emits signed 16-bit stereo PCM and can use the default playback device or an explicitly selected runtime playback stream, including an attached LEDC PWM audio expansion.
-- [gameboy application](apps.md#gameboy) — Original Game Boy (DMG) emulator selected by the gameboy group on boards with PSRAM, SD storage, graphics, and a streaming display. Current integrated targets are SolarTerm, Freenove IPS, CL-32, T-LoRa-Pager, T-Deck Plus, ODROID-GO, Freenove PAL, and TTGO VGA32. The application loads a user-supplied ROM into PSRAM and writes battery-backed cartridge RAM beside it as a .sav file. Game Boy Color-only ROMs and ROMs larger than 4 MiB are rejected.
+- [Game Boy application](app.gameboy.md) — Run original Game Boy ROMs with the external foreground module
 - [help application](apps.md#help) — Foreground browser for the package-aware SolarOS manual. The foldable tree groups the topics available in the current firmware and shows whether it is using the setup and recovery guide or a verified downloaded revision. Full guides and scripting API references require the downloaded manual; use help update to install it on devices with Wi-Fi, PSRAM, and SD storage. All groups start folded. The selection, scroll position, and fold state remain unchanged after a topic closes.
 - [hexedit application](apps.md#hexedit) — Two-pane binary editor for files on mounted storage. Each row shows a file offset, hexadecimal bytes, and their synchronized printable ASCII view. The number of bytes per row adapts to the terminal width. It uses the same 256 KiB PSRAM and 32 KiB internal-memory limits as edit.
 - [inbox application](apps.md#inbox) — Universal incoming-message browser for pages, chat notifications, mail, and other background producers. It reads the same shared inbox that supplies the status-bar unread count. Messages and read state survive reboot in the bounded /.inbox/messages.bin store; the service retains at most 64 entries and keeps the file below 32 KB even when internal flash is the only storage.
@@ -230,6 +230,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Expansion hardware reference](expansion.reference.md) — Resource rules, workflows, drivers, bindings, and wiring examples
 - [GPIO, ADC, PWM, and LED APIs](gpio.analog.md) — Use runtime-safe digital and analog expansion pins
 - [Servo outputs](servo.md) — Control calibrated positional servos with hardware PWM
+- [Source keymaps](input.keymap.md) — Inspect and customize registered input-source mappings
 - [Time, battery, and environment APIs](time.sensors.md) — Read clocks, battery state, temperature, and humidity
 
 ## Scripting APIs
@@ -244,7 +245,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Lua buses and expansion API](lua.buses.md) — Buses and expansion: buses, expansion
 - [Lua camera, streams, and RTSP API](lua.media.md) — Owned local stream frames, camera snapshots, native images, and asynchronous RTSP sessions
 - [Lua contacts and messages API](lua.messaging.md) — Contacts and messages: contacts, messages
-- [Lua gpio and peripherals API](lua.hardware.md) — GPIO and peripherals: gpio, onewire, led, adc, pwm, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC
+- [Lua gpio and peripherals API](lua.hardware.md) — GPIO and peripherals: gpio, onewire, led, adc, pwm, servo, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC
 - [Lua graphics API](lua.gfx.md) — Draw through SolarOS displays from Lua
 - [Lua input and clipboard API](lua.input.md) — Input and clipboard: input, hid, clipboard
 - [Lua networking API](lua.network.md) — Networking: wifi, mqtt, http, net, ftp, sftpsync, ssh_keys
@@ -254,6 +255,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Model bundles and pipelines](model-bundles.md) — Checked model manifests, reusable adapters, and resident file or stream inference
 - [Model inference](inference.md) — Load resident ESP-DL models from storage and execute named tensor inputs and outputs
 - [Named runtime buses](buses.md) — Create and use resource-owned I2C, SPI, UART, MIDI, OneWire, and PS/2 buses
+- [Native foreground apps](native-app.md) — External app lifecycle, resource declarations and foreground services
 - [Native image pipelines](pipelines.md) — OS-owned QR and model processing jobs with bounded latest results and frame timings
 - [Native media and inference](native-media.md) — Versioned image, camera/RTSP, QR, imlib and resident-model interfaces for ELF modules
 - [Python API overview](python.md) — Runtime basics, conventions, and service API topic index
@@ -263,7 +265,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Python buses and expansion API](python.buses.md) — Buses and expansion: buses, expansion
 - [Python camera, streams, and RTSP API](python.media.md) — Owned local stream frames, camera snapshots, native images, and asynchronous RTSP sessions
 - [Python contacts and messages API](python.messaging.md) — Contacts and messages: contacts, messages
-- [Python gpio and peripherals API](python.hardware.md) — GPIO and peripherals: gpio, onewire, led, adc, pwm, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC
+- [Python gpio and peripherals API](python.hardware.md) — GPIO and peripherals: gpio, onewire, led, adc, pwm, servo, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC
 - [Python graphics API](python.gfx.md) — Draw through SolarOS displays from MicroPython
 - [Python input and clipboard API](python.input.md) — Input and clipboard: input, hid, clipboard
 - [Python networking API](python.network.md) — Networking: wifi, mqtt, http, net, ftp, sftpsync, ssh_keys

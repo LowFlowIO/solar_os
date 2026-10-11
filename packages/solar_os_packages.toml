@@ -477,11 +477,6 @@ label = "Invaders"
 category = "Games"
 members = ["app_invaders"]
 
-[groups.gameboy]
-label = "Game Boy"
-category = "Games"
-members = ["app_gameboy"]
-
 [groups.python]
 label = "Python"
 category = "Scripting"
@@ -863,6 +858,7 @@ sources = [
   "services/solar_os_module_packages.c",
   "services/solar_os_native.c",
   "services/solar_os_native_media.c",
+  "services/solar_os_native_foreground.c",
   "services/solar_os_native_elf.c",
   "shell/solar_os_shell_native.c",
   "shell/solar_os_shell_pkg_tui.c",
@@ -2537,18 +2533,6 @@ capabilities = ["gfx"]
 label = "app.invaders"
 sources = ["apps/solar_os_invaders.c"]
 capabilities = ["gfx"]
-
-[packages.app_gameboy]
-label = "app.gameboy"
-sources = [
-  "apps/solar_os_gameboy.c",
-  "apps/solar_os_gameboy_apu.c",
-  "apps/solar_os_gameboy_audio.c",
-  "apps/solar_os_gameboy_presenter.c",
-  "apps/solar_os_gameboy_rom.c",
-  "apps/solar_os_gameboy_video.c",
-]
-capabilities = ["gfx", "psram", "sd", "streaming_display"]
 
 [packages.app_python]
 label = "app.python"

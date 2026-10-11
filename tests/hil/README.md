@@ -108,7 +108,7 @@ time. Success prints `IMAGE_TENSOR_PYTHON_OK` or `IMAGE_TENSOR_LUA_OK`.
 
 ## Loadable native vision services
 
-Build `modules/vision-check`. Requires SolarTerm firmware with the native-module,
+Build `modules/examples/vision-check`. Requires SolarTerm firmware with the native-module,
 image, QR, imlib, inference, script-media and RTSP-client packages, no-auth
 Telnet, an existing `/dl` folder, a stopped device FTP job, FFmpeg and MediaMTX.
 Host ports 18754/18200/18201 must be free. Pass the host's LAN address.

@@ -3,6 +3,7 @@
 #include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
+#include <setjmp.h>
 
 #include "esp_elf.h"
 #include "freertos/FreeRTOS.h"
@@ -29,7 +30,50 @@
 
 static atomic_bool native_running;
 static atomic_bool native_symbols_registered;
-static solar_os_native_run_options_t native_active_options;
+typedef struct native_run_scope {
+    struct native_run_scope *next;
+    TaskHandle_t task;
+    solar_os_native_run_options_t options;
+} native_run_scope_t;
+
+static native_run_scope_t *native_run_scopes;
+static portMUX_TYPE native_run_scope_lock = portMUX_INITIALIZER_UNLOCKED;
+
+static native_run_scope_t *native_run_scope_current(void)
+{
+    const TaskHandle_t task = xTaskGetCurrentTaskHandle();
+    native_run_scope_t *found = NULL;
+    portENTER_CRITICAL(&native_run_scope_lock);
+    for (native_run_scope_t *scope = native_run_scopes; scope; scope = scope->next) {
+        if (scope->task == task) { found = scope; break; }
+    }
+    portEXIT_CRITICAL(&native_run_scope_lock);
+    /* Only this task can remove its own stack-owned execution scope. */
+    return found;
+}
+
+static void native_run_scope_add(native_run_scope_t *scope)
+{
+    portENTER_CRITICAL(&native_run_scope_lock);
+    scope->next = native_run_scopes;
+    native_run_scopes = scope;
+    portEXIT_CRITICAL(&native_run_scope_lock);
+}
+
+static void native_run_scope_remove(native_run_scope_t *scope)
+{
+    portENTER_CRITICAL(&native_run_scope_lock);
+    native_run_scope_t **link = &native_run_scopes;
+    while (*link && *link != scope) link = &(*link)->next;
+    if (*link) *link = scope->next;
+    portEXIT_CRITICAL(&native_run_scope_lock);
+}
+
+void *solar_os_native_run_service_user(void)
+{
+    native_run_scope_t *scope = native_run_scope_current();
+    return scope ? scope->options.service_user : NULL;
+}
 
 #define SOLAR_OS_NATIVE_RESIDENT_MAX SOLAR_OS_MODULE_PACKAGE_COUNT_MAX
 #define SOLAR_OS_NATIVE_SUMMARY_MAX 96U
@@ -68,15 +112,14 @@ static const void *native_job_get_service(const char *name,
 
 static esp_err_t native_write_utf8(const char *text, size_t text_len)
 {
-    if (text == NULL || (text_len > 0U && native_active_options.write == NULL)) {
+    native_run_scope_t *scope = native_run_scope_current();
+    if (text == NULL || (text_len > 0U && (scope == NULL || scope->options.write == NULL))) {
         return ESP_ERR_INVALID_ARG;
     }
     if (text_len == 0U) {
         return ESP_OK;
     }
-    return native_active_options.write(text,
-                                       text_len,
-                                       native_active_options.write_user);
+    return scope->options.write(text, text_len, scope->options.write_user);
 }
 
 static const solar_os_native_host_api_v1_t native_host_v1 = {
@@ -349,6 +392,12 @@ static const void *native_job_get_service(const char *name,
                                           uint32_t abi_version,
                                           uint32_t minimum_struct_size)
 {
+    native_run_scope_t *scope = native_run_scope_current();
+    if (scope != NULL && scope->options.get_service != NULL) {
+        const void *custom = scope->options.get_service(name, abi_version,
+            minimum_struct_size, scope->options.service_user);
+        if (custom != NULL) return custom;
+    }
     const void *service = solar_os_native_media_get_service(name, abi_version,
                                                            minimum_struct_size);
     if (service != NULL) return service;
@@ -405,6 +454,8 @@ static const struct esp_elfsym native_symbols[] = {
     ESP_ELFSYM_EXPORT(memmove),
     ESP_ELFSYM_EXPORT(memcmp),
     ESP_ELFSYM_EXPORT(strlen),
+    ESP_ELFSYM_EXPORT(setjmp),
+    ESP_ELFSYM_EXPORT(longjmp),
     ESP_ELFSYM_END,
 };
 
@@ -800,6 +851,11 @@ esp_err_t solar_os_native_run(const char *path,
     }
 
     esp_err_t err = ESP_OK;
+    bool operation_locked = true;
+    bool scope_linked = false;
+    native_run_scope_t scope = {
+        .task = xTaskGetCurrentTaskHandle(), .options = *options,
+    };
     uint8_t *data = NULL;
     esp_elf_t elf;
     bool elf_initialized = false;
@@ -847,6 +903,14 @@ esp_err_t solar_os_native_run(const char *path,
     if (err != ESP_OK) {
         goto done;
     }
+    if ((elf_info.foreground && options->expected_manifest == NULL) ||
+        (options->expected_manifest != NULL &&
+         (!elf_info.foreground || memcmp(&elf_info.app, options->expected_manifest,
+                                         sizeof(elf_info.app)) != 0))) {
+        native_set_detail(detail, detail_len, "foreground app requires its admitted session manifest");
+        err = ESP_ERR_INVALID_STATE;
+        goto done;
+    }
     err = native_register_symbols(detail, detail_len);
     if (err != ESP_OK) {
         goto done;
@@ -867,9 +931,15 @@ esp_err_t solar_os_native_run(const char *path,
         goto done;
     }
 
-    native_active_options = *options;
+    /* Relocation and symbol registration are serialized. Module execution
+     * can remain resident while another task loads a different application. */
+    solar_os_memory_free(data);
+    data = NULL;
+    native_run_scope_add(&scope);
+    scope_linked = true;
+    atomic_store(&native_running, false);
+    operation_locked = false;
     loader_ret = esp_elf_request(&elf, 0, argc, argv);
-    memset(&native_active_options, 0, sizeof(native_active_options));
     if (loader_ret != 0) {
         native_set_detail(detail, detail_len, "ELF entry point failed to run");
         err = ESP_FAIL;
@@ -881,12 +951,13 @@ esp_err_t solar_os_native_run(const char *path,
     }
 
 done:
-    memset(&native_active_options, 0, sizeof(native_active_options));
+    if (options->cleanup != NULL) options->cleanup(options->service_user);
+    if (scope_linked) native_run_scope_remove(&scope);
     if (elf_initialized) {
         esp_elf_deinit(&elf);
     }
     solar_os_memory_free(data);
-    atomic_store(&native_running, false);
+    if (operation_locked) atomic_store(&native_running, false);
     return err;
 }
 

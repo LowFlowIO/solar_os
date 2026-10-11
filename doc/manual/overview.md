@@ -27,6 +27,9 @@ than one fixed product shape.
 - Launch foreground applications such as an editor, pager, file manager,
   reader, image viewer, serial terminal, SSH/Telnet clients, web client,
   plotter, clock, chat client, games, Python, and Lua.
+- Install external apps, jobs, and drivers on ESP32-S3 devices with PSRAM.
+  [Apple II Plus](app.apple2.md) and [Game Boy](app.gameboy.md) run as external
+  foreground apps and retain their guest state when switching sessions.
 - Keep background jobs running for logging, data acquisition, NTP sync, SLIP,
   HTTP serving, Telnet shell access, serial bridging, battery monitoring, and
   gateway messaging synchronization.
