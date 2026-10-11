@@ -58,6 +58,7 @@ COMMAND_GITHUB_HREFS = {
     "job": "jobs.md",
     "jobs": "jobs.md",
     "link": "link.md",
+    "servo": "servo.md",
 }
 # Bare names intentionally owned by a richer topic or an earlier focused page.
 # Any new or changed collision is a review failure rather than a silent alias
@@ -86,6 +87,7 @@ DERIVED_ALIAS_OWNERS = {
     ("command.onewire", "onewire"): "compatibility.io",
     ("command.osc", "osc"): "osc",
     ("command.pwm", "pwm"): "gpio.analog",
+    ("command.servo", "servo"): "servo",
     ("command.sessions", "sessions"): "sessions.apps",
     ("command.spi", "spi"): "compatibility.io",
     ("command.sshkey", "sshkey"): "ssh_keys",

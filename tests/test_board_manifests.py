@@ -45,6 +45,26 @@ class BoardManifestTest(unittest.TestCase):
                 board = load_board_manifest(path, self.manifest_dir)
                 validate_board(board, self.drivers)
 
+    def test_pca9685_overlay_and_calibration_bindings(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        device = {"driver": "pca9685", "name": "servos0",
+                  "bindings": {"i2c": "i2c0", "addr": 0x40, "osc_hz": 26000000}}
+        board.setdefault("devices", []).append(device)
+        validate_board(board, self.drivers)
+        self.assertIn("pca9685", required_packages(board, self.drivers))
+        header = generate_header(board, self.drivers)
+        self.assertIn('.driver = "pca9685", .name = "servos0"', header)
+        self.assertIn('.role = "osc_hz"', header)
+        for address in (0x3f, 0x70, 0x78):
+            device["bindings"]["addr"] = address
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+        device["bindings"]["addr"] = 0x40
+        for frequency in (19999999, 30000001):
+            device["bindings"]["osc_hz"] = frequency
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+
     def test_inputronic_keyboard_overlay_uses_named_bus(self) -> None:
         for profile in ("esp32_s3_devkitc1_n16r8", "esp32_devkitc_v4_wrover", "cl_32"):
             with self.subTest(profile=profile):

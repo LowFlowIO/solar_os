@@ -2,6 +2,17 @@
 
 ## 4.x
 
+- **4.16.6** — 2026-10-11 — Added calibrated positional servo control
+  through the `servo` command and `solaros.servo` in Python and Lua, with
+  explicit angle/pulse limits, optional inversion, and named outputs.
+  Opening reserves an output without pulses; disable retains the reservation,
+  while close releases it. Scripts close their servos on interpreter exit.
+  PWM gains provider discovery, `provider:number` output names, and pulse-width
+  commands while retaining native GPIO shorthand. Added the reusable PCA9685
+  I2C expansion driver with 16 PWM channels, usable for general PWM or servos.
+  Outputs enforce their controller's shared-frequency constraints; all PCA9685
+  channels share one frequency. Servo support and the PCA9685 driver are
+  included in the full flavor where supported.
 - **4.16.5** — 2026-10-10 — Added Elecrow ThinkNode M9 support with a
   320x240 ST7789 display, backlit STC8H QWERTY keypad, microSD, PCF8563 RTC,
   NMEA GNSS, battery ADC, PWM buzzer, USB/UART console, Wi-Fi, and BLE.

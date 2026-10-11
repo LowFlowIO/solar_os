@@ -64,6 +64,17 @@ OS-owned QR or model processing jobs through `service.pipeline`; select
 Installing Python or Lua alone does not enable these optional services.
 Neither a camera nor a display is required to process stored images.
 
+The optional `servo` group selects `service.servo` and the generic PWM service.
+The `pwm` group also selects `driver.pwm-native` where the board supports PWM
+and GPIO. The generic services remain available to expansion providers on
+boards without native PWM. Both groups are enabled in `full`. The service provides calibrated positional outputs through the
+shell and `solaros.servo` in Python and Lua. See [Servo outputs](servo.md).
+
+The optional `pca9685` group selects `expansion.pca9685` on boards with expansion
+I2C. It registers 16 PWM channels through the generic PWM service and does not
+require native ESP32 PWM. Select `servo` as well for calibrated servo control.
+The group is enabled in `full`.
+
 `service.http-server` owns the shared inbound HTTP listener, route registry,
 and access-code authentication. Long-lived handlers use asynchronous routes so
 the server task remains available to other endpoints. An asynchronous consumer
