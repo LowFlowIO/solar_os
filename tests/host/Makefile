@@ -48,6 +48,13 @@ TARGETS += rtc_pcf8563_test
 TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
 TARGETS += inmp441_test
+TARGETS += lc709203f_test
+
+lc709203f_test: lc709203f_test.c $(ROOT)/src/drivers/lc709203f.c $(ROOT)/src/drivers/lc709203f.h \
+        $(ROOT)/src/services/solar_os_lc709203f.c $(ROOT)/src/services/solar_os_lc709203f.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iinmp441_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/src/drivers -I$(ROOT)/src/services lc709203f_test.c $(ROOT)/src/drivers/lc709203f.c \
+		$(ROOT)/src/services/solar_os_lc709203f.c -o $@
 
 inmp441_test: inmp441_test.c $(ROOT)/src/drivers/inmp441.c $(ROOT)/src/drivers/inmp441.h $(wildcard inmp441_stubs/*/*.h) \
         $(ROOT)/src/services/solar_os_inmp441.c $(ROOT)/src/services/solar_os_inmp441.h $(ROOT)/src/services/solar_os_stream.c

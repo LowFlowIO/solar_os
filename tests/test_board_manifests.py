@@ -64,6 +64,20 @@ class BoardManifestTest(unittest.TestCase):
         del device["bindings"]["dout"]
         validate_board(board, self.drivers)
 
+    def test_lc709203f_configuration_and_fixed_address(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        device = {"driver": "lc709203f", "name": "battery0", "bindings":
+                  {"i2c": "i2c0", "addr": 0x0b, "capacity": 3000, "temp": 250, "profile": 1}}
+        board.setdefault("devices", []).append(device)
+        validate_board(board, self.drivers)
+        self.assertIn("lc709203f", required_packages(board, self.drivers))
+        for key, bad_value in (("addr", 0x0c), ("capacity", 0), ("temp", 601), ("profile", 2)):
+            original = device["bindings"][key]
+            device["bindings"][key] = bad_value
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+            device["bindings"][key] = original
+
     def test_pca9685_overlay_and_calibration_bindings(self) -> None:
         board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
         device = {"driver": "pca9685", "name": "servos0",

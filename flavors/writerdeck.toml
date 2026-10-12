@@ -65,6 +65,7 @@ playground = true
 battery_adc = true
 bq27220 = true
 max17048 = true
+lc709203f = true
 audio_pwm = true
 pcm5102 = true
 pcm1808 = true

@@ -296,6 +296,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `shtc3` | SHTC3 temperature and humidity sensor | `i2c=<bus> addr=0x70` | Registers temperature and humidity providers. |
 | `battery-adc` | ADC battery monitor | `adc=<pin> divider=<1000..10000>` | Registers a battery provider using the configured divider ratio in thousandths. |
 | `bq27220` | BQ27220 fuel gauge | `i2c=<bus> addr=0x55` | Registers a battery provider backed by the fuel gauge. |
+| `lc709203f` | LC709203F single-cell Li-ion fuel gauge | `i2c=<bus> addr=0x0b`; optional `capacity=<mAh> profile=0|1 temp=<decic> apa=<value>` | CRC-checked voltage and state of charge; follows configured battery capacity. No charger-state measurement. |
 | `max17048` | MAX17048 fuel gauge | `i2c=<bus> addr=0x36` | Registers a battery provider with gauge-reported voltage and state of charge. The chip does not report charger or external-power state, so charging remains unknown unless another provider supplies it. |
 | `cw2017` | CW2017 fuel gauge | `i2c=<bus> addr=0x63` | Registers a battery provider with cell voltage and state of charge. Preserves the resident cell-specific BATINFO profile. Without a loaded profile or valid SOC, battery percentage uses the service's voltage estimate. Charging and external-power state are not reported by the gauge. |
 | `bq25896` | BQ25896 battery charger | `i2c=<bus> addr=0x6b`; optional `charge_current=<0..3008>` and `charge_voltage=<3840..4608>` | Registers a charger provider; optional values configure milliamps and millivolts within the device's supported steps. |
@@ -434,6 +435,41 @@ PCM5102A output is line level: use a powered input or a suitable amplifier, not
 a passive speaker. Stop playback before detaching; detach reports busy while
 the playback stream is open. Run `audio default auto` after testing to restore
 automatic output selection.
+
+### LC709203F battery fuel gauge
+
+Connect the Adafruit breakout's VIN to 3.3 V for ESP32 logic, GND to common
+ground, and SDA/SDI and SCL to a named I2C bus. Connect the actual single-cell
+Li-ion battery to the breakout's battery sockets. Its two battery sockets are
+parallel: use one for the cell and the other for the board's battery connection.
+The battery powers the gauge chip; VIN supplies the I2C pull-ups and level
+shifters. The fixed 7-bit address is `0x0b`.
+
+```text
+expansion attach lc709203f battery0 i2c=i2c0 addr=0x0b capacity=3000
+battery status
+battery capacity 3000
+```
+
+The driver wakes the gauge, checks each read's CRC, and registers the battery
+service's voltage and gauge-reported percentage. It does not measure charger
+status or USB power presence. Successful samples are cached for two seconds;
+I2C and CRC failures return errors rather than estimated percentages.
+
+`capacity` is the attachment's fallback in mAh (default 500). A nonzero
+`battery capacity` setting takes precedence and updates the gauge's APA setting
+on the next sample. APA uses the closest characterized Type-01/Type-03 cell
+capacity: 100, 200, 500, 1000, 2000, or 3000 mAh. Other cell/IC variants can
+specify `apa=1..255` to use their manufacturer's adjustment value instead.
+`profile=1` is the default Adafruit 3.7 V nominal / 4.2 V charge profile;
+`profile=0` selects the other profile stored in the chip.
+
+Without a thermistor, `temp=250` supplies an assumed 25.0 °C to the gauge's
+algorithm. This is compensation input, not a temperature measurement.
+`temp` accepts -200 through 600 in tenths of a degree Celsius. No interrupt
+wire is required. Detach removes the provider but leaves the gauge operating
+so battery tracking continues. Select the `lc709203f` firmware group on boards
+with expansion I2C.
 
 ### INMP441 I2S microphone
 
