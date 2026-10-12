@@ -190,15 +190,25 @@ int main(int argc, char **argv)
     tiny_host = solar_os_native_host_v1();
     if (!tiny_host || !tiny_host->get_service) return 1;
     tiny_app = tiny_host->get_service("foreground", 1,
-        offsetof(solar_os_native_foreground_api_v1_t, video_dimensions) + sizeof(tiny_app->video_dimensions));
+        offsetof(solar_os_native_foreground_api_v1_t, disk_close) + sizeof(tiny_app->disk_close));
     tiny_memory = tiny_host->get_service("memory", 1, offsetof(solar_os_native_memory_api_v1_t, alloc_internal));
     if (!tiny_app || !tiny_memory) { tiny_report("tiny386: foreground services unavailable"); return 1; }
-    if (argc != 2) { tiny_report("usage: tiny386 /path/floppy.img"); tiny_app->set_exit_code(1); return 1; }
-    char path[192];
+    const char *floppy_arg = NULL, *hard_arg = NULL;
+    if (argc == 2) floppy_arg = argv[1];
+    else if (argc == 3 && !strcmp(argv[1], "--hdd")) hard_arg = argv[2];
+    else if (argc == 4 && !strcmp(argv[2], "--hdd")) { floppy_arg = argv[1]; hard_arg = argv[3]; }
+    else { tiny_report("usage: tiny386 [floppy.img] [--hdd harddisk.img]"); tiny_app->set_exit_code(1); return 1; }
+    char floppy_path[160], hard_path[160];
     uint32_t size;
-    if (tiny_app->resolve_path(argv[1], path, sizeof(path)) || tiny_app->file_size(path, &size) ||
-        (size != 720U * 1024U && size != 1200U * 1024U && size != 1440U * 1024U && size != 2880U * 1024U)) {
+    if (floppy_arg && (tiny_app->resolve_path(floppy_arg, floppy_path, sizeof(floppy_path)) ||
+        tiny_app->file_size(floppy_path, &size) ||
+        (size != 720U * 1024U && size != 1200U * 1024U && size != 1440U * 1024U && size != 2880U * 1024U))) {
         tiny_report("tiny386: expected a 720K, 1.2M, 1.44M or 2.88M floppy image"); tiny_app->set_exit_code(1); return 1;
+    }
+    if (hard_arg && (tiny_app->resolve_path(hard_arg, hard_path, sizeof(hard_path)) ||
+        tiny_app->file_size(hard_path, &size) || !size || size > 0x7ffffe00U || size % 512)) {
+        tiny_report("tiny386: hard disk must be a raw image with 512-byte sectors, smaller than 2 GiB");
+        tiny_app->set_exit_code(1); return 1;
     }
     int result = 0;
     machine = NULL; rgb = NULL; indexed = NULL; changed = false; tiny_failure = NULL;
@@ -209,8 +219,12 @@ int main(int argc, char **argv)
     PCConfig config = {0};
     config.mem_size = 2 * 1024 * 1024; config.vga_mem_size = 256 * 1024;
     config.cpu_gen = 3; config.width = WIDTH; config.height = HEIGHT;
-    config.vga_force_8dm = 1; config.fdd[0] = path;
+    config.vga_force_8dm = 1; config.fdd[0] = floppy_arg ? floppy_path : NULL;
+    config.disks[0] = hard_arg ? hard_path : NULL; config.fill_cmos = 1;
     machine = pc_new(redraw, NULL, (uint8_t *)rgb, &config);
+    /* QEMU SeaBIOS reads this CMOS field for ATA geometry translation. LBA
+     * translation also gives DOS a usable CHS view beyond 504 MiB. */
+    if (hard_arg) cmos_set(machine->cmos, 0x39, 1);
     uint16_t palette[256];
     for (unsigned i = 0; i < 256; ++i) {
         unsigned r = (i >> 5) * 31 / 7, g = ((i >> 2) & 7) * 63 / 7, b = (i & 3) * 31 / 3;
@@ -226,7 +240,8 @@ int main(int argc, char **argv)
     text_scratch = tiny_malloc(TINY_TEXT_SCRATCH_BYTES);
     if (tiny_app->enable_suspend()) { tiny_failure = "suspend setup failed"; tiny_abort(); }
     load_bios_and_reset(machine);
-    tiny_report("tiny386: 386, 2 MiB RAM; booting floppy with SeaBIOS");
+    tiny_report(hard_arg ? "tiny386: 386, 2 MiB RAM; IDE hard disk attached" :
+        "tiny386: 386, 2 MiB RAM; booting floppy with SeaBIOS");
     uint64_t next_frame = 0;
     while (!tiny_app->stop_requested() && machine->shutdown_state != 8) {
         if (tiny_app->suspend_requested()) {
@@ -247,7 +262,8 @@ int main(int argc, char **argv)
     }
 done:
     if (tiny_failure) { tiny_report("tiny386: emulation stopped"); tiny_report(tiny_failure); }
-    if (tiny_save_disks()) { tiny_report("tiny386: floppy save failed"); result = 1; }
-    tiny_cleanup(); machine = NULL; rgb = NULL; indexed = NULL;
+    if (tiny_save_disks()) { tiny_report("tiny386: disk sync failed"); result = 1; }
+    if (tiny_cleanup()) { tiny_report("tiny386: disk close failed"); result = 1; }
+    machine = NULL; rgb = NULL; indexed = NULL;
     tiny_app->set_exit_code(result); return result;
 }

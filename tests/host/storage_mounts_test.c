@@ -11,6 +11,15 @@
 #include "solar_os_board_storage.h"
 #include "solar_os_ramfs.h"
 #include "solar_os_storage.h"
+#include "solar_os_disk_image.h"
+
+size_t solar_os_disk_image_mount_count(void) { return 0; }
+bool solar_os_disk_image_get_block(size_t i, solar_os_storage_block_t *b) { (void)i; (void)b; return false; }
+bool solar_os_disk_image_get_mount(size_t i, solar_os_storage_mount_info_t *m) { (void)i; (void)m; return false; }
+bool solar_os_disk_image_path_busy(const char *p) { (void)p; return false; }
+bool solar_os_disk_image_backing_busy(const char *p) { (void)p; return false; }
+void solar_os_disk_image_registry_lock(void) {}
+void solar_os_disk_image_registry_unlock(void) {}
 
 static bool fail_write;
 static bool fail_sync;

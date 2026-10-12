@@ -44,7 +44,7 @@ has no startup file, `auto` does not run the flash script.
 
 ## Mounts
 
-Use `disk`Use `disk` for both internal and removable persistent storage:
+Use `disk` for internal and removable persistent storage:
 
 ```text
 disk status
@@ -56,6 +56,41 @@ disk umount sd0p2
 
 `disk lsblk` names internal flash as `flash`, a removable card as `sd0`, and
 its partitions as `sd0p1`, `sd0p2`, and so on.
+
+## Disk images
+
+Mount a raw `.img` with a FAT12, FAT16, or FAT32 filesystem to edit its files:
+
+```text
+disk mount /sdcard/tiny386/harddisk.img /mnt/dos
+ls /mnt/dos
+cp /sdcard/notes.txt /mnt/dos/notes.txt
+disk umount /mnt/dos
+```
+
+SolarOS accepts whole-volume images, such as FAT floppy images, and MBR disks.
+It selects the first FAT partition by default. Add a partition number from 1
+to 4 to select another primary partition, for example
+`disk mount /sdcard/disk.img /mnt/dos 2`. Other filesystems and compressed disk
+formats are not supported. Mounting never formats an existing image.
+
+To create a new hard-drive image with one FAT partition:
+
+```text
+disk create /sdcard/tiny386/harddisk.img 32
+```
+
+The size is in MiB, from 1 to 2047. Creation allocates the full size and refuses
+to overwrite an existing file. The new disk is formatted but is not bootable;
+install a guest operating system separately. Images must use 512-byte sectors
+and be smaller than 2 GiB. FAT mounts share the firmware's available volume
+slots with SD and flash; `disk lsblk` lists mounted images as `imgN`.
+
+Close files before unmounting. Unmount an image before giving it to Tiny386;
+close the guest before mounting it again. Suspending a guest keeps its disk
+claim. SolarOS refuses a second mount or guest using the same image, and keeps
+the backing storage mounted while an image is in use. Do not edit or replace
+the raw image file through another program while it is mounted or running.
 
 ## Formatting
 

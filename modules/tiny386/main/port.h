@@ -19,7 +19,7 @@ extern const char *tiny_failure;
 void *tiny_malloc(size_t size);
 void *tiny_calloc(size_t count, size_t size);
 void tiny_free(void *pointer);
-void tiny_cleanup(void);
+int tiny_cleanup(void);
 _Noreturn void tiny_abort(void);
 _Noreturn void tiny_exit(int status);
 _Noreturn void tiny_assert(const char *file, int line);

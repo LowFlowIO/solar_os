@@ -1935,7 +1935,8 @@ static int bf_read_async(BlockDevice *bs,
         fprintf(f, "%" PRId64 " %d\n", sector_num, n);
     }
 #endif
-    if (!bf->f)
+    if (!bf->f || n <= 0 || sector_num >= (uint64_t)bf->nb_sectors ||
+        (uint64_t)n > (uint64_t)bf->nb_sectors - sector_num)
         return -1;
     if (bf->mode == BF_MODE_SNAPSHOT) {
         int i;
@@ -1950,8 +1951,8 @@ static int bf_read_async(BlockDevice *bs,
             buf += SECTOR_SIZE;
         }
     } else {
-        fseeko(bf->f, bf->start_offset + sector_num * SECTOR_SIZE, SEEK_SET);
-        fread(buf, 1, n * SECTOR_SIZE, bf->f);
+        if (fseeko(bf->f, bf->start_offset + sector_num * SECTOR_SIZE, SEEK_SET) ||
+            fread(buf, 1, n * SECTOR_SIZE, bf->f) != (size_t)n * SECTOR_SIZE) return -1;
     }
     /* synchronous read */
     return 0;
@@ -1964,14 +1965,16 @@ static int bf_write_async(BlockDevice *bs,
     BlockDeviceFile *bf = bs->opaque;
     int ret;
 
+    if (!bf->f || n <= 0 || sector_num >= (uint64_t)bf->nb_sectors ||
+        (uint64_t)n > (uint64_t)bf->nb_sectors - sector_num) return -1;
+
     switch(bf->mode) {
     case BF_MODE_RO:
         ret = -1; /* error */
         break;
     case BF_MODE_RW:
-        fseeko(bf->f, bf->start_offset + sector_num * SECTOR_SIZE, SEEK_SET);
-        fwrite(buf, 1, n * SECTOR_SIZE, bf->f);
-        ret = 0;
+        ret = fseeko(bf->f, bf->start_offset + sector_num * SECTOR_SIZE, SEEK_SET) ||
+            fwrite(buf, 1, n * SECTOR_SIZE, bf->f) != (size_t)n * SECTOR_SIZE ? -1 : 0;
         break;
     case BF_MODE_SNAPSHOT:
         {

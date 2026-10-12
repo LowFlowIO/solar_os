@@ -30,6 +30,8 @@ typedef struct {
     atomic_bool done, resumable, stop_requested, suspend_requested, suspended, input_reset;
     uint64_t stop_deadline_us;
     bool worker_started, keyboard_captured, themed_index2;
+    int result, exit_code;
+    char detail[160];
     void *gfx, *keys, *presenter, *audio;
 } foreground_state_t;
 static foreground_state_t first, second;
@@ -93,6 +95,11 @@ static void solar_os_memory_get_status(solar_os_memory_status_t *out) {*out=memo
 static bool solar_os_task_admit(const char *id, size_t stack, int role, bool external) {
     assert(id && stack==8192 && role==1 && !external);return task_admitted;
 }
+static bool disk_close_failed;
+static const void *disk_closed_owner;
+static int solar_os_disk_image_close_owner(const void *owner) {
+    disk_closed_owner = owner; return disk_close_failed ? ESP_FAIL : ESP_OK;
+}
 #include "foreground.inc"
 static void setup(void) {
     memset(&first, 0, sizeof(first)); memset(&second, 0, sizeof(second));
@@ -108,6 +115,7 @@ static void setup(void) {
     }
     scope=&first; current=&token[0]; wait_state=&first;
     clock_us=0; mode=0; presenter_fail=false;
+    disk_close_failed = false; disk_closed_owner = NULL;
     sequence=audio_order=presenter_order=release_order=deletions=0;
 }
 int main(void) {
@@ -178,8 +186,12 @@ int main(void) {
     assert(foreground_guest_suspend()==SOLAR_OS_NATIVE_OK);
     assert(atomic_load(&first.stop_requested) && !atomic_load(&first.suspended));
     setup(); foreground_worker_cleanup(&first);
+    assert(disk_closed_owner == &first);
     assert(audio_order < presenter_order && !first.audio && !first.presenter);
     assert(second.audio && second.presenter);
+    setup(); disk_close_failed = true; foreground_worker_cleanup(&first);
+    assert(first.exit_code == 1 && !strcmp(first.detail, "disk image close failed"));
+    assert(!first.audio && !first.presenter && second.audio && second.presenter);
     setup(); presenter_fail=true;
     if (!setjmp(reboot)) { foreground_worker_cleanup(&first); assert(0); }
     setup(); mode=0;

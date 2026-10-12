@@ -10,10 +10,8 @@ const char *tiny_failure;
 static void *allocations[96];
 static uint64_t clock_origin, clock_paused;
 struct tiny_file {
-    char path[192];
-    uint8_t *data;
-    uint32_t size, offset;
-    bool open, dirty;
+    uint32_t handle, size, offset;
+    bool open, writable;
 };
 static tiny_file files[4];
 static char bios_log[160];
@@ -46,13 +44,17 @@ void tiny_free(void *p)
     }
     tiny_failure = "invalid guest allocation"; tiny_abort();
 }
-void tiny_cleanup(void)
+int tiny_cleanup(void)
 {
+    int result = 0;
+    for (unsigned i = 0; i < 4; ++i)
+        if (files[i].open && tiny_app->disk_close(files[i].handle)) result = -1;
     for (unsigned i = 0; i < 96; ++i) if (allocations[i]) {
         tiny_memory->free(allocations[i]); allocations[i] = NULL;
     }
     memset(files, 0, sizeof(files));
     bios_log_length = 0;
+    return result;
 }
 void *bigmalloc(size_t size) { return tiny_malloc(size); }
 char *tiny_strcpy(char *out, const char *in) { memcpy(out, in, strlen(in) + 1); return out; }
@@ -65,22 +67,17 @@ int tiny_strcmp(const char *a, const char *b)
 int tiny_atoi(const char *s) { int n = 0; while (*s >= '0' && *s <= '9') n = n * 10 + *s++ - '0'; return n; }
 tiny_file *tiny_fopen(const char *path, const char *mode)
 {
-    (void)mode;
-    uint32_t size;
-    if (!path || strlen(path) >= sizeof(files[0].path) ||
-        tiny_app->file_size(path, &size) || !size || size > 2880U * 1024U) return NULL;
+    if (!path || !mode) return NULL;
     for (unsigned i = 0; i < 4; ++i) if (!files[i].open) {
         tiny_file *f = &files[i];
         memset(f, 0, sizeof(*f));
-        tiny_strcpy(f->path, path); f->data = tiny_malloc(size); f->size = size;
-        for (uint32_t off = 0; off < size;) {
-            size_t n = size - off, got = 0;
-            if (n > 65536) n = 65536;
-            if (tiny_app->read_file(path, off, f->data + off, n, &got) || got != n) {
-                tiny_free(f->data); memset(f, 0, sizeof(*f)); return NULL;
-            }
-            off += (uint32_t)n;
+        int result = tiny_app->disk_open(path, &f->handle, &f->size);
+        if (result) {
+            tiny_failure = result == SOLAR_OS_NATIVE_ERROR_INVALID_STATE ?
+                "disk image is in use; unmount it or close the other guest first" : "cannot open disk image";
+            return NULL;
         }
+        for (const char *p = mode; *p; ++p) f->writable |= *p == '+' || *p == 'w';
         f->open = true; return f;
     }
     return NULL;
@@ -88,8 +85,8 @@ tiny_file *tiny_fopen(const char *path, const char *mode)
 int tiny_fclose(tiny_file *f)
 {
     if (!f || !f->open) return -1;
-    if (f->dirty && tiny_app->replace_file(f->path, f->data, f->size)) return -1;
-    tiny_free(f->data); memset(f, 0, sizeof(*f)); return 0;
+    int result = tiny_app->disk_close(f->handle);
+    memset(f, 0, sizeof(*f)); return result;
 }
 int tiny_fseek(tiny_file *f, int64_t offset, int whence)
 {
@@ -104,21 +101,34 @@ size_t tiny_fread(void *out, size_t size, size_t count, tiny_file *f)
     if (!f || !f->open || !size || count > SIZE_MAX / size) return 0;
     size_t n = count * size;
     if (n > f->size - f->offset) n = (f->size - f->offset) / size * size;
-    memcpy(out, f->data + f->offset, n); f->offset += (uint32_t)n; return n / size;
+    for (size_t done = 0; done < n;) {
+        size_t chunk = n - done; if (chunk > 65536) chunk = 65536;
+        if (tiny_app->disk_read(f->handle, f->offset, (uint8_t *)out + done, chunk)) {
+            tiny_failure = "disk read failed"; tiny_abort();
+        }
+        done += chunk; f->offset += (uint32_t)chunk;
+    }
+    return n / size;
 }
 size_t tiny_fwrite(const void *in, size_t size, size_t count, tiny_file *f)
 {
-    if (!f || !f->open || !size || count > SIZE_MAX / size || count * size > f->size - f->offset) return 0;
+    if (!f || !f->open || !f->writable || !size || count > SIZE_MAX / size || count * size > f->size - f->offset) return 0;
     size_t n = count * size;
-    memcpy(f->data + f->offset, in, n); f->offset += (uint32_t)n;
-    f->dirty |= n != 0; return count;
+    for (size_t done = 0; done < n;) {
+        size_t chunk = n - done; if (chunk > 65536) chunk = 65536;
+        if (tiny_app->disk_write(f->handle, f->offset, (const uint8_t *)in + done, chunk)) {
+            tiny_failure = "disk write or sync failed"; tiny_abort();
+        }
+        done += chunk; f->offset += (uint32_t)chunk;
+    }
+    return count;
 }
 int tiny_save_disks(void)
 {
     int result = 0;
-    for (unsigned i = 0; i < 4; ++i) if (files[i].open && files[i].dirty) {
-        int e = tiny_app->replace_file(files[i].path, files[i].data, files[i].size);
-        if (e) result = e; else files[i].dirty = false;
+    for (unsigned i = 0; i < 4; ++i) if (files[i].open) {
+        int e = tiny_app->disk_sync(files[i].handle);
+        if (e) result = e;
     }
     return result;
 }
@@ -133,8 +143,13 @@ int tiny_putchar(int ch)
     } else if (ch >= 32 && ch < 127) bios_log[bios_log_length++] = (char)ch;
     return ch;
 }
-int tiny_fflush(void *file) { (void)file; return 0; }
-void tiny_perror(const char *text) { tiny_failure = text; }
+int tiny_fflush(void *file)
+{
+    for (unsigned i = 0; i < 4; ++i)
+        if (file == &files[i] && files[i].open) return tiny_app->disk_sync(files[i].handle);
+    return 0;
+}
+void tiny_perror(const char *text) { if (!tiny_failure) tiny_failure = text; }
 int tiny_usleep(unsigned usecs) { (void)usecs; return 0; }
 void tiny_clock_reset(void) { clock_origin = tiny_app->time_us(); clock_paused = 0; }
 void tiny_clock_pause(uint64_t elapsed) { clock_paused += elapsed; }

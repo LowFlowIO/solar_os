@@ -1025,6 +1025,7 @@ static const char * const meshcore_stream_port_values[] = {"mser0", "mser1"};
 #endif
 
 static const char * const disk_subcommands[] = {
+    "create",
     "status",
     "lsblk",
     "mount",
@@ -2316,6 +2317,7 @@ static const char * const path_mqtt_subscribe_topic[] = {
 #endif
 static const char * const path_disk[] = {"disk"};
 static const char * const path_disk_mount[] = {"disk", "mount"};
+static const char * const path_disk_create[] = {"disk", "create"};
 static const char * const path_disk_mount_target[] = {"disk", "mount", SHELL_COMPLETION_ANY};
 static const char * const path_disk_umount[] = {"disk", "umount"};
 static const char * const path_disk_format[] = {"disk", "format"};
@@ -3432,6 +3434,8 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #endif
     SHELL_COMPLETION_STATIC(path_disk, disk_subcommands),
     SHELL_COMPLETION_STORAGE_MOUNTABLES(path_disk_mount),
+    SHELL_COMPLETION_PATH(path_disk_mount, false),
+    SHELL_COMPLETION_PATH(path_disk_create, false),
     SHELL_COMPLETION_PATH(path_disk_mount_target, true),
     SHELL_COMPLETION_STORAGE_UNMOUNT_TARGETS(path_disk_umount),
     SHELL_COMPLETION_STORAGE_BLOCKS(path_disk_format),

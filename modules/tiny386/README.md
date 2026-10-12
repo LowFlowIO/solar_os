@@ -6,16 +6,17 @@ notices are retained in `main/vendor`. The port uses SolarOS memory, timing,
 display, input and file services; it initializes no board peripherals.
 
 The app emulates a 386 PC with 2 MiB RAM, 256 KiB VGA RAM, PS/2 keyboard,
-timer, RTC and floppy drive. The app queries the foreground display dimensions
+timer, RTC, floppy drive and IDE hard drive. The app queries the foreground display dimensions
 and submits a matching indexed frame. Text cells use the guest's VGA font and
 palette, with coverage sampling to retain thin strokes at smaller cell sizes.
 Graphics use a 640x400 VGA buffer and an aspect-preserving fit. This version
 has no guest networking, mouse or audio.
 Guest RTC starts at 2000-01-01. It supports 720 KiB, 1.2 MiB, 1.44 MiB and
-2.88 MiB raw floppy images. Each image is loaded into PSRAM. Guest writes remain
-in RAM until the app closes, when the image is atomically replaced. A save error
-is reported. Keep a copy of images whose original contents must be preserved.
-Hard-disk images and streamed sector access are not supported by this version.
+2.88 MiB raw floppy images and one raw IDE image with 512-byte sectors, smaller
+than 2 GiB. Images are read and written directly through the host's disk-image
+service; writes sync before returning. Keep a copy of images whose original
+contents must be preserved. Unmount an image from SolarOS before starting the
+guest, and close the guest before mounting it to edit its files.
 
 ## Build and launch
 
@@ -29,7 +30,8 @@ cmake --build build --target typed_elf
 
 The BIOS and VGA BIOS are embedded in the ELF; no separate ROM files are
 required. The firmware must provide the appended foreground `video_dimensions`
-method. Copy `build/solaros_native_tiny386.app.elf` to storage and run:
+method and the appended disk-image methods through `disk_close`. Copy
+`build/solaros_native_tiny386.app.elf` to storage and run:
 
 ```text
 load /sdcard/solaros_native_tiny386.app.elf /sdcard/tiny386/dos.img
@@ -40,6 +42,8 @@ For installed app discovery, copy the artifact to
 
 ```text
 tiny386 /sdcard/tiny386/dos.img
+tiny386 /sdcard/tiny386/dos.img --hdd /sdcard/tiny386/harddisk.img
+tiny386 --hdd /sdcard/tiny386/bootable-harddisk.img
 ```
 
 The manifest declares a resumable GUI app, a 16 KiB worker stack, priority 1,

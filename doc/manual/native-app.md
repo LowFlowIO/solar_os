@@ -101,6 +101,14 @@ instead of assuming a board's resolution. Request a service table large enough
 to include this method. Fixed-resolution emulators can still submit their own
 frame size and use the presenter's aspect-preserving fit.
 
+The appended `disk_open`, `disk_read`, `disk_write`, `disk_sync`, and
+`disk_close` methods provide exclusive access to fixed-size raw disk images.
+Request a table through `disk_close` before using them. `disk_open` returns an
+opaque handle and byte size; reads and writes take byte offsets and at most
+64 KiB per call. Writes sync before returning. Claims survive suspension, and
+the host closes remaining handles before unloading the worker. Unmount a host
+FAT image before opening it as a guest disk.
+
 Packed INDEX2 frames use four shades of the current display theme. The appended
 synth methods accept a bounded block size and required sample rate. Callbacks
 render signed 16-bit stereo PCM under a host mutex. The module uses
@@ -120,7 +128,7 @@ are exported for synchronous interpreter error handling.
 See [Apple II Plus](app.apple2.md) for bundled ROMs, NIB disk requirements, controls, and
 explicit disk saves. See [Game Boy](app.gameboy.md) for cartridge compatibility,
 controls, and automatic cartridge RAM saves. See [Tiny386](app.tiny386.md) for
-bootable PC floppy images, embedded BIOS, and display requirements. For example,
+bootable PC floppy and IDE images, embedded BIOS, and display requirements. For example,
 with assets present:
 
 ```text

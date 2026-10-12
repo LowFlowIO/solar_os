@@ -1,4 +1,5 @@
 #include "solar_os_storage.h"
+#include "solar_os_disk_image.h"
 
 #include <dirent.h>
 #include <errno.h>
@@ -138,7 +139,7 @@ esp_err_t solar_os_storage_init(void)
 #endif
 }
 
-esp_err_t solar_os_storage_mount(void)
+static esp_err_t storage_mount_locked(void)
 {
 #if SOLAR_OS_STORAGE_HAS_REMOVABLE
     if (solar_os_board_storage_available()) {
@@ -148,8 +149,22 @@ esp_err_t solar_os_storage_mount(void)
     return flash_storage_mount(storage_flash_default_mount_point());
 }
 
-esp_err_t solar_os_storage_mount_volume(const char *name, const char *mount_point)
+esp_err_t solar_os_storage_mount(void)
 {
+    solar_os_disk_image_registry_lock();
+    esp_err_t err = storage_mount_locked();
+    solar_os_disk_image_registry_unlock();
+    return err;
+}
+
+static esp_err_t storage_mount_volume_locked(const char *name, const char *mount_point)
+{
+    if (name && name[0] && strcmp(name, "flash") &&
+        (strncmp(name, "sd0", 3) || strchr(name, '/') || strchr(name, '.'))) {
+        char path[SOLAR_OS_STORAGE_PATH_MAX];
+        esp_err_t err = solar_os_storage_resolve_path(name, path, sizeof(path));
+        return err == ESP_OK ? solar_os_disk_image_mount(path, mount_point, 0) : err;
+    }
     if (name != NULL && strcmp(name, "flash") == 0) {
         return flash_storage_mount(
             mount_point != NULL && mount_point[0] != '\0' ?
@@ -165,18 +180,52 @@ esp_err_t solar_os_storage_mount_volume(const char *name, const char *mount_poin
     return ESP_ERR_NOT_SUPPORTED;
 }
 
-esp_err_t solar_os_storage_unmount(void)
+esp_err_t solar_os_storage_mount_volume(const char *name, const char *mount_point)
 {
+    solar_os_disk_image_registry_lock();
+    esp_err_t err = storage_mount_volume_locked(name, mount_point);
+    solar_os_disk_image_registry_unlock();
+    return err;
+}
+
+static esp_err_t storage_unmount_locked(void)
+{
+#if SOLAR_OS_STORAGE_HAS_REMOVABLE
+    const size_t count = solar_os_storage_mount_count();
+    for (size_t i = 0; i < count; ++i) {
+        solar_os_storage_mount_info_t mount;
+        if (solar_os_storage_get_mount(i, &mount) && mount.type == SOLAR_OS_STORAGE_MOUNT_SD &&
+            solar_os_disk_image_backing_busy(mount.mount_point)) return ESP_ERR_INVALID_STATE;
+    }
+#endif
 #if SOLAR_OS_STORAGE_HAS_REMOVABLE
     if (solar_os_board_storage_available()) {
         return solar_os_board_storage_unmount();
     }
 #endif
+    if (solar_os_disk_image_backing_busy(flash_storage_mount_point())) return ESP_ERR_INVALID_STATE;
     return flash_storage_unmount();
 }
 
-esp_err_t solar_os_storage_unmount_volume(const char *target)
+esp_err_t solar_os_storage_unmount(void)
 {
+    solar_os_disk_image_registry_lock();
+    esp_err_t err = storage_unmount_locked();
+    solar_os_disk_image_registry_unlock();
+    return err;
+}
+
+static esp_err_t storage_unmount_volume_locked(const char *target)
+{
+    if (!target || !target[0]) return solar_os_storage_unmount();
+    esp_err_t image_err = solar_os_disk_image_unmount(target);
+    if (image_err != ESP_ERR_NOT_FOUND) return image_err;
+    for (size_t i = 0; target && i < solar_os_storage_mount_count(); ++i) {
+        solar_os_storage_mount_info_t mount;
+        if (solar_os_storage_get_mount(i, &mount) &&
+            (!strcmp(target, mount.name) || !strcmp(target, mount.mount_point)) &&
+            solar_os_disk_image_backing_busy(mount.mount_point)) return ESP_ERR_INVALID_STATE;
+    }
     if (target != NULL &&
         (strcmp(target, "flash") == 0 ||
          (flash_storage_is_mounted() &&
@@ -192,12 +241,21 @@ esp_err_t solar_os_storage_unmount_volume(const char *target)
     return ESP_ERR_NOT_SUPPORTED;
 }
 
-esp_err_t solar_os_storage_format(const char *target)
+esp_err_t solar_os_storage_unmount_volume(const char *target)
+{
+    solar_os_disk_image_registry_lock();
+    esp_err_t err = storage_unmount_volume_locked(target);
+    solar_os_disk_image_registry_unlock();
+    return err;
+}
+
+static esp_err_t storage_format_locked(const char *target)
 {
     if (target == NULL || target[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
     if (strcmp(target, "flash") == 0) {
+        if (solar_os_disk_image_backing_busy(flash_storage_mount_point())) return ESP_ERR_INVALID_STATE;
         return flash_storage_format(storage_flash_default_mount_point());
     }
 #if SOLAR_OS_STORAGE_HAS_REMOVABLE
@@ -206,6 +264,14 @@ esp_err_t solar_os_storage_format(const char *target)
     }
 #endif
     return ESP_ERR_NOT_FOUND;
+}
+
+esp_err_t solar_os_storage_format(const char *target)
+{
+    solar_os_disk_image_registry_lock();
+    esp_err_t err = storage_format_locked(target);
+    solar_os_disk_image_registry_unlock();
+    return err;
 }
 
 bool solar_os_storage_is_mounted(void)
@@ -297,6 +363,10 @@ esp_err_t solar_os_storage_get_usage_for_path(const char *path, solar_os_storage
     if (path == NULL || path[0] == '\0') {
         return ESP_ERR_INVALID_ARG;
     }
+    solar_os_storage_block_t image_block;
+    for (size_t i = 0; solar_os_disk_image_get_block(i, &image_block); ++i)
+        if (path_is_on_mount(path, image_block.mount_point))
+            return solar_os_storage_get_usage_for_block(&image_block, usage);
     uint64_t total = 0;
     uint64_t used = 0;
     uint64_t free_space = 0;
@@ -355,12 +425,8 @@ esp_err_t solar_os_storage_get_usage_for_block(const solar_os_storage_block_t *b
         return storage_flash_get_usage(usage);
     }
 
-#if !SOLAR_OS_STORAGE_HAS_REMOVABLE
-    return ESP_ERR_NOT_SUPPORTED;
-#else
     char drive[3] = {(char)('0' + block->logical_volume), ':', '\0'};
     return get_usage_for_fatfs_path(drive, usage);
-#endif
 }
 
 esp_err_t solar_os_storage_rescan(void)
@@ -375,9 +441,9 @@ esp_err_t solar_os_storage_rescan(void)
 size_t solar_os_storage_block_count(void)
 {
 #if SOLAR_OS_STORAGE_HAS_REMOVABLE
-    return solar_os_board_storage_block_count() + 1U;
+    return solar_os_board_storage_block_count() + 1U + solar_os_disk_image_mount_count();
 #else
-    return 1U;
+    return 1U + solar_os_disk_image_mount_count();
 #endif
 }
 
@@ -419,7 +485,7 @@ bool solar_os_storage_get_block(size_t index, solar_os_storage_block_t *block)
     index -= board_count;
 #endif
     if (index != 0) {
-        return false;
+        return solar_os_disk_image_get_block(index - 1U, block);
     }
     memset(block, 0, sizeof(*block));
     strlcpy(block->name, "flash", sizeof(block->name));
@@ -515,6 +581,7 @@ size_t solar_os_storage_mount_count(void)
     }
 
     count += solar_os_ramfs_mount_count();
+    count += solar_os_disk_image_mount_count();
     return count;
 }
 
@@ -561,6 +628,9 @@ bool solar_os_storage_get_mount(size_t index, solar_os_storage_mount_info_t *mou
     }
 
     solar_os_ramfs_info_t ramfs;
+    if (index >= solar_os_ramfs_mount_count()) {
+        return solar_os_disk_image_get_mount(index - solar_os_ramfs_mount_count(), mount);
+    }
     if (!solar_os_ramfs_get_info(index, &ramfs)) {
         return false;
     }
@@ -602,9 +672,8 @@ esp_err_t solar_os_storage_path_mount_point(const char *path,
         }
     }
 
-#if SOLAR_OS_STORAGE_HAS_REMOVABLE
     const char *default_mount = solar_os_storage_sd_mount_point();
-    if (solar_os_storage_sd_is_mounted() && path_is_on_mount(path, default_mount)) {
+    if (solar_os_storage_sd_is_mounted() && strlen(default_mount) > best_len && path_is_on_mount(path, default_mount)) {
         best_len = strlen(default_mount);
         if (strlcpy(best_mount, default_mount, sizeof(best_mount)) >= sizeof(best_mount)) {
             return ESP_ERR_INVALID_SIZE;
@@ -626,8 +695,6 @@ esp_err_t solar_os_storage_path_mount_point(const char *path,
             strlcpy(best_mount, block.mount_point, sizeof(best_mount));
         }
     }
-#endif
-
     if (flash_storage_is_mounted() || storage_flash_prefix_is_reserved()) {
         const char *flash_mount = flash_storage_is_mounted() ?
             flash_storage_mount_point() :
@@ -1075,6 +1142,7 @@ esp_err_t solar_os_storage_rmdir(const char *path)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (solar_os_disk_image_path_busy(path)) { errno = EBUSY; return ESP_ERR_INVALID_STATE; }
     return rmdir(path) == 0 ? ESP_OK : ESP_FAIL;
 }
 
@@ -1085,6 +1153,7 @@ esp_err_t solar_os_storage_remove(const char *path)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (solar_os_disk_image_path_busy(path)) { errno = EBUSY; return ESP_ERR_INVALID_STATE; }
     return remove(path) == 0 ? ESP_OK : ESP_FAIL;
 }
 
@@ -1095,6 +1164,9 @@ esp_err_t solar_os_storage_rename(const char *old_path, const char *new_path)
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (solar_os_disk_image_path_busy(old_path) || solar_os_disk_image_path_busy(new_path)) {
+        errno = EBUSY; return ESP_ERR_INVALID_STATE;
+    }
     return rename(old_path, new_path) == 0 ? ESP_OK : ESP_FAIL;
 }
 
@@ -1140,6 +1212,8 @@ esp_err_t solar_os_storage_replace_file(const char *staged_path,
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (solar_os_disk_image_path_busy(staged_path) || solar_os_disk_image_path_busy(active_path) ||
+        solar_os_disk_image_path_busy(backup_path)) { errno = EBUSY; return ESP_ERR_INVALID_STATE; }
     struct stat info;
     if (stat(staged_path, &info) != 0 || !S_ISREG(info.st_mode)) {
         return ESP_ERR_NOT_FOUND;
@@ -1228,6 +1302,7 @@ esp_err_t solar_os_storage_write_file(const char *path,
         return storage_errno_to_esp(errno);
     }
 
+    if (solar_os_disk_image_path_busy(path)) { errno = EBUSY; return ESP_ERR_INVALID_STATE; }
     FILE *file = fopen(path, append ? "ab" : "wb");
     if (file == NULL) {
         return storage_errno_to_esp(errno);
@@ -1270,6 +1345,7 @@ esp_err_t solar_os_storage_copy_file_progress_cancel(
         return ESP_ERR_INVALID_ARG;
     }
 
+    if (solar_os_disk_image_path_busy(dest_path)) { errno = EBUSY; return ESP_ERR_INVALID_STATE; }
     FILE *source = fopen(source_path, "rb");
     if (source == NULL) {
         return ESP_FAIL;

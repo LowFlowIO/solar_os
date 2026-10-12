@@ -20,6 +20,7 @@
 #include "solar_os_native_app_abi.h"
 #include "solar_os_memory.h"
 #include "solar_os_storage.h"
+#include "solar_os_disk_image.h"
 #include "solar_os_task.h"
 #include "solar_os_shell.h"
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
@@ -461,6 +462,7 @@ static int foreground_replace_file(const char *path, const void *buffer, size_t 
     if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if (!foreground_path_valid(path) || (!buffer && length) || length > FOREGROUND_FILE_MAX)
         return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    if (solar_os_disk_image_path_busy(path)) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     char staged[SOLAR_OS_STORAGE_PATH_MAX], backup[SOLAR_OS_STORAGE_PATH_MAX];
     esp_err_t err = solar_os_storage_sibling_path(path, ".app.tmp", staged, sizeof(staged));
     if (err == ESP_OK) err = solar_os_storage_sibling_path(path, ".app.bak", backup, sizeof(backup));
@@ -479,6 +481,33 @@ static int foreground_replace_file(const char *path, const void *buffer, size_t 
     if (err == ESP_OK) err = solar_os_storage_replace_file(staged, path, backup);
     if (err != ESP_OK) (void)solar_os_storage_remove(staged);
     return foreground_result(err);
+}
+
+static int foreground_disk_open(const char *path, uint32_t *handle, uint32_t *size)
+{
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!foreground_path_valid(path)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    return foreground_result(solar_os_disk_image_open(path, foreground_current(), handle, size));
+}
+static int foreground_disk_read(uint32_t handle, uint32_t offset, void *data, size_t length)
+{
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    return foreground_result(solar_os_disk_image_read(handle, foreground_current(), offset, data, length));
+}
+static int foreground_disk_write(uint32_t handle, uint32_t offset, const void *data, size_t length)
+{
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    return foreground_result(solar_os_disk_image_write(handle, foreground_current(), offset, data, length));
+}
+static int foreground_disk_sync(uint32_t handle)
+{
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    return foreground_result(solar_os_disk_image_sync(handle, foreground_current()));
+}
+static int foreground_disk_close(uint32_t handle)
+{
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    return foreground_result(solar_os_disk_image_close(handle, foreground_current()));
 }
 
 static void foreground_audio_close(void)
@@ -591,6 +620,9 @@ static const solar_os_native_foreground_api_v1_t foreground_api = {
     .rtc_read = foreground_rtc_read, .buttons_source = foreground_buttons_source,
     .video_stats = foreground_video_stats,
     .video_dimensions = foreground_video_dimensions,
+    .disk_open = foreground_disk_open, .disk_read = foreground_disk_read,
+    .disk_write = foreground_disk_write, .disk_sync = foreground_disk_sync,
+    .disk_close = foreground_disk_close,
 };
 
 
@@ -619,6 +651,11 @@ static esp_err_t foreground_write(const char *text, size_t length, void *user)
 static void foreground_worker_cleanup(void *user)
 {
     foreground_state_t *state = user;
+    if (solar_os_disk_image_close_owner(state) != ESP_OK) {
+        state->result = ESP_FAIL;
+        state->exit_code = 1;
+        strlcpy(state->detail, "disk image close failed", sizeof(state->detail));
+    }
 #if SOLAR_OS_PACKAGE_SERVICE_SYNTH
     foreground_synth_close_state(state);
     if (state->synth_mutex) vSemaphoreDelete(state->synth_mutex);

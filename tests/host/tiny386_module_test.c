@@ -7,6 +7,9 @@
 int tiny386_main(int argc, char **argv);
 uint32_t get_uticks(void);
 static uint8_t disk[1440 * 1024];
+static uint8_t harddisk[1024];
+static bool open_disks[2], fail_open, fail_write;
+static unsigned keys_sent, writes;
 static bool booted, keyboard_ok, fail_allocation, fail_read, fail_save;
 static unsigned allocations, frames, suspends, saved;
 static int exit_code;
@@ -34,7 +37,12 @@ static int write_text(const char *text, size_t n)
     return 0;
 }
 static int size_of_file(const char *path, uint32_t *n)
-{ if (strcmp(path, "/test.img")) return -5; *n = sizeof(disk); return 0; }
+{
+    if (!strcmp(path, "/test.img")) *n = sizeof(disk);
+    else if (!strcmp(path, "/hard.img")) *n = 32U * 1024U * 1024U;
+    else return -5;
+    return 0;
+}
 static int read_image(const char *path, uint32_t offset, void *out, size_t n, size_t *got)
 {
     if (fail_read || strcmp(path, "/test.img") || offset > sizeof(disk) || n > sizeof(disk) - offset) return -1;
@@ -42,6 +50,41 @@ static int read_image(const char *path, uint32_t offset, void *out, size_t n, si
 }
 static int replace_image(const char *path, const void *in, size_t n)
 { assert(!strcmp(path, "/test.img") && n == sizeof(disk)); ++saved; if (fail_save) return -1; memcpy(disk, in, n); return 0; }
+static int disk_open(const char *path, uint32_t *handle, uint32_t *size)
+{
+    if (fail_open) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (size_of_file(path, size)) return -5;
+    unsigned index = strcmp(path, "/test.img") ? 1 : 0;
+    if (open_disks[index]) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    open_disks[index] = true; *handle = index + 1; return 0;
+}
+static int disk_read(uint32_t handle, uint32_t offset, void *out, size_t n)
+{
+    assert(handle >= 1 && handle <= 2 && open_disks[handle - 1] && n <= 65536);
+    if (fail_read) return -1;
+    if (handle == 1) { assert(offset <= sizeof(disk) && n <= sizeof(disk) - offset); memcpy(out, disk + offset, n); }
+    else {
+        assert(offset <= 32U * 1024U * 1024U && n <= 32U * 1024U * 1024U - offset);
+        memset(out, 0, n);
+        if (offset < sizeof(harddisk)) {
+            size_t count = n < sizeof(harddisk) - offset ? n : sizeof(harddisk) - offset;
+            memcpy(out, harddisk + offset, count);
+        }
+    }
+    return 0;
+}
+static int disk_write(uint32_t handle, uint32_t offset, const void *in, size_t n)
+{
+    assert(handle >= 1 && handle <= 2 && open_disks[handle - 1] && n <= 65536);
+    if (fail_write) return -1;
+    if (handle == 1) { assert(offset <= sizeof(disk) && n <= sizeof(disk) - offset); memcpy(disk + offset, in, n); }
+    else { assert(offset <= sizeof(harddisk) && n <= sizeof(harddisk) - offset); memcpy(harddisk + offset, in, n); }
+    ++writes; return 0;
+}
+static int disk_sync(uint32_t handle)
+{ assert(handle >= 1 && handle <= 2 && open_disks[handle - 1]); ++saved; return fail_save ? -1 : 0; }
+static int disk_close(uint32_t handle)
+{ assert(handle >= 1 && handle <= 2 && open_disks[handle - 1]); open_disks[handle - 1] = false; return fail_save ? -1 : 0; }
 static int resolve(const char *path, char *out, size_t n)
 { if (strlen(path) >= n) return -1; strcpy(out, path); return 0; }
 static int open_video(uint16_t w, uint16_t h, const uint16_t *pal, uint16_t fps, uint8_t bg)
@@ -73,10 +116,9 @@ static int suspend_app(void) { guest_before_suspend = get_uticks(); ++suspends; 
 static int enable_suspend(void) { return 0; }
 static int read_key(solar_os_native_foreground_key_v1_t *key, bool *available)
 {
-    static unsigned sent;
     const uint8_t keys[] = {'A', '>', 3};
-    *available = booted && sent < sizeof(keys);
-    if (*available) *key = (solar_os_native_foreground_key_v1_t){.key = keys[sent++], .action = SOLAR_OS_NATIVE_FOREGROUND_KEY_PRESS};
+    *available = booted && keys_sent < sizeof(keys);
+    if (*available) *key = (solar_os_native_foreground_key_v1_t){.key = keys[keys_sent++], .action = SOLAR_OS_NATIVE_FOREGROUND_KEY_PRESS};
     return 0;
 }
 static void sleep_ms(uint32_t n) { usleep(n * 1000); }
@@ -88,6 +130,8 @@ static const solar_os_native_foreground_api_v1_t app = {
     .resolve_path = resolve, .stop_requested = stop, .enable_suspend = enable_suspend,
     .suspend_requested = suspend_requested, .suspend = suspend_app, .set_exit_code = set_exit,
     .video_dimensions = video_dimensions,
+    .disk_open = disk_open, .disk_read = disk_read, .disk_write = disk_write,
+    .disk_sync = disk_sync, .disk_close = disk_close,
 };
 static const solar_os_native_memory_api_v1_t memory = {
     .abi_version = 1, .struct_size = sizeof(memory), .alloc = allocate, .free = release,
@@ -183,15 +227,40 @@ int main(void)
     char *argv[] = {"tiny386", "/test.img"};
     assert(tiny386_main(2, argv) == 0);
     assert(booted && keyboard_ok && frames >= 2 && suspends == 1 && allocations == 0 && exit_code == 0);
-    assert(saved == 1 && !memcmp(disk, disk + 512, 512));
+    assert(saved >= 1 && writes == 1 && !memcmp(disk, disk + 512, 512));
+    assert(!open_disks[0] && !open_disks[1]);
+    /* The same boot sector runs through SeaBIOS's real IDE path. DL=80h
+     * selects the hard disk for the guest INT 13h sector write. */
+    memcpy(harddisk, disk, 512);
+    size_t write_offset = n - 4 - sizeof(write_sector);
+    assert(!memcmp(harddisk + write_offset, write_sector, sizeof(write_sector)));
+    memmove(harddisk + write_offset + 16, harddisk + write_offset + 15, 510 - write_offset - 16);
+    harddisk[write_offset + 13] = 0xba; harddisk[write_offset + 14] = 0x80; harddisk[write_offset + 15] = 0;
+    booted = keyboard_ok = false; suspends = frames = keys_sent = writes = 0;
+    char *hard_argv[] = {"tiny386", "--hdd", "/hard.img"};
+    assert(tiny386_main(3, hard_argv) == 0);
+    assert(booted && keyboard_ok && suspends == 1 && writes == 1);
+    assert(!memcmp(harddisk, harddisk + 512, 512) && allocations == 0);
+    assert(!open_disks[0] && !open_disks[1]);
+    /* A floppy can boot with an attached IDE disk as well. */
+    booted = keyboard_ok = false; suspends = frames = keys_sent = writes = 0;
+    char *both_argv[] = {"tiny386", "/test.img", "--hdd", "/hard.img"};
+    assert(tiny386_main(4, both_argv) == 0);
+    assert(booted && keyboard_ok && writes == 1 && allocations == 0);
+    assert(!open_disks[0] && !open_disks[1]);
     saved = 0;
     assert(tiny386_main(1, argv) == 1 && allocations == 0);
     fail_allocation = true;
     assert(tiny386_main(2, argv) == 1 && allocations == 0 && exit_code == 1);
-    fail_allocation = false; fail_read = true;
+    fail_allocation = false; fail_read = true; booted = keyboard_ok = false;
+    suspends = frames = keys_sent = 0;
     assert(tiny386_main(2, argv) == 1 && allocations == 0);
     fail_read = false;
-    /* Bounded file operations and retryable save failures. */
+    fail_open = true;
+    assert(tiny386_main(3, hard_argv) == 1 && allocations == 0);
+    assert(!strcmp(tiny_failure, "disk image is in use; unmount it or close the other guest first"));
+    fail_open = false;
+    /* Bounded file operations and retryable sync failures. */
     tiny_app = &app; tiny_memory = &memory; tiny_host = &host;
     assert(!setjmp(tiny_trap));
     tiny_file *f = tiny_fopen("/test.img", "r+b"); assert(f);
@@ -202,10 +271,19 @@ int main(void)
     assert(tiny_fwrite(pair, 1, 2, f) == 0);
     assert(tiny_fseek(f, 100, SEEK_SET) == 0);
     assert(tiny_fwrite(pair, 1, 2, f) == 2);
-    fail_save = true; assert(tiny_save_disks() != 0 && saved == 1);
-    fail_save = false; assert(tiny_save_disks() == 0 && saved == 2 && disk[100] == 1 && disk[101] == 2);
+    assert(disk[100] == 1 && disk[101] == 2); /* Write-through, before close. */
+    fail_save = true; assert(tiny_save_disks() != 0);
+    fail_save = false; assert(tiny_save_disks() == 0);
     assert(tiny_fclose(f) == 0 && allocations == 0);
+    f = tiny_fopen("/hard.img", "r+b"); assert(f);
+    assert(tiny_fseek(f, 32U * 1024U * 1024U - 1, SEEK_SET) == 0);
+    assert(tiny_fread(pair, 1, 2, f) == 1 && pair[0] == 0);
+    assert(tiny_fseek(f, 0, SEEK_SET) == 0);
+    fail_write = true;
+    if (!setjmp(tiny_trap)) { (void)tiny_fwrite(pair, 1, 2, f); assert(0); }
+    fail_write = false;
     tiny_cleanup();
-    puts("Tiny386 real BIOS boot, suspend clock, cleanup, allocation and disk failures passed");
+    assert(!open_disks[0] && !open_disks[1] && allocations == 0);
+    puts("Tiny386 real floppy and IDE BIOS boot, guest writes, suspend and disk failures passed");
     return 0;
 }
