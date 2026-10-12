@@ -482,6 +482,36 @@ static void assert_storage_discovery(void)
     assert(rmdir(root) == 0);
 }
 
+static void assert_discovery_notifications(void)
+{
+    char root[] = "/tmp/solaros-storage-revision-XXXXXX";
+    assert(mkdtemp(root));
+    char file[SOLAR_OS_STORAGE_PATH_MAX], moved[SOLAR_OS_STORAGE_PATH_MAX];
+    snprintf(file, sizeof(file), "%s/app.elf", root);
+    snprintf(moved, sizeof(moved), "%s/new.elf", root);
+    uint32_t revision = solar_os_storage_revision();
+    assert(solar_os_storage_write_file(file, "ELF", 3U, false) == ESP_OK);
+    assert(solar_os_storage_revision() != revision);
+    revision = solar_os_storage_revision();
+    char content[4];
+    size_t read;
+    assert(solar_os_storage_read_file(file, content, sizeof(content), &read) == ESP_OK);
+    assert(read == 3U && solar_os_storage_revision() == revision);
+    assert(solar_os_storage_remove(moved) == ESP_FAIL);
+    assert(solar_os_storage_revision() == revision);
+    assert(solar_os_storage_rename(file, moved) == ESP_OK);
+    assert(solar_os_storage_revision() != revision);
+    revision = solar_os_storage_revision();
+    assert(solar_os_storage_remove(moved) == ESP_OK);
+    assert(solar_os_storage_revision() != revision);
+    revision = solar_os_storage_revision();
+    assert(solar_os_storage_rmdir(root) == ESP_OK);
+    assert(solar_os_storage_revision() != revision);
+    revision = solar_os_storage_revision();
+    solar_os_storage_notify_changed();
+    assert(solar_os_storage_revision() != revision);
+}
+
 int main(void)
 {
     assert(solar_os_storage_block_count() == 3);
@@ -502,6 +532,7 @@ int main(void)
     assert_replace_file();
     assert_write_file();
     assert_storage_discovery();
+    assert_discovery_notifications();
 
     puts("storage mount tests: ok");
     return 0;

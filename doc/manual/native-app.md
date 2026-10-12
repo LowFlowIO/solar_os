@@ -42,6 +42,11 @@ session. Different external apps can remain loaded in suspended sessions.
 Installing or removing a running or suspended foreground app is refused.
 Resource declaration changes to an app already discovered require a restart.
 
+App lists and command completion share cached discovery. Package installs and
+removals, FTP changes, and storage commands refresh it on the next lookup.
+Changes made through direct file APIs may take up to 30 seconds to appear.
+The host still validates each ELF when launching it.
+
 The package catalog has application, job and driver categories.
 
 ## Developer reference: resource declaration

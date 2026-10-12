@@ -5486,8 +5486,7 @@ static void shell_print_builtin_command_matches(solar_os_context_t *ctx, const c
     (void)shell_for_each_alias(shell_alias_print_callback, &alias_print);
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
     shell_native_module_print_t native_print = {.prefix = prefix, .io = io};
-    (void)solar_os_module_package_foreach_installed(
-        SOLAR_OS_MODULE_TYPE_APP,
+    solar_os_app_registry_foreach_module(
         shell_native_module_print_callback,
         &native_print);
 #endif
@@ -5536,8 +5535,7 @@ static void shell_complete_builtin_command(solar_os_context_t *ctx, bool show_ma
         .match_len = sizeof(match),
         .count = &match_count,
     };
-    (void)solar_os_module_package_foreach_installed(
-        SOLAR_OS_MODULE_TYPE_APP,
+    solar_os_app_registry_foreach_module(
         shell_native_module_complete_callback,
         &native_complete);
 #endif
@@ -5976,8 +5974,7 @@ static void shell_completion_emit_commands(shell_completion_match_t *state)
     }
     (void)shell_for_each_alias(shell_completion_alias_emit_callback, state);
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
-    (void)solar_os_module_package_foreach_installed(
-        SOLAR_OS_MODULE_TYPE_APP,
+    solar_os_app_registry_foreach_module(
         shell_completion_native_module_emit_callback,
         state);
 #endif

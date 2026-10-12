@@ -4,6 +4,7 @@
 #include <dirent.h>
 #include <errno.h>
 #include <stdint.h>
+#include <stdatomic.h>
 #include <stdio.h>
 #include <string.h>
 #include <sys/stat.h>
@@ -35,6 +36,17 @@
 #define SOLAR_OS_STORAGE_DEFAULT_MOUNT_POINT "/sdcard"
 
 static const char *TAG = "storage";
+static atomic_uint storage_revision;
+
+uint32_t solar_os_storage_revision(void)
+{
+    return atomic_load(&storage_revision);
+}
+
+void solar_os_storage_notify_changed(void)
+{
+    atomic_fetch_add(&storage_revision, 1U);
+}
 
 static esp_err_t get_usage_for_fatfs_path(const char *fatfs_path, solar_os_storage_usage_t *usage)
 {
@@ -154,6 +166,7 @@ esp_err_t solar_os_storage_mount(void)
     solar_os_disk_image_registry_lock();
     esp_err_t err = storage_mount_locked();
     solar_os_disk_image_registry_unlock();
+    if (err == ESP_OK) solar_os_storage_notify_changed();
     return err;
 }
 
@@ -185,6 +198,7 @@ esp_err_t solar_os_storage_mount_volume(const char *name, const char *mount_poin
     solar_os_disk_image_registry_lock();
     esp_err_t err = storage_mount_volume_locked(name, mount_point);
     solar_os_disk_image_registry_unlock();
+    if (err == ESP_OK) solar_os_storage_notify_changed();
     return err;
 }
 
@@ -212,6 +226,7 @@ esp_err_t solar_os_storage_unmount(void)
     solar_os_disk_image_registry_lock();
     esp_err_t err = storage_unmount_locked();
     solar_os_disk_image_registry_unlock();
+    if (err == ESP_OK) solar_os_storage_notify_changed();
     return err;
 }
 
@@ -246,6 +261,7 @@ esp_err_t solar_os_storage_unmount_volume(const char *target)
     solar_os_disk_image_registry_lock();
     esp_err_t err = storage_unmount_volume_locked(target);
     solar_os_disk_image_registry_unlock();
+    if (err == ESP_OK) solar_os_storage_notify_changed();
     return err;
 }
 
@@ -271,6 +287,7 @@ esp_err_t solar_os_storage_format(const char *target)
     solar_os_disk_image_registry_lock();
     esp_err_t err = storage_format_locked(target);
     solar_os_disk_image_registry_unlock();
+    if (err == ESP_OK) solar_os_storage_notify_changed();
     return err;
 }
 
@@ -1081,12 +1098,15 @@ esp_err_t solar_os_storage_mkdir(const char *path)
         return ESP_ERR_INVALID_ARG;
     }
 
-    return mkdir(path, 0777) == 0 ? ESP_OK : ESP_FAIL;
+    if (mkdir(path, 0777) != 0) return ESP_FAIL;
+    solar_os_storage_notify_changed();
+    return ESP_OK;
 }
 
 static esp_err_t storage_ensure_directory(const char *path, bool exist_ok)
 {
     if (mkdir(path, 0777) == 0) {
+        solar_os_storage_notify_changed();
         return ESP_OK;
     }
     if (errno != EEXIST) {
@@ -1143,7 +1163,9 @@ esp_err_t solar_os_storage_rmdir(const char *path)
     }
 
     if (solar_os_disk_image_path_busy(path)) { errno = EBUSY; return ESP_ERR_INVALID_STATE; }
-    return rmdir(path) == 0 ? ESP_OK : ESP_FAIL;
+    if (rmdir(path) != 0) return ESP_FAIL;
+    solar_os_storage_notify_changed();
+    return ESP_OK;
 }
 
 esp_err_t solar_os_storage_remove(const char *path)
@@ -1154,7 +1176,9 @@ esp_err_t solar_os_storage_remove(const char *path)
     }
 
     if (solar_os_disk_image_path_busy(path)) { errno = EBUSY; return ESP_ERR_INVALID_STATE; }
-    return remove(path) == 0 ? ESP_OK : ESP_FAIL;
+    if (remove(path) != 0) return ESP_FAIL;
+    solar_os_storage_notify_changed();
+    return ESP_OK;
 }
 
 esp_err_t solar_os_storage_rename(const char *old_path, const char *new_path)
@@ -1167,7 +1191,9 @@ esp_err_t solar_os_storage_rename(const char *old_path, const char *new_path)
     if (solar_os_disk_image_path_busy(old_path) || solar_os_disk_image_path_busy(new_path)) {
         errno = EBUSY; return ESP_ERR_INVALID_STATE;
     }
-    return rename(old_path, new_path) == 0 ? ESP_OK : ESP_FAIL;
+    if (rename(old_path, new_path) != 0) return ESP_FAIL;
+    solar_os_storage_notify_changed();
+    return ESP_OK;
 }
 
 esp_err_t solar_os_storage_sync_file(FILE *file)
@@ -1220,10 +1246,14 @@ esp_err_t solar_os_storage_replace_file(const char *staged_path,
     }
 
     const bool had_active = stat(active_path, &info) == 0;
+    /* Replacement can change the namespace even when rollback fails. */
+    solar_os_storage_notify_changed();
     if (stat(backup_path, &info) == 0 && remove(backup_path) != 0) {
+        solar_os_storage_notify_changed();
         return ESP_FAIL;
     }
     if (had_active && rename(active_path, backup_path) != 0) {
+        solar_os_storage_notify_changed();
         return ESP_FAIL;
     }
 
@@ -1232,6 +1262,7 @@ esp_err_t solar_os_storage_replace_file(const char *staged_path,
         if (had_active && rename(backup_path, active_path) != 0) {
             ESP_LOGW(TAG, "file replacement rollback failed: %s", active_path);
         }
+        solar_os_storage_notify_changed();
         errno = replace_errno;
         return ESP_FAIL;
     }
@@ -1239,6 +1270,7 @@ esp_err_t solar_os_storage_replace_file(const char *staged_path,
     if (had_active && remove(backup_path) != 0) {
         ESP_LOGW(TAG, "stale replacement backup remains: %s", backup_path);
     }
+    solar_os_storage_notify_changed();
     return ESP_OK;
 }
 
@@ -1318,6 +1350,7 @@ esp_err_t solar_os_storage_write_file(const char *path,
     }
     const int write_errno = errno;
     const int close_ret = fclose(file);
+    solar_os_storage_notify_changed();
     if (result != ESP_OK) {
         errno = write_errno != 0 ? write_errno : EIO;
     } else if (close_ret != 0) {
@@ -1413,6 +1446,7 @@ esp_err_t solar_os_storage_copy_file_progress_cancel(
         (void)remove(dest_path);
         errno = failure_errno;
     }
+    solar_os_storage_notify_changed();
     return ret;
 }
 
