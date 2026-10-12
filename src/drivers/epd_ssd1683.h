@@ -6,6 +6,9 @@
 
 #include "driver/spi_master.h"
 #include "esp_err.h"
+#include "epd_pixel_budget.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "u8g2.h"
 
 #ifdef __cplusplus
@@ -16,6 +19,7 @@ typedef enum {
     EPD_SSD1683_REFRESH_AUTO = 0,
     EPD_SSD1683_REFRESH_FAST,
     EPD_SSD1683_REFRESH_FULL,
+    EPD_SSD1683_REFRESH_PULSE,
 } epd_ssd1683_refresh_mode_t;
 
 typedef enum {
@@ -69,6 +73,14 @@ typedef struct {
     bool shadow_valid;
     bool partial_refresh_active;
     bool powered;
+    epd_pulse_tuning_t pulse_tuning;
+    epd_pixel_budget_t pixel_budget;
+    uint32_t pulse_updates;
+    bool pulse_lut_loaded;
+    bool pulse_needs_cleanup;
+    SemaphoreHandle_t lock;
+    StaticSemaphore_t lock_storage;
+    char mode_description[144];
 } epd_ssd1683_t;
 
 esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,

@@ -1246,6 +1246,17 @@ initial cleanup and does not schedule periodic full refreshes. `refresh=fast`
 forces a fast full-frame waveform and `refresh=full` forces the full cleanup
 waveform on every changed frame.
 
+The Elecrow 5.79-inch dual-SSD1683 profile also accepts the optional
+`refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
+sets the per-pixel budget, `pulse-frames=<1..8>` sets each drive phase's scan
+duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
+`cleanup-every=<1..128>` sets the native-cleanup interval in image updates.
+These runtime settings apply only to pulse mode and are listed by
+`display mode <target>`. Each presentation completes its pending pulse cycles
+synchronously. The mode requires physical panel calibration; other EPD
+profiles reject it until they have a matching waveform adapter. See the
+[SolarWriter display controls](boards.md#solarwriter) for behavior and recovery.
+
 Packet radio devices are datagram endpoints registered by expansion drivers, not
 byte-stream ports. The common radio layer preserves packet metadata such as RSSI
 and optional source/destination IDs. Radio frequency values are Hz by default

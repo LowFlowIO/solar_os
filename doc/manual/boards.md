@@ -978,6 +978,42 @@ playback data stream; the DAC provides stereo line output and the amplifier
 plays its default mono mix. The PCM5102 jack requires a line-level load,
 such as powered speakers or a headphone amplifier.
 
+The 5.79-inch dual-SSD1683 display has an optional monochrome pulse mode.
+It uses the shared EPD pixel-budget layer and a waveform specific to this
+panel profile. Select it and tune it with:
+
+```text
+display mode display0 refresh=pulse
+display mode display0 drive-cycles=1
+display mode display0 pulse-frames=1
+display mode display0 waveform-fr=8
+display mode display0 cleanup-every=32
+display mode display0
+```
+
+Each changed pixel receives `drive-cycles` completed waveform activations
+(1–32). Settled pixels select the neutral waveform; submitting the same target
+does not refill its budget. `pulse-frames` is the scan-frame duration of each
+drive phase (1–8); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
+frequency in Hz. Defaults are 1 cycle, 1 scan frame, code 8, and a native
+cleanup after 32 image updates. Settings are runtime-only. Pulse mode is
+experimental: its speed, polarity, ghosting, and optical settling require
+verification on the physical panel. It does not provide native grayscale.
+
+The driver completes all pending cycles before returning from a presentation.
+Increasing the cycle budget increases that presentation's blocking time; this
+mode does not run an independent 30 Hz scan worker. The first presentation
+establishes a native full-refresh baseline. Logs report changed pixel count,
+completed cycles, SPI transfer time, and waveform BUSY time separately.
+A failed transfer or waveform does not consume the failed cycle's budget and
+returns the driver to `refresh=auto` for a native recovery on the next paint.
+Use `display mode display0 refresh=auto` to restore the standard waveform;
+the next presentation resets the controller and performs a full cleanup.
+The pattern script `tests/hil/epd_pulse_pattern.py` exercises both transition
+directions and moves patches across both controller halves. Its printed
+presentation times include graphics-service overhead; judge optical settling
+and ghosting on the actual screen.
+
 `battery0` attaches automatically at I2C address `0x0b`. Battery capacity
 defaults to 3000 mAh and remains configurable:
 
