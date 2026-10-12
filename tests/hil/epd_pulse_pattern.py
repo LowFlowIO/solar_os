@@ -1,18 +1,16 @@
 """SolarOS MicroPython panel probe. Run as a foreground display-shell script.
 
 Set the display's refresh/tuning mode from telnet before launching this script.
-Driver logs distinguish transfer and waveform completion; printed present times
-include service overhead. Inspect the physical panel for gray drift, retained
+Driver logs distinguish transfer and waveform completion; gfx.present() queues
+work and does not measure physical completion. Inspect the panel for gray drift, retained
 patches, wrong polarity, and a mismatch between the two controller halves.
 """
-import time
-from solaros import gfx
+from solaros import gfx, time
 
 
 def present(label):
-    started = time.ticks_ms()
     gfx.present()
-    print(label, time.ticks_diff(time.ticks_ms(), started), "ms")
+    print("queued", label)
     time.sleep_ms(150)
 
 

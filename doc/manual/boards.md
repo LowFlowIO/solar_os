@@ -1004,14 +1004,16 @@ The driver completes all pending cycles before returning from a presentation.
 Increasing the cycle budget increases that presentation's blocking time; this
 mode does not run an independent 30 Hz scan worker. The first presentation
 establishes a native full-refresh baseline. Logs report changed pixel count,
-completed cycles, SPI transfer time, and waveform BUSY time separately.
+completed cycles, SPI transfer time, and waveform BUSY time separately in
+`log show`.
 A failed transfer or waveform does not consume the failed cycle's budget and
 returns the driver to `refresh=auto` for a native recovery on the next paint.
 Use `display mode display0 refresh=auto` to restore the standard waveform;
 the next presentation resets the controller and performs a full cleanup.
 The pattern script `tests/hil/epd_pulse_pattern.py` exercises both transition
 directions and moves patches across both controller halves. Its printed
-presentation times include graphics-service overhead; judge optical settling
+messages mark queued presentations; `gfx.present()` returns before physical
+completion. Read the driver timings in `log show` and judge optical settling
 and ghosting on the actual screen.
 
 `battery0` attaches automatically at I2C address `0x0b`. Battery capacity

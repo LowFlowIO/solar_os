@@ -12,6 +12,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "solar_os_buses.h"
+#include "solar_os_log.h"
 
 #define SSD1683_WIDTH 400U
 #define SSD1683_HEIGHT 300U
@@ -722,9 +723,9 @@ static esp_err_t ssd1683_dual_write_frame(epd_ssd1683_t *display,
 /* SSD1683 Rev 1.0 Figure 6-7: five 42-byte LUTs, then FR/XON at 224.
  * In B/W mode RAM (old,new) selects BB, WB, BW, WW. Only transitions
  * are driven; BB and WW are neutral. Phase A drives, phase B settles.
- * Source/gate rails remain those loaded by this panel's native init. The
- * VCOM offset uses this panel's published 0x00 pulse setting so neutral
- * sources do not see the full native VCOM bias.
+ * Custom waveforms require their companion power registers as well as LUT
+ * SRAM. Program the published GDEY0579T93 rail settings on both controllers;
+ * an earlier native OTP activation is not the custom-waveform power setup.
  */
 static esp_err_t ssd1683_dual_load_pulse_lut(epd_ssd1683_t *display)
 {
@@ -744,13 +745,22 @@ static esp_err_t ssd1683_dual_load_pulse_lut(epd_ssd1683_t *display)
     const uint8_t border[] = {0x80};
     const uint8_t cascade[] = {0x00, 0x10};
     const uint8_t vcom[] = {0x00};
+    const uint8_t gate[] = {0x17};
+    const uint8_t source[] = {0x41, 0xa8, 0x32};
+    const uint8_t booster[] = {0x8b, 0x9c, 0xa4, 0x0f};
     const uint8_t ram_options[10] = {0}; /* Disable RAM ping-pong: explicit planes. */
     for (unsigned chip = 0; chip < 2; ++chip) {
         const uint8_t select = chip == 0 ? 0x00 : 0x80;
+        ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x0c | select, booster,
+                                              sizeof(booster)), TAG, "pulse booster failed");
         ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x32 | select, lut,
                                               sizeof(lut)), TAG, "pulse LUT failed");
         ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x3f | select, end,
                                               sizeof(end)), TAG, "pulse end failed");
+        ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x03 | select, gate,
+                                              sizeof(gate)), TAG, "pulse gate voltage failed");
+        ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x04 | select, source,
+                                              sizeof(source)), TAG, "pulse source voltage failed");
         ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x3c | select, border,
                                               sizeof(border)), TAG, "pulse border failed");
         ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x2c | select, vcom,
@@ -864,7 +874,7 @@ static esp_err_t ssd1683_dual_pulse_refresh(epd_ssd1683_t *display)
         display->partial_refresh_active = false;
         display->pulse_needs_cleanup = false;
         display->pulse_updates = 0;
-        ESP_LOGI(TAG, "pulse baseline native total=%lldus",
+        SOLAR_OS_LOGI(TAG, "pulse baseline native total=%lldus",
                  (long long)(esp_timer_get_time() - cleanup_started));
         return ESP_OK;
     }
@@ -881,6 +891,9 @@ static esp_err_t ssd1683_dual_pulse_refresh(epd_ssd1683_t *display)
     if (!display->pulse_lut_loaded)
         ESP_RETURN_ON_ERROR(ssd1683_dual_load_pulse_lut(display), TAG,
                             "pulse waveform setup failed");
+    SOLAR_OS_LOGI(TAG, "pulse start pixels=%u cycles=%u frames=%u fr=%u",
+        (unsigned)changed, display->pulse_tuning.drive_cycles,
+        display->pulse_tuning.pulse_frames, display->pulse_tuning.waveform_fr);
     while (display->pixel_budget.pending != 0) {
         const int64_t transfer_started = esp_timer_get_time();
         ESP_RETURN_ON_ERROR(ssd1683_dual_write_pulse(display), TAG,
@@ -891,16 +904,21 @@ static esp_err_t ssd1683_dual_pulse_refresh(epd_ssd1683_t *display)
         ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x22, update, sizeof(update)),
                             TAG, "pulse activation setup failed");
         ESP_RETURN_ON_ERROR(ssd1683_cmd(display, 0x20), TAG, "pulse activation failed");
-        if (!ssd1683_busy_asserted(display, SSD1683_BUSY_ASSERT_TIMEOUT_MS) ||
-            !ssd1683_busy_cleared(display, 2000))
+        if (!ssd1683_busy_asserted(display, SSD1683_BUSY_ASSERT_TIMEOUT_MS)) {
+            SOLAR_OS_LOGE(TAG, "pulse activation did not assert BUSY; cycle=%u", cycles + 1);
             return ESP_ERR_TIMEOUT;
+        }
+        if (!ssd1683_busy_cleared(display, 2000)) {
+            SOLAR_OS_LOGE(TAG, "pulse BUSY did not clear within 2000ms; cycle=%u", cycles + 1);
+            return ESP_ERR_TIMEOUT;
+        }
         drive_us += esp_timer_get_time() - drive_started;
         epd_pixel_budget_advance(&display->pixel_budget);
         ++cycles;
     }
     memcpy(display->shadow, display->buffer, display->buffer_size);
     ++display->pulse_updates;
-    ESP_LOGI(TAG, "pulse pixels=%u cycles=%u transfer=%lldus drive=%lldus total=%lldus",
+    SOLAR_OS_LOGI(TAG, "pulse pixels=%u cycles=%u transfer=%lldus drive=%lldus total=%lldus",
         (unsigned)changed, cycles, (long long)transfer_us, (long long)drive_us,
         (long long)(esp_timer_get_time() - started));
     return ESP_OK;
@@ -918,7 +936,7 @@ static esp_err_t ssd1683_dual_refresh(epd_ssd1683_t *display)
             display->controller_ready = false;
             display->shadow_valid = false;
             display->pulse_needs_cleanup = true;
-            ESP_LOGW(TAG, "pulse failed, returning to refresh=auto");
+            SOLAR_OS_LOGW(TAG, "pulse failed err=0x%x, returning to refresh=auto", (unsigned)err);
         }
         return err;
     }

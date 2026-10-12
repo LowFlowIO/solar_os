@@ -1,10 +1,23 @@
 #include <assert.h>
 #include <stdio.h>
 #include <string.h>
+#include <stdarg.h>
+#include "solar_os_log.h"
 #include "esp_log.h"
 #undef ESP_LOGI
 #define ESP_LOGI(tag, ...) do { (void)(tag); snprintf(last_log, sizeof(last_log), __VA_ARGS__); } while (0)
 static char last_log[256];
+static char error_log[256];
+esp_err_t solar_os_log_write(solar_os_log_level_t level, const char *tag, const char *fmt, ...) {
+    assert(strcmp(tag, "epd_ssd1683") == 0);
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(last_log, sizeof(last_log), fmt, args);
+    va_end(args);
+    if (level == SOLAR_OS_LOG_LEVEL_ERROR)
+        snprintf(error_log, sizeof(error_log), "%s", last_log);
+    return ESP_OK;
+}
 #include "../../src/drivers/epd_ssd1683.c"
 
 typedef struct { uint8_t cmd; size_t size; uint8_t data[14000]; } capture_t;
@@ -109,6 +122,16 @@ static void test_pulse_and_restore(void) {
     pixel(0, 0, false); pixel(395, 100, false); pixel(396, 271, false); pixel(791, 10, false);
     assert(ssd1683_refresh(&d) == ESP_OK);
     assert(count(0x32) == 1 && count(0xb2) == 1);
+    /* Published panel power setup must precede its first custom activation,
+     * for both controllers, rather than relying on previous OTP state.
+     */
+    assert(find(0x0c, 0)->size == 4 && find(0x8c, 0)->size == 4);
+    assert(memcmp(find(0x0c, 0)->data, (uint8_t[]){0x8b,0x9c,0xa4,0x0f}, 4) == 0);
+    assert(memcmp(find(0x8c, 0)->data, find(0x0c, 0)->data, 4) == 0);
+    assert(find(0x03, 0)->data[0] == 0x17 && find(0x83, 0)->data[0] == 0x17);
+    assert(find(0x04, 0)->size == 3 && find(0x84, 0)->size == 3);
+    assert(memcmp(find(0x04, 0)->data, (uint8_t[]){0x41,0xa8,0x32}, 3) == 0);
+    assert(memcmp(find(0x84, 0)->data, find(0x04, 0)->data, 3) == 0);
     capture_t *lut = find(0x32, 0), *slave_lut = find(0xb2, 0);
     assert(lut->size == 227 && memcmp(lut->data, slave_lut->data, 227) == 0);
     assert(lut->data[85] == 0x41 && lut->data[127] == 0x81);
@@ -166,6 +189,7 @@ static void test_cleanup_failure_and_capability(void) {
     assert(ssd1683_refresh(&d) == ESP_OK);
     pixel(1, 0, false); no_busy = true; capture_count = 0;
     assert(ssd1683_refresh(&d) == ESP_ERR_TIMEOUT);
+    assert(strstr(error_log, "did not assert BUSY") != NULL);
     assert(d.pixel_budget.pending == 1 && d.refresh_mode == EPD_SSD1683_REFRESH_AUTO);
     free_budget(&d);
     d = display();

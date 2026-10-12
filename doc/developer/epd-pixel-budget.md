@@ -32,6 +32,8 @@ Waveform register layout follows Solomon Systech's SSD1683 Rev 1.0, sections
 Good Display's panel sequence as published in
 [Typoena's GDEY0579T93 driver](https://github.com/typoena/typewriter/blob/main/firmware/src/drivers/screen_epd.rs).
 SolarOS generates its own short differential waveform; it does not reuse the
-other project's full waveform table. Source and gate rail settings come from
-the panel's native initialization; pulse mode uses the published 0x00 VCOM
-offset and disables RAM ping-pong because it writes both planes explicitly.
+other project's full waveform table. Pulse mode explicitly programs the
+panel's published source/gate rail and VCOM settings on both controllers,
+including booster soft start, and disables RAM ping-pong because it writes
+both planes explicitly. Pulse start, completion, and errors use the SolarOS
+log ring and can be read with `log show` over a port shell.

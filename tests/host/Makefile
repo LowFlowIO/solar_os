@@ -52,7 +52,7 @@ TARGETS += epd_pixel_budget_test
 TARGETS += epd_ssd1683_test
 
 epd_ssd1683_test: epd_ssd1683_test.c $(ROOT)/src/drivers/epd_ssd1683.c $(ROOT)/src/drivers/epd_ssd1683.h $(ROOT)/src/drivers/epd_pixel_budget.c $(ROOT)/src/drivers/epd_pixel_budget.h $(wildcard epd_stubs/*.h epd_stubs/driver/*.h)
-	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib -I$(ROOT)/src/drivers epd_ssd1683_test.c $(ROOT)/src/drivers/epd_pixel_budget.c -Wl,--gc-sections -o $@
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib -I$(ROOT)/src/drivers -I$(ROOT)/src/services epd_ssd1683_test.c $(ROOT)/src/drivers/epd_pixel_budget.c -Wl,--gc-sections -o $@
 
 epd_pixel_budget_test: epd_pixel_budget_test.c $(ROOT)/src/drivers/epd_pixel_budget.c $(ROOT)/src/drivers/epd_pixel_budget.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers epd_pixel_budget_test.c $(ROOT)/src/drivers/epd_pixel_budget.c -o $@
