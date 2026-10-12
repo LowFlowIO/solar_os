@@ -24,19 +24,16 @@ SolarOS separates three networking concepts:
 - The **router** forwards traffic for other devices from the local downstream
   interface through the same route table SolarOS uses for its own traffic.
 
-Run `network` to open a two-tab TUI. **Status** combines interface state,
-addresses, the selected default path, VPN routes, and downstream client
-routing. Active SLIP and PPP jobs appear by interface name and are labelled as
-an uplink, downstream, or routed peer; downstream rows show whether NAT is
-active and which selected route carries their traffic. **Settings** opens the
-installed Wi-Fi and modem control TUIs, changes each uplink's priority, and
-enables or disables Wi-Fi AP routing. Downstream and peer links are status-only
-here; their owning jobs configure their lifecycle. A transport TUI returns to
-the same Network tab and selection when it exits. Tab switches views. Use the
-arrow keys to select a setting; Left and Right lower or raise priority, and
-Enter opens a transport or toggles routing. Higher priority wins. Priority
-overrides are saved by interface name and apply again when a runtime interface
-such as `modem0` is registered later.
+Run `network` for the interactive view:
+
+- **Status** shows connections, addresses, the default route, VPN routes, and
+  downstream links. It also shows whether NAT is active for clients.
+- **Settings** opens Wi-Fi or modem controls, sets uplink priorities, and toggles
+  Wi-Fi AP routing. Higher priority wins; saved priorities survive reboot.
+
+Use Tab to switch views, arrows to select, Left/Right to change priority, and
+Enter to open a transport or toggle routing. SLIP and PPP jobs manage their
+own downstream or peer connections; Network shows their status.
 
 For scripts and plain output, use `network status` for the same combined view,
 `network interfaces` for interface state and addresses, and `network routes`
@@ -107,8 +104,7 @@ for network in solaros.wifi.scan():
 print(solaros.wifi.status())
 ```
 
-Connecting or stopping Wi-Fi can interrupt an active agent, SSH, chat, or HTTP
-session. Confirm disruptive changes locally.
+Changing Wi-Fi can interrupt agent, SSH, chat, or HTTP connections.
 
 `wifi repeater on` enables IPv4 layer-2 forwarding between a station and
 SoftAP. It

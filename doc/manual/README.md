@@ -5,7 +5,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 ## Getting started
 
 - [Browsing and refreshing documentation](help.md) — Browse the manual and refresh its signed Markdown pages
-- [SolarOS manual](overview.md) — Find commands, applications, jobs, scripting APIs, and hardware concepts
+- [SolarOS overview](overview.md) — Understand boards, drivers, services, displays, apps, jobs, and parameters
 - [SolarOS scripting conventions](script.conventions.md) — Write cooperative Python and Lua programs against SolarOS services
 
 ## Shell and storage
@@ -127,7 +127,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 ## Applications
 
 - [agent application](apps.md#agent) — Native Responses/Chat-Completions LLM client and SolarOS agent control plane. It streams model text directly to the active shell and exposes typed system-status, storage-listing, job-listing, display-discovery, and optional Python/Lua execution tools. agent tools shows risk, policy, and runtime availability.
-- [Agent service and tool reference](agent.service.md) — Provider contract, typed tools, policy, resource bounds, and roadmap
+- [Agent service and tool reference](agent.service.md) — Configure providers, inspect tools, and understand request limits
 - [aplay application](apps.md#aplay) — Play audio files through the default registered playback endpoint. WAV and MP3 are supported when an output device is present. MP3 decoding is provided by the shared, device-independent audio codec service. aplay prints the source details, plays the file once through the shared background audio player, and then returns to the prompt without clearing existing terminal output. It can be launched from display, UART, USB CDC, Telnet, and other port shells.
 - [Apple II Plus application](app.apple2.md) — Run Apple II Plus software with the external foreground module
 - [Application reference](apps.md) — Usage, controls, and examples for every foreground application
@@ -174,6 +174,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [ssh application](apps.md#ssh) — Interactive SSH client. It supports password and key authentication, known hosts, hostname lookup through /.ssh/hosts, UTF-8 text, VT-style controls, and remote full-screen terminal applications. When user@ is omitted, SSH uses the NVS-backed SolarOS identity user. Tab completion reads aliases from /.ssh/hosts and preserves an explicit user@ prefix.
 - [synth application](apps.md#synth) — Open the native synthesizer and sound designer:
 - [telnet application](apps.md#telnet) — Telnet client for classic TCP terminal sessions. It supports basic Telnet option negotiation, terminal type reporting, window size reporting, and raw mode.
+- [Tiny386 application](app.tiny386.md) — Boot PC floppy images with the external 386 emulator
 - [view application](apps.md#view) — Graphical image viewer. It supports the image formats compiled into the current firmware, including common PNG/JPEG/GIF/WebP paths and automatic animated GIF playback when the media package is enabled. Images are decoded as RGB on a negotiated indexed-color display and as grayscale on a one-bit display. In the default fit mode, JPEG color conversion writes display-sized output directly, so a large source photograph does not require a full-size RGB destination.
 - [vplay application](apps.md#vplay) — Graphical MPEG-1 media player with optional MP2 audio. The bottom controls show playback status and elapsed time above the volume bar; full screen hides the controls and time. The middle Stop/Play icon indicates pause while paused.
 - [web application](apps.md#web) — Simple graphical web browser for lightweight HTML pages. It shares document and image rendering infrastructure with reader where possible. Embedded and direct PNG, JPEG, GIF, and WebP images retain color on indexed-color displays; one-bit displays keep the grayscale decode and dither path. Direct MJPEG URLs are shown as live video using the same JPEG renderer.
@@ -184,7 +185,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 ## Background jobs
 
 - [Background job reference](jobs.reference.md) — Configuration, ownership, and examples for every background job
-- [Background jobs](jobs.md) — Inspect and control bounded background workers
+- [Background jobs](jobs.md) — Start, inspect, and stop background workers
 - [batmon job](jobs.reference.md#batmon) — Battery monitor. It periodically samples battery voltage, maintains a smoothed trend, estimates power state, and can request light sleep when the configured minimum voltage is reached.
 - [bridge job](jobs.reference.md#bridge) — Bidirectional byte bridge between two byte-stream ports, or between one byte-stream port and an active SolarOS Link instance.
 - [cam-webd job](jobs.reference.md#cam-webd) — HTTP access to the fitted camera as one-shot JPEG images or a single-client MJPEG stream.
@@ -255,7 +256,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Model bundles and pipelines](model-bundles.md) — Checked model manifests, reusable adapters, and resident file or stream inference
 - [Model inference](inference.md) — Load resident ESP-DL models from storage and execute named tensor inputs and outputs
 - [Named runtime buses](buses.md) — Create and use resource-owned I2C, SPI, UART, MIDI, OneWire, and PS/2 buses
-- [Native foreground apps](native-app.md) — External app lifecycle, resource declarations and foreground services
+- [Native foreground apps](native-app.md) — Install native apps, switch sessions, and use the foreground module API
 - [Native image pipelines](pipelines.md) — OS-owned QR and model processing jobs with bounded latest results and frame timings
 - [Native media and inference](native-media.md) — Versioned image, camera/RTSP, QR, imlib and resident-model interfaces for ELF modules
 - [Python API overview](python.md) — Runtime basics, conventions, and service API topic index
@@ -276,15 +277,15 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 ## System services
 
 - [Cellular modem](sim7670.md) — Configure cellular profiles without modem-specific AT commands
-- [Device identity](identity.md) — Read and configure the NVS-backed user and hostname
+- [Device identity](identity.md) — Set the username and hostname shown in the shell and network services
 - [Foreground sessions and applications](sessions.apps.md) — Create shells and inspect resumable foreground applications
 - [MeshCore companion messaging](meshcore.md) — Secure MeshCore messaging over a local packet radio or BLE companion device
-- [Messaging, contacts, and credential security](messaging.md) — Provider-neutral messaging identities, trust, persistence, and secret handling
+- [Messaging, contacts, and credential security](messaging.md) — Manage contacts, conversations, trust, and saved credentials
 - [SolarOS Link](link.md) — Packet messaging and reliable virtual serial ports over packet radio or ESP-NOW
 
 ## Boards and firmware
 
 - [Boards and hardware targets](boards.md) — Supported boards, capabilities, porting structure, and validation
-- [Firmware packages and flavors](packages.md) — Understand package ownership, groups, flavors, and custom builds
+- [Firmware packages and flavors](packages.md) — Choose firmware features and create custom builds
 
 The TOML frontmatter on each topic controls package availability, search metadata, and placement in the documentation tree. Edit the topic itself; do not maintain a separate device or website copy.

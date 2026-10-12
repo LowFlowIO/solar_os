@@ -81,4 +81,4 @@ replaces the corresponding NIB file and requires writable storage. Closing the
 app discards unsaved disk changes.
 
 See the [foreground app contract](native-app.md) and
-[module build instructions](../../modules/apple2/README.md).
+[module build instructions](https://github.com/nilseuropa/solar_os/blob/main/modules/apple2/README.md).

@@ -16,14 +16,24 @@ process, filesystem, or device APIs.
 ## Start with discovery
 
 Inspect the installed board, packages, buses, displays, and safe pins before
-choosing names or hardware. Optional modules disappear when their package is
-not compiled.
+choosing names or hardware. Optional modules are available only when their services are included in the
+firmware. Start with `board`, `pkg`, `display list`, and `expansion status`.
 
-## Cooperate with the foreground session
+## Keep scripts responsive
 
-Interactive code must check `solaros.should_exit()` and release displays,
-buses, GPIO claims, files, and interpreter-owned services on every exit path.
-Use `try/finally` in Python and `pcall` plus explicit cleanup in Lua.
+Long-running loops should check `solaros.should_exit()` and sleep briefly so
+the OS can handle input. For example:
+
+```python
+import solaros
+
+while not solaros.should_exit():
+    print(solaros.time.uptime())
+    solaros.time.sleep_ms(1000)
+```
+
+Close opened files and release displays, buses, and GPIOs when finished, even
+after an error. Use `try/finally` in Python and `pcall` with cleanup in Lua.
 When a foreground script exits, SolarOS preserves its stdout, errors, and
 tracebacks in the launching shell. TUI and graphics screen contents are not
 copied into shell history. The normal terminal scrollback limit still applies.

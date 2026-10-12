@@ -15,20 +15,36 @@ On a board without SD, `/` normally maps to internal flash.
 Attaching an `sdmmc` or `sdspi` expansion does not change that mapping:
 internal flash remains `/`, and the removable card mounts at `/sdcard`.
 
-Boards with an integrated SDMMC slot expose it as the fixed expansion device
-`storage0`. Its pins are claimed before storage starts, but card probing and
-mounting remain in the normal storage initialization phase.
+## Browse and manage files
 
-Shell startup is deliberately independent of whichever volume is currently the
-default. `setterm startup flash` reads `/flash/.shell/startup` on SD-capable
-boards and `/.shell/startup` on boards where flash is root. `setterm startup sd`
-reads `/sdcard/.shell/startup`. The setting is stored in NVS and takes effect on
-the next boot. The default `setterm startup auto` first uses a mounted
-board-owned SD card and falls back to flash when SD cannot be mounted. Explicit
-`flash` and `sd` selections never fall back to the other volume. If SD is
-mounted but has no `.shell/startup`, `auto` does not run the flash script.
+```text
+pwd
+ls
+mkdir /notes
+edit /notes/todo.txt
+cp /notes/todo.txt /notes/backup.txt
+df
+```
 
-Use `disk` for both internal and removable persistent storage:
+Relative paths start in the current shell directory. A leading slash starts at
+the default volume root. Use `/flash` or `/sdcard` to select a particular
+mounted volume. Check free space with `df` before a large copy or capture.
+
+## Startup script
+
+Run `setterm startup` to see the script path. The selection is saved and takes
+effect at the next boot:
+
+- `auto`: use mounted board-owned SD, otherwise flash. This is the default.
+- `flash`: use `/flash/.shell/startup`, or `/.shell/startup` on flash-root boards.
+- `sd`: use `/sdcard/.shell/startup`.
+
+Explicit `flash` and `sd` selections do not fall back. If SD is mounted but
+has no startup file, `auto` does not run the flash script.
+
+## Mounts
+
+Use `disk`Use `disk` for both internal and removable persistent storage:
 
 ```text
 disk status
@@ -58,18 +74,9 @@ volumes before formatting `sd0` or one of its partitions. Formatting `sd0`
 creates a whole-disk FAT filesystem; formatting `sd0pN` preserves the partition
 table and formats only that partition.
 
-SolarOS initializes a completely erased internal flash partition on first use,
-but it does not automatically format a non-empty partition when mounting fails.
-This keeps filesystem damage from silently turning into data loss; use the
-guarded format command only when the existing contents can be discarded.
-
-Shell paths are not host operating-system paths. Scripts should use
-`solaros.storage` so the same code follows SolarOS mount and path rules.
-
-Relative path arguments passed to shell commands and foreground applications
-start at the directory shown in the shell prompt. This includes file editors,
-readers, script runtimes, media applications, transfers, and `files [path]`.
-Use a leading slash to start at the active volume root.
+SolarOS initializes erased internal storage on first use. If a non-empty
+volume fails to mount, it leaves the contents intact. Format it only when you
+can discard those contents.
 
 ## Inspect before writing
 
@@ -84,11 +91,8 @@ print(solaros.storage.usage())
 Use `resolve(path)` when a native or library operation needs the resolved
 internal path. Check free space before copying or producing a large capture.
 
-## Volumes and directories
-
-The storage API can create and remove directories, copy or rename files, and
-mount detected volumes. Destructive calls report SolarOS errors; do not assume
-that a failed operation partially succeeded.
+Scripts should use `solaros.storage` for SolarOS paths and file operations.
+See [Python storage](python.storage.md) or [Lua storage](lua.storage.md).
 
 ## Quick reference
 

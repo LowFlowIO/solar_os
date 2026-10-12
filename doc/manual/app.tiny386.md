@@ -61,4 +61,4 @@ the image file and requires writable storage. A save error is reported to the
 launching shell. Reset or loss of power before close loses unsaved writes.
 
 See the [foreground app contract](native-app.md) and
-[module build and BIOS source instructions](../../modules/tiny386/README.md).
+[module build and BIOS source instructions](https://github.com/nilseuropa/solar_os/blob/main/modules/tiny386/README.md).

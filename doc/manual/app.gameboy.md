@@ -66,4 +66,4 @@ to a `.sav` file beside the ROM using atomic replacement. Existing saves are
 loaded on launch; a size mismatch is reported. Reset preserves cartridge RAM.
 
 See the [foreground app contract](native-app.md) and the
-[module build instructions](../../modules/gameboy/README.md).
+[module build instructions](https://github.com/nilseuropa/solar_os/blob/main/modules/gameboy/README.md).

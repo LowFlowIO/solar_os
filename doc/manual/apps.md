@@ -9,52 +9,25 @@ packages_any = []
 +++
 # SolarOS Embedded Apps
 
-This document covers foreground applications registered in SolarOS. Availability
-depends on the selected firmware flavor and board capabilities. The `apps`
-command shows the app set compiled into the running image.
+Run `apps` to list the applications available in your firmware. Start an app
+by its command name, with any arguments shown below.
 
-Exit behavior:
+## Common controls
 
-- Display shell: `CTRL+ALT+DEL` exits foreground apps.
-- Port shells: `Ctrl+]` exits foreground apps.
-- Application screens are private presentation state and are discarded when
-  the application exits. Text written to the application output channel is
-  preserved in the launching shell before its next prompt; Python and Lua use
-  this channel for stdout, errors, and tracebacks. The normal terminal
-  scrollback limit still applies.
-- Every foreground application returns an exit code to its launching shell and
-  can return an optional message. Normal exits use code 0 and stay silent;
-  failures use a nonzero code and a useful message. `status` shows the most
-  recent foreground-application exit code.
-- The runtime assigns every launchable foreground application to one lifecycle
-  class. Commands preserve their sequential text transcript. TUI applications
-  discard their screen buffer. GUI applications discard their framebuffer.
-  Hybrid applications such as `python`, `lua`, `calc`, and `webradio` select
-  the effective class from the mode that was launched.
-- A fatal startup or runtime error is an exit outcome, not an application
-  screen. The runtime closes the application immediately, restores the
-  launching shell, prints the diagnostic there, and does not wait for an
-  acknowledgement key.
-- Port shells: `Ctrl+Z` suspends a resumable app and returns to the prompt;
-  `fg` restores the most recently suspended app.
-- `Alt+Tab` or `Alt+Right` switches to the next resumable foreground session on
-  the locally focused display. `Alt+Left` switches to the previous session.
-  Either Alt key is accepted, including AltGr on compact keyboards.
-  Switching back restores the retained terminal or graphics frame, including
-  Python and Lua application screens.
-- `Alt+Ctrl+Right/Left` moves local keyboard and board-control focus across a
-  horizontal display split; `Alt+Ctrl+Down/Up` does the same across a vertical
-  split. These shortcuts do not change either display's running session and
-  remain global while a foreground application is active. Plain `Ctrl+Arrow`
-  chords remain available to the shell or foreground application. AltGr can
-  be used instead of Alt.
-- `Alt+Enter` toggles full-screen mode in applications that use the shared TUI.
-  Either Alt key is accepted, including AltGr; on the CL-32 keyboard, use
-  `File+OK`. Full-screen mode hides the system status bar and persistent TUI
-  footer rows without changing the saved terminal profile. TUIs start in this
-  mode automatically when ten or fewer terminal rows are available. Input rows
-  remain visible, and status or error feedback can temporarily cover the last
-  content row.
+| Action | Display | Port terminal |
+| --- | --- | --- |
+| Close the current app | `Ctrl+Alt+Del` | `Ctrl+]` |
+| Switch to a retained session | `Alt+Tab` or `Alt+Right`; previous with `Alt+Left` | `Ctrl+Z` to suspend, then `fg` or `fg ID` to resume |
+| Move local input between displays | `Ctrl+Alt+Arrow` | `session focus TARGET` |
+
+Either Alt key works, including AltGr. Apps may also provide `Esc` or `Q` to
+exit. In shared text menus, `Alt+Enter` toggles full screen; on CL-32 use
+`File+OK`. Small text menus start in full screen automatically.
+
+Closing returns to the shell. Python/Lua stdout, errors, and tracebacks remain
+in shell scrollback; app screens are discarded. Errors return to the shell
+with a diagnostic. Run `status` to check the most recent app exit code: 0 means
+success. See [Sessions](sessions.apps.md) for switching and display focus.
 
 ## rtsp
 
@@ -89,96 +62,31 @@ video or expanding the audio-only oscilloscope to the whole screen. `D` toggles
 the separate frame diagnostic overlay: received, displayed, network/app drops,
 and displayed frames per second. `Q`, Escape, or the normal application-exit key
 closes playback.
-Color TFTs with native RGB565 frame support bypass palette quantization: compact
-decoded frames remain in PSRAM and the driver scales them into its bounded DMA
-bands. The header/controls update separately; `D` reserves a diagnostic strip
-above the video on this path. Other targets retain the common raster blitter.
-Suspending retains audio playback; video decoding pauses until resume.
+Suspending keeps audio playing and pauses video decoding until you return.
+Closing releases the audio output and network connection.
 
-Transient network failures, a stopped publisher, and temporarily missing paths
-retry up to six times with cancellable 0.5, 1, 2, 4, 4, 4 second backoffs.
-A session lasting at least ten seconds resets that consecutive-failure budget.
-Unsupported codecs, authentication, malformed responses, and local allocation
-or audio-output failures stop immediately. Retry renegotiates tracks, flushes
-old audio/timestamps and discards decoded frames from the previous connection.
-Exit remains available while reconnecting. Python/Lua sessions retain their
-single-session behavior and report failures to the script.
+Temporary connection failures retry up to six times. Unsupported codecs,
+authentication requests, and local memory or audio failures stop immediately.
+The shell diagnostic identifies the failing operation. Use `--stats` and
+`log show` for frame counts, drops, timings, audio buffering, and retry details.
+The `D` overlay works without logging; `--stats` also enables it initially.
 
-`--stats` writes bounded, approximately once-per-second `rtsp.stats` entries
-to the OS log (`log show`). These report received/decoded/presented frame counts,
-queue depth, drops, decode/scale/draw times (including separate blit and present
-timings), frame age and presentation gaps,
-plus audio conversion format, native block size, queue depth, concealment,
-write time, submission gaps, and concealed source sample frames (silence).
-They also report declared worker stacks versus minimum free bytes, connection
-epoch and retries. Network/decode stacks use PSRAM on supported builds; the
-8192-byte audio-output stack stays internal. DMA buffers stay internal too.
-Maxima are for the current playback session;
-submission gaps and jitter-wait polls are not hardware underrun counters.
-Diagnostic timing/logging is disabled without this flag; the lightweight `D`
-overlay works independently. `--stats` initially enables that overlay too.
-Failures report the operation and cause, such as connection refused, RTSP 404
-(missing stream/path), authentication required, rejected UDP transport, server
-connection closure, or a media timeout. They do not collapse these into `ESP_FAIL`.
+Requirements and limits:
 
-The reusable RTSP client service owns negotiation, sockets, frame leases, audio
-conversion, and bounded jitter buffering. Its compressed JPEG assembler is a
-single 512 KiB PSRAM allocation, created only when video is selected. The decoder
-leases it briefly; video packets are dropped while it is leased. Two decoded,
-display-sized frames are buffered in PSRAM, with frame-driven video presentation.
-Monochrome displays decode and buffer grayscale rather than RGB; color displays
-retain RGB565 on direct-color displays or RGB888 otherwise.
-On ESP32-S3, supported baseline JPEG images use the shared SIMD decoder on both
-mono and color displays. Unsupported layouts fall back to the ROM or software
-decoder. Private SIMD workspace is allocated during each decode and prefers
-internal SRAM; decoded strips and image buffers prefer PSRAM. Decoding uses the
-ROM fallback when internal free memory cannot cover the 32 KiB OS reserve plus
-a 16 KiB workspace allowance. SIMD routines also occupy resident instruction
-RAM, separate from the temporary workspace.
-Incomplete, superseded, or more than 150 ms late frames are discarded. L16 audio supports
-8–48 kHz mono/stereo with a 32-packet, 80 ms reorder buffer, bounded gap silence,
-and stale-packet dropping. RTCP sender reports align video to the audio playback
-clock when both tracks have timing reports; before that, video uses an 80 ms
-arrival-based delay. The receiver accepts L16 payloads up to 1460 bytes,
-including standard-MTU packets from external RTSP relays.
-Converted PCM is coalesced into complete native output blocks rather than
-writing uneven RTP fragments directly to the audio device. A stalled audio
-source is rebuffered when it resumes. A timestamp more than one second ahead
-also rebases the jitter clock, discarding queued PCM and the converter's partial
-block instead of allowing a full, silent queue. Diagnostics report rebuffering.
-Runtime allocations are released on exit; the app reserves no idle bulk SRAM.
+- IPv4 RTSP 1.0 with unicast UDP media and no authentication.
+- One JPEG video track and/or one L16 audio track (8–48 kHz, mono or stereo).
+- JPEG types 0/1 with explicit 8-bit quantization tables (Q=255); restart
+  markers are supported.
+- TCP-interleaved media, multicast, encrypted RTSP, compressed audio, and
+  redirects are unsupported.
+- Five seconds without media triggers reconnection. Retry exhaustion returns
+  an error to the shell.
+- `rtspd` allows one receiver at a time; stop another receiver before connecting.
+- Microphone capture cannot be opened while playback is active.
 
-Worker stacks and DMA buffers:
-
-| Resource | Reserved bytes | Placement |
-| --- | ---: | --- |
-| RTSP network worker | 8192 | PSRAM when supported |
-| JPEG decoder, video only | 24576 | PSRAM when supported |
-| RTSP audio-output worker, when audio is selected | 8192 | Internal SRAM |
-| `rtspd` control worker | 8192 | Internal SRAM |
-| Each enabled `rtspd` source reader | 4096 | Internal SRAM |
-| Freenove ST7796 line buffers, already present at idle | 5120 | Internal DMA |
-| Freenove ES8311 duplex PCM DMA payload, while initialized | 4096 | Internal DMA |
-
-The Freenove display uses two 320-pixel, four-line RGB565 buffers. Its audio
-driver uses four 128-frame stereo S16 buffers per direction, including input
-when opening the duplex output. DMA descriptors, codec/I2S state, socket state
-and task control blocks are additional, so heap deltas are not just stack plus
-payload sizes. Internal and DMA heap views overlap; do not add them together.
-Task admission preserves a 32 KiB internal reserve. `mem` reports free memory
-and the largest contiguous blocks; `top` reports minimum free task-stack space.
-`mem policy` request totals are cumulative, not active allocation sizes.
-External-preferred buffers can consume internal memory on non-PSRAM targets.
-Opening microphone capture while playback is active is not supported, including
-on the Freenove duplex codec.
-
-V1 supports unauthenticated IPv4 RTSP 1.0, one JPEG and one L16 track, and unicast
-UDP. JPEG uses the publisher's explicit 8-bit quantization tables (Q=255), types
-0/1 with optional restart markers. TCP interleaving, multicast, authentication,
-encrypted RTSP, compressed audio, and redirects are not supported. Five seconds
-without media triggers the bounded reconnect policy; permanent failures or
-retry exhaustion return a diagnostic to the shell. The publisher must have a
-free receiver slot; `rtspd` is single-client.
+If playback reports no memory, use `mem` to check internal memory and its
+largest free block, then stop unused jobs. PSRAM alone does not meet audio
+and DMA memory requirements.
 
 ## agent
 
@@ -231,17 +139,13 @@ status, reasoning effort, duration, traffic, and internal-RAM/PSRAM measurements
 from the last request. The API key itself is never printed. A
 Chat-Completions-compatible endpoint can still be configured explicitly.
 
-The agent permits 16 sequential tool calls by default, followed by a separately
-reserved final provider turn. `agent config max-tools COUNT` stores a
-per-request limit from 1 through 32 in NVS. The final turn advertises no tools
-after that budget is consumed, so the model concludes from the collected
-results instead of failing on one more tool request. Output is bounded to
-16 KiB, protocol buffers and queues prefer PSRAM, and the foreground worker
-uses a declared 16 KiB internal stack.
-Full builds can reuse that worker for bounded Python or Lua source/file
-execution. The manual script path captures at most 4095 output bytes, has a
-30-second deadline, and supports cancellation with `Esc` or the app-exit key.
-Model-generated source is capped at 640 bytes and captures 383 output bytes.
+The agent allows 16 tool calls per request by default. Set a limit from 1 to
+32 with `agent config max-tools COUNT`. When the budget is used, it gives a
+final answer from the results already collected. Answers are limited to 16 KiB.
+
+`agent script` supports Python or Lua with a 30-second deadline and up to 4095
+output bytes. Model-generated scripts are limited to 640 source bytes and 383
+output bytes. `Esc` or the app-exit key cancels execution.
 
 The storage registry includes bounded listing, sensitive text-file reads, and
 text-file replacement. Reads and writes are capped at 3072 bytes and paths
@@ -401,10 +305,6 @@ Funcgen is active:
 - `funcgen.output`: runtime output index; 0 follows the default output.
 - `funcgen.enabled`: 0 off or 1 on.
 
-The durable foreground state and oscilloscope storage use PSRAM when present.
-Only the bounded oscillator/render state, Synth worker stack, and PCM block
-remain in internal SRAM.
-
 ## player
 
 Interactive WAV/MP3 player and the user-facing counterpart to `aplay`. `player`
@@ -445,12 +345,9 @@ playing, paused, or stopped state with elapsed and total time. Playback follows
 the resumable app while another foreground session is selected and stops when
 Player closes. End of file advances to the next playlist entry.
 
-WAV seeking is sample-aligned. MP3 seeking scans frame headers to locate the
-target, including in variable-bitrate files, then decodes a short warm-up for
-the bit reservoir and synthesis filter. A bounded transient index uses PSRAM
-when available. Player shows `SEEKING` until audio resumes. File scanning can
-still take time on slow storage; stopping playback cancels the seek. If the
-index cannot be allocated, playback uses slower sequential seeking instead.
+Player shows `SEEKING` while preparing a new position. MP3 seeking can take
+longer on slow storage, including with variable-bitrate files. Stop playback
+to cancel a seek.
 
 WAV playback converts the file's mono/stereo channel count and sample rate to
 the selected output stream. A mono recording therefore plays through a fixed
@@ -699,15 +596,14 @@ as a harmless interface override.
 
 URLs are literal HTTP or HTTPS MP3 stream URLs. WebRadio does not translate
 station names or website addresses and does not discover streams from HTML
-pages. The initial implementation does not support playlists, HLS, or AAC.
+pages. Playlists, HLS, and AAC are unsupported.
 
 Controls:
 
 - `Tab` switches between the Player and Channels tabs in the GUI.
 - The Player tab gives the space above the shared bottom controls to a live PCM
   oscilloscope or spectrum analyzer. `V` switches visualizers. The spectrum
-  analyzer uses the shared DSP service, including PIE SIMD window and FFT paths
-  on eligible ESP32-S3 boards.
+  analyzer shows the frequencies in the playing audio.
 - On the Player tab, `Left` and `Right` play the previous or next catalog
   channel. The catalog wraps as a ring. `Enter` stops playback or reconnects
   the channel; Space pauses/resumes, and `Up`/`Down` changes global volume in
@@ -732,24 +628,9 @@ The app is available on Wi-Fi builds even when the board has no built-in audio
 hardware. Playback starts when a default output device has been registered,
 including an output supplied by a runtime-attached expansion.
 
-Network reception and MP3 decoding feed an app-owned PCM jitter buffer. A
-separate playback worker consumes that buffer at the audio device's steady
-rate. Both workers continue while the resumable WebRadio session is suspended
-or another foreground app is selected. Closing WebRadio cancels the network
-operation through its bounded read timeout, stops both workers, and releases
-the audio device. The network worker exclusively owns the HTTP request during
-that shutdown.
-
-The playback worker, not the decoder, publishes visualizer samples after each
-audio write. The widgets retain only the latest played block and may drop
-intermediate display frames, so buffering does not put the visualization ahead
-of the audio. WebRadio uses 256 scope samples and a 256-point SIMD-eligible FFT,
-grouped into 32 displayed frequency bands.
-
-`service.signal-widgets` provides the reusable thread-safe signed-16-bit
-oscilloscope and spectrum components used by the graphical player. The widgets
-accept mono or interleaved multichannel PCM and own their snapshot storage;
-applications retain ownership of their audio streams.
+Playback continues when you switch sessions. Closing WebRadio stops reception
+and playback and releases the output device. The visualizer follows played
+audio, so it does not run ahead of sound while the stream buffers.
 
 ## help
 
@@ -1798,9 +1679,7 @@ Supports MPEG-1 program streams (`.mpg` and `.mpeg`) containing
 one MPEG-1 video track and optionally one MPEG-1 Layer II (MP2) audio track.
 MPEG-2, MPEG-4/H.264, AVI, transport streams, and MP3/AAC audio are not supported.
 The source limit is 640x480; lower resolutions and frame rates are recommended
-for smooth playback. Decoding reads the file incrementally into bounded PSRAM
-buffers. Color screens use native RGB565 output and ESP32-S3 SIMD color
-conversion; monochrome screens use the luma plane. Playback speed depends on
+for smooth playback. Playback speed depends on
 source complexity, display transfer speed, and output size.
 
 Controls:
@@ -1825,12 +1704,9 @@ clock when present; a file with audio requires an available playback output.
 Video dimensions and frame rate must remain constant, and the initial audio/video
 timestamp difference must be no more than ten seconds.
 
-Seeking discards queued audio and jumps to an earlier timestamped intra frame,
-then decodes the reference pictures and MP2 warm-up needed at the target.
-Files without usable seek timestamps fall back to sequential decoding, which
-can take longer. Buffers remain bounded, and `SEEKING` indicates preparation;
-stopping or closing playback cancels the work. Positions beyond the end are
-clamped to the last video frame.
+`SEEKING` means the player is preparing a new position. Files without usable
+seek timestamps take longer. Stop or close playback to cancel. Positions beyond
+the end select the last frame.
 
 ## sketch
 
@@ -1857,8 +1733,7 @@ Controls:
 
 - Click Save to update the current PNG. For an untitled or imported image, the
   first save selects the next free `Sketches/sketchNNN.png` path on persistent
-  storage. Saves use a synced staging file, backup rename, atomic replacement,
-  and rollback.
+  storage. A failed save preserves the previous document.
 - Click Open to select a PNG as the current document. Click Import to flatten a
   PNG, JPEG, or GIF into the current four-color canvas; the next save creates a
   new PNG instead of overwriting the imported source.

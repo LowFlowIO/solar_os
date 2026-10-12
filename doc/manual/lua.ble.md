@@ -26,7 +26,7 @@ bond from an older SolarOS release.
 ## BLE scan
 
 `solaros.ble.scan()` returns a one-based array of device tables with the same
-fields and blocking behavior as [Python scan](python.ble.md#solarosblescan).
+fields and blocking behavior as [Python scan](python.ble.md#solaros-ble-scan).
 It includes non-keyboard devices, returns an empty table if none are found,
 and raises a Lua error on scan failure. Call it before opening GATT connections.
 
@@ -38,7 +38,7 @@ end
 
 ## Generic BLE GATT client
 
-`solaros.ble.gatt` mirrors the [Python GATT client](python.ble.md#solarosblegatt):
+`solaros.ble.gatt` mirrors the [Python GATT client](python.ble.md#solaros-ble-gatt):
 `capacity()`, `connect(address, addr_type, timeout_ms)`, `disconnect(peer)`,
 `status(peer)`, `services(peer)`, `characteristics(peer, service_index)`,
 `read(peer, handle, timeout_ms)`, and
@@ -82,7 +82,7 @@ when finished with a peer.
 ## Native BLE HID peripheral
 
 `solaros.ble.hid` mirrors the
-[Python BLE HID API](python.ble.md#solarosblehid). `start(name)` publishes a
+[Python BLE HID API](python.ble.md#solaros-ble-hid). `start(name)` publishes a
 fixed encrypted and bonded composite keyboard, mouse, and gamepad service for
 one host. `start(name, true)` starts a manual host-selection lease, initially
 idle. `hosts()` lists saved HID hosts with `address`, `addr_type`, `connected`,
@@ -144,7 +144,7 @@ The native HID service shares the single application-peripheral lease with
 dormant USB-only `solaros.hid` package. Scripts select behavior through typed
 operations and constants; report descriptors and raw report bytes stay native.
 
-`solaros.ble.server` mirrors the [application peripheral API](../ble-server.md):
+`solaros.ble.server` mirrors the [application peripheral API](https://github.com/nilseuropa/solar_os/blob/main/doc/ble-server.md):
 `create`, `service`, `characteristic`, `start`, `stop`, `close`, `status`, `peers`,
 `set`, `send`, `disconnect`, and `poll`. Values and event `data` use binary Lua
 strings; `poll()` returns `nil` when empty. Properties combine `solaros.ble.READ`,

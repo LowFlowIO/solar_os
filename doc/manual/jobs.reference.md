@@ -25,13 +25,8 @@ jobs
 job status [name]
 ```
 
-`jobs` is intentionally compact so it fits on the built-in 65-column display
-terminal. It shows job name, state, declared worker-stack requirement, kind,
-event source, tick count, and resource count. Running rows are bold. Use
-`job status <name>` for the summary, owner string, worker-stack placement, last
-error, effective tick interval/deadline, runtime duration statistics, deadline
-misses, and claimed resources. Compact timing lines use `interval/deadline` in
-milliseconds, `n` for dispatches, `us=last/max`, and `miss` for deadline misses.
+`jobs` shows state, worker-stack bytes, and resource counts. Use
+`job status NAME` for errors, resource owners, memory placement, and timings.
 
 ## Job Control
 
@@ -45,23 +40,15 @@ milliseconds, `n` for dispatches, `us=last/max`, and `miss` for deadline misses.
 Only one instance of each job name can run at a time. Starting a running job
 first stops the previous instance, then starts it again with the new arguments.
 
-Jobs have stable owner strings in the form `job:<name>`. Jobs that claim ports,
-files, streams, or network listeners publish those resources through the job
-status model. This keeps port/resource conflict messages readable and avoids
-job-specific inspection code in the shell.
+Jobs report which ports, files, streams, and listeners they own. If a resource
+is busy, stop its current user before starting another job on it.
 
-Job states distinguish a deferred launch from a completed launch attempt:
-
-- `waiting` means SolarOS retained the start request because admitting the
-  declared worker stack would consume the internal-memory reserve. The job is
-  not running yet; the scheduler retries it automatically as memory becomes
-  available.
-- `failed` means SolarOS attempted the job's start callback and it returned a
-  terminal error. `job status <name>` prints that error. A `no memory` failure
-  can still occur when a job or library needs dynamic memory beyond its
-  declared worker stack; that memory is not predictable from the descriptor.
-- `running` means start completed successfully. `stopped` means there is no
-  active or retained launch request.
+- `waiting`: the start request is retained and retries automatically when
+  enough worker memory is available.
+- `failed`: starting or running failed. Check `job status NAME`, fix the cause,
+  and restart. Jobs may need buffers beyond their declared stack size.
+- `running`: the job started successfully.
+- `stopped`: there is no active job or pending start request.
 
 The `STACK` column is the declared worker-stack admission requirement in bytes,
 not a worst-case total-memory estimate. `-` means that the job declares no
@@ -73,21 +60,9 @@ internal largest block of at least `STACK + 1 KiB overhead`. Treat a manual
 check as a snapshot: other work can allocate memory before `job start`, which
 is why SolarOS retains and retries a launch that loses that race.
 
-Jobs that use byte-stream ports claim those ports while running. If a port is
-already owned, SolarOS reports the owner, for example `job log owns cdc0`.
-Radio listeners expose their radio as a custom job resource.
-
-GPIO-key mappings claim each selected pin through the same resource model. The
-`io` application therefore shows assignments such as `key:UP`, their
-`gpio-keys-job` attachment owner, and the board's canonical pin policy without
-special GPIO-key display logic.
-
-Tick intervals and execution-time deadlines are declared by each event-driven
-job. A zero descriptor value selects the runtime default. Deadline misses do
-not forcibly terminate a cooperative handler; SolarOS counts them, records the
-last and maximum duration, and emits rate-limited warnings. The DAQ and log
-handlers only enqueue work, so their stream, filesystem, and port I/O runs in
-isolated worker tasks instead of the display scheduler.
+Timing fields show the effective interval/deadline, last and maximum execution
+time, and missed deadlines. A missed deadline is recorded; it does not forcibly
+stop a handler.
 
 Compact list example:
 
@@ -126,13 +101,8 @@ stream
 
 ## Startup
 
-Jobs can be started from the normal startup script:
-
-```text
-/.shell/startup
-```
-
-Example:
+Jobs stop at reboot. Run `setterm startup` to find the selected startup script
+and add the commands you want to run at boot. For example:
 
 ```text
 wifi on

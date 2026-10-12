@@ -1,180 +1,185 @@
 +++
 id = "overview"
-title = "SolarOS manual"
+title = "SolarOS overview"
 section = "concept"
-summary = "Find commands, applications, jobs, scripting APIs, and hardware concepts"
+summary = "Understand boards, drivers, services, displays, apps, jobs, and parameters"
 aliases = ["solaros", "manual"]
-keywords = "solaros api modules python lua help reference capabilities commands apps jobs"
+keywords = "solaros architecture runtime drivers services boards capabilities flavors packages modules shell sessions apps jobs displays ports buses resources streams parameters controls schedules python lua"
 packages_any = []
 +++
-# SolarOS manual
+# SolarOS overview
 
-SolarOS is a small ESP32 operating environment for pocket terminals, reflective
-displays, serial consoles, and low-power embedded tools. It is text-first, but
-not text-only: the core experience is a shell with local storage, sessions,
-jobs, device services, networking, scripting, and foreground applications.
+SolarOS turns an ESP32 board into a pocket computer or a small terminal. Use
+the shell to manage files and hardware, open apps, run background jobs, or
+write Python and Lua programs. A board can have its own screen and keyboard,
+or you can use it through a serial or network terminal.
 
-On display boards SolarOS behaves like a self-contained handheld terminal. On
-headless boards it runs through UART or USB CDC as a compact networked
-maintenance node. The primary target is the Waveshare
-ESP32-S3-RLCD-4.2, but the codebase is built around board capabilities rather
-than one fixed product shape.
+## How the parts fit together
 
-## What SolarOS can do
+| Layer | Role | Example |
+| --- | --- | --- |
+| Board profile | Describes the hardware, pins, and built-in devices. | A screen, SD slot, and keyboard. |
+| Drivers | Communicate with particular hardware. | A display controller or temperature sensor. |
+| Services | Give programs a shared way to use hardware and OS features. | Storage, audio, time, input, and networking. |
+| Commands, apps, jobs, and scripts | Use services to do useful work. | Read a file, play music, or record sensor data. |
 
-- Run a local shell with history, aliases, scripts, tab completion, storage,
-  and resumable sessions.
-- Launch foreground applications such as an editor, pager, file manager,
-  reader, image viewer, serial terminal, SSH/Telnet clients, web client,
-  plotter, clock, chat client, games, Python, and Lua.
-- Install external apps, jobs, and drivers on ESP32-S3 devices with PSRAM.
-  [Apple II Plus](app.apple2.md) and [Game Boy](app.gameboy.md) run as external
-  foreground apps and retain their guest state when switching sessions.
-- Keep background jobs running for logging, data acquisition, NTP sync, SLIP,
-  HTTP serving, Telnet shell access, serial bridging, battery monitoring, and
-  gateway messaging synchronization.
-- Use Wi-Fi, BLE, USB CDC, UART, SD or flash storage, RTC time, GPIO, ADC, PWM,
-  I2C, SPI, 1-Wire, audio, sensors, and board-specific display hardware through
-  shared SolarOS services.
-- Join multiple physical displays into one logical canvas, or split a wide
-  display into independent session viewports with directional input focus.
-- Capture streams to CSV or raw files, transfer files over byte-stream ports,
-  capture GPIO waveforms through SUMP or the on-device logic analyzer, and
-  inspect runtime resource ownership.
-- Carry ordinary SolarOS port shells and serial bridges over peer-bound,
-  retransmitted Link virtual serial ports on packet radios.
-- Decode QR codes and process images from Python or Lua. On ESP32-S3 with
-  PSRAM, install model bundles through Zoo and use resident inference for
-  classification, PICO detection, or raw tensor results.
-- Process stored images, camera streams, and JPEG RTSP feeds in OS-owned
-  background pipelines, with latest results available to shell and script
-  clients after the configuring script exits.
-- Build focused or full firmware images through capability-aware package
-  flavors.
+For example, a sensor driver reads a chip, the sensor service exposes its
+temperature, and a command or script reads that value. Programs can use the
+same service with built-in hardware or an attached expansion device.
 
-The result is a deliberately small runtime for turning inexpensive
-microcontroller hardware into useful field terminals, diagnostic tools,
-portable loggers, serial/network bridges, and scripting surfaces.
+## Boards, capabilities, and packages
 
-For model installation and script examples, start with
-[Zoo](apps.md#zoo), [Computer vision](vision.md),
-[Model bundles](model-bundles.md), and [Native image pipelines](pipelines.md).
-The full flavor includes these optional services where the target supports
-them. A camera and display are optional for stored-image processing.
+A **board profile** describes a supported hardware target. **Capabilities**
+describe what it can support, such as graphics, Wi-Fi, or expansion I2C.
+A **firmware flavor** selects a set of compiled **packages**: services,
+drivers, apps, and jobs. Features also depend on the hardware being present.
 
-## Runtime model
-
-- Shells are interactive command surfaces on displays, UART, USB CDC, Telnet,
-  or SSH.
-- Applications are foreground programs. They may be text, graphics,
-  display-only, or port-capable according to their registry flags.
-- Jobs are background workers with explicit resource and memory claims, so
-  ports, files, streams, and listeners have visible owners.
-- Services provide shared storage, terminal, session, port, network, time,
-  sensor, hardware I/O, graphics, scripting, OTA, and power behavior.
-- Board profiles describe capabilities and pins. Runtime code asks for those
-  capabilities instead of assuming a particular display, storage bus, or
-  peripheral layout.
-
-Drivers own hardware detail, services own policy, and applications, jobs, and
-shell commands use services.
-
-## Hardware targets
-
-Built-in targets include:
-
-- `solar_term`: SolarTerm pocket terminal built around the Waveshare
-  ESP32-S3-RLCD-4.2 board.
-- `freenove_esp32_s3_display_4_0`: integrated 480x320 capacitive-touch terminal
-  with speaker, microphone, SD, and battery monitoring.
-- `qdtech_es3c28p`: capacitive-touch 320x240 color terminal with speaker,
-  microphone, SD, battery monitoring, and one RGB LED.
-- `qdtech_es3n28p`: non-touch 320x240 color terminal with speaker, microphone,
-  SD, battery monitoring, and one RGB LED.
-- `elecrow_crowpanel_esp32_s3_4_2_epaper`: 400x300 e-paper HMI with rotary
-  controls and microSD.
-- `elecrow_crowpanel_esp32_s3_5_79_epaper`: 792x272 dual-SSD1683 e-paper HMI
-  with rotary controls and microSD.
-- `waveshare_esp32_s3_epaper_3_97`: SSD1677 e-paper HMI that defaults to 800x480
-  landscape, with rotary controls, microSD, RTC, environmental sensor, and duplex audio.
-- `xteink_x4_pro`: 800x480 e-paper handheld with GT911 touch, fixed-mix
-  frontlight brightness, microSD, BM8563-compatible RTC, and CW2017 gauge.
-- `cl_32`: compact 384x168 reflective terminal with an integrated keyboard,
-  microSD, RTC, battery monitor, and PWM audio.
-- `t_lora_pager`: 480x222 pager with keyboard, rotary input, LoRa, GNSS, NFC,
-  IMU, haptics, microSD, RTC, battery management, and audio.
-- `t_deck_plus`: 320x240 touch terminal with keyboard, trackball, LoRa, GNSS,
-  microSD, speaker output, and microphone input.
-- `odroid_go`: classic ESP32 handheld.
-- `freenove_esp32_wrover_v3`: classic ESP32 headless/PAL-composite target.
-- `ttgo_vga32_v14`: classic ESP32 desktop terminal with VGA, mono DAC audio,
-  PS/2 keyboard, and microSD.
-- `esp32_s3_devkitc1_n16r8`: minimal headless ESP32-S3 target.
-- `goouuu_esp32_s3cam`: headless ESP32-S3 camera target with one-bit SDMMC,
-  native USB, UART, and reserved DVP/SCCB camera wiring.
-- `esp32_devkitc_v4_wrover`: minimal headless classic ESP32 target with PSRAM.
-
-See `man boards` for the complete board table, capability flags, pins, build
-environments, and bring-up checklist. See `man packages` for firmware flavors
-and package ownership.
-
-## First commands
-
-Once SolarOS boots, these commands give a quick view of the installed system:
+Check your device before following an example:
 
 ```text
-help
+board
+pkg system
 apps
 jobs
-sessions
-board
-pkg
-wifi
-stream list
-python
-lua
 ```
 
-Availability depends on the selected board and firmware flavor. The running
-device is authoritative: `help`, `apps`, `jobs`, `board`, and `pkg` show what
-was compiled and which hardware is exposed.
+[Boards](boards.md) lists targets and wiring. [Packages and flavors](packages.md)
+explains how to choose or build an image.
+
+## Reusable runtime drivers and buses
+
+A **bus** is a named connection such as `i2c0` or `spi0`. A **driver** knows
+how to use a particular device on that connection. An **attachment** is a
+configured instance of the driver, with a device name and wiring.
+
+Built-in devices attach at boot and are fixed. Where the board and firmware
+allow it, you can attach more devices at runtime using the same drivers.
+Attaching hardware publishes it to the relevant services: an added display
+becomes a display target, for example.
+
+```text
+expansion bus list
+expansion drivers
+expansion devices
+```
+
+Pins, buses, ports, and devices can have an **owner** while in use. If a
+resource is busy, inspect its owner and stop that user before reusing it.
+See [Named buses](buses.md) and [Expansion devices](expansion.md).
+
+## Shells, apps, sessions, and jobs
+
+- A **shell** accepts commands on a display or terminal connection. Paths,
+  history, and typed input belong to that shell.
+- An **app** is an interactive foreground program, such as Files or Reader.
+  Start it by name, for example `files`.
+- A **session** holds a shell or app on a particular display or port.
+  Resumable apps keep their state when you switch away.
+- A **job** works in the background, such as a logger or HTTP server. It
+  continues when you switch apps. Start and stop jobs explicitly.
+
+```text
+session list
+job start batmon 60
+job status batmon
+job stop batmon
+```
+
+On a display, `Alt+Tab` switches sessions and `Ctrl+Alt+Del` closes the app.
+On a port terminal, `Ctrl+Z` suspends a resumable app, `fg` resumes it, and
+`Ctrl+]` closes it. See [Sessions](sessions.apps.md), [Apps](apps.md), and
+[Jobs](jobs.md).
+
+## Displays, terminals, and input
+
+A **display target** is a named screen or canvas. It can be a physical panel,
+joined panels, a split-screen viewport, or a virtual display. Each target
+has its own active session. A **port** carries bytes, for example over UART,
+USB CDC, or a Link radio connection; port shells use terminal text.
+
+**Local input focus** selects which display receives keyboard and board-control
+input. Changing focus does not move an app. Touch and browser input can target
+a specific display. **TUI** apps use text menus; **GUI** apps use graphics.
+Check an app's requirements before launching it from a port shell.
+
+```text
+display list
+port list
+session focus
+```
+
+See [Display commands](commands.md#hardware-and-time), [Sessions](sessions.apps.md), and
+[Input and audio](media.input.md).
+
+## Streams, parameters, and controls
+
+A **stream** is a named source or destination for data. Scalar streams carry
+measurements such as millivolts; other streams carry bytes, audio, or video.
+Use `stream list` to discover them. Apps and jobs can plot, record, or process
+the types they support.
+
+A **parameter** is a named setting published by a running native app, such as
+`synth.filter.cutoff`. A **control** maps an input stream or script value to
+an app parameter or MIDI controller. For example, a potentiometer can adjust
+Synth's filter through the `controls` job.
+
+```text
+control parameters
+control list
+control bindings
+```
+
+See [Continuous controls](controls.md) for a complete example. [Image pipelines](pipelines.md)
+process camera or RTSP streams in the background and retain their latest result.
+
+## Files, settings, and automation
+
+Shell paths use `/` for the default storage volume. Other mounted volumes can
+include `/flash` and `/sdcard`. Use `disk status` and `df` to check storage.
+Files hold documents, scripts, captures, and installed apps.
+
+Many system settings are saved across reboots in **NVS**, the device's settings
+store. Runtime buses, attachments, control mappings, and job starts can be
+restored with the startup script. Run `setterm startup` to find its path.
+**Schedules** run actions at a time or interval; they do not launch foreground apps.
+
+Python and Lua use the `solaros` APIs to access these services. **Playground**
+installs script apps. On supported ESP32-S3 boards with PSRAM, **native modules**
+add compiled apps, jobs, or drivers. Install only code you trust.
+
+See [Storage](storage.md), [Scripting](script.conventions.md),
+[Playground](playground.md), [Native apps](native-app.md), and
+[Scheduling](commands.md#power-rtc-schedules-and-terminal-settings).
+
+## Connections, power, and updates
+
+The network service manages connections and routes; `network status` shows
+the current path. `power status` shows the power profile and sleep settings.
+Suspending the display keeps jobs running; deep sleep starts a fresh boot
+on wake. Firmware updates use `ota` on boards with an OTA layout.
+See [Networking](network.md) and [Power and updates](commands.md).
 
 ## Finding documentation
 
-Firmware includes a small setup and recovery guide and a searchable topic
-directory. Full guides and scripting API references require the signed
-downloadable manual. On devices with Wi-Fi, PSRAM, and SD storage, connect
-Wi-Fi, mount the SD card, and run `help update`. Use `man help` for setup
-instructions. The downloaded manual works offline while the SD card is mounted;
-the full manual is also available at [solar-os.eu](https://solar-os.eu/).
-
-Optional topics appear only when their package is part of the firmware. Open
-`help` for the foldable manual tree, or search by task:
-
 ```text
-man --list
-man -k draw a circle
+help
 man -k connect wifi
-man -k background job memory
+man sessions.apps
 ```
 
-Open a result with `man TOPIC`. Graphic display shells can also open topics from
-`help` in `reader`; text shells use `less`. Arrow and Page Up/Page Down keys
-scroll, `/` searches inside a page, and the app-exit key returns to the shell.
-
-## Where to begin
-
-- Use `man scripting` before writing a Python or Lua application.
-- Use `man python.gfx` or `man lua.gfx` for a graphical application.
-- Use `man jobs` to understand background workers and their memory.
-- Use `man buses` and `man expansion` before connecting external hardware.
-- Use `man identity` to configure the device user and hostname.
-- Use `man help` to learn how to refresh the signed manual on a supported device.
+The website has the full manual. Device firmware includes setup help and a
+topic directory. With Wi-Fi, PSRAM, and SD storage, `help update` installs the
+manual for your firmware version; it then works offline while the card is
+mounted. See [Documentation setup](help.md).
 
 ## Quick reference
 
-Search again with a module or task name. Topics cover gfx, tui, storage,
-identity, commands, jobs, sessions, applications, boards, packages, Wi-Fi,
-MQTT, networking, GPIO, ADC, PWM, buses, I2C, SPI, UART, OneWire, expansion,
-audio, BLE, clipboard, time, battery, sensors, Python, Lua, and SSH keys.
-Optional modules exist only when their package is installed.
+Board profiles describe hardware; capabilities and firmware flavors determine
+which packages are available. Drivers attach devices to named buses; services
+expose them to commands, apps, jobs, and Python/Lua. Apps run in foreground
+sessions on displays or ports; jobs run in the background. Local input focus
+selects a display. Streams carry data; controls map values to app parameters or
+MIDI. Files hold user data, NVS holds persistent settings, and startup scripts
+restore runtime configuration. Discover names with board, pkg, apps, jobs,
+display list, port list, expansion status, and stream list. Use help or man to
+find usage; help update installs the full manual on supported devices.

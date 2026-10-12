@@ -1,7 +1,7 @@
 +++
 id = "native-app"
 title = "Native foreground apps"
-summary = "External app lifecycle, resource declarations and foreground services"
+summary = "Install native apps, switch sessions, and use the foreground module API"
 section = "api"
 keywords = "native app foreground emulator apple2 gameboy suspend resume resources"
 packages_any = ["service_native_modules"]
@@ -26,7 +26,7 @@ session create apple2 display0 /sdcard/apple2 dos33.nib
 load /sdcard/apple2.app.elf /sdcard/apple2 dos33.nib
 ```
 
-## Installation and launch
+## Using installed apps
 
 Catalog entries use `type = "app"` and `lifecycle_abi = 2`. `pkg install ID`
 installs an ELF under `modules/apps/ID.elf` in the preferred storage volume.
@@ -44,7 +44,7 @@ Resource declaration changes to an app already discovered require a restart.
 
 The package catalog has application, job and driver categories.
 
-## Resource declaration
+## Developer reference: resource declaration
 
 `solar_os_native_app_abi.h` defines the exported, pointer-free
 `solar_os_native_app_manifest` record. It declares the app ID, summary, GUI or
