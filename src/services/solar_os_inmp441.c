@@ -178,7 +178,10 @@ esp_err_t solar_os_inmp441_attach(const char *name,
             info.capabilities |= SOLAR_OS_AUDIO_DEVICE_CAP_OUTPUT |
                                  SOLAR_OS_AUDIO_DEVICE_CAP_VOLUME;
         strlcpy(info.id, name, sizeof(info.id));
-        strlcpy(info.name, "INMP441 / shared I2S", sizeof(info.name));
+        strlcpy(info.name,
+                c.dout >= 0 ? "INMP441 mic + I2S DAC/amp"
+                            : "INMP441 microphone",
+                sizeof(info.name));
         strlcpy(info.provider, "expansion", sizeof(info.provider));
         strlcpy(info.capture_stream, mic.capture, sizeof(info.capture_stream));
         if (c.dout >= 0)

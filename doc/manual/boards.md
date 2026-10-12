@@ -971,6 +971,7 @@ I2C logic level. No thermistor or interrupt wire is required. Fuel-gauge
 compensation uses an assumed 25.0 °C, not a measured temperature.
 
 `audio0` attaches automatically through the reusable `inmp441` driver. It
+appears as **INMP441 mic + I2S DAC/amp** in audio device information and
 publishes `audio0.capture` as 16 kHz mono and `audio0.playback` as 16 kHz
 stereo. The microphone uses received slot 1. The DAC and amplifier share one
 playback data stream; the DAC provides stereo line output and the amplifier

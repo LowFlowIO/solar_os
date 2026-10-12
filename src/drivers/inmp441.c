@@ -73,9 +73,14 @@ static esp_err_t create_channels(solar_os_inmp441_t *d) {
                      .din = c->din,
                      .dout = c->dout},
     };
-    err = i2s_channel_init_std_mode(d->rx, &standard);
-    if (err == ESP_OK && d->tx != NULL)
+    /* ESP-IDF makes the second initialized duplex channel a clock slave.
+     * TX must be the master: it runs for both playback-only and capture,
+     * while RX may be disabled when no capture stream is open.
+     */
+    if (d->tx != NULL)
         err = i2s_channel_init_std_mode(d->tx, &standard);
+    if (err == ESP_OK)
+        err = i2s_channel_init_std_mode(d->rx, &standard);
     /* In duplex mode keep TX running with cleared DMA buffers during capture.
      * The DAC and speaker receive silence while microphone clocks are running.
      */
