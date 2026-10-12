@@ -25,6 +25,17 @@ The common tuning parser handles `drive-cycles`, `pulse-frames`,
 invalid values leave configuration unchanged. `waveform-fr` is a profile's raw
 frame-rate code, not a portable frequency. Profiles may impose narrower limits.
 
+`epd_scan_worker.h` supplies an optional persistent task with a latest-frame
+mailbox. Submitting copies the frame without waiting for panel I/O; repeated
+queued submissions coalesce. The adapter callback performs at most one drive
+cycle and reports whether work remains. The worker continues until settling
+finishes, accepts retargeting between cycles, and enforces a requested minimum
+interval between scan starts. Hardware time can exceed that interval; its
+statistics report completed scans, duration, and actual start-to-start time.
+The adapter owns bus serialization, power transitions, and failure recovery.
+Disable the worker during native operation and join it before releasing panel
+resources. The mailbox lock must never be held while acquiring a panel lock.
+
 The dual-SSD1683 5.79-inch adapter is the first consumer. It programs both
 controllers, replaces both RAM planes whenever the active drive mask changes,
 reuses them between identical cycles with RAM ping-pong disabled, holds seam padding

@@ -49,6 +49,7 @@ TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
 TARGETS += inmp441_test
 TARGETS += epd_pixel_budget_test
+TARGETS += epd_scan_worker_test
 TARGETS += epd_ssd1683_test
 
 epd_ssd1683_test: epd_ssd1683_test.c $(ROOT)/src/drivers/epd_ssd1683.c $(ROOT)/src/drivers/epd_ssd1683.h $(ROOT)/src/drivers/epd_pixel_budget.c $(ROOT)/src/drivers/epd_pixel_budget.h $(wildcard epd_stubs/*.h epd_stubs/driver/*.h)
@@ -56,6 +57,9 @@ epd_ssd1683_test: epd_ssd1683_test.c $(ROOT)/src/drivers/epd_ssd1683.c $(ROOT)/s
 
 epd_pixel_budget_test: epd_pixel_budget_test.c $(ROOT)/src/drivers/epd_pixel_budget.c $(ROOT)/src/drivers/epd_pixel_budget.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers epd_pixel_budget_test.c $(ROOT)/src/drivers/epd_pixel_budget.c -o $@
+
+epd_scan_worker_test: epd_scan_worker_test.c $(ROOT)/src/drivers/epd_scan_worker.c $(ROOT)/src/drivers/epd_scan_worker.h $(wildcard epd_scan_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread -Iepd_scan_stubs -I. -I$(ROOT)/src/drivers epd_scan_worker_test.c $(ROOT)/src/drivers/epd_scan_worker.c -o $@
 TARGETS += lc709203f_test
 TARGETS += battery_service_default_test
 
@@ -994,6 +998,7 @@ test: $(TARGETS)
 	./i2c_buses_test
 	./inmp441_test
 	./epd_pixel_budget_test
+	./epd_scan_worker_test
 	./epd_ssd1683_test
 	./lc709203f_test
 	./battery_service_default_test

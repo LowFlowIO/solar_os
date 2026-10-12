@@ -1568,11 +1568,17 @@ label = "driver.epd_pixel_budget"
 targets = ["esp32", "esp32s3"]
 sources = ["drivers/epd_pixel_budget.c"]
 
+[packages.driver_epd_scan_worker]
+label = "driver.epd_scan_worker"
+targets = ["esp32", "esp32s3"]
+sources = ["drivers/epd_scan_worker.c"]
+requires = ["esp_timer"]
+
 [packages.expansion_ssd1683]
 label = "expansion.ssd1683"
 targets = ["esp32", "esp32s3"]
 expansion_drivers = ["solar_os_ssd1683_expansion_driver"]
-depends = ["service_expansion", "service_spi", "driver_epd_pixel_budget"]
+depends = ["service_expansion", "service_spi", "driver_epd_pixel_budget", "driver_epd_scan_worker"]
 sources = [
   "board/solar_os_board_display_expansion.c",
   "drivers/epd_ssd1683.c",
