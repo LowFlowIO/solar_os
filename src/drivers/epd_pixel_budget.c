@@ -16,7 +16,7 @@ esp_err_t epd_pulse_tuning_set(epd_pulse_tuning_t *t, const char *mode)
         return ESP_ERR_INVALID_ARG;
     struct option { const char *key; uint8_t *value; unsigned max; } options[] = {
         {"drive-cycles=", &t->drive_cycles, 32},
-        {"pulse-frames=", &t->pulse_frames, 8},
+        {"pulse-frames=", &t->pulse_frames, 32},
         {"waveform-fr=", &t->waveform_fr, 12},
         {"cleanup-every=", &t->cleanup_every, 128},
     };

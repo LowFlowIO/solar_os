@@ -1696,7 +1696,7 @@ const char *epd_ssd1683_controller_mode_values(const epd_ssd1683_t *display)
 {
     if (ssd1683_is_dual(display))
         return "refresh=<auto,fast,full,pulse> drive-cycles=<1..32> "
-               "pulse-frames=<1..8> waveform-fr=<1..12> cleanup-every=<1..128>";
+               "pulse-frames=<1..32> waveform-fr=<1..12> cleanup-every=<1..128>";
     return "refresh=<auto,fast,full>";
 }
 

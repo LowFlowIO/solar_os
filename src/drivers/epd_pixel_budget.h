@@ -18,7 +18,7 @@ typedef enum {
 
 typedef struct {
     uint8_t drive_cycles;   /* 1..32 successful waveforms per changed pixel */
-    uint8_t pulse_frames;   /* 1..8 panel scan frames per drive phase */
+    uint8_t pulse_frames;   /* 1..32 panel scan frames per drive phase */
     uint8_t waveform_fr;    /* 1..12 raw controller frame-rate code */
     uint8_t cleanup_every;  /* 1..128 completed image updates */
 } epd_pulse_tuning_t;

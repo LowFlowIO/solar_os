@@ -40,12 +40,14 @@ int main(void)
     assert(epd_pulse_tuning_set(&t, "drive-cycles=6") == ESP_OK);
     assert(t.drive_cycles == 6);
     assert(epd_pulse_tuning_set(&t, "pulse-frames=8") == ESP_OK);
+    assert(epd_pulse_tuning_set(&t, "pulse-frames=16") == ESP_OK && t.pulse_frames == 16);
+    assert(epd_pulse_tuning_set(&t, "pulse-frames=32") == ESP_OK && t.pulse_frames == 32);
     assert(epd_pulse_tuning_set(&t, "waveform-fr=4") == ESP_OK);
     assert(epd_pulse_tuning_set(&t, "cleanup-every=128") == ESP_OK);
     const epd_pulse_tuning_t before = t;
     const char *bad[] = {"drive-cycles=0", "drive-cycles=33", "drive-cycles=-1",
         "drive-cycles=+1", "drive-cycles=1x", "drive-cycles=99999999999999",
-        "drive-cycles=", "pulse-frames=9", "waveform-fr=13", "cleanup-every=129"};
+        "drive-cycles=", "pulse-frames=0", "pulse-frames=33", "waveform-fr=13", "cleanup-every=129"};
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i) {
         assert(epd_pulse_tuning_set(&t, bad[i]) == ESP_ERR_INVALID_ARG);
         assert(memcmp(&t, &before, sizeof(t)) == 0);

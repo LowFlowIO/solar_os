@@ -1248,7 +1248,7 @@ waveform on every changed frame.
 
 The Elecrow 5.79-inch dual-SSD1683 profile also accepts the optional
 `refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
-sets the per-pixel budget, `pulse-frames=<1..8>` sets each drive phase's scan
+sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
 duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
 `cleanup-every=<1..128>` sets the native-cleanup interval in image updates.
 These runtime settings apply only to pulse mode and are listed by

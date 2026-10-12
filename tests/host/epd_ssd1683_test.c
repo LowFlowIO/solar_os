@@ -197,6 +197,21 @@ static void test_settled_pixels_replace_mask(void) {
     assert(d.pixel_budget.pending == 0);
     free_budget(&d);
 }
+static void test_long_phase_voltage_bits(void) {
+    epd_ssd1683_t d = display();
+    assert(epd_ssd1683_set_controller_mode(&d, "pulse-frames=32") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "drive-cycles=1") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    capture_count = 0;
+    pixel(0, 0, false);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    /* Six duration bits must never overwrite the two voltage-selection bits. */
+    assert(find(0x32, 0)->data[85] == 0x60);
+    assert(find(0x32, 0)->data[127] == 0xa0);
+    assert(memcmp(find(0x32, 0)->data, find(0xb2, 0)->data, 227) == 0);
+    free_budget(&d);
+}
 static void test_cleanup_failure_and_capability(void) {
     epd_ssd1683_t d = display();
     assert(epd_ssd1683_set_controller_mode(&d, "cleanup-every=1") == ESP_OK);
@@ -235,6 +250,7 @@ static void test_cleanup_failure_and_capability(void) {
 int main(void) {
     test_native(); test_pulse_and_restore(); test_default_drive_budget();
     test_settled_pixels_replace_mask();
+    test_long_phase_voltage_bits();
     test_cleanup_failure_and_capability();
     puts("SSD1683 dual native/pulse transport tests: ok");
 }

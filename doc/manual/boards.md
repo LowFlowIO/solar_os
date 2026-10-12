@@ -994,7 +994,7 @@ display mode display0
 Each changed pixel receives `drive-cycles` completed waveform activations
 (1–32). Settled pixels select the neutral waveform; submitting the same target
 does not refill its budget. `pulse-frames` is the scan-frame duration of each
-drive phase (1–8); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
+drive phase (1–32); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
 frequency in Hz. Defaults are 6 cycles, 8 scan frames, code 4, and a native
 cleanup after 32 image updates. Settings are runtime-only. Pulse mode is
 experimental: its speed, polarity, ghosting, and optical settling require
