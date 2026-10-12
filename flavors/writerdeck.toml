@@ -68,4 +68,5 @@ max17048 = true
 audio_pwm = true
 pcm5102 = true
 pcm1808 = true
+inmp441 = true
 es8311 = true

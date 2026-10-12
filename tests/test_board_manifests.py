@@ -45,6 +45,25 @@ class BoardManifestTest(unittest.TestCase):
                 board = load_board_manifest(path, self.manifest_dir)
                 validate_board(board, self.drivers)
 
+    def test_inmp441_capture_and_shared_playback_bindings(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        for pin in board["pins"]:
+            if pin["gpio"] in (14, 15, 16, 17):
+                pin.update(policy="fixed", user=False, adc=False, pwm=False)
+        device = {"driver": "inmp441", "name": "audio0", "bindings":
+                  {"i2s": 1, "bck": 14, "ws": 15, "din": 17, "dout": 16, "slot": 1}}
+        board.setdefault("devices", []).append(device)
+        validate_board(board, self.drivers)
+        self.assertIn("expansion_inmp441", required_packages(board, self.drivers))
+        self.assertIn('.driver = "inmp441", .name = "audio0"', generate_header(board, self.drivers))
+        for slot in (-1, 2):
+            device["bindings"]["slot"] = slot
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+        device["bindings"]["slot"] = 0
+        del device["bindings"]["dout"]
+        validate_board(board, self.drivers)
+
     def test_pca9685_overlay_and_calibration_bindings(self) -> None:
         board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
         device = {"driver": "pca9685", "name": "servos0",

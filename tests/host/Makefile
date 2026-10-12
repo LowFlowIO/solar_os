@@ -47,6 +47,12 @@ TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
 TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
+TARGETS += inmp441_test
+
+inmp441_test: inmp441_test.c $(ROOT)/src/drivers/inmp441.c $(ROOT)/src/drivers/inmp441.h $(wildcard inmp441_stubs/*/*.h) \
+        $(ROOT)/src/services/solar_os_inmp441.c $(ROOT)/src/services/solar_os_inmp441.h $(ROOT)/src/services/solar_os_stream.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iinmp441_stubs -I. -I$(ROOT)/src/drivers -I$(ROOT)/src/services \
+		inmp441_test.c $(ROOT)/src/drivers/inmp441.c $(ROOT)/src/services/solar_os_inmp441.c $(ROOT)/src/services/solar_os_stream.c -o $@
 TARGETS += apple2_app_test
 TARGETS += apple2_app_entry_test
 

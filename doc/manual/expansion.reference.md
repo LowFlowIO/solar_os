@@ -314,6 +314,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `audio-pwm` | LEDC PWM mono audio output | `pwm=<pin>` | Claims the PWM GPIO and registers a 16 kHz mono playback device. One instance can be attached. |
 | `esp32-camera` | DVP JPEG camera | `d0=<pin>` through `d7=<pin>`, `vsync=<pin> href=<pin> pclk=<pin> xclk=<pin>`; either `i2c=<bus>` or `siod=<pin> sioc=<pin>`; optional `pwdn=<pin> reset=<pin>` | ESP32-S3 with PSRAM; claims GPIOs and the single DVP capture peripheral. Named SCCB buses can be shared with other devices; direct-pin SCCB reserves the configured I2C controller. Registers the device name as an exclusive typed video source. Capture starts only on use. Busy owners or frames prevent detach. |
 | `pcm1808` | PCM1808 four-wire I2S ADC | `mclk=<pin> bck=<pin> ws=<pin> dout=<pin>` | Requires `expansion_i2s`, claims four GPIOs and a runtime I2S controller, then registers a 16 kHz stereo capture device and stream. One instance can be attached. |
+| `inmp441` | Three-wire I2S microphone, optional shared playback | `i2s=<port> bck=<pin> ws=<pin> din=<pin>`; optional `slot=0|1 dout=<pin>` | Registers mono 16 kHz capture. With `dout`, also registers stereo playback on the same clocks and controller. One instance can be attached. |
 | `es7210` | ES7210 I2S microphone array | `i2c=<bus> i2s=<port> mclk=<pin> bck=<pin> ws=<pin> din=<pin>` | Requires I2C and `expansion_i2s`, claims its bindings, then registers a 16 kHz stereo capture device and stream with microphone-gain control. One instance can be attached. |
 | `pcm5102` | PCM5102A three-wire I2S DAC | `i2s=<port> bck=<pin> din=<pin> rck=<pin>` | Requires `expansion_i2s`, claims the selected runtime I2S controller and three GPIOs, then registers a 16 kHz stereo playback device and stream. One instance can be attached. |
 | `i2s-output` | Generic I2S DAC or speaker amplifier | `i2s=<port> bck=<pin> din=<pin> rck=<pin>` | Claims the selected runtime I2S controller and registers the same 16 kHz stereo playback device and stream for an integrated or external Philips-I2S receiver without assuming a specific DAC. |
@@ -433,6 +434,39 @@ PCM5102A output is line level: use a powered input or a suitable amplifier, not
 a passive speaker. Stop playback before detaching; detach reports busy while
 the playback stream is open. Run `audio default auto` after testing to restore
 automatic output selection.
+
+### INMP441 I2S microphone
+
+Power the microphone from 3.3 V, connect its SCK/WS/SD to `bck`/`ws`/`din`,
+and tie L/R to ground or 3.3 V. It needs no MCLK or I2C connection.
+`slot=0` selects the first received stereo slot; `slot=1` selects the second.
+The default is 0. The driver reads 24-bit microphone data in 32-bit Philips-I2S
+slots and exports its most significant 16 bits as mono PCM at 16 kHz.
+Startup samples are discarded before capture opens.
+
+```text
+expansion attach inmp441 mic0 i2s=i2s1 bck=gpio14 ws=gpio15 din=gpio17 slot=1
+arecord -d 5 -i mic0.capture /sdcard/microphone.wav
+```
+
+Add `dout=gpio16` to send playback data to an I2S DAC or MAX98357 amplifier.
+Both receivers can share that data line and the same BCK/WS clocks:
+
+```text
+expansion attach inmp441 audio0 i2s=i2s1 bck=gpio14 ws=gpio15 din=gpio17 slot=1 dout=gpio16
+audio default audio0
+```
+
+This attachment provides `audio0.capture` (mono) and `audio0.playback`
+(stereo). Capture and playback can run together at 16 kHz. Mono playback is
+duplicated to both outputs; volume is applied in software. The output remains
+silent when only capture is open. Use `arecord`, `recorder`, or typed streams
+for this expansion input; `audio mic` measures the board audio backend.
+
+Detach an existing `pcm5102`/`i2s-output` attachment before attaching this
+combined configuration. The clocks, pins, and I2S controller have one owner.
+Close both capture and playback streams before detaching. Select the
+`inmp441` firmware group on boards with `expansion_i2s`.
 
 ### PCM1808 I2S audio input
 
