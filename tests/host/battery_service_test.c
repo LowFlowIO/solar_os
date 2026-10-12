@@ -26,8 +26,10 @@ size_t strlcpy(char *dst, const char *src, size_t size)
 esp_err_t nvs_open(const char *name, nvs_open_mode_t mode, nvs_handle_t *handle)
 {
     (void)name;
-    (void)mode;
-    (void)handle;
+    if (mode == NVS_READWRITE) {
+        *handle = 1;
+        return ESP_OK;
+    }
     return ESP_ERR_NVS_NOT_FOUND;
 }
 
@@ -107,6 +109,16 @@ static solar_os_battery_status_t read_status(void)
 
 int main(void)
 {
+    solar_os_battery_config_t initial_config;
+    solar_os_battery_get_config(&initial_config);
+#ifdef SOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH
+    assert(initial_config.capacity_mah == SOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH);
+#else
+    assert(initial_config.capacity_mah == 0U);
+#endif
+    assert(solar_os_battery_set_capacity_mah(2500U) == ESP_OK);
+    solar_os_battery_get_config(&initial_config);
+    assert(initial_config.capacity_mah == 2500U);
     const solar_os_battery_provider_t provider = {
         .read = read_battery,
         .user = &provider_sample,

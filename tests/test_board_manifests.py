@@ -78,6 +78,37 @@ class BoardManifestTest(unittest.TestCase):
                 validate_board(board, self.drivers)
             device["bindings"][key] = original
 
+    def test_solar_writer_preserves_wiring_and_reserves_jack_detect(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "solar_writer.toml", self.manifest_dir)
+        validate_board(board, self.drivers)
+        self.assertEqual(board["board"]["name"], "SolarWriter")
+        self.assertEqual(board["target"]["platformio_board"], "solar_writer")
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(devices["audio0"]["bindings"],
+                         {"i2s": 1, "bck": 14, "ws": 15, "din": 17, "dout": 16, "slot": 1})
+        self.assertEqual(devices["battery0"]["bindings"]["addr"], 0x0b)
+        self.assertEqual(devices["battery0"]["bindings"]["capacity"], 3000)
+        self.assertEqual({"display0", "storage0", "audio0", "battery0"}, set(devices))
+        bus = next(bus for bus in board["buses"] if bus["name"] == "i2c0")
+        self.assertEqual((bus["sda"], bus["scl"], bus["speed_hz"]), (8, 9, 100000))
+        for pin in board["pins"]:
+            if pin["gpio"] in (8, 9, 14, 15, 16, 17, 21):
+                self.assertEqual(pin["policy"], "fixed")
+                self.assertFalse(pin.get("user", False))
+                self.assertFalse(pin.get("pwm", False))
+        power = [pin for pin in board["connectors"] if 11 <= pin["position"] <= 14]
+        self.assertEqual([pin["label"] for pin in power], ["3V3"] * 4)
+        header = generate_header(board, self.drivers)
+        self.assertIn("SOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH 3000U", header)
+        self.assertIn("SOLAR_OS_BOARD_PIN_AUDIO_JACK_DETECT GPIO_NUM_21", header)
+        self.assertIn("SOLAR_OS_BOARD_USER_GPIO_LIST \"18 19 20 38\"", header)
+        self.assertIn("expansion_inmp441", required_packages(board, self.drivers))
+        self.assertIn("lc709203f", required_packages(board, self.drivers))
+        image = json.loads((ROOT / "boards/solar_writer.json").read_text())
+        base = json.loads((ROOT / "boards/elecrow_crowpanel_esp32_s3_5_79_epaper.json").read_text())
+        self.assertEqual(image["build"], base["build"])
+        self.assertEqual(image["upload"], base["upload"])
+
     def test_pca9685_overlay_and_calibration_bindings(self) -> None:
         board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
         device = {"driver": "pca9685", "name": "servos0",

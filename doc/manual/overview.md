@@ -46,6 +46,11 @@ jobs
 [Boards](boards.md) lists targets and wiring. [Packages and flavors](packages.md)
 explains how to choose or build an image.
 
+[SolarWriter](boards.md#solarwriter) combines the CrowPanel 5.79-inch wide
+e-paper display with INMP441 capture, shared PCM5102/MAX98357 playback, and
+an LC709203F battery gauge. Its fixed attachments use the same reusable
+expansion drivers available on other compatible boards.
+
 ## Reusable runtime drivers and buses
 
 A **bus** is a named connection such as `i2c0` or `spi0`. A **driver** knows

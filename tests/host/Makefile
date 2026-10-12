@@ -49,6 +49,11 @@ TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
 TARGETS += inmp441_test
 TARGETS += lc709203f_test
+TARGETS += battery_service_default_test
+
+battery_service_default_test: battery_service_test.c $(ROOT)/src/services/solar_os_battery.c $(ROOT)/src/services/solar_os_battery.h $(ROOT)/src/services/solar_os_battery_trend.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DSOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH=3000U -include compat.h -I. -I$(ROOT)/src/services \
+		battery_service_test.c $(ROOT)/src/services/solar_os_battery.c $(ROOT)/src/services/solar_os_battery_trend.c -o $@
 
 lc709203f_test: lc709203f_test.c $(ROOT)/src/drivers/lc709203f.c $(ROOT)/src/drivers/lc709203f.h \
         $(ROOT)/src/services/solar_os_lc709203f.c $(ROOT)/src/services/solar_os_lc709203f.h
@@ -979,6 +984,9 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 
 test: $(TARGETS)
 	./i2c_buses_test
+	./inmp441_test
+	./lc709203f_test
+	./battery_service_default_test
 	./apple2_app_test
 	./apple2_app_entry_test
 	./cw2017_test

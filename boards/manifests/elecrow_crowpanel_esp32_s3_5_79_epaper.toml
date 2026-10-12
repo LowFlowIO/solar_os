@@ -248,28 +248,28 @@ position = 14
 row = 1
 column = 6
 kind = "power"
-label = "VBUS"
+label = "3V3"
 [[connectors]]
 connector = "U5"
 position = 13
 row = 1
 column = 7
 kind = "power"
-label = "VBUS"
+label = "3V3"
 [[connectors]]
 connector = "U5"
 position = 12
 row = 1
 column = 8
 kind = "power"
-label = "VBUS"
+label = "3V3"
 [[connectors]]
 connector = "U5"
 position = 11
 row = 1
 column = 9
 kind = "power"
-label = "VBUS"
+label = "3V3"
 
 [[pins]]
 gpio = 0
