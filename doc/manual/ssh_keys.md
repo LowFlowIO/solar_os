@@ -25,14 +25,12 @@ overwritten.
 
 ## Protect private material
 
-Do not print, copy, edit, or delete the private key unless the user explicitly
-requests that exact operation. The agent's storage tools reject paths below
-`.ssh`.
+Copy only the public key to the remote host's `authorized_keys`. Keep the
+private key on the device. The agent's storage tools cannot access `.ssh`.
 
 ## Quick reference
 
 solaros.ssh_keys provides default_paths, default_exists, status, public_key,
 generate (optional bits and overwrite), and remove when SSH is installed.
-`public_key()` returns only the default OpenSSH public-key line. Do not inspect,
-expose, replace, or delete private key material unless the user explicitly
-requests that operation.
+`public_key()` returns only the default OpenSSH public-key line. Share that
+line with the remote host; keep the private key on the device.

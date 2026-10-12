@@ -217,7 +217,7 @@ sleep release queue storage and discard queued events. Loss counters remain
 readable for the peer handle's lifetime. Reconnect and resubscribe after sleep.
 No user callback runs on the Bluetooth task. There is no script MTU setter or
 automatic write chunking. Application services and advertising use
-[`solaros.ble.server`](../ble-server.md), independently of these client peers.
+[`solaros.ble.server`](https://github.com/nilseuropa/solar_os/blob/main/doc/ble-server.md), independently of these client peers.
 
 ```python
 import solaros

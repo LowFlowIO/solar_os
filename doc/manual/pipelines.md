@@ -19,7 +19,7 @@ agent_reference_sections = true
 The `pipeline` service connects an image source to a native processor in an
 OS-owned background job. Python and Lua configure and inspect the job; their
 sessions can exit while processing continues. QR and model processors share the
-same source, cancellation, ownership, timing, and latest-result interface.
+same start, stop, and result commands.
 
 Competing lifecycle controls can report busy. If another client takes control
 of the public job during startup, a retained configuration remains discoverable
@@ -107,7 +107,7 @@ print(pipeline.list())
 print(pipeline.status(p))
 result = pipeline.result(p, last_sequence)  # None when no newer result exists.
 pipeline.stop(p)       # Keep configuration and latest result.
-pipeline.destroy(p)    # Remove both, with idempotent worker cleanup.
+pipeline.destroy(p)    # Stop and remove configuration and result.
 ```
 
 Lua uses the same calls and returns tables (`nil` when no newer result exists).
@@ -188,7 +188,6 @@ byte count, and `data_hex`; total raw output bytes must not exceed 24000 and the
 serialized record must fit the result bound. Larger tensor outputs can be read
 through the general inference API.
 
-Stopping cooperatively cancels active work, joins workers, and releases retained
-images, frame leases, sources, and model references before returning. Processing
-workers use internal stacks allocated only while active; configurations and
-result buffers use PSRAM.
+Stopping waits for active work to finish cancelling and releases the source
+and model reference. The model stays loaded until you explicitly unload it.
+If startup reports no memory, check internal RAM with `mem` as well as PSRAM.

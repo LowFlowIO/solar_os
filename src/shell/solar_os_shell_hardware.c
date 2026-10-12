@@ -35,6 +35,7 @@
 #include "solar_os_shell.h"
 #include "solar_os_status_led.h"
 #include "solar_os_storage.h"
+#include "solar_os_disk_image.h"
 #if SOLAR_OS_PACKAGE_SERVICE_SYNTH
 #include "solar_os_synth.h"
 #endif
@@ -272,7 +273,9 @@ static void disk_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  disk [status]");
     solar_os_shell_io_writeln(term, "  disk lsblk");
     solar_os_shell_io_writeln(term, "  disk mount [flash|sd0pN] [mount]");
-    solar_os_shell_io_writeln(term, "  disk umount [flash|sd0pN|mount]");
+    solar_os_shell_io_writeln(term, "  disk mount <image.img> <mount> [partition 1-4]");
+    solar_os_shell_io_writeln(term, "  disk create <image.img> <MiB>");
+    solar_os_shell_io_writeln(term, "  disk umount [flash|sd0pN|imgN|mount]");
     solar_os_shell_io_writeln(term, "  disk format <flash|sd0|sd0pN> --force");
 }
 
@@ -295,6 +298,38 @@ void solar_os_shell_cmd_disk(solar_os_context_t *ctx, int argc, char **argv)
             return;
         }
         disk_print_lsblk(term);
+        return;
+    }
+
+    if (strcmp(argv[1], "create") == 0) {
+        char path[SOLAR_OS_STORAGE_PATH_MAX];
+        char *end = NULL;
+        unsigned long size = argc == 4 ? strtoul(argv[3], &end, 10) : 0;
+        if (argc != 4 || !size || size > 2047 || !end || *end || argv[3][0] == '-') {
+            solar_os_shell_io_writeln(term, "usage: disk create <image.img> <MiB: 1-2047>");
+            return;
+        }
+        esp_err_t err = solar_os_shell_resolve_path(ctx, argv[2], path, sizeof(path));
+        if (err == ESP_OK) err = solar_os_disk_image_create(path, (uint32_t)size);
+        if (err == ESP_OK) solar_os_shell_io_printf(term, "Disk: created %s (%lu MiB, MBR/FAT)\n", path, size);
+        else solar_os_shell_io_printf(term, "disk create failed: %s\n", solar_os_shell_error_text(err));
+        return;
+    }
+
+    if (strcmp(argv[1], "mount") == 0 && argc >= 3 &&
+        strcmp(argv[2], "flash") &&
+        (strncmp(argv[2], "sd0", 3) || strchr(argv[2], '/') || strchr(argv[2], '.'))) {
+        if (argc < 4 || argc > 5 || (argc == 5 && (strlen(argv[4]) != 1 || argv[4][0] < '1' || argv[4][0] > '4'))) {
+            solar_os_shell_io_writeln(term, "usage: disk mount <image.img> <mount> [partition 1-4]");
+            return;
+        }
+        char path[SOLAR_OS_STORAGE_PATH_MAX];
+        esp_err_t err = solar_os_shell_resolve_path(ctx, argv[2], path, sizeof(path));
+        if (err == ESP_OK) err = solar_os_disk_image_mount(path, argv[3], argc == 5 ? argv[4][0] - '0' : 0);
+        if (err == ESP_OK) solar_os_shell_io_printf(term, "Disk: mounted %s at %s\n", path, argv[3]);
+        else if (err == ESP_ERR_INVALID_STATE) solar_os_shell_io_writeln(term, "disk mount failed: image or mount is in use; close the guest first");
+        else if (err == ESP_ERR_NOT_SUPPORTED) solar_os_shell_io_writeln(term, "disk mount failed: no FAT filesystem found");
+        else solar_os_shell_io_printf(term, "disk mount failed: %s\n", solar_os_shell_error_text(err));
         return;
     }
 
@@ -343,7 +378,7 @@ void solar_os_shell_cmd_disk(solar_os_context_t *ctx, int argc, char **argv)
         } else if (shell_print_not_supported(term, "disk", "persistent storage", err)) {
             return;
         } else if (err == ESP_ERR_INVALID_STATE) {
-            solar_os_shell_io_writeln(term, "Disk: not mounted");
+            solar_os_shell_io_writeln(term, "disk umount failed: storage is busy or not mounted; close guests and unmount images first");
         } else if (err == ESP_ERR_NOT_FOUND) {
             if (argc == 2) {
                 solar_os_shell_io_writeln(term, "Disk: not mounted");

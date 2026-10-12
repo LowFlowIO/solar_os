@@ -607,32 +607,32 @@ static sd_card_mount_t *find_mount_by_target(const char *target)
 
 static sd_card_mount_t *alloc_mount(uint8_t *logical_volume)
 {
-    const uint8_t flash_volume = flash_storage_logical_volume();
-
-    for (uint8_t vol = 0; vol < SD_CARD_MAX_MOUNTS; vol++) {
-        if (vol == flash_volume) {
-            continue;
-        }
-
-        bool used = false;
-        for (size_t i = 0; i < SD_CARD_MAX_MOUNTS; i++) {
-            if (mounts[i].active && mounts[i].logical_volume == vol) {
-                used = true;
-                break;
-            }
-        }
-        if (used) {
-            continue;
-        }
-        for (size_t i = 0; i < SD_CARD_MAX_MOUNTS; i++) {
-            if (!mounts[i].active) {
-                *logical_volume = vol;
-                return &mounts[i];
-            }
+    /* Reserve extra logical volumes in diskio too, so flash and file-backed
+     * disks cannot reuse the number of a second SD partition. */
+    BYTE vol = physical_pdrv;
+    for (size_t i = 0; i < SD_CARD_MAX_MOUNTS; ++i) {
+        if (mounts[i].active && mounts[i].logical_volume == physical_pdrv) {
+            if (ff_diskio_get_drive(&vol) != ESP_OK) return NULL;
+            break;
         }
     }
+    for (size_t i = 0; i < SD_CARD_MAX_MOUNTS; ++i)
+        if (!mounts[i].active) { *logical_volume = vol; return &mounts[i]; }
     return NULL;
 }
+
+static DSTATUS sd_partition_init(BYTE drive) { (void)drive; return ff_disk_initialize(physical_pdrv); }
+static DSTATUS sd_partition_status(BYTE drive) { (void)drive; return ff_disk_status(physical_pdrv); }
+static DRESULT sd_partition_read(BYTE drive, BYTE *data, DWORD sector, UINT count)
+{ (void)drive; return ff_disk_read(physical_pdrv, data, sector, count); }
+static DRESULT sd_partition_write(BYTE drive, const BYTE *data, DWORD sector, UINT count)
+{ (void)drive; return ff_disk_write(physical_pdrv, data, sector, count); }
+static DRESULT sd_partition_ioctl(BYTE drive, BYTE command, void *data)
+{ (void)drive; return ff_disk_ioctl(physical_pdrv, command, data); }
+static const ff_diskio_impl_t sd_partition_diskio = {
+    .init = sd_partition_init, .status = sd_partition_status,
+    .read = sd_partition_read, .write = sd_partition_write, .ioctl = sd_partition_ioctl,
+};
 
 static void update_block_mount_state(void)
 {
@@ -965,6 +965,7 @@ static esp_err_t unmount_one(sd_card_mount_t *mount)
 
     mount->active = false;
     mount->fs = NULL;
+    if (mount->logical_volume != physical_pdrv) ff_diskio_unregister(mount->logical_volume);
     update_block_mount_state();
     return err;
 }
@@ -1070,10 +1071,14 @@ esp_err_t sd_card_mount_volume(const char *name, const char *mount_point)
         return ret;
     }
 
+    if (logical_volume != physical_pdrv) ff_diskio_register(logical_volume, &sd_partition_diskio);
+
     FRESULT fresult = f_mount(fs, drv, 1);
     if (fresult != FR_OK) {
         diagnostics_fresult = fresult;
+        (void)f_mount(NULL, drv, 0);
         esp_vfs_fat_unregister_path(mount_point);
+        if (logical_volume != physical_pdrv) ff_diskio_unregister(logical_volume);
         return ESP_FAIL;
     }
 
@@ -1188,6 +1193,7 @@ esp_err_t sd_card_format(const char *name)
 #endif
 
     char drive[3] = {(char)('0' + logical_volume), ':', 0};
+    if (logical_volume != physical_pdrv) ff_diskio_register(logical_volume, &sd_partition_diskio);
     const size_t work_size = 4096U;
     void *work = heap_caps_malloc(work_size,
                                   MALLOC_CAP_DMA | MALLOC_CAP_INTERNAL);
@@ -1207,6 +1213,7 @@ esp_err_t sd_card_format(const char *name)
         heap_caps_free(work);
     }
 
+    if (logical_volume != physical_pdrv) ff_diskio_unregister(logical_volume);
     deinit_card_if_unused();
     if (ret == ESP_OK) {
         snprintf(status_text, sizeof(status_text), "formatted %s", name);

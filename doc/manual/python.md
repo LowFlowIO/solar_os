@@ -55,8 +55,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 
 Most mutating functions return `None` on success and raise `OSError("ESP_ERR_...")` on service failure. Query functions return strings, integers, booleans, dictionaries, or lists.
 
-SolarOS uses MicroPython's size-conscious `EXTRA` language profile. This adds
-common language features such as f-strings, sets, properties, descriptors,
+Supported language features include f-strings, sets, properties, descriptors,
 `enumerate()`, `filter()`, `reversed()`, `memoryview`, and `frozenset`. The
 importable runtime modules are `array`, `binascii`, `cmath`, `collections`,
 `errno`, `gc`, `hashlib`, `io`, `json`, `math`, `micropython`, `random`,
@@ -72,51 +71,27 @@ set remain disabled. Use the typed `solaros` service APIs instead.
 
 The selected modules include `json.loads()` and `json.dumps()`, hexadecimal and
 Base64 conversions in `binascii`, SHA-256 in `hashlib`, and the usual
-non-cryptographic `random` helpers. SolarOS seeds `random` from the ESP32
-hardware random source when the module is first imported. Use `hashlib` for
-hashing and an appropriate SolarOS security service, not `random`, for
-security-sensitive values.
+non-cryptographic `random` helpers. Use `hashlib` for hashing; `random` is not suitable for security-sensitive
+values.
 
 Functions that accept file paths use SolarOS shell-style paths. `/` means the default storage mount; internally this resolves to the active storage mount point.
 
 ## Service availability
 
-The Python runtime package requires PSRAM. Hardware and network helpers are
-added only when the board/flavor includes their service package. For example,
-an ODROID-GO full build includes Python with `solaros.spi` and
-`solaros.onewire`, while omitting `solaros.adc` and `solaros.i2c` because those
-service packages are not available on that board.
+Python requires PSRAM. Optional `solaros` modules appear only when their
+services are included in the firmware. Check `pkg` and `board` on your device;
+the topic table above links to each service's requirements and examples.
+For an optional module, test availability before using it:
 
-Optional API groups follow these package gates:
+```python
+import solaros
 
-- `service.wifi`: top-level `wifi_status` and `solaros.wifi`
-- `network.mqtt`: `solaros.mqtt`
-- `network.http-client`: `solaros.http`
-- `network.ftp`: `solaros.ftp`
-- `network.sftpsync`: `solaros.sftpsync`
-- `network.base`: `solaros.net`
-- `network.ssh`: `solaros.ssh_keys`
-- `service.ble`: `solaros.ble`
-- `service.hid`: `solaros.hid`
-- `service.gpio`: `solaros.gpio` and `solaros.led`
-- `service.onewire`: `solaros.onewire`
-- `service.servo`: `solaros.servo`
-- `service.messaging`: `solaros.contacts` and `solaros.messages`
-- `service.adc`, `service.pwm`, `service.i2c`, `service.spi`, and
-  `service.uart`: their matching submodules
-- `service.audio`, `service.synth`, `service.battery`, and `service.sensors`:
-  their matching helpers and submodules
-- `service.gnss` and `service.nfc`: `solaros.gnss` and `solaros.nfc`
-- `service.dsp`: `solaros.dsp` fixed-point block operations and caller-owned
-  FIR, decimator, and FFT processors
-- `media.image`: `solaros.image` decoded raster handles and queued drawing
-- `service.script-media`: `solaros.streams` local handles and leased JPEG frames
-- `service.camera`: `solaros.camera` snapshots and ownership status
-- `service.rtsp-client`: `solaros.rtsp` asynchronous receivers and native audio
-- `service.vision`: `solaros.vision` native QR recognition and decoding
-- `service.imlib`: `solaros.vision` statistics, segmentation, filters, morphology, difference, and blobs
-- `service.pipeline`: `solaros.pipeline` OS-owned native image processing jobs
-- `service.inference`: `solaros.inference` resident ESP-DL models and named tensors
+if hasattr(solaros, "wifi"):
+    print(solaros.wifi.status())
+```
+
+Vision, inference, and pipelines need their own packages; adding Python alone
+does not enable them. See [Packages and flavors](packages.md).
 
 ## Top-Level Helpers
 
@@ -134,9 +109,8 @@ schedule or preempt Python code, and it is not a hard-real-time timer. The
 setting lasts for the current foreground Python app only; headless script jobs
 cannot change it.
 
-## Not Exposed Yet
-
-The Python bridge intentionally does not expose raw SSH/SCP session handles yet. Those APIs need object lifetime, ownership, and event-loop rules before they can safely become scriptable.
+Raw SSH/SCP session handles are unavailable in scripts. Use the `ssh` and
+`scp` applications for remote access and file transfers.
 
 ## Quick reference
 

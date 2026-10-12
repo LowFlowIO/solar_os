@@ -10,7 +10,7 @@ class NativeForegroundTest(unittest.TestCase):
     def test_isolated_session_lifecycle(self):
         source = (ROOT / "src/services/solar_os_native_foreground.c").read_text()
         names = ("foreground_current", "foreground_context_state", "foreground_caller",
-                 "foreground_result", "foreground_enable_suspend", "foreground_suspend_requested",
+                 "foreground_result", "foreground_video_dimensions", "foreground_enable_suspend", "foreground_suspend_requested",
                  "foreground_guest_suspend", "foreground_get_service", "foreground_worker_cleanup",
                  "solar_os_native_foreground_entry", "solar_os_native_foreground_owner",
                  "solar_os_native_foreground_claim", "solar_os_native_foreground_release",

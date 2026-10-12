@@ -702,7 +702,9 @@ same job again stops the previous instance and starts it with the new arguments.
 | `disk` | `disk [status]` | Show persistent-storage status. |
 | `disk` | `disk lsblk` | List internal flash and detected removable block devices and partitions. |
 | `disk` | `disk mount [flash\|sd0pN] [mount]` | Mount the default volume or an explicit persistent volume. |
-| `disk` | `disk umount [flash\|sd0pN\|mount]` | Unmount the default volume or an explicit volume/mount point. |
+| `disk` | `disk mount <image.img> <mount> [partition]` | Mount a raw FAT image; select an MBR primary partition from 1 to 4 if needed. |
+| `disk` | `disk create <image.img> <MiB>` | Create a new MBR/FAT hard-disk image without overwriting an existing file. |
+| `disk` | `disk umount [flash\|sd0pN\|imgN\|mount]` | Unmount the default volume or an explicit volume/image/mount point. |
 | `disk` | `disk format <flash\|sd0\|sd0pN> --force` | Create a FAT filesystem, permanently erasing the unmounted target. |
 | `ramfs` | `ramfs [status]` | List PSRAM-backed volatile filesystem mounts. |
 | `ramfs` | `ramfs mount /path size` | Mount a volatile filesystem that reserves PSRAM, such as `ramfs mount / 1m`. |

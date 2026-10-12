@@ -813,6 +813,7 @@ sources = [
   "services/solar_os_sessions.c",
   "services/solar_os_splash.c",
   "services/solar_os_storage.c",
+  "services/solar_os_disk_image.c",
   "services/solar_os_terminal.c",
   "services/solar_os_terminal_geometry.c",
   "services/solar_os_terminal_preferences.c",

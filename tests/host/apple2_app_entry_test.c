@@ -5,6 +5,7 @@
 #include <string.h>
 #include "solar_os_native_abi.h"
 #include "machine.h"
+#include "roms.h"
 #include "vendor/puce6502.h"
 
 extern int apple2_app_entry(int argc, char **argv);
@@ -31,10 +32,22 @@ static int resume_failure;
 static unsigned suspension_case;
 static uint64_t suspended_wall, suspend_cycles;
 static bool suspend_boot;
+static bool basic_boot, basic_ready, basic_done;
+static unsigned basic_character;
+static const char *const *direct_inputs, *const *direct_outputs;
+static unsigned direct_resolves;
+static unsigned direct_fail_at = 2;
 static int resolve_path(const char *path, char *resolved, size_t size)
 {
+    if (direct_inputs) {
+        assert(direct_resolves < 2 && !strcmp(path, direct_inputs[direct_resolves]));
+        if (direct_resolves == direct_fail_at) return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
+        assert(strlen(direct_outputs[direct_resolves]) < size);
+        strcpy(resolved, direct_outputs[direct_resolves++]);
+        return 0;
+    }
     if (expected_directory_arg) assert(!strcmp(path, expected_directory_arg));
-    if (fail_resolve) return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
+    if (fail_resolve || failure == 1) return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
     const char *result = resolved_directory ? resolved_directory : path;
     assert(result[0] == '/' && strlen(result) < size);
     strcpy(resolved, result); return 0;
@@ -47,7 +60,11 @@ static FILE *asset_file(const char *path)
     assert(snprintf(resolved, sizeof(resolved), "%s/%s", assets, name) < (int)sizeof(resolved));
     return fopen(resolved, "rb");
 }
-static void *allocate(size_t bytes) { allocations++; return malloc(bytes); }
+static void *allocate(size_t bytes)
+{
+    if (failure == 2) return NULL;
+    allocations++; return malloc(bytes);
+}
 static void release(void *data) { assert(!audio_live); frees++; free(data); }
 static int report(const char *text, size_t length)
 {
@@ -71,6 +88,9 @@ static void sleep_ms(uint32_t ms)
 static void set_exit(int code) { exit_code = code; }
 static int file_size(const char *path, uint32_t *size)
 {
+    assert(!strstr(path, ".rom"));
+    if (direct_outputs) assert(!strcmp(path, direct_outputs[0]) ||
+        (direct_resolves == 2 && !strcmp(path, direct_outputs[1])));
     if (resolved_directory) {
         if (expected_disk && !strstr(path, ".rom")) assert(!strcmp(path, expected_disk));
         else {
@@ -82,22 +102,15 @@ static int file_size(const char *path, uint32_t *size)
         FILE *file = asset_file(path); assert(file && !fseek(file, 0, SEEK_END));
         *size = (uint32_t)ftell(file); fclose(file); return 0;
     }
-    if (strstr(path, "appleII+.rom")) {
-        if (failure == 1) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
-        *size = 12288;
-    } else if (strstr(path, "diskII.rom")) {
-        if (failure == 2) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
-        *size = 256;
-    } else {
-        if (failure == 5) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
-        *size = failure == 3 ? 1 : APPLE2_NIB_SIZE;
-    }
+    if (failure == 5) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
+    *size = failure == 3 ? 1 : APPLE2_NIB_SIZE;
     return 0;
 }
 static int read_file(const char *path, uint32_t offset, void *buffer,
     size_t length, size_t *actual)
 {
     assert(length <= 65536U); reads++;
+    assert(!strstr(path, ".rom"));
     if (assets) {
         FILE *file = asset_file(path); assert(file && !fseek(file, offset, SEEK_SET));
         *actual = fread(buffer, 1, length, file); assert(!ferror(file));
@@ -106,8 +119,12 @@ static int read_file(const char *path, uint32_t offset, void *buffer,
     if (strstr(path, "disk.nib") && failure == 6) return SOLAR_OS_NATIVE_ERROR_FAILED;
     memset(buffer, 0, length); *actual = length;
     if (strstr(path, "disk.nib") && failure == 7 && offset == 65536U) *actual = length - 1U;
-    if (strstr(path, "appleII+.rom")) {
-        assert(offset == 0 && length == 12288);
+    return 0;
+}
+static void synthetic_rom(void)
+{
+    if (!assets && !basic_boot) {
+        uint8_t *buffer = apple2_machine->rom;
         /* ROM program echoes the keyboard latch to RAM and clears its strobe. */
         static const uint8_t rom[] = {
             0xad, 0x00, 0xc0, 0x8d, 0x00, 0x03,
@@ -121,10 +138,12 @@ static int read_file(const char *path, uint32_t offset, void *buffer,
         ((uint8_t *)buffer)[0x2ffc] = 0;
         ((uint8_t *)buffer)[0x2ffd] = 0xd0;
     }
-    return 0;
 }
 static int video_open(uint16_t width, uint16_t height, const uint16_t *palette, uint16_t fps)
 {
+    assert(!memcmp(apple2_machine->rom, solar_os_apple2_rom, sizeof(apple2_machine->rom)));
+    assert(!memcmp(apple2_machine->sl6, solar_os_apple2_disk_rom, sizeof(apple2_machine->sl6)));
+    synthetic_rom();
     assert(width == 280 && height == 192 && palette[15] == 0xffff && fps == 25);
     assert(palette[0] == 0 && palette[1] == 0x984cU);
     assert(palette[APPLE2_TEXT_FOREGROUND] == text_foreground);
@@ -140,12 +159,29 @@ static int text_colors(uint16_t *foreground, uint16_t *background)
 static int video_open_ex(uint16_t width, uint16_t height, const uint16_t *palette,
     uint16_t fps, uint8_t background_index)
 {
-    assert(background_index == APPLE2_TEXT_BACKGROUND);
+    assert(background_index == 0U && palette[background_index] == 0x0000U);
     return video_open(width, height, palette, fps);
 }
 static int present(const uint8_t *pixels, size_t length)
 {
     assert(pixels && length == 280U * 192U);
+    if (basic_boot) {
+        assert(!apple2_machine->disk[0].mounted && !apple2_machine->disk[1].mounted);
+        assert(time_us < 5000000U);
+        char screen[24 * 41 + 1]; size_t n = 0;
+        for (unsigned row = 0; row < 24; ++row) {
+            unsigned offset = (row & 7U) * 128U + (row >> 3) * 40U;
+            for (unsigned col = 0; col < 40; ++col) {
+                uint8_t ch = apple2_machine->ram[0x400 + offset + col] & 0x7fU;
+                screen[n++] = (char)(ch < 32 ? ch + 64 : ch);
+            }
+            screen[n++] = '\n';
+        }
+        screen[n] = '\0';
+        if (strstr(screen, "\n]")) basic_ready = true;
+        if (strstr(screen, "579")) basic_done = true;
+        return 0;
+    }
     if (stop_case) {
         frames++;
         if (stop_case == 2) assert(apple2_machine->paused);
@@ -198,6 +234,12 @@ static int present(const uint8_t *pixels, size_t length)
 static int read_key(solar_os_native_foreground_key_v1_t *key, bool *available)
 {
     memset(key, 0, sizeof(*key));
+    if (basic_boot) {
+        const char *command = "PRINT 123+456\r";
+        *available = basic_ready && !(apple2_machine->KBD & 0x80U) && command[basic_character];
+        if (*available) key->key = (uint8_t)command[basic_character++];
+        return 0;
+    }
     if (assets) {
         if (suspend_boot && !suspends && time_us > 1000000U) suspend_pending = true;
         if (model_cpu_cost && time_us > 1100000U) {
@@ -239,7 +281,7 @@ static int audio_write(const int16_t *samples, size_t count)
     assert(audio_live && samples && count); audio_writes++; return 0;
 }
 static void audio_close(void) { audio_live = false; closes++; }
-static bool stop_requested(void) { return suspend_exit || (stop_case && time_us - suspended_wall >= 120000U); }
+static bool stop_requested(void) { return basic_done || suspend_exit || (stop_case && time_us - suspended_wall >= 120000U); }
 static int enable_suspend(void) { resumable = true; return 0; }
 static bool suspend_requested(void) { return suspend_pending; }
 static int suspend_vm(void)
@@ -308,15 +350,15 @@ int main(int argc, char **test_argv)
     }
     failure = 0; reads = 0;
     assert(apple2_app_entry(3, argv) == 1 && exit_code == 1);
-    assert(reads == 6 && frames == 4 && key_sent && time_us >= 120000);
-    assert(allocations == frees && closes == 8 && apple2_machine == NULL);
+    assert(reads == 4 && frames == 4 && key_sent && time_us >= 120000);
+    assert(allocations == frees && closes == 6 && apple2_machine == NULL);
     failure = 8; frames = 0; time_us = 0; key_sent = false;
     assert(apple2_app_entry(3, argv) == 1 && ticks > 500000U);
-    assert(allocations == frees && closes == 9 && apple2_machine == NULL);
+    assert(allocations == frees && closes == 7 && apple2_machine == NULL);
     failure = 9; frames = 0; time_us = 0; key_sent = stats_sent = false;
     sleep_quantum_us = 10000U;
     assert(apple2_app_entry(3, argv) == 1 && ticks > 100000U && ticks < 140000U);
-    assert(allocations == frees && closes == 10 && apple2_machine == NULL);
+    assert(allocations == frees && closes == 8 && apple2_machine == NULL);
     sleep_quantum_us = 1000U;
     /* Repeat real module entry/cleanup with active audio, pause, disk turbo,
      * help open and help dismissed. Every stop must return successfully. */
@@ -343,14 +385,14 @@ int main(int argc, char **test_argv)
         int expected = resume_failure ? 1 : 0;
         assert(apple2_app_entry(3, argv) == expected && exit_code == expected);
         assert(suspends == 1 && resumable && !audio_live && allocations == frees);
-        assert(reads == before_reads + 6); /* ROM and disks are loaded only once. */
+        assert(reads == before_reads + 4); /* Disk is loaded only once; ROMs are embedded. */
         assert(audio_opens == before_opens + (suspension_case >= 4 ? 1U : 2U));
         if (suspension_case < 4) assert(frames >= 3);
         else assert(frames == 2);
     }
     suspension_case = stop_case = 0; suspend_exit = false;
     resume_failure = 0; suspended_wall = 0;
-    /* The module delegates only its directory to the host. Disk names remain
+    /* The legacy form delegates its directory to the host. Disk names remain
      * relative to that resolved directory, including when launched with '.'. */
     static const char *const directories[] = {"apple2", ".", "../apple2", "/apple2", "/sdcard/apple2"};
     for (unsigned i = 0; i < sizeof(directories) / sizeof(directories[0]); ++i) {
@@ -367,12 +409,52 @@ int main(int argc, char **test_argv)
     unsigned before_allocations = allocations;
     fail_resolve = true;
     assert(apple2_app_entry(3, argv) == 1 && exit_code == 1);
-    assert(allocations == before_allocations && !strcmp(last_report, "apple2: invalid asset directory"));
+    assert(allocations == before_allocations && !strcmp(last_report, "apple2: invalid disk directory"));
     fail_resolve = false;
     expected_directory_arg = resolved_directory = expected_disk = NULL;
+    /* The short form resolves each disk against the launching shell, including
+     * absolute paths and uppercase suffixes. No external ROM file is opened. */
+    static const char *const short_inputs[] = {"../disks/disk.NIB", "/flash/disks/data.nib"};
+    static const char *const short_outputs[] = {"/sdcard/disks/disk.NIB", "/flash/disks/data.nib"};
+    char *short_argv[] = {"apple2", (char *)short_inputs[0], (char *)short_inputs[1], "extra.nib"};
+    direct_inputs = short_inputs; direct_outputs = short_outputs;
+    for (int count = 2; count <= 3; ++count) {
+        direct_resolves = 0; frames = 0; time_us = 0; key_sent = stats_sent = false;
+        unsigned before_reads = reads;
+        assert(apple2_app_entry(count, short_argv) == 0 && exit_code == 0);
+        assert(direct_resolves == (unsigned)(count - 1));
+        assert(reads == before_reads + 4U * (unsigned)(count - 1));
+        assert(allocations == frees && apple2_machine == NULL);
+    }
+    before_allocations = allocations;
+    assert(apple2_app_entry(4, short_argv) == 1 && exit_code == 1);
+    assert(allocations == before_allocations);
+    unsigned before_reads = reads;
+    for (direct_fail_at = 0; direct_fail_at < 2; ++direct_fail_at) {
+        direct_resolves = 0; before_reads = reads;
+        assert(apple2_app_entry(3, short_argv) == 1 && exit_code == 1);
+        assert(reads == before_reads + 4U * direct_fail_at);
+        assert(allocations == frees && apple2_machine == NULL);
+        assert(!strcmp(last_report, "apple2: invalid disk path"));
+    }
+    direct_fail_at = 2;
+    direct_inputs = direct_outputs = NULL;
+    /* Plain apple2 boots the embedded ROM to BASIC and executes a command. */
+    char *bare_argv[] = {"apple2"};
+    basic_boot = true; stop_case = 0; time_us = 0;
+    before_reads = reads;
+    assert(apple2_app_entry(1, bare_argv) == 0 && exit_code == 0);
+    assert(basic_ready && basic_done && reads == before_reads);
+    assert(allocations == frees && apple2_machine == NULL);
+    basic_boot = basic_ready = basic_done = false;
     stop_case = 0; argv[1] = "/assets"; argv[2] = "disk.nib";
     if (argc == 2) {
         assets = test_argv[1]; failure = 0; time_us = 0;
+        char *disk_argv[] = {"apple2", "/assets/disk.nib"};
+        asset_frames = 0; booted = false;
+        assert(apple2_app_entry(2, disk_argv) == 1 && booted && exit_code == 1);
+        assert(allocations == frees && apple2_machine == NULL);
+        time_us = 0; booted = false;
         asset_frames = 0;
         assert(apple2_app_entry(3, argv) == 1 && booted && exit_code == 1);
         assert(allocations == frees && apple2_machine == NULL);

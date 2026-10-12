@@ -71,9 +71,8 @@ include numeric=1, alphanumeric=2, byte=4, and Kanji=8.
 Only one QR request runs at a time. A competing request returns a busy error.
 Allocation failures return an error without falling back to internal RAM for
 QR buffers. Processing uses a five-second cooperative deadline and checks app
-cancellation. The call waits for the worker to stop before releasing its memory;
-the deadline is not a hard preemption guarantee for an individual decode step.
-The native worker does not call an interpreter.
+cancellation. Cancellation waits for the current decode step, so return may take longer
+than the deadline.
 
 ## Python example
 

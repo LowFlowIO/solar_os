@@ -22,6 +22,8 @@ typedef struct {
     solar_os_native_foreground_audio_render_v1_t synth_render;
     void *synth_user, *audio, *presenter;
     uint16_t palette[256];
+    int result, exit_code;
+    char detail[160];
 } foreground_state_t;
 typedef struct {
     const char *owner;
@@ -59,6 +61,10 @@ static void solar_os_synth_get_status(solar_os_synth_status_t *s) {s->sample_rat
 static void solar_os_audio_stream_close(void *s) {(void)s;assert(!state.synth_running);}
 static int solar_os_frame_presenter_deinit(void *p) {assert(p && !state.synth_running && deleted);presented++;return ESP_OK;}
 static void esp_restart(void) {longjmp(restarted,1);}
+static int solar_os_disk_image_close_owner(const void *owner) { (void)owner; return ESP_OK; }
+static size_t strlcpy(char *out, const char *in, size_t size) {
+    size_t n = strlen(in); if (size) { size_t c = n < size ? n : size - 1; memcpy(out, in, c); out[c] = 0; } return n;
+}
 #include "audio.inc"
 static void guest_render(int16_t *samples,size_t frames,uint32_t rate,void *user) {
     assert(image_live && samples && frames==16 && rate==16000 && user==&state && depth==1);calls++;

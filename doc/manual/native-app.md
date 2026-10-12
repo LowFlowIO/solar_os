@@ -1,7 +1,7 @@
 +++
 id = "native-app"
 title = "Native foreground apps"
-summary = "External app lifecycle, resource declarations and foreground services"
+summary = "Install native apps, switch sessions, and use the foreground module API"
 section = "api"
 keywords = "native app foreground emulator apple2 gameboy suspend resume resources"
 packages_any = ["service_native_modules"]
@@ -20,13 +20,13 @@ are foreground apps. Their CPU cores and guest state belong to their modules.
 pkg installed
 pkg install apple2
 pkg install gameboy
-apple2 /sdcard/apple2 dos33.nib
+apple2 /sdcard/apple2/dos33.nib
 gameboy /sdcard/roms/game.gb
-session create apple2 display0 /sdcard/apple2 dos33.nib
-load /sdcard/apple2.app.elf /sdcard/apple2 dos33.nib
+session create apple2 display0 /sdcard/apple2/dos33.nib
+load /sdcard/apple2.app.elf /sdcard/apple2/dos33.nib
 ```
 
-## Installation and launch
+## Using installed apps
 
 Catalog entries use `type = "app"` and `lifecycle_abi = 2`. `pkg install ID`
 installs an ELF under `modules/apps/ID.elf` in the preferred storage volume.
@@ -42,9 +42,14 @@ session. Different external apps can remain loaded in suspended sessions.
 Installing or removing a running or suspended foreground app is refused.
 Resource declaration changes to an app already discovered require a restart.
 
+App lists and command completion share cached discovery. Package installs and
+removals, FTP changes, and storage commands refresh it on the next lookup.
+Changes made through direct file APIs may take up to 30 seconds to appear.
+The host still validates each ELF when launching it.
+
 The package catalog has application, job and driver categories.
 
-## Resource declaration
+## Developer reference: resource declaration
 
 `solar_os_native_app_abi.h` defines the exported, pointer-free
 `solar_os_native_app_manifest` record. It declares the app ID, summary, GUI or
@@ -94,6 +99,21 @@ presenter, audio ownership and retained state. OS session shortcuts pass through
 captured keyboards. Modules must not leave callbacks or tasks running after
 `main` returns.
 
+The appended `video_dimensions(&width, &height)` method reports the calling
+app's rotated foreground graphics dimensions before video is opened. Modules
+that render text or other display-sized content can allocate a matching frame
+instead of assuming a board's resolution. Request a service table large enough
+to include this method. Fixed-resolution emulators can still submit their own
+frame size and use the presenter's aspect-preserving fit.
+
+The appended `disk_open`, `disk_read`, `disk_write`, `disk_sync`, and
+`disk_close` methods provide exclusive access to fixed-size raw disk images.
+Request a table through `disk_close` before using them. `disk_open` returns an
+opaque handle and byte size; reads and writes take byte offsets and at most
+64 KiB per call. Writes sync before returning. Claims survive suspension, and
+the host closes remaining handles before unloading the worker. Unmount a host
+FAT image before opening it as a guest disk.
+
 Packed INDEX2 frames use four shades of the current display theme. The appended
 synth methods accept a bounded block size and required sample rate. Callbacks
 render signed 16-bit stereo PCM under a host mutex. The module uses
@@ -110,13 +130,16 @@ are exported for synchronous interpreter error handling.
 
 ## Emulator apps
 
-See [Apple II Plus](app.apple2.md) for ROM and NIB requirements, controls, and
+See [Apple II Plus](app.apple2.md) for bundled ROMs, NIB disk requirements, controls, and
 explicit disk saves. See [Game Boy](app.gameboy.md) for cartridge compatibility,
-controls, and automatic cartridge RAM saves. For example, with assets present:
+controls, and automatic cartridge RAM saves. See [Tiny386](app.tiny386.md) for
+bootable PC floppy and IDE images, embedded BIOS, and display requirements. For example,
+with assets present:
 
 ```text
-apple2 /sdcard/apple2 dos33.nib
+apple2 /sdcard/apple2/dos33.nib
 gameboy /sdcard/roms/game.gb
+tiny386 /sdcard/tiny386/dos.img
 ```
 
 Apple II disk writes remain in memory until explicitly saved. Session switches

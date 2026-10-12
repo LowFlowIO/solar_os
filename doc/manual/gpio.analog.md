@@ -30,8 +30,10 @@ script is done so another service can use it.
 pin = 1
 if solaros.gpio.allowed(pin):
     solaros.gpio.mode(pin, solaros.gpio.OUTPUT)
-    solaros.gpio.write(pin, 1)
-    solaros.gpio.release(pin)
+    try:
+        solaros.gpio.write(pin, 1)
+    finally:
+        solaros.gpio.release(pin)
 ```
 
 Use the documented mode and pull constants. Do not replace them with guessed

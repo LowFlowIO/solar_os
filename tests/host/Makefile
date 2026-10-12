@@ -51,11 +51,15 @@ TARGETS += apple2_app_test
 TARGETS += apple2_app_entry_test
 
 APPLE2_DIR := $(ROOT)/modules/apple2/main
+APPLE2_ROMS := generated/apple2/roms_data.c
 apple2_app_test: apple2_app_test.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h $(APPLE2_DIR)/font.h
 	$(CC) $(CFLAGS) -I$(APPLE2_DIR) $(filter %.c,$^) -o $@
 
-apple2_app_entry_test: apple2_app_entry_test.c $(APPLE2_DIR)/apple2.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h
+apple2_app_entry_test: apple2_app_entry_test.c $(APPLE2_DIR)/apple2.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h $(APPLE2_DIR)/roms.h $(APPLE2_ROMS)
 	$(CC) $(CFLAGS) -I$(APPLE2_DIR) -Dmain=apple2_app_entry $(filter %.c,$^) -o $@
+
+$(APPLE2_ROMS): $(APPLE2_DIR)/../scripts/embed_roms.py $(APPLE2_DIR)/../rom/appleII+.rom $(APPLE2_DIR)/../rom/diskII.rom $(APPLE2_DIR)/roms.h
+	python3 -B $< $(APPLE2_DIR)/../rom $@
 
 tab5_keyboard_test: tab5_keyboard_test.c $(wildcard $(ROOT)/src/services/solar_os_tab5_keyboard*) \
         $(ROOT)/src/drivers/tab5_keyboard.c $(ROOT)/src/drivers/tab5_keyboard.h \

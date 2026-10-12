@@ -218,22 +218,13 @@ Stream definitions remain in RAM if the MeshCore job stops and reconnect after
 it starts again, but they do not persist across a reboot. Remove an unclaimed
 port with `meshcore stream remove <port>`.
 
-## Implementation and limits
+## Requirements and diagnostics
 
-The complete provider context and its 16-packet pool use external-required
-PSRAM. Runtime measurement tuned the local-radio worker to a 7168-byte internal
-stack. `meshcore status`
-reports packet usage, traffic, retries, duplicate counts, whether the context
-is in PSRAM, and the measured minimum stack watermark. The BLE companion uses
-an 8192-byte internal stack because Contacts and Messages can perform persistent
-filesystem writes; its endpoint and GATT discovery buffers use PSRAM. Firmware
-packages omit the local-radio transport unless the board has PSRAM and
-packet-radio expansion capability, and omit the BLE transport unless the board
-has PSRAM and BLE.
-
-SolarOS vendors the audited protocol subset from MeshCore commit
-`03b6ef4b0de98fc70b49ef10a6d0d61f8381fb7a`. Updates are explicit source
-reviews; firmware builds never download protocol code.
+Both transports require PSRAM. Local-radio messaging also needs a supported
+packet radio; the companion transport needs BLE. Use `meshcore status` for
+traffic, packet usage, retries, and duplicates. If startup reports no memory,
+check `mem` and stop unused jobs: the local-radio worker needs a 7168-byte
+internal stack and the BLE companion needs 8192 bytes, plus other buffers.
 
 ## Quick reference
 

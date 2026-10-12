@@ -2,7 +2,7 @@
 id = "messaging"
 title = "Messaging, contacts, and credential security"
 section = "service"
-summary = "Provider-neutral messaging identities, trust, persistence, and secret handling"
+summary = "Manage contacts, conversations, trust, and saved credentials"
 aliases = ["contacts.service", "credentials"]
 keywords = "messaging contacts credentials trust endpoint gateway meshcore security"
 packages_any = ["service_contacts", "service_credentials"]
@@ -24,29 +24,16 @@ A signed MeshCore advert proves ownership of its public key, not the human
 identity using the device. New adverts therefore remain `discovered` until the
 user trusts them.
 
-Contacts keeps at most 512 contacts and 576 endpoints in PSRAM. Its bounded,
-CRC-checked store uses alternating headers and data copies under
-`/.contacts/contacts.bin`. Persistence writes and `fsync` occur after releasing
-the service lock. If the filesystem is unavailable, the service stays usable
-in volatile mode and reports the error through `contacts status`.
-The store remains below 192 KiB. Existing contact files migrate on the next
-successful write, preserving contact IDs, names, endpoint trust, and metadata.
-Companion imports preserve retained contacts and report entries skipped when
-the shared store is full.
+Contacts can retain up to 512 contacts and 576 endpoints. They are saved in
+`/.contacts/contacts.bin` (under 192 KiB). If storage is unavailable, contacts
+remain usable for the current boot; check `contacts status` for save errors.
+Imports keep existing contacts and report skipped entries when full.
 
-Credentials keeps at most 12 opaque NVS records with at most 128 secret bytes
-each. Supported record kinds are asymmetric identities, shared keys, and
-tokens. Public listing exposes only the record ID, provider, kind, and label.
-Secret reads name one record and copy into a caller-owned buffer; temporary
-buffers are wiped.
-
-Credentials are never exposed through Inbox, logs, autocomplete, native-agent
-tools, Python, or Lua. The current SolarOS NVS configuration is not encrypted,
-so someone with physical flash access can recover the stored secrets. Flash
-and NVS encryption provisioning are outside this release.
-
-SSH keys, native-agent API keys, and existing provider tokens remain in their
-current stores and are not migrated automatically.
+The credential store holds provider keys and tokens. Secret values are not
+shown in Inbox, logs, autocomplete, agent tools, Python, or Lua. NVS is not
+encrypted in the current firmware, so physical flash access can reveal stored
+secrets. SSH keys, agent API keys, and other provider tokens keep their separate
+stores.
 
 See `contacts` for the TUI and mutation commands. `chat` is the unified
 conversation UI and works without Wi-Fi; provider jobs connect transports when
@@ -90,12 +77,8 @@ outbox [list]
 outbox cancel MESSAGE_ID
 ```
 
-The three user-facing collections have distinct roles: Conversations contain
-retained message history, Inbox is a universal notification view of inbound
-items from messaging and other applications, and Outbox contains only pending
-sends. Provider packet queues and event rings are internal bounded transport
-mechanisms, not additional mailboxes. On internal flash, Messaging physically
-shares Inbox's compact persistent records but still owns the conversation API.
+Conversations hold message history. Inbox shows incoming notifications from
+messaging and other apps. Outbox holds pending sends.
 
 `messages clear` also removes the selected provider's Inbox projections,
 including stale projections whose retained ring slot has already wrapped. It

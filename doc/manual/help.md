@@ -9,79 +9,53 @@ packages_any = []
 +++
 # Browse and refresh documentation
 
-SolarOS carries a small setup and recovery guide in firmware, together with a
-searchable directory of the topics available in the current build. Full guides
-and scripting API references come from the downloaded manual. Before that
-manual is installed, other topics explain how to download it.
-
-The built-in guide covers documentation setup, Wi-Fi connection, storage mounts,
-firmware updates, basic diagnostics, and session controls. Run `commands` to
-list the commands in this firmware, `man --list` to list manual topics, or
-`man -k QUERY` to search the topic directory.
-
-Run `help` to open the foreground documentation browser. Topics are grouped in
-a tree with all groups initially folded. Use Left and Right or Enter on a group
-to fold and unfold it, then select a topic and press Enter to read it. The tree
-retains its selection, scroll position, and folded groups when the topic closes.
-On a graphic display the topic opens in `reader`; text shells use `less`. Both
-consume the same `man:TOPIC` source, so TOML frontmatter is never shown as
-document content.
-
-## Refresh from solar-os.eu
-
-On devices with Wi-Fi, PSRAM, and an SD card, install or refresh the full manual
-without installing new firmware. The downloaded manual remains available
-without a network connection while the SD card is mounted. Devices without
-download support retain the setup and recovery guide; the full manual is also
-available at [solar-os.eu](https://solar-os.eu/).
-
-First connect Wi-Fi, inspect the available persistent disks, and mount the
-default removable volume if necessary:
+Run `help` to browse topics, or search and open them from the shell:
 
 ```text
-wifi on
+man -k connect wifi
+man sessions.apps
+man --list
+```
+
+In Help, use arrows or Enter to expand a group, then Enter to read a topic.
+Graphic displays use Reader; text terminals use Less. Closing a page returns
+to the same place in Help.
+
+Firmware includes setup help and a topic directory. Install the full manual
+for detailed guides and scripting APIs, or read it at
+[solar-os.eu](https://solar-os.eu/).
+
+## Install or refresh the manual
+
+This requires Wi-Fi, PSRAM, and mounted SD storage. Connect Wi-Fi using `wifi`
+on a display or `wifi connect SSID PASSWORD` from a text shell. Then:
+
+```text
 disk lsblk
 disk mount
+help update
+help status
 ```
 
-Use the display Wi-Fi menu with `wifi`, or connect from a text shell with
-`wifi connect SSID PASSWORD`. Run `man command.wifi` for saved-network and
-connection commands. `disk lsblk` lists the detected volumes; `disk mount`
-mounts the default removable volume. Run `man command.disk` if you need to
-select a different volume.
+`disk mount` mounts the default removable volume; use `man command.disk` to
+select another volume. `help update` downloads and verifies the manual for
+your running firmware version. If the download fails or is interrupted, the
+previous manual stays active. Once installed, it works offline while the
+storage is mounted.
 
-Then run:
+After an OS upgrade, a previously downloaded manual remains readable but is
+marked outdated. Run `help update` to refresh it. `help status` shows the
+firmware and manual versions, download state, and last error.
+
+## Return to built-in help
 
 ```text
-help update
+help reset
 ```
 
-SolarOS requests the documentation published for its exact running firmware
-version. It verifies the catalog with the OTA public key, downloads the single
-`manual.zip` archive authenticated by that catalog, and extracts it into a
-temporary revision. Every extracted Markdown page is then checked against its
-signed size and SHA-256 before activation. The command shows width-aware
-download and extraction progress, including on the narrow display shell at text
-size 16. An interrupted or invalid download leaves the previous manual active.
-
-`help status` shows whether the external revision or embedded fallback is in
-use. After a firmware upgrade, SolarOS keeps using a valid signed manual that
-was downloaded for the previous version until `help update` installs the exact
-current-version manual. `help`, `man`, and `help status` warn that this retained
-manual may be outdated. `help reset` stops using the downloaded revision; it
-does not remove the immutable cached files from the SD card.
-
-The maintenance word `status` intentionally takes precedence over the bare
-manual alias. Use the exact topic ID `help command.status` to open the shell
-`status` command page.
-
-## Why versions must match
-
-Documentation can affect scripts produced by the agent. A newly downloaded
-manual is therefore activated only when its catalog names the exact running
-firmware version. A previously verified manual remains available after an OS
-upgrade instead of silently falling back to embedded content, but SolarOS marks
-it as potentially outdated until it is refreshed or reset.
+This stops using the downloaded manual and restores setup help. Cached files
+may remain on SD. To read the shell's `status` command page, use
+`help command.status`; `help status` reports the manual's own status.
 
 ## Quick reference
 

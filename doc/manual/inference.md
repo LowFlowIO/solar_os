@@ -34,8 +34,7 @@ firmware; put compatible `.espdl` files on a mounted SolarOS storage volume.
 in native memory until explicit `unload(handle)`/`close(handle)`,
 `unload_all()`/`close_all()`, or reboot. The OS owns models. Python, Lua, shell
 commands, and native clients can use the same handles across client lifetimes.
-Interpreter exit cancels and joins its pending request, then releases client
-state; it does not unload models. Closed handles are invalid and are never
+Exiting a script cancels its pending request but leaves models loaded. Closed handles are invalid and are never
 reused during that boot. Removing or replacing a file does not change an
 already resident model; explicitly unload and reload to use the new file.
 
@@ -79,8 +78,7 @@ lets ESP-DL choose parallel execution for suitable operators; `"dual"` requests
 splitting supported operators between both cores. Operators that cannot split
 still execute on one core. SIMD acceleration is available in all modes.
 For example, call `solaros.inference.set_mode(model, "auto")` before `run`.
-Both worker results are joined before the next operator and before cancellation
-returns. Mode changes do not reload or reset a model.
+Mode changes do not reload or reset a model.
 
 Dual-core worker storage is allocated on first parallel dispatch and reused
 across runs and resident models. It is released when the last resident model

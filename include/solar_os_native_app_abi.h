@@ -105,4 +105,15 @@ typedef struct {
     int (*rtc_read)(uint8_t registers[5]);
     uint8_t (*buttons_source)(void);
     int (*video_stats)(solar_os_native_foreground_video_stats_v1_t *stats);
+    /* Rotated foreground surface. Valid before video_open; dimensions
+     * describe the caller's selected display. */
+    int (*video_dimensions)(uint16_t *width, uint16_t *height);
+    /* Exclusive fixed-size raw disk images. Byte offsets permit header reads;
+     * transfers are bounded to 64 KiB. Writes sync before returning. Claims
+     * survive suspension and the host closes leaked handles on worker exit. */
+    int (*disk_open)(const char *path, uint32_t *handle, uint32_t *size);
+    int (*disk_read)(uint32_t handle, uint32_t offset, void *data, size_t length);
+    int (*disk_write)(uint32_t handle, uint32_t offset, const void *data, size_t length);
+    int (*disk_sync)(uint32_t handle);
+    int (*disk_close)(uint32_t handle);
 } solar_os_native_foreground_api_v1_t;

@@ -30,6 +30,8 @@ typedef struct {
     atomic_bool done, resumable, stop_requested, suspend_requested, suspended, input_reset;
     uint64_t stop_deadline_us;
     bool worker_started, keyboard_captured, themed_index2;
+    int result, exit_code;
+    char detail[160];
     void *gfx, *keys, *presenter, *audio;
 } foreground_state_t;
 static foreground_state_t first, second;
@@ -40,6 +42,8 @@ static solar_os_context_t contexts[2];
 static foreground_state_t *scope, *wait_state;
 static TaskHandle_t current;
 static int token[3], mode;
+static size_t solar_os_gfx_width(const void *gfx) { return gfx == &token[0] ? 480 : 400; }
+static size_t solar_os_gfx_height(const void *gfx) { return gfx == &token[0] ? 304 : 288; }
 static uint64_t clock_us;
 static unsigned sequence, audio_order, presenter_order, release_order, deletions;
 static bool presenter_fail;
@@ -91,6 +95,11 @@ static void solar_os_memory_get_status(solar_os_memory_status_t *out) {*out=memo
 static bool solar_os_task_admit(const char *id, size_t stack, int role, bool external) {
     assert(id && stack==8192 && role==1 && !external);return task_admitted;
 }
+static bool disk_close_failed;
+static const void *disk_closed_owner;
+static int solar_os_disk_image_close_owner(const void *owner) {
+    disk_closed_owner = owner; return disk_close_failed ? ESP_FAIL : ESP_OK;
+}
 #include "foreground.inc"
 static void setup(void) {
     memset(&first, 0, sizeof(first)); memset(&second, 0, sizeof(second));
@@ -99,17 +108,29 @@ static void setup(void) {
     for (unsigned i = 0; i < 2; ++i) {
         states[i] = s[i]; apps[i].state_slot = &states[i];
         contexts[i] = (solar_os_context_t){.app=&apps[i], .gfx=&token[i], .streaming=true};
-        s[i]->slot=&slots[i]; s[i]->keys=&token[i]; s[i]->presenter=&token[i]; s[i]->audio=&token[i];
+        s[i]->slot=&slots[i]; s[i]->gfx=&token[i]; s[i]->keys=&token[i]; s[i]->presenter=&token[i]; s[i]->audio=&token[i];
         slots[i].manifest.flags=SOLAR_OS_NATIVE_APP_RESUMABLE;
         atomic_store(&slots[i].active, true); atomic_store(&s[i]->resumable, true);
         atomic_store(&s[i]->worker, &token[i]); s[i]->worker_started=true;
     }
     scope=&first; current=&token[0]; wait_state=&first;
     clock_us=0; mode=0; presenter_fail=false;
+    disk_close_failed = false; disk_closed_owner = NULL;
     sequence=audio_order=presenter_order=release_order=deletions=0;
 }
 int main(void) {
     setup(); char busy[32];
+    uint16_t width = 0, height = 0;
+    first.presenter = NULL;
+    assert(foreground_video_dimensions(&width, &height) == SOLAR_OS_NATIVE_OK);
+    assert(width == 480 && height == 304);
+    assert(foreground_video_dimensions(NULL, &height) == SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT);
+    scope = &second; current = &token[1];
+    assert(foreground_video_dimensions(&width, &height) == SOLAR_OS_NATIVE_OK);
+    assert(width == 400 && height == 288);
+    current = &token[0];
+    assert(foreground_video_dimensions(&width, &height) == SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+    setup();
     slots[0].manifest.worker_stack_bytes=8192;
     slots[0].manifest.minimum_internal_bytes=16384;
     slots[0].manifest.minimum_psram_bytes=262144;
@@ -165,8 +186,12 @@ int main(void) {
     assert(foreground_guest_suspend()==SOLAR_OS_NATIVE_OK);
     assert(atomic_load(&first.stop_requested) && !atomic_load(&first.suspended));
     setup(); foreground_worker_cleanup(&first);
+    assert(disk_closed_owner == &first);
     assert(audio_order < presenter_order && !first.audio && !first.presenter);
     assert(second.audio && second.presenter);
+    setup(); disk_close_failed = true; foreground_worker_cleanup(&first);
+    assert(first.exit_code == 1 && !strcmp(first.detail, "disk image close failed"));
+    assert(!first.audio && !first.presenter && second.audio && second.presenter);
     setup(); presenter_fail=true;
     if (!setjmp(reboot)) { foreground_worker_cleanup(&first); assert(0); }
     setup(); mode=0;
