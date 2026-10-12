@@ -998,7 +998,12 @@ static esp_err_t ssd1683_dual_pulse_prepare(epd_ssd1683_t *display,
         *baseline = true;
         return ESP_OK;
     }
-    if (new_target) ssd1683_dual_retarget(display, source);
+    if (new_target && ssd1683_dual_retarget(display, source) && display->scan_async) {
+        /* Continuous retargeting can keep some pixels pending forever.
+         * Age cleanup by changed targets, independently of budget completion.
+         */
+        ++display->pulse_updates;
+    }
     return ESP_OK;
 }
 
@@ -1112,7 +1117,6 @@ static esp_err_t ssd1683_scan_process(void *context, const uint8_t *source,
             err = ssd1683_dual_pulse_cycle(display, &transfer_us, &drive_us);
             if (err == ESP_OK) {
                 *scanned = true;
-                if (display->pixel_budget.pending == 0) ++display->pulse_updates;
                 SOLAR_OS_LOGI(TAG, "pulse scan pixels=%u pending=%u transfer=%lldus drive=%lldus total=%lldus interval=%lldus",
                     (unsigned)pixels, (unsigned)display->pixel_budget.pending,
                     (long long)transfer_us, (long long)drive_us,

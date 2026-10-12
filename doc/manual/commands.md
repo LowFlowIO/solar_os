@@ -1250,9 +1250,11 @@ The Elecrow 5.79-inch dual-SSD1683 profile also accepts the optional
 `refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
 sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
 duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
-`cleanup-every=<1..128>` sets the native-cleanup interval in completed settling
-batches (one per changed synchronous presentation; asynchronous batches finish
-when all pending pixels settle).
+`cleanup-every=<1..128>` sets the native-cleanup interval in changed images
+(completed changed presentations in synchronous mode; changed targets consumed
+by the worker in asynchronous mode). Identical targets and continuation scans
+do not advance the count. Asynchronous cleanup can interrupt unfinished budgets
+so continuous motion does not postpone native cleanup indefinitely.
 These runtime settings apply only to pulse mode and are listed by
 `display mode <target>`. `pulse-scan=sync` completes a presentation's pending
 cycles before returning. `pulse-scan=async` runs one cycle per scan in a

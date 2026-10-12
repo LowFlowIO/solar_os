@@ -45,7 +45,12 @@ cycle per callback, retargets only changed image bits, and keeps a copied target
 independent of the renderer's buffer. The mailbox is separate from the panel
 lock, so BUSY waits do not block submissions. DRAW_TILE is a no-op; REFRESH
 submits the completed buffer in asynchronous mode. The model supplies no
-optical feedback or grayscale state.
+optical feedback or grayscale state. Native cleanup is aged by completed changed
+presentations in synchronous mode and by changed targets consumed in asynchronous
+mode. It must not depend on the entire asynchronous budget becoming empty:
+continuous retargeting can prevent that indefinitely. Identical targets and
+continuation scans do not age cleanup. At the limit, the next callback establishes
+a native baseline from its newest target, even if old budgets remain pending.
 The first custom activation clears native image bits from all four RAM planes.
 Later writes cover the union of the current and preceding active bounds, so
 old drive bits become neutral before another activation. This restricts SPI

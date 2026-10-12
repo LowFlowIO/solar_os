@@ -399,6 +399,40 @@ static void test_async_retarget_and_recovery(void) {
     assert(!ram_pixel(0, 2, 0) && !ram_pixel(0, 3, 0));
     epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
 }
+static void test_async_cleanup_during_continuous_changes(void) {
+    epd_ssd1683_t d = display();
+    assert(epd_ssd1683_set_controller_mode(&d, "pulse-scan=async") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "drive-cycles=8") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "cleanup-every=3") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
+    assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+    assert(worker_tick(&d.scan_worker) == ESP_OK);
+    for (unsigned frame = 0; frame < 3; ++frame) {
+        pixel(frame, 0, false);
+        assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+        assert(worker_tick(&d.scan_worker) == ESP_OK);
+        assert(d.pixel_budget.pending != 0);
+        assert(d.pulse_updates == frame + 1);
+        if (frame == 0) {
+            /* Duplicate targets and continuation scans do not age cleanup. */
+            assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+            assert(worker_tick(&d.scan_worker) == ESP_OK);
+            assert(worker_tick(&d.scan_worker) == ESP_OK);
+            assert(d.pulse_updates == 1);
+        }
+    }
+    /* The next scan cleans up despite unfinished budgets, using the newest
+     * accepted target rather than waiting for all pixels to settle. */
+    pixel(3, 0, false);
+    assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+    capture_count = 0;
+    assert(worker_tick(&d.scan_worker) == ESP_OK);
+    assert(find(0x22, count(0x22) - 1)->data[0] == 0xf7);
+    assert(d.pulse_updates == 0 && d.pixel_budget.pending == 0);
+    assert(memcmp(d.shadow, d.buffer, d.buffer_size) == 0);
+    for (unsigned x = 0; x < 4; ++x) assert(!ram_pixel(0, x, 0));
+    epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
+}
 static void test_hold_power_and_fast_ramp(void) {
     epd_ssd1683_t d = display();
     assert(epd_ssd1683_set_controller_mode(&d, "drive-cycles=3") == ESP_OK);
@@ -497,6 +531,7 @@ int main(void) {
     test_long_phase_voltage_bits();
     test_moving_window_clears_old_mask();
     test_async_retarget_and_recovery(); test_hold_power_and_fast_ramp();
+    test_async_cleanup_during_continuous_changes();
     test_async_sleep_and_resume();
     test_pulse_tuning_preserves_native_idle();
     test_cleanup_failure_and_capability();

@@ -996,8 +996,11 @@ Each changed pixel receives `drive-cycles` completed waveform activations
 does not refill its budget. `pulse-frames` is the scan-frame duration of each
 drive phase (1–32); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
 frequency in Hz. Defaults are 6 cycles, 8 scan frames, code 4, and a native
-cleanup after 32 completed settling batches. A synchronous presentation is one
-batch; an asynchronous batch finishes when no pixels remain pending.
+cleanup after 32 changed images. Synchronous mode counts completed changed
+presentations; asynchronous mode counts changed targets consumed by the scan
+worker, including targets received while earlier pixels are still settling.
+Repeated identical targets and continuation scans do not advance this count.
+Cleanup uses the newest consumed target and can interrupt unfinished budgets.
 Settings are runtime-only. Pulse mode is
 experimental: its speed, polarity, ghosting, and optical settling require
 verification on the physical panel. It does not provide native grayscale.
