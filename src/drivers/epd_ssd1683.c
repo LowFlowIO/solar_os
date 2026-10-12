@@ -121,6 +121,21 @@ static bool ssd1683_is_dual(const epd_ssd1683_t *display)
         display->panel_variant == EPD_SSD1683_PANEL_ELECROW_579_DUAL;
 }
 
+static epd_pulse_tuning_t ssd1683_default_pulse_tuning(epd_ssd1683_panel_variant_t panel)
+{
+    epd_pulse_tuning_t tuning = epd_pulse_default_tuning();
+    if (panel == EPD_SSD1683_PANEL_ELECROW_579_DUAL) {
+        /* A single short activation can complete without visibly settling ink.
+         * Use the conservative preset confirmed on the 5.79-inch panel; keep
+         * the common model's defaults independent of this panel's waveform.
+         */
+        tuning.drive_cycles = 6;
+        tuning.pulse_frames = 8;
+        tuning.waveform_fr = 4;
+    }
+    return tuning;
+}
+
 static esp_err_t ssd1683_trigger_update(epd_ssd1683_t *display,
                                         bool full,
                                         bool partial);
@@ -1468,7 +1483,7 @@ esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,
     memset(display, 0, sizeof(*display));
     display->last_error = ESP_OK;
     display->refresh_mode = EPD_SSD1683_REFRESH_AUTO;
-    display->pulse_tuning = epd_pulse_default_tuning();
+    display->pulse_tuning = ssd1683_default_pulse_tuning(config->panel_variant);
     display->lock = xSemaphoreCreateMutexStatic(&display->lock_storage);
     display->panel_variant = config->panel_variant;
     display->dc_pin = config->dc_pin;

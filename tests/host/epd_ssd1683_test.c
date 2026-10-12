@@ -73,7 +73,7 @@ static epd_ssd1683_t display(void) {
         .busy_pin = 48, .busy_level = 1, .power_pin = 7, .powered = true,
         .panel_variant = EPD_SSD1683_PANEL_ELECROW_579_DUAL,
         .controller_ready = true, .shadow_valid = true,
-        .pulse_tuning = epd_pulse_default_tuning()};
+        .pulse_tuning = ssd1683_default_pulse_tuning(EPD_SSD1683_PANEL_ELECROW_579_DUAL)};
 }
 static capture_t *find(uint8_t cmd, unsigned occurrence) {
     for (size_t i = 0; i < capture_count; ++i)
@@ -134,8 +134,8 @@ static void test_pulse_and_restore(void) {
     assert(memcmp(find(0x84, 0)->data, find(0x04, 0)->data, 3) == 0);
     capture_t *lut = find(0x32, 0), *slave_lut = find(0xb2, 0);
     assert(lut->size == 227 && memcmp(lut->data, slave_lut->data, 227) == 0);
-    assert(lut->data[85] == 0x41 && lut->data[127] == 0x81);
-    assert(lut->data[43] == 1 && lut->data[169] == 1 && lut->data[224] == 8);
+    assert(lut->data[85] == 0x48 && lut->data[127] == 0x88);
+    assert(lut->data[43] == 8 && lut->data[169] == 8 && lut->data[224] == 4);
     assert(count(0x24) == 3 && count(0x26) == 3 && count(0xa4) == 3 && count(0xa6) == 3);
     assert(find(0x21, 0)->size == 2 && find(0x21, 0)->data[1] == 0x10);
     assert(find(0x37, 0)->size == 10 && find(0xb7, 0)->size == 10);
@@ -162,6 +162,20 @@ static void test_pulse_and_restore(void) {
     assert(ssd1683_refresh(&d) == ESP_OK);
     assert(resets > 0 && !d.pulse_lut_loaded && d.pixel_budget.pixels == NULL);
     assert(count(0x32) == 0 && find(0x22, count(0x22) - 1)->data[0] == 0xf7);
+}
+static void test_default_drive_budget(void) {
+    epd_ssd1683_t d = display();
+    assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    capture_count = 0;
+    pixel(0, 0, false);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    assert(count(0x20) == 6 && d.pixel_budget.pending == 0);
+    capture_count = 0;
+    pixel(0, 0, true);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    assert(count(0x20) == 6 && d.pixel_budget.pending == 0);
+    free_budget(&d);
 }
 static void test_cleanup_failure_and_capability(void) {
     epd_ssd1683_t d = display();
@@ -199,6 +213,7 @@ static void test_cleanup_failure_and_capability(void) {
     assert(strcmp(epd_ssd1683_controller_mode_values(&d), "refresh=<auto,fast,full>") == 0);
 }
 int main(void) {
-    test_native(); test_pulse_and_restore(); test_cleanup_failure_and_capability();
+    test_native(); test_pulse_and_restore(); test_default_drive_budget();
+    test_cleanup_failure_and_capability();
     puts("SSD1683 dual native/pulse transport tests: ok");
 }

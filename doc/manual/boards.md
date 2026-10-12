@@ -984,9 +984,9 @@ panel profile. Select it and tune it with:
 
 ```text
 display mode display0 refresh=pulse
-display mode display0 drive-cycles=1
-display mode display0 pulse-frames=1
-display mode display0 waveform-fr=8
+display mode display0 drive-cycles=6
+display mode display0 pulse-frames=8
+display mode display0 waveform-fr=4
 display mode display0 cleanup-every=32
 display mode display0
 ```
@@ -995,10 +995,14 @@ Each changed pixel receives `drive-cycles` completed waveform activations
 (1–32). Settled pixels select the neutral waveform; submitting the same target
 does not refill its budget. `pulse-frames` is the scan-frame duration of each
 drive phase (1–8); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
-frequency in Hz. Defaults are 1 cycle, 1 scan frame, code 8, and a native
+frequency in Hz. Defaults are 6 cycles, 8 scan frames, code 4, and a native
 cleanup after 32 image updates. Settings are runtime-only. Pulse mode is
 experimental: its speed, polarity, ghosting, and optical settling require
 verification on the physical panel. It does not provide native grayscale.
+The default is a conservative drive preset. Lower budgets can complete without
+visibly moving the ink, so a successful BUSY cycle does not prove optical
+settling. Reduce the cycle budget and frame duration only while inspecting the
+screen in both transition directions.
 
 The driver completes all pending cycles before returning from a presentation.
 Increasing the cycle budget increases that presentation's blocking time; this
