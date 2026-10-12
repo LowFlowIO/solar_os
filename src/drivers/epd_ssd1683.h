@@ -7,6 +7,7 @@
 #include "driver/spi_master.h"
 #include "esp_err.h"
 #include "epd_pixel_budget.h"
+#include "epd_scan_worker.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "u8g2.h"
@@ -79,12 +80,21 @@ typedef struct {
     bool pulse_window_valid;
     uint8_t pulse_x_start, pulse_x_end;
     uint16_t pulse_y_start, pulse_y_end;
+    size_t pulse_mask_pending;
+    bool pulse_mask_dirty;
+    bool pulse_power_hold, pulse_ramp_fast, pulse_analog_on;
+    bool scan_async;
+    uint32_t scan_submit_ready;
+    uint16_t scan_period_ms;
+    uint32_t spi_clock_hz, pulse_spi_clock_hz, spi_applied_hz;
+    int64_t pulse_last_drive_start, pulse_drive_interval;
+    epd_scan_worker_t scan_worker;
     uint32_t pulse_updates;
     bool pulse_lut_loaded;
     bool pulse_needs_cleanup;
     SemaphoreHandle_t lock;
     StaticSemaphore_t lock_storage;
-    char mode_description[144];
+    char mode_description[384];
 } epd_ssd1683_t;
 
 esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,

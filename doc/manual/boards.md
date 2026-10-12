@@ -996,7 +996,9 @@ Each changed pixel receives `drive-cycles` completed waveform activations
 does not refill its budget. `pulse-frames` is the scan-frame duration of each
 drive phase (1–32); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
 frequency in Hz. Defaults are 6 cycles, 8 scan frames, code 4, and a native
-cleanup after 32 image updates. Settings are runtime-only. Pulse mode is
+cleanup after 32 completed settling batches. A synchronous presentation is one
+batch; an asynchronous batch finishes when no pixels remain pending.
+Settings are runtime-only. Pulse mode is
 experimental: its speed, polarity, ghosting, and optical settling require
 verification on the physical panel. It does not provide native grayscale.
 The default is a conservative drive preset. Lower budgets can complete without
@@ -1004,14 +1006,45 @@ visibly moving the ink, so a successful BUSY cycle does not prove optical
 settling. Reduce the cycle budget and frame duration only while inspecting the
 screen in both transition directions.
 
-The driver completes all pending cycles before returning from a presentation.
-Increasing the cycle budget increases that presentation's blocking time; this
-mode does not run an independent 30 Hz scan worker. The first presentation
+`pulse-scan=sync` is the default: the driver completes all pending cycles before
+returning from a presentation. Increasing the cycle budget increases that
+presentation's blocking time. `pulse-scan=async` instead submits the newest
+image to a persistent scan worker. It delivers one pulse per scan and continues
+settling without further presentations. New targets can arrive between cycles;
+queued images coalesce to the latest target. Settling can span several scans.
+Select asynchronous operation with:
+
+```text
+display mode display0 pulse-scan=async
+display mode display0 pulse-period=100
+```
+
+`pulse-period` requests a minimum start-to-start interval of 10–1000 ms;
+100 ms requests 10 scans/s. Hardware work can exceed that interval.
+`display mode display0` reports `scan-last-us`, `scan-interval-us`, completed
+`scan-count`, submitted/coalesced image counts, and pending pixel count. These
+measure actual completed scan work; image submission rate is separate from
+scan rate and optical settling.
+
+Additional panel-specific controls are `pulse-power=<cycle,hold>`,
+`pulse-ramp=<normal,fast>`, and `pulse-spi-khz=<100..20000>`. The default power
+policy cycles the supply stages for each pulse. `hold` retains them during a
+settling sequence and powers down when all budgets finish. The normal booster
+ramp uses approximately 40/40/10 ms phases; fast uses 10/10/10 ms with the same
+current settings and voltage targets. Both ramp settings require optical
+calibration. Pulse SPI speed defaults to the board's configured clock;
+its override applies only in pulse mode, with the normal clock restored for
+native operation. These controls do not guarantee a particular frame rate.
+
+The first presentation
 establishes a native full-refresh baseline. Logs report changed pixel count,
-completed cycles, SPI transfer time, and waveform BUSY time separately in
+completed cycles or scans, SPI transfer time, and waveform BUSY time separately in
 `log show`.
+Asynchronous scan logs also report the interval between waveform activations.
 A failed transfer or waveform does not consume the failed cycle's budget and
-returns the driver to `refresh=auto` for a native recovery on the next paint.
+returns the driver to `refresh=auto`. Synchronous mode recovers on the next
+paint; asynchronous mode immediately performs a native recovery of the newest
+accepted target. Sleep suspends scans; waking reseeds from a native baseline.
 Use `display mode display0 refresh=auto` to restore the standard waveform;
 the next presentation resets the controller and performs a full cleanup.
 The pattern script `tests/hil/epd_pulse_pattern.py` exercises both transition
@@ -1019,6 +1052,9 @@ directions and moves patches across both controller halves. Its printed
 messages mark queued presentations; `gfx.present()` returns before physical
 completion. Read the driver timings in `log show` and judge optical settling
 and ghosting on the actual screen.
+`tests/hil/epd_pulse_scan_pattern.py` queues moving-patch targets at 100 ms
+intervals for asynchronous cadence tests, then holds the final image so its
+pixels can settle. Use the driver statistics and physical screen to assess it.
 
 `battery0` attaches automatically at I2C address `0x0b`. Battery capacity
 defaults to 3000 mAh and remains configurable:

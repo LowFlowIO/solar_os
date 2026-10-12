@@ -39,9 +39,13 @@ resources. The mailbox lock must never be held while acquiring a panel lock.
 The dual-SSD1683 5.79-inch adapter is the first consumer. It programs both
 controllers, replaces both RAM planes whenever the active drive mask changes,
 reuses them between identical cycles with RAM ping-pong disabled, holds seam padding
-neutral, and serializes tuning with presentation. It completes pending cycles
-synchronously. The common model also supports retargeting between cycles for
-a future scan worker, but supplies no optical feedback or grayscale model.
+neutral, and serializes tuning with panel operations. The default adapter
+completes pending cycles synchronously. Its optional scan worker consumes one
+cycle per callback, retargets only changed image bits, and keeps a copied target
+independent of the renderer's buffer. The mailbox is separate from the panel
+lock, so BUSY waits do not block submissions. DRAW_TILE is a no-op; REFRESH
+submits the completed buffer in asynchronous mode. The model supplies no
+optical feedback or grayscale state.
 The first custom activation clears native image bits from all four RAM planes.
 Later writes cover the union of the current and preceding active bounds, so
 old drive bits become neutral before another activation. This restricts SPI
@@ -60,3 +64,12 @@ panel's published source/gate rail and VCOM settings on both controllers,
 including booster soft start, and disables RAM ping-pong because it writes
 both planes explicitly. Pulse start, completion, and errors use the SolarOS
 log ring and can be read with `log show` over a port shell.
+The optional fast booster duration is 0x00 (10/10/10 ms) instead of 0x0f
+(40/40/10 ms), per SSD1683 section 7 command 0x0c. It retains current/strength
+and rail settings. Holding power uses 0xcc and explicitly shuts down via 0x03
+when budgets finish. Sleep rejects queued targets, and resume resets/reseeds.
+Failed asynchronous pulses disable the worker and recover the newest accepted
+snapshot through a native full update. SPI frequency overrides use the
+ESP-IDF transaction override, apply only in pulse mode, and restore the board
+clock for native operation. Requested period and actual scan statistics are
+separate; only a panel test can establish useful optical update cadence.

@@ -1250,10 +1250,21 @@ The Elecrow 5.79-inch dual-SSD1683 profile also accepts the optional
 `refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
 sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
 duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
-`cleanup-every=<1..128>` sets the native-cleanup interval in image updates.
+`cleanup-every=<1..128>` sets the native-cleanup interval in completed settling
+batches (one per changed synchronous presentation; asynchronous batches finish
+when all pending pixels settle).
 These runtime settings apply only to pulse mode and are listed by
-`display mode <target>`. Each presentation completes its pending pulse cycles
-synchronously. The mode requires physical panel calibration; other EPD
+`display mode <target>`. `pulse-scan=sync` completes a presentation's pending
+cycles before returning. `pulse-scan=async` runs one cycle per scan in a
+persistent worker and accepts new targets while earlier pixels settle.
+`pulse-period=<10..1000>` requests the minimum scan interval in milliseconds;
+actual timing and submitted/coalesced image counts appear in the mode output.
+`pulse-power=<cycle,hold>` selects supply cycling or retention during settling,
+`pulse-ramp=<normal,fast>` selects booster duration, and
+`pulse-spi-khz=<100..20000>` overrides the SPI clock only for pulse operation.
+Defaults remain synchronous with normal ramp and supply cycling. Requested
+scan cadence is not a guarantee of achieved cadence or optical settling.
+The mode requires physical panel calibration; other EPD
 profiles reject it until they have a matching waveform adapter. See the
 [SolarWriter display controls](boards.md#solarwriter) for behavior and recovery.
 
