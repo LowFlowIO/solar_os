@@ -6,6 +6,13 @@ allocation, or waveform. A panel driver supplies storage, maps physical pixel
 order to indices, and encodes HOLD/DRIVE_BLACK/DRIVE_WHITE into its controller's
 RAM and waveform selections.
 
+Drivers may attach caller-owned `uint32_t[count]` active-index storage before
+seeding or retargeting. Budget advancement then visits pending pixels only.
+The list compacts after a successful cycle; seeded entries can remain listed
+until compaction and must be checked with `epd_pixel_budget_drive()`. Reset
+the model before seeding a complete native baseline. Without active storage,
+the same API uses a full-map scan.
+
 Seed every pixel after a successful native cleanup. A changed target receives
 the configured cycle budget. Repeating that target preserves its remaining
 budget; reversing it assigns a new budget in the new direction. Call

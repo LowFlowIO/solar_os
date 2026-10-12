@@ -27,6 +27,8 @@ typedef struct {
     uint8_t *pixels; /* One byte/pixel: target color + remaining cycles. */
     size_t count;
     size_t pending;
+    uint32_t *active; /* Optional caller-owned sparse list, count entries. */
+    size_t active_count;
 } epd_pixel_budget_t;
 
 epd_pulse_tuning_t epd_pulse_default_tuning(void);
@@ -36,6 +38,14 @@ epd_pulse_tuning_t epd_pulse_default_tuning(void);
 esp_err_t epd_pulse_tuning_set(epd_pulse_tuning_t *tuning, const char *mode);
 esp_err_t epd_pixel_budget_init(epd_pixel_budget_t *budget, uint8_t *storage,
                                 size_t pixels);
+/* Attach before seeding/retargeting. Storage must hold count uint32_t entries.
+ * The sparse list includes only pending pixels after advance(), and may retain
+ * seeded/settled entries until the next advance. Never consume an extra drive
+ * for those entries: consult epd_pixel_budget_drive().
+ */
+esp_err_t epd_pixel_budget_set_active_storage(epd_pixel_budget_t *budget,
+                                             uint32_t *storage, size_t entries);
+void epd_pixel_budget_reset(epd_pixel_budget_t *budget);
 void epd_pixel_budget_seed(epd_pixel_budget_t *budget, size_t pixel, bool white);
 void epd_pixel_budget_target(epd_pixel_budget_t *budget, size_t pixel, bool white,
                               uint8_t cycles);
