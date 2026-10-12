@@ -80,8 +80,10 @@ switching sessions and release display and audio for the selected app.
 [Apple II Plus](doc/manual/app.apple2.md) and
 [Game Boy](doc/manual/app.gameboy.md) are external foreground apps. Install
 them with `pkg install apple2` and `pkg install gameboy`, or copy their built
-ELFs into `modules/apps/` on the preferred storage volume. Supply ROMs and disk
-images separately. Files opens `.gb` ROMs with the installed Game Boy module.
+ELFs into `modules/apps/` on the preferred storage volume. Apple II Plus bundles
+its firmware ROMs: `apple2` starts BASIC and `apple2 file.nib` boots a disk.
+Supply disk images and Game Boy cartridges separately. Files opens `.nib`
+images with Apple II Plus and `.gb` ROMs with Game Boy.
 
 See [Native foreground apps](doc/manual/native-app.md) for installation,
 resource declarations, and the suspend/resume contract.

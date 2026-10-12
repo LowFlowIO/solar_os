@@ -2,6 +2,13 @@
 
 ## 4.x
 
+- **4.16.8** — 2026-10-12 — Apple II Plus now bundles its system and Disk II
+  ROMs. `apple2` starts BASIC without external assets; `apple2 file.nib`
+  boots a disk, and Files opens NIB images with the installed module.
+  Added the resumable Tiny386 module with embedded SeaBIOS, bootable PC
+  floppy images, and disk saves on close. Native apps can query foreground
+  display dimensions; Tiny386 text follows the selected display resolution.
+  Simplified the manual around usage and added an architecture overview.
 - **4.16.7** — 2026-10-11 — Added resumable external foreground apps on
   ESP32-S3 devices with PSRAM. Installed apps appear in the app registry and
   launch by name, through `session create`, or directly with `load`.

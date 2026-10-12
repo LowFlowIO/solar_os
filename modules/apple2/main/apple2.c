@@ -1,5 +1,6 @@
 #include "solar_os_native_abi.h"
 #include "machine.h"
+#include "roms.h"
 #include "vendor/puce6502.h"
 #include <string.h>
 
@@ -16,6 +17,7 @@ SOLAR_OS_NATIVE_APP_MANIFEST = {
     .minimum_psram_bytes = sizeof(apple2_machine_t) + 128U * 1024U,
     .tick_interval_ms = 5U,
     .id = "apple2", .summary = "Apple II Plus emulator",
+    .file_extensions = ".nib",
 };
 
 static void report(const char *message) { host->write_utf8(message, strlen(message)); }
@@ -90,6 +92,15 @@ static bool asset_path(char path[160], const char *directory, const char *name)
     if (slash) path[base++] = '/';
     memcpy(path + base, name, tail + 1U);
     return true;
+}
+
+static bool nib_path(const char *path)
+{
+    size_t length = strlen(path);
+    if (length < 4U) return false;
+    const char *suffix = path + length - 4U;
+    return suffix[0] == '.' && (suffix[1] == 'n' || suffix[1] == 'N') &&
+        (suffix[2] == 'i' || suffix[2] == 'I') && (suffix[3] == 'b' || suffix[3] == 'B');
 }
 
 static int load_exact(const char *path, void *buffer, size_t length)
@@ -218,36 +229,35 @@ int main(int argc, char **argv)
     const solar_os_native_memory_api_v1_t *memory = host->get_service(
         SOLAR_OS_NATIVE_MEMORY_SERVICE, 1U, sizeof(*memory));
     if (!apple2_app || !memory) { report("apple2: requires the foreground app host on compatible firmware"); return 1; }
-    if (argc < 2 || argc > 4) {
-        report("apple2: apple2 <asset-directory> [drive1.nib] [drive2.nib]");
+    bool disk_arguments = argc > 1 && nib_path(argv[1]);
+    if (argc < 1 || argc > (disk_arguments ? 3 : 4)) {
+        report("apple2: apple2 [drive1.nib [drive2.nib]] or apple2 <disk-directory> [drive1.nib] [drive2.nib]");
         apple2_app->set_exit_code(1); return 1;
     }
     char directory[160];
-    int path_result = apple2_app->resolve_path(argv[1], directory, sizeof(directory));
-    if (path_result) {
-        report("apple2: invalid asset directory");
-        apple2_app->set_exit_code(1); return 1;
+    if (argc > 1 && !disk_arguments) {
+        int path_result = apple2_app->resolve_path(argv[1], directory, sizeof(directory));
+        if (path_result) {
+            report("apple2: invalid disk directory");
+            apple2_app->set_exit_code(1); return 1;
+        }
     }
     apple2_machine_t *m = memory->alloc(sizeof(*m));
     if (!m) { report("apple2: insufficient PSRAM"); apple2_app->set_exit_code(1); return 1; }
     apple2_machine_init(m);
-    char path[160];
-    int result = SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
-    if (!asset_path(path, directory, "appleII+.rom")) {
-        report("apple2: invalid Apple II ROM path"); goto done;
-    }
-    result = load_exact(path, m->rom, sizeof(m->rom));
-    if (result) goto done;
-    result = SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
-    if (!asset_path(path, directory, "diskII.rom")) {
-        report("apple2: invalid Disk II ROM path"); goto done;
-    }
-    result = load_exact(path, m->sl6, sizeof(m->sl6));
-    if (result) goto done;
-    for (int i = 2; i < argc; ++i) {
-        apple2_drive_t *drive = &m->disk[i - 2];
+    memcpy(m->rom, solar_os_apple2_rom, sizeof(m->rom));
+    memcpy(m->sl6, solar_os_apple2_disk_rom, sizeof(m->sl6));
+    int result = SOLAR_OS_NATIVE_OK;
+    int first_disk = disk_arguments ? 1 : 2;
+    for (int i = first_disk; i < argc; ++i) {
+        apple2_drive_t *drive = &m->disk[i - first_disk];
         result = SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
-        if (!asset_path(drive->filename, directory, argv[i])) {
+        if (disk_arguments) {
+            result = apple2_app->resolve_path(argv[i], drive->filename, sizeof(drive->filename));
+        } else if (asset_path(drive->filename, directory, argv[i])) {
+            result = SOLAR_OS_NATIVE_OK;
+        }
+        if (result) {
             report("apple2: invalid disk path"); goto done;
         }
         result = load_exact(drive->filename, drive->data, sizeof(drive->data));
@@ -260,7 +270,7 @@ int main(int argc, char **argv)
         &palette[APPLE2_TEXT_BACKGROUND]);
     if (result) { report("apple2: display text colors unavailable"); goto done; }
     result = apple2_app->video_open_ex(APPLE2_WIDTH, APPLE2_HEIGHT, palette, 25U,
-        APPLE2_TEXT_BACKGROUND);
+        0U); /* Literal black for the aspect-ratio bars. */
     if (result) { report_display_error(result); goto done; }
     open_audio(m);
     result = apple2_app->enable_suspend();

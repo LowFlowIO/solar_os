@@ -20,10 +20,10 @@ are foreground apps. Their CPU cores and guest state belong to their modules.
 pkg installed
 pkg install apple2
 pkg install gameboy
-apple2 /sdcard/apple2 dos33.nib
+apple2 /sdcard/apple2/dos33.nib
 gameboy /sdcard/roms/game.gb
-session create apple2 display0 /sdcard/apple2 dos33.nib
-load /sdcard/apple2.app.elf /sdcard/apple2 dos33.nib
+session create apple2 display0 /sdcard/apple2/dos33.nib
+load /sdcard/apple2.app.elf /sdcard/apple2/dos33.nib
 ```
 
 ## Using installed apps
@@ -117,14 +117,14 @@ are exported for synchronous interpreter error handling.
 
 ## Emulator apps
 
-See [Apple II Plus](app.apple2.md) for ROM and NIB requirements, controls, and
+See [Apple II Plus](app.apple2.md) for bundled ROMs, NIB disk requirements, controls, and
 explicit disk saves. See [Game Boy](app.gameboy.md) for cartridge compatibility,
 controls, and automatic cartridge RAM saves. See [Tiny386](app.tiny386.md) for
 bootable PC floppy images, embedded BIOS, and display requirements. For example,
 with assets present:
 
 ```text
-apple2 /sdcard/apple2 dos33.nib
+apple2 /sdcard/apple2/dos33.nib
 gameboy /sdcard/roms/game.gb
 tiny386 /sdcard/tiny386/dos.img
 ```

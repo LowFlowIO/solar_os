@@ -14,45 +14,44 @@ Apple II Plus is an external foreground app for ESP32-S3 devices with PSRAM,
 graphics, and native-module support. It emulates a 6502, 64 KiB RAM including
 the language card, 40-column text, lores/hires and mixed graphics, two Disk II
 drives, keyboard, paddles, and speaker. Undocumented CPU opcodes act as NOPs.
-No ROMs or disk images are bundled.
+Apple II Plus and Disk II firmware ROMs are bundled. Supply disk images separately.
 
 ## Quick reference
 
 ```text
 pkg install apple2
-apple2 /sdcard/apple2 dos33.nib
-session create apple2 display0 /sdcard/apple2 dos33.nib
+apple2
+apple2 /sdcard/apple2/dos33.nib
+session create apple2 display0 /sdcard/apple2/dos33.nib
 ```
 
-## Installation and assets
+## Installation and disks
 
 Install from a compatible module catalog with `pkg install apple2`, or copy
 `solaros_native_apple2.app.elf` to `modules/apps/apple2.elf` in the preferred
 storage volume. The app appears in the installed app registry.
 
-Choose an asset directory and provide these files:
-
-| File | Required size |
-|---|---:|
-| `appleII+.rom` | 12288 bytes |
-| `diskII.rom` | 256 bytes |
-| Each `.nib` disk image | 232960 bytes |
-
-Both ROM files are required. One or two NIB disks can be mounted at launch;
-launching without a disk is also supported.
+No separate ROM files are needed. NIB disk images must be exactly 232960 bytes.
+Mount one or two disks at launch, or run `apple2` without arguments to start
+Applesoft BASIC. For example, type `PRINT 123+456` and press Enter.
 
 ## Launch
 
 ```text
-apple2 <asset-directory> [drive1.nib] [drive2.nib]
-apple2 /sdcard/apple2 dos33.nib data.nib
-load /sdcard/solaros_native_apple2.app.elf /sdcard/apple2 dos33.nib
+apple2
+apple2 drive1.nib [drive2.nib]
+apple2 /sdcard/apple2/dos33.nib
+load /sdcard/solaros_native_apple2.app.elf /sdcard/apple2/dos33.nib
 ```
 
-The asset directory can be relative to the launching shell's current directory.
-From `/sdcard/apple2`, use `apple2 . dos33.nib`. Relative disk filenames use
-the asset directory. Text and status overlays follow the terminal theme;
+Disk paths are relative to the launching shell's current directory, or absolute.
+The older `apple2 <disk-directory> [drive1.nib] [drive2.nib]` form also works:
+from `/sdcard`, use `apple2 apple2 dos33.nib`. Relative disk names then use
+that directory. Files opens `.nib` images with the installed module.
+
+Text and status overlays follow the terminal theme;
 graphics use Apple II palettes. Changed frames are presented at up to 25 Hz.
+On native color displays, the aspect-ratio bars are black.
 Speaker output is optional; emulation continues when audio is unavailable.
 
 ## Controls

@@ -789,7 +789,8 @@ foreground apps. Associations include images to `view`,
 WAV/MP3 to `player`, MPEG-1 `.mpg`/`.mpeg` files to `vplay`, CSV to `sheet`,
 Python and Lua scripts to their runtimes,
 documents to `reader` (or `writer` when Reader is unavailable), and `.gb` ROMs
-to the installed [Game Boy module](app.gameboy.md). Unknown files fall back to
+to the installed [Game Boy module](app.gameboy.md). NIB disk images open with
+the installed [Apple II Plus module](app.apple2.md). Unknown files fall back to
 `less` or `edit`. A `.sh` file runs
 through the built-in SolarOS shell. In launcher mode, documents associated with
 Reader open as `reader --pager` for row-aware page navigation.

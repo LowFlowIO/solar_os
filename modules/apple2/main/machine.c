@@ -263,8 +263,11 @@ uint8_t readMem(uint16_t address) {
         return lgc[address - LGCSTART];                                             // LC
     }
 
-    if ((address & 0xFF00) == SL6START)
+    if ((address & 0xFF00) == SL6START) {
+        /* Without a disk, leave slot 6 absent so the ROM starts BASIC. */
+        if (!disk[0].mounted && !disk[1].mounted) return 0xff;
         return sl6[address - SL6START];                                             // disk][
+    }
 
     if ((address & 0xF000) == 0xC000)
         return softSwitches(address, 0, false);                                     // Soft Switches
