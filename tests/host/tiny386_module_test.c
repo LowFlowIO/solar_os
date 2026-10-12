@@ -1,6 +1,7 @@
 #define TINY386_PORT_IMPLEMENTATION
 #include "port.h"
 #include "text.h"
+#include "vendor/pc.h"
 #include <assert.h>
 #include <sys/time.h>
 
@@ -15,9 +16,12 @@ static unsigned allocations, frames, suspends, saved;
 static int exit_code;
 static uint64_t boot_time, wall_offset;
 static uint32_t guest_before_suspend;
+static bool fixed_clock;
+static uint64_t fixed_time;
 
 static uint64_t now(void)
 {
+    if (fixed_clock) return fixed_time;
     struct timespec t; clock_gettime(CLOCK_MONOTONIC, &t);
     return (uint64_t)t.tv_sec * 1000000 + (uint64_t)t.tv_nsec / 1000 + wall_offset;
 }
@@ -148,11 +152,53 @@ static const solar_os_native_host_api_v1_t host = {
 };
 const solar_os_native_host_api_v1_t *solar_os_native_host_v1(void) { return &host; }
 
+static void no_redraw(void *opaque, int x, int y, int w, int h)
+{ (void)opaque; (void)x; (void)y; (void)w; (void)h; }
+
+static void test_retrace_without_frequent_rendering(void)
+{
+    tiny_app = &app; tiny_memory = &memory; tiny_host = &host;
+    fixed_time = now(); fixed_clock = true; tiny_clock_reset();
+    PCConfig config = {.mem_size = 2 * 1024 * 1024, .vga_mem_size = 256 * 1024,
+        .cpu_gen = 3, .width = 640, .height = 400};
+    uint8_t *framebuffer = tiny_calloc(640 * 400, 2);
+    PC *pc = pc_new(no_redraw, NULL, framebuffer, &config);
+    load_bios_and_reset(pc);
+    unsigned retraces = 0, renders = 0;
+    bool previous_retrace = false;
+    for (unsigned elapsed = 0; elapsed < 200000; elapsed += 250) {
+        pc_step(pc);
+        bool retrace = (vga_ioport_read(pc->vga, 0x3da) & 8) != 0;
+        if (retrace && !previous_retrace) ++retraces;
+        previous_retrace = retrace;
+        if (elapsed >= renders * 66666) { pc_vga_step(pc); ++renders; }
+        fixed_time += 250;
+    }
+    /* Actual guest-visible retrace status progresses at about 60 Hz even
+     * though the host only checks for rendering at 15 Hz. */
+    assert(retraces >= 10 && retraces <= 13);
+    assert(renders == 3);
+    assert(tiny_cleanup() == 0 && allocations == 0);
+    fixed_clock = false;
+}
+
+static void compare_cold_text(const VGATextFrame *text, uint8_t *pixels, uint16_t *scratch)
+{
+    uint8_t *expected = malloc(480 * 300);
+    uint16_t *cold = malloc(TINY_TEXT_SCRATCH_BYTES);
+    tiny_text_reset(cold);
+    assert(tiny_render_text(text, pixels, 480, 300, scratch));
+    assert(tiny_render_text(text, expected, 480, 300, cold));
+    assert(!memcmp(pixels, expected, 480 * 300));
+    free(cold); free(expected);
+}
+
 static void test_native_text(void)
 {
     uint8_t *ram = calloc(1, 128 * 1024), *font = calloc(1, 256 * 128);
     uint8_t *pixels = malloc(480 * 300);
     uint16_t *scratch = malloc(TINY_TEXT_SCRATCH_BYTES);
+    tiny_text_reset(scratch);
     uint32_t palette[16] = {0}; palette[15] = 0xffff;
     VGATextFrame text = {.ram = ram, .font = {font, font}, .palette = palette,
         .columns = 80, .rows = 25, .glyph_height = 16, .line_offset = 320,
@@ -163,6 +209,9 @@ static void test_native_text(void)
     ram[8] = 'A'; ram[9] = 15; ram[12] = 'B'; ram[13] = 15;
     ram[21] = 15; ram[8 + 320 + 1] = 0xf0;
     assert(tiny_render_text(&text, pixels, 480, 300, scratch));
+    assert(tiny_text_changed(scratch));
+    assert(tiny_render_text(&text, pixels, 480, 300, scratch));
+    assert(!tiny_text_changed(scratch));
     /* A one-pixel vertical stroke survives in every native cell row. */
     for (unsigned y = 0; y < 12; ++y) {
         unsigned ink = 0;
@@ -183,12 +232,42 @@ static void test_native_text(void)
     assert(tiny_render_text(&text, pixels, 480, 300, scratch));
     for (unsigned y = 0; y < 12; ++y)
         for (unsigned x = 0; x < 24; ++x) assert(pixels[y * 480 + x] == 0);
+    /* A cached frame must match a fresh render after every kind of guest
+     * text change, including fonts, palette, cursor, scrolling and geometry. */
+    font['A' * 128] = 0xff;
+    compare_cold_text(&text, pixels, scratch);
+    palette[15] = 0xff0000;
+    compare_cold_text(&text, pixels, scratch);
+    text.cursor_visible = true; text.cursor_address = 8;
+    compare_cold_text(&text, pixels, scratch);
+    text.cursor_address = 12; text.cursor_start = 0; text.cursor_end = 2;
+    compare_cold_text(&text, pixels, scratch);
+    text.cursor_visible = false;
+    ram[8] = 'B'; ram[9] = 0xf0;
+    compare_cold_text(&text, pixels, scratch);
+    text.start_address += 320;
+    compare_cold_text(&text, pixels, scratch);
+    text.columns = 40; text.rows = 50; text.glyph_height = 8;
+    compare_cold_text(&text, pixels, scratch);
+    uint8_t *second_font = calloc(1, 256 * 128);
+    text.font[1] = second_font; palette[8] = 0x00ff00;
+    ram[text.start_address] = 'A'; ram[text.start_address + 1] = 8;
+    second_font['A' * 128] = 0xf0;
+    compare_cold_text(&text, pixels, scratch);
+    second_font['A' * 128 + 4] = 0x0f;
+    compare_cold_text(&text, pixels, scratch);
+    text.columns = 80; text.rows = 100;
+    compare_cold_text(&text, pixels, scratch);
+    /* Returning from graphics overwrites the complete output, including bars. */
+    memset(pixels, 255, 480 * 300); tiny_text_reset(scratch);
+    compare_cold_text(&text, pixels, scratch);
     text.columns = 0; assert(!tiny_render_text(&text, pixels, 480, 300, scratch));
-    free(ram); free(font); free(pixels); free(scratch);
+    free(second_font); free(ram); free(font); free(pixels); free(scratch);
 }
 
 int main(void)
 {
+    test_retrace_without_frequent_rendering();
     test_native_text();
     /* Boot a synthetic floppy through the actual embedded SeaBIOS. The guest
      * writes a marker to the BIOS debug port and halts; no DOS fixture required. */

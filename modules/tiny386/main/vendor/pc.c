@@ -581,8 +581,8 @@ static int pc_io_write_string(void *o, int addr, uint8_t *buf, int size, int cou
 void pc_vga_step(void *o)
 {
 	PC *pc = o;
-	int refresh = vga_step(pc->vga);
-	if (refresh) {
+	if (pc->vga_refresh_pending) {
+		pc->vga_refresh_pending = false;
 		vga_refresh(pc->vga, pc->redraw, pc->redraw_data,
 			    pc->full_update != 0);
 		if (pc->full_update == 2)
@@ -605,6 +605,10 @@ void pc_step(PC *pc)
 	ne2000_step(pc->ne2000);
 	i8257_dma_run(pc->isa_dma);
 	i8257_dma_run(pc->isa_hdma);
+	/* Guest retrace polling must progress independently of host rendering.
+	 * Keep completed retraces pending until the next display update. */
+	if (vga_step(pc->vga))
+		pc->vga_refresh_pending = true;
 	cpu_step(pc->cpu, PC_STEP_COUNT);
 }
 
@@ -778,6 +782,7 @@ PC *pc_new(SimpleFBDrawFunc *redraw, void *redraw_data,
 		CaptureKeyboardInput();
 #endif
 	pc->full_update = 0;
+	pc->vga_refresh_pending = false;
 
 	pc->pic = i8259_init(raise_irq(pc->cpu), raise_irq_param(pc->cpu));
 	cb->pic = pc->pic;

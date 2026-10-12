@@ -69,7 +69,14 @@ Distribute these sources, patches, configuration and notices with the ROMs.
 
 SolarOS changes to the vendored core provide bounded stepping, service-backed
 allocation, files and timing, trapped failures, and a VGA text-frame snapshot
-for rendering at the selected display's resolution. Guest fonts remain in VGA
+for rendering at the selected display's resolution. VGA retrace advances with
+CPU/device stepping independently of the host's 15 fps rendering limit.
+Text rendering caches guest glyphs and unchanged cells; a resumed session still
+submits a complete frame. CPU execution yields after bounded 8 ms batches.
+Register decrement/branch pairs retain the instruction budget and code-page
+checks. REP moves use bulk copies for separate RAM ranges; overlaps and device
+memory retain element-by-element access.
+Guest fonts remain in VGA
 RAM; no replacement font or guest disk image is bundled.
 
 Rebuild the ROMs with a native x86 GCC/binutils toolchain, Python 3 and make:

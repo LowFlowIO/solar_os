@@ -753,6 +753,27 @@ static inline bool in_iomem(uword addr)
 	return (addr >= 0xa0000 && addr < 0xc0000) || addr >= 0xe0000000;
 }
 
+static bool try_ram_movs(CPUI386 *cpu, uword source, uword destination,
+                         uword count, unsigned width, int direction)
+{
+	if (count < 8) return false;
+	uword bytes = count * width;
+	if (direction < 0) {
+		source -= bytes - width;
+		destination -= bytes - width;
+	}
+	/* Translation and page-sized chunking have already checked permissions.
+	 * Overlapping copies retain x86's element-by-element ordering. */
+	if (source >= cpu->phys_mem_size || bytes > cpu->phys_mem_size - source ||
+	    destination >= cpu->phys_mem_size || bytes > cpu->phys_mem_size - destination ||
+	    in_iomem(source) || in_iomem(source + bytes - 1) ||
+	    in_iomem(destination) || in_iomem(destination + bytes - 1) ||
+	    (source < destination ? destination - source : source - destination) < bytes)
+		return false;
+	memcpy(cpu->phys_mem + destination, cpu->phys_mem + source, bytes);
+	return true;
+}
+
 static u8 IRAM_ATTR load8(CPUI386 *cpu, OptAddr *res)
 {
 	uword addr = res->addr1;
@@ -1777,6 +1798,29 @@ noinline void IRAM_ATTR try_jcc8(CPUI386 *cpu)
 	}
 }
 
+static inline bool try_dec_jcc8(CPUI386 *cpu)
+{
+	/* Fuse only a register DEC followed by an unprefixed JZ/JNZ. Both
+	 * instruction bytes must already belong to the cached code page. */
+	uword linear = cpu->seg[SEG_CS].base + cpu->next_ip;
+	if (!cpu->ifetch.paddr || (linear ^ cpu->ifetch.laddr) >= 4095 ||
+	    (cpu->code16 && cpu->next_ip >= 0xfffe) || (cpu->flags & TF))
+		return false;
+	u8 op = pload8(cpu, cpu->ifetch.paddr);
+	if ((op & ~1) != 0x74)
+		return false;
+	sword displacement = sext8(pload8(cpu, cpu->ifetch.paddr + 1));
+	cpu->ifetch.paddr += 2;
+	cpu->ip = cpu->next_ip;
+	cpu->next_ip += 2;
+	if ((cpu->cc.dst == 0) ^ (op & 1)) {
+		cpu->next_ip += displacement;
+		if (cpu->code16) cpu->next_ip &= 0xffff;
+	}
+	cpu->cycle++;
+	return true;
+}
+
 #define CMP_helper(NAME, BIT, OP, a, b, la, sa, lb, sb) \
 	AOP0_helper(NAME, BIT, OP, a, b, la, sa, lb, sb) \
 	try_jcc8(cpu);
@@ -1816,8 +1860,11 @@ noinline void IRAM_ATTR try_jcc8(CPUI386 *cpu)
 #define INCw(...) INCDEC_helper(INC, 16, +, __VA_ARGS__)
 #define INCd(...) INCDEC_helper(INC, 32, +, __VA_ARGS__)
 #define DECb(...) INCDEC_helper(DEC,  8, -, __VA_ARGS__)
-#define DECw(...) INCDEC_helper(DEC, 16, -, __VA_ARGS__)
-#define DECd(...) INCDEC_helper(DEC, 32, -, __VA_ARGS__)
+#define DEC_helper(BIT, ...) \
+	INCDEC_helper(DEC, BIT, -, __VA_ARGS__) \
+	if ((b1 & 0xf8) == 0x48 && stepcount > 1 && try_dec_jcc8(cpu)) --stepcount;
+#define DECw(...) DEC_helper(16, __VA_ARGS__)
+#define DECd(...) DEC_helper(32, __VA_ARGS__)
 #define NOTb(a, la, sa) sa(a, ~la(a));
 #define NOTw(a, la, sa) sa(a, ~la(a));
 #define NOTd(a, la, sa) sa(a, ~la(a));
@@ -2791,10 +2838,12 @@ static bool call_isr(CPUI386 *cpu, int no, bool pusherr, int ext);
 				continue; \
 			} \
 		} \
-		for (uword i = 0; i <= count - 1; i++) { \
-			store ## BIT(cpu, &memld, load ## BIT(cpu, &memls)); \
-			memld.addr1 += dir; \
-			memls.addr1 += dir; \
+		if (!try_ram_movs(cpu, memls.addr1, memld.addr1, count, BIT / 8, dir)) { \
+			for (uword i = 0; i <= count - 1; i++) { \
+				store ## BIT(cpu, &memld, load ## BIT(cpu, &memls)); \
+				memld.addr1 += dir; \
+				memls.addr1 += dir; \
+			} \
 		} \
 		sreg ## ABIT(6, lreg ## ABIT(6) + count * dir); \
 		sreg ## ABIT(7, lreg ## ABIT(7) + count * dir); \

@@ -91,6 +91,7 @@ typedef struct {
 	const char *cmdline;
 	int enable_serial;
 	int full_update;
+	bool vga_refresh_pending;
 } PC;
 
 // if filled by ini_parse(), all strings are malloc'd

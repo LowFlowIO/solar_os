@@ -13,6 +13,7 @@ static uint8_t *indexed;
 static uint16_t *text_scratch;
 static unsigned present_width, present_height;
 static bool changed;
+static bool force_present;
 static bool held[256];
 
 static void fail_display(int result)
@@ -169,6 +170,7 @@ static void present(void)
     VGATextFrame text;
     if (!vga_get_text_frame(machine->vga, &text) ||
         !tiny_render_text(&text, indexed, present_width, present_height, text_scratch)) {
+        tiny_text_reset(text_scratch);
         unsigned w = present_width, h = w * HEIGHT / WIDTH;
         if (h > present_height) { h = present_height; w = h * WIDTH / HEIGHT; }
         unsigned left = (present_width - w) / 2, top = (present_height - h) / 2;
@@ -179,11 +181,15 @@ static void present(void)
                 indexed[(top + y) * present_width + left + x] =
                     (uint8_t)(((c >> 8) & 0xe0) | ((c >> 6) & 0x1c) | ((c >> 3) & 3));
             }
+    } else if (!tiny_text_changed(text_scratch) && !force_present) {
+        changed = false;
+        return;
     }
     if (tiny_app->present(indexed, present_width * present_height)) {
         tiny_failure = "display submission failed"; tiny_abort();
     }
     changed = false;
+    force_present = false;
 }
 int main(int argc, char **argv)
 {
@@ -211,7 +217,7 @@ int main(int argc, char **argv)
         tiny_app->set_exit_code(1); return 1;
     }
     int result = 0;
-    machine = NULL; rgb = NULL; indexed = NULL; changed = false; tiny_failure = NULL;
+    machine = NULL; rgb = NULL; indexed = NULL; changed = false; force_present = true; tiny_failure = NULL;
     memset(held, 0, sizeof(held));
     if (setjmp(tiny_trap)) { result = 1; goto done; }
     tiny_clock_reset();
@@ -238,6 +244,7 @@ int main(int argc, char **argv)
     if (video_result) fail_display(video_result);
     indexed = tiny_malloc(present_width * present_height);
     text_scratch = tiny_malloc(TINY_TEXT_SCRATCH_BYTES);
+    tiny_text_reset(text_scratch);
     if (tiny_app->enable_suspend()) { tiny_failure = "suspend setup failed"; tiny_abort(); }
     load_bios_and_reset(machine);
     tiny_report(hard_arg ? "tiny386: 386, 2 MiB RAM; IDE hard disk attached" :
@@ -249,12 +256,12 @@ int main(int argc, char **argv)
             uint64_t before = tiny_app->time_us();
             if (tiny_app->suspend()) break;
             tiny_clock_pause(tiny_app->time_us() - before);
-            reset_keys(); machine->full_update = 2; changed = true; next_frame = 0;
+            reset_keys(); machine->full_update = 2; changed = true; force_present = true; next_frame = 0;
             if (tiny_app->stop_requested()) break;
         }
         keyboard();
         uint64_t start = tiny_app->time_us();
-        do { pc_step(machine); } while (tiny_app->time_us() - start < 3000);
+        do { pc_step(machine); } while (tiny_app->time_us() - start < 8000);
         if (tiny_app->time_us() >= next_frame) {
             pc_vga_step(machine); present(); next_frame = tiny_app->time_us() + 66666;
         }
