@@ -839,7 +839,7 @@ static esp_err_t ssd1683_dual_write_pulse_half(epd_ssd1683_t *display,
 static esp_err_t ssd1683_dual_write_pulse(epd_ssd1683_t *display)
 {
     /* Black drive is (old,new)=(1,0), white=(0,1), hold=(0,0).
-     * Explicitly write both planes of both controllers on EVERY cycle.
+     * Always replace both planes of both controllers when the mask changes.
      */
     for (unsigned chip = 0; chip < 2; ++chip) {
         const uint8_t select = chip == 0 ? 0x00 : 0x80;
@@ -909,12 +909,21 @@ static esp_err_t ssd1683_dual_pulse_refresh(epd_ssd1683_t *display)
     SOLAR_OS_LOGI(TAG, "pulse start pixels=%u cycles=%u frames=%u fr=%u",
         (unsigned)changed, display->pulse_tuning.drive_cycles,
         display->pulse_tuning.pulse_frames, display->pulse_tuning.waveform_fr);
+    size_t written_pending = 0;
     while (display->pixel_budget.pending != 0) {
-        const int64_t transfer_started = esp_timer_get_time();
-        ESP_RETURN_ON_ERROR(ssd1683_dual_write_pulse(display), TAG,
-                            "pulse transfer failed");
+        /* Targets are fixed under the display lock for this presentation.
+         * Advance only removes settled pixels, so the pending count changes
+         * exactly when the drive mask does. RAM ping-pong is disabled and
+         * power-down retains RAM: identical cycles can reuse both planes.
+         */
+        if (written_pending != display->pixel_budget.pending) {
+            const int64_t transfer_started = esp_timer_get_time();
+            ESP_RETURN_ON_ERROR(ssd1683_dual_write_pulse(display), TAG,
+                                "pulse transfer failed");
+            transfer_us += esp_timer_get_time() - transfer_started;
+            written_pending = display->pixel_budget.pending;
+        }
         const int64_t drive_started = esp_timer_get_time();
-        transfer_us += drive_started - transfer_started;
         const uint8_t update[] = {0xcf}; /* Use SRAM LUT; power down after scan. */
         ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x22, update, sizeof(update)),
                             TAG, "pulse activation setup failed");

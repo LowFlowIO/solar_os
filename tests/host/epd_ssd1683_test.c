@@ -136,7 +136,8 @@ static void test_pulse_and_restore(void) {
     assert(lut->size == 227 && memcmp(lut->data, slave_lut->data, 227) == 0);
     assert(lut->data[85] == 0x48 && lut->data[127] == 0x88);
     assert(lut->data[43] == 8 && lut->data[169] == 8 && lut->data[224] == 4);
-    assert(count(0x24) == 3 && count(0x26) == 3 && count(0xa4) == 3 && count(0xa6) == 3);
+    assert(count(0x24) == 1 && count(0x26) == 1 && count(0xa4) == 1 && count(0xa6) == 1);
+    assert(count(0x20) == 3); /* All drive cycles still complete. */
     assert(find(0x21, 0)->size == 2 && find(0x21, 0)->data[1] == 0x10);
     assert(find(0x37, 0)->size == 10 && find(0xb7, 0)->size == 10);
     assert(find(0x37, 0)->data[5] == 0 && find(0xb7, 0)->data[5] == 0);
@@ -171,10 +172,29 @@ static void test_default_drive_budget(void) {
     pixel(0, 0, false);
     assert(ssd1683_refresh(&d) == ESP_OK);
     assert(count(0x20) == 6 && d.pixel_budget.pending == 0);
+    assert(count(0x24) == 1 && count(0x26) == 1 && count(0xa4) == 1 && count(0xa6) == 1);
     capture_count = 0;
     pixel(0, 0, true);
     assert(ssd1683_refresh(&d) == ESP_OK);
     assert(count(0x20) == 6 && d.pixel_budget.pending == 0);
+    free_budget(&d);
+}
+static void test_settled_pixels_replace_mask(void) {
+    epd_ssd1683_t d = display();
+    assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    pixel(0, 0, false); pixel(1, 0, false);
+    /* Different remaining budgets exercise an active-mask change mid-frame.
+     * Retargeting the same colors in refresh must preserve these budgets.
+     */
+    epd_pixel_budget_target(&d.pixel_budget, 0, false, 1);
+    epd_pixel_budget_target(&d.pixel_budget, 1, false, 3);
+    capture_count = 0;
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    assert(count(0x20) == 3 && count(0x26) == 2 && count(0xa6) == 2);
+    assert(plane_pixel(0x26, 0, 0) && plane_pixel(0x26, 1, 0));
+    assert((find(0x26, 1)->data[0] & 0xc0U) == 0x40U);
+    assert(d.pixel_budget.pending == 0);
     free_budget(&d);
 }
 static void test_cleanup_failure_and_capability(void) {
@@ -214,6 +234,7 @@ static void test_cleanup_failure_and_capability(void) {
 }
 int main(void) {
     test_native(); test_pulse_and_restore(); test_default_drive_budget();
+    test_settled_pixels_replace_mask();
     test_cleanup_failure_and_capability();
     puts("SSD1683 dual native/pulse transport tests: ok");
 }

@@ -19,7 +19,8 @@ invalid values leave configuration unchanged. `waveform-fr` is a profile's raw
 frame-rate code, not a portable frequency. Profiles may impose narrower limits.
 
 The dual-SSD1683 5.79-inch adapter is the first consumer. It programs both
-controllers, sends both RAM planes for every pulse cycle, holds seam padding
+controllers, replaces both RAM planes whenever the active drive mask changes,
+reuses them between identical cycles with RAM ping-pong disabled, holds seam padding
 neutral, and serializes tuning with presentation. It completes pending cycles
 synchronously. The common model also supports retargeting between cycles for
 a future scan worker, but supplies no optical feedback or grayscale model.
