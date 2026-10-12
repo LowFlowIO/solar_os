@@ -799,41 +799,28 @@ static bool ssd1683_dual_pixel_white(const uint8_t *source, size_t pixel)
 
 static void ssd1683_dual_seed_budget(epd_ssd1683_t *display, const uint8_t *source)
 {
+    epd_pixel_budget_reset(&display->pixel_budget);
+    display->pulse_window_valid = false;
     for (size_t p = 0; p < display->pixel_budget.count; ++p)
         epd_pixel_budget_seed(&display->pixel_budget, p,
                               ssd1683_dual_pixel_white(source, p));
 }
 
-static esp_err_t ssd1683_dual_write_pulse_half(epd_ssd1683_t *display,
-                                               uint8_t command,
-                                               uint16_t first_x_byte,
-                                               epd_pixel_drive_t drive)
+static esp_err_t ssd1683_dual_pulse_window(epd_ssd1683_t *display, unsigned chip,
+                                          unsigned first, unsigned last,
+                                          unsigned top, unsigned bottom)
 {
-    ESP_RETURN_ON_ERROR(ssd1683_cmd(display, command), TAG, "pulse RAM failed");
-    ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)display->dc_pin, 1),
-                        TAG, "pulse D/C failed");
-    for (unsigned column = first_x_byte;
-         column < first_x_byte + SSD1683_DUAL_CONTROLLER_ROW_BYTES; ++column) {
-        for (unsigned y = 0; y < SSD1683_DUAL_HEIGHT; ++y) {
-            uint8_t bits = 0;
-            for (unsigned bit = 0; bit < 8; ++bit) {
-                unsigned x = column * 8U + bit;
-                if (x >= SSD1683_DUAL_SEAM_START &&
-                    x < SSD1683_DUAL_SEAM_START + SSD1683_DUAL_SEAM_WIDTH)
-                    continue; /* Gap pixels remain electrically neutral. */
-                if (x >= SSD1683_DUAL_SEAM_START + SSD1683_DUAL_SEAM_WIDTH)
-                    x -= SSD1683_DUAL_SEAM_WIDTH;
-                if (epd_pixel_budget_drive(&display->pixel_budget,
-                        y * SSD1683_DUAL_WIDTH + x) == drive)
-                    bits |= (uint8_t)(0x80U >> bit);
-            }
-            display->line_buffer[y] = bits;
-        }
-        ESP_RETURN_ON_ERROR(ssd1683_tx_bytes(display, display->line_buffer,
-                                               SSD1683_DUAL_HEIGHT),
-                            TAG, "pulse frame transmit failed");
-    }
-    return ESP_OK;
+    const uint8_t select = chip ? 0x80 : 0;
+    const uint8_t mode[] = {chip ? 0x04 : 0x05};
+    const uint8_t x[] = {chip ? 99U - first : first, chip ? 99U - last : last};
+    const unsigned ys = SSD1683_DUAL_HEIGHT - 1U - top;
+    const unsigned ye = SSD1683_DUAL_HEIGHT - 1U - bottom;
+    const uint8_t y[] = {ys & 0xffU, ys >> 8, ye & 0xffU, ye >> 8};
+    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x11 | select, mode, 1), TAG, "pulse entry failed");
+    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x44 | select, x, 2), TAG, "pulse X failed");
+    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x45 | select, y, 4), TAG, "pulse Y failed");
+    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x4e | select, x, 1), TAG, "pulse X cursor failed");
+    return ssd1683_cmd_data(display, 0x4f | select, y, 2);
 }
 
 static esp_err_t ssd1683_dual_write_pulse(epd_ssd1683_t *display)
@@ -841,20 +828,72 @@ static esp_err_t ssd1683_dual_write_pulse(epd_ssd1683_t *display)
     /* Black drive is (old,new)=(1,0), white=(0,1), hold=(0,0).
      * Always replace both planes of both controllers when the mask changes.
      */
+    const size_t plane_size = SSD1683_DUAL_PADDED_ROW_BYTES * SSD1683_DUAL_HEIGHT;
+    memset(display->pulse_planes, 0, plane_size * 2U);
+    unsigned first = 99, last = 0, top = 271, bottom = 0;
+    for (size_t i = 0; i < display->pixel_budget.active_count; ++i) {
+        const size_t p = display->pixel_budget.active[i];
+        const epd_pixel_drive_t drive = epd_pixel_budget_drive(&display->pixel_budget, p);
+        if (drive == EPD_PIXEL_HOLD)
+            continue;
+        unsigned x = p % SSD1683_DUAL_WIDTH;
+        const unsigned y = p / SSD1683_DUAL_WIDTH;
+        if (x >= SSD1683_DUAL_SEAM_START)
+            x += SSD1683_DUAL_SEAM_WIDTH;
+        const unsigned column = x / 8U;
+        if (column < first) first = column;
+        if (column > last) last = column;
+        if (y < top) top = y;
+        if (y > bottom) bottom = y;
+        const unsigned plane = drive == EPD_PIXEL_DRIVE_BLACK;
+        display->pulse_planes[plane * plane_size + column * SSD1683_DUAL_HEIGHT + y] |=
+            (uint8_t)(0x80U >> (x % 8U));
+    }
+    const unsigned active_first = first, active_last = last;
+    const unsigned active_top = top, active_bottom = bottom;
+    /* Include the preceding mask so its now-settled pixels become neutral.
+     * Remember the active bounds, not this union, so the window can shrink.
+     */
+    if (display->pulse_window_valid) {
+        if (display->pulse_x_start < first) first = display->pulse_x_start;
+        if (display->pulse_x_end > last) last = display->pulse_x_end;
+        if (display->pulse_y_start < top) top = display->pulse_y_start;
+        if (display->pulse_y_end > bottom) bottom = display->pulse_y_end;
+    } else {
+        /* Native image bits select active entries in the custom LUT. Replace
+         * all four planes once before restricting writes to smaller windows.
+         */
+        first = 0; last = SSD1683_DUAL_PADDED_ROW_BYTES - 1U;
+        top = 0; bottom = SSD1683_DUAL_HEIGHT - 1U;
+    }
     for (unsigned chip = 0; chip < 2; ++chip) {
         const uint8_t select = chip == 0 ? 0x00 : 0x80;
-        const uint16_t column = chip * SSD1683_DUAL_CONTROLLER_ROW_BYTES;
+        const unsigned chip_first = chip * SSD1683_DUAL_CONTROLLER_ROW_BYTES;
+        const unsigned chip_last = chip_first + SSD1683_DUAL_CONTROLLER_ROW_BYTES - 1U;
+        if (last < chip_first || first > chip_last)
+            continue;
+        const unsigned start = first > chip_first ? first : chip_first;
+        const unsigned end = last < chip_last ? last : chip_last;
         for (unsigned plane = 0; plane < 2; ++plane) {
-            esp_err_t err = chip == 0 ? ssd1683_dual_set_master_address(display) :
-                                       ssd1683_dual_set_slave_address(display);
-            if (err != ESP_OK)
-                return err;
-            ESP_RETURN_ON_ERROR(ssd1683_dual_write_pulse_half(display,
-                    (plane == 0 ? 0x24 : 0x26) | select, column,
-                    plane == 0 ? EPD_PIXEL_DRIVE_WHITE : EPD_PIXEL_DRIVE_BLACK),
-                    TAG, "pulse plane failed");
+            ESP_RETURN_ON_ERROR(ssd1683_dual_pulse_window(display, chip, start, end, top, bottom),
+                                TAG, "pulse window failed");
+            ESP_RETURN_ON_ERROR(ssd1683_cmd(display, (plane ? 0x26 : 0x24) | select),
+                                TAG, "pulse RAM failed");
+            ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)display->dc_pin, 1), TAG, "pulse D/C failed");
+            for (unsigned column = start; column <= end; ++column) {
+                const size_t rows = bottom - top + 1U;
+                memcpy(display->line_buffer, display->pulse_planes + plane * plane_size +
+                           column * SSD1683_DUAL_HEIGHT + top, rows);
+                ESP_RETURN_ON_ERROR(ssd1683_tx_bytes(display, display->line_buffer, rows),
+                                    TAG, "pulse plane failed");
+            }
         }
     }
+    display->pulse_window_valid = true;
+    display->pulse_x_start = active_first;
+    display->pulse_x_end = active_last;
+    display->pulse_y_start = active_top;
+    display->pulse_y_end = active_bottom;
     return ESP_OK;
 }
 
@@ -870,6 +909,19 @@ static esp_err_t ssd1683_dual_pulse_refresh(epd_ssd1683_t *display)
         ESP_RETURN_ON_ERROR(epd_pixel_budget_init(&display->pixel_budget,
                                                    storage, count), TAG,
                             "pixel budget init failed");
+        uint32_t *active = heap_caps_malloc(count * sizeof(*active), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        display->pulse_planes = heap_caps_malloc(SSD1683_DUAL_PADDED_ROW_BYTES *
+            SSD1683_DUAL_HEIGHT * 2U, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (active == NULL || display->pulse_planes == NULL) {
+            heap_caps_free(active);
+            heap_caps_free(display->pixel_budget.pixels);
+            memset(&display->pixel_budget, 0, sizeof(display->pixel_budget));
+            heap_caps_free(display->pulse_planes);
+            display->pulse_planes = NULL;
+            return ESP_ERR_NO_MEM;
+        }
+        ESP_RETURN_ON_ERROR(epd_pixel_budget_set_active_storage(&display->pixel_budget, active, count),
+                            TAG, "active storage failed");
         display->pulse_needs_cleanup = true;
     }
     if (!display->shadow_valid || display->pulse_needs_cleanup ||
@@ -970,9 +1022,12 @@ static esp_err_t ssd1683_dual_refresh(epd_ssd1683_t *display)
         display->pulse_needs_cleanup = false;
     }
     if (display->pixel_budget.pixels != NULL) {
+        heap_caps_free(display->pixel_budget.active);
         heap_caps_free(display->pixel_budget.pixels);
         memset(&display->pixel_budget, 0, sizeof(display->pixel_budget));
     }
+    heap_caps_free(display->pulse_planes);
+    display->pulse_planes = NULL;
     if (display->shadow_valid && display->shadow != NULL &&
         memcmp(display->buffer, display->shadow, display->buffer_size) == 0) {
         return ESP_OK;
@@ -1629,9 +1684,12 @@ void epd_ssd1683_deinit(epd_ssd1683_t *display)
         display->shadow = NULL;
     }
     if (display->pixel_budget.pixels != NULL) {
+        heap_caps_free(display->pixel_budget.active);
         heap_caps_free(display->pixel_budget.pixels);
         memset(&display->pixel_budget, 0, sizeof(display->pixel_budget));
     }
+    heap_caps_free(display->pulse_planes);
+    display->pulse_planes = NULL;
     if (display->dc_pin >= 0) {
         (void)gpio_reset_pin((gpio_num_t)display->dc_pin);
     }

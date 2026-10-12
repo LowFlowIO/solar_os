@@ -75,6 +75,10 @@ typedef struct {
     bool powered;
     epd_pulse_tuning_t pulse_tuning;
     epd_pixel_budget_t pixel_budget;
+    uint8_t *pulse_planes;
+    bool pulse_window_valid;
+    uint8_t pulse_x_start, pulse_x_end;
+    uint16_t pulse_y_start, pulse_y_end;
     uint32_t pulse_updates;
     bool pulse_lut_loaded;
     bool pulse_needs_cleanup;

@@ -20,7 +20,9 @@ esp_err_t solar_os_log_write(solar_os_log_level_t level, const char *tag, const 
 }
 #include "../../src/drivers/epd_ssd1683.c"
 
-typedef struct { uint8_t cmd; size_t size; uint8_t data[14000]; } capture_t;
+typedef struct { uint8_t cmd; size_t size; uint8_t data[14000];
+    unsigned x_start, x_end, y_start, y_end;
+} capture_t;
 static capture_t captures[256];
 static size_t capture_count;
 static int dc_level, resets;
@@ -29,6 +31,8 @@ static bool no_busy, stuck_busy;
 static uint8_t fail_command;
 static uint8_t frame[SSD1683_DUAL_BUFFER_BYTES], shadow[SSD1683_DUAL_BUFFER_BYTES];
 static uint8_t line[SSD1683_DUAL_HEIGHT];
+static unsigned ram_bounds[2][4];
+static uint8_t ram[2][2][50U * 272U];
 
 void vTaskDelay(TickType_t ticks) { assert(ticks); time_us += ticks * 1000LL; }
 int64_t esp_timer_get_time(void) { return time_us; }
@@ -51,13 +55,39 @@ esp_err_t spi_device_polling_transmit(spi_device_handle_t device, spi_transactio
         assert(size == 1 && capture_count < 256);
         if (*data == fail_command) { fail_command = 0; return ESP_FAIL; }
         captures[capture_count++] = (capture_t){.cmd = *data};
+        if ((*data & 0x7fU) == 0x24 || (*data & 0x7fU) == 0x26) {
+            capture_t *c = &captures[capture_count - 1];
+            unsigned *bounds = ram_bounds[(*data & 0x80U) != 0];
+            c->x_start = bounds[0]; c->x_end = bounds[1];
+            c->y_start = bounds[2]; c->y_end = bounds[3];
+        }
         if (*data == 0x20 && !no_busy) busy_until = time_us + 20000;
     } else {
         assert(capture_count);
         capture_t *c = &captures[capture_count - 1];
         assert(c->size + size <= sizeof(c->data));
+        if ((c->cmd & 0x7fU) == 0x24 || (c->cmd & 0x7fU) == 0x26) {
+            const unsigned chip = (c->cmd & 0x80U) != 0;
+            const unsigned plane = (c->cmd & 0x7fU) == 0x26;
+            const unsigned rows = c->y_start - c->y_end + 1U;
+            for (size_t n = 0; n < size; ++n) {
+                unsigned column = (c->size + n) / rows;
+                unsigned x = chip ? c->x_start - column : c->x_start + column;
+                unsigned y = c->y_start - (c->size + n) % rows;
+                assert(x < 50 && y < 272);
+                ram[chip][plane][x * 272U + y] = data[n];
+            }
+        }
         memcpy(c->data + c->size, data, size);
         c->size += size;
+        unsigned *bounds = ram_bounds[(c->cmd & 0x80U) != 0];
+        if ((c->cmd & 0x7fU) == 0x44 && c->size == 2) {
+            bounds[0] = c->data[0]; bounds[1] = c->data[1];
+        }
+        if ((c->cmd & 0x7fU) == 0x45 && c->size == 4) {
+            bounds[2] = c->data[0] | (c->data[1] << 8);
+            bounds[3] = c->data[2] | (c->data[3] << 8);
+        }
     }
     return ESP_OK;
 }
@@ -66,6 +96,7 @@ static epd_ssd1683_t display(void) {
     memset(frame, 0xff, sizeof(frame));
     memset(shadow, 0xff, sizeof(shadow));
     capture_count = 0; resets = 0; busy_until = 0;
+    memset(ram, 0, sizeof(ram));
     no_busy = stuck_busy = false; fail_command = 0;
     return (epd_ssd1683_t){.spi = (void *)1, .buffer = frame, .shadow = shadow,
         .line_buffer = line, .buffer_size = sizeof(frame), .shadow_size = sizeof(shadow),
@@ -93,14 +124,33 @@ static void pixel(unsigned x, unsigned y, bool white) {
 static bool plane_pixel(uint8_t cmd, unsigned x, unsigned y) {
     /* Slave transport columns start at padded x=400; 8-pixel seam at 396. */
     unsigned padded_x = x < 396 ? x : x + 8;
-    if (cmd & 0x80) padded_x -= 400;
     capture_t *c = find(cmd, 0);
-    assert(c->size == 50U * 272U);
-    return (c->data[(padded_x / 8U) * 272U + y] & (0x80U >> (padded_x % 8U))) != 0;
+    unsigned column = padded_x / 8U;
+    unsigned local = cmd & 0x80U ? 99U - column : column;
+    unsigned ram_y = 271U - y;
+    if ((cmd & 0x80U ? local > c->x_start || local < c->x_end :
+                       local < c->x_start || local > c->x_end) ||
+        ram_y > c->y_start || ram_y < c->y_end)
+        return false;
+    unsigned col_index = cmd & 0x80U ? c->x_start - local : local - c->x_start;
+    unsigned rows = c->y_start - c->y_end + 1U;
+    unsigned row_index = c->y_start - ram_y;
+    assert(col_index * rows + row_index < c->size);
+    return (c->data[col_index * rows + row_index] & (0x80U >> (padded_x % 8U))) != 0;
 }
 static void free_budget(epd_ssd1683_t *d) {
+    heap_caps_free(d->pixel_budget.active);
     heap_caps_free(d->pixel_budget.pixels);
+    heap_caps_free(d->pulse_planes);
+    d->pulse_planes = NULL;
     memset(&d->pixel_budget, 0, sizeof(d->pixel_budget));
+}
+static bool ram_pixel(unsigned plane, unsigned x, unsigned y) {
+    unsigned padded = x < 396 ? x : x + 8;
+    unsigned column = padded / 8U;
+    unsigned chip = column >= 50;
+    unsigned local = chip ? 99U - column : column;
+    return (ram[chip][plane][local * 272U + 271U - y] & (0x80U >> (padded % 8U))) != 0;
 }
 
 static void test_native(void) {
@@ -191,7 +241,7 @@ static void test_settled_pixels_replace_mask(void) {
     epd_pixel_budget_target(&d.pixel_budget, 1, false, 3);
     capture_count = 0;
     assert(ssd1683_refresh(&d) == ESP_OK);
-    assert(count(0x20) == 3 && count(0x26) == 2 && count(0xa6) == 2);
+    assert(count(0x20) == 3 && count(0x26) == 2 && count(0xa6) == 1);
     assert(plane_pixel(0x26, 0, 0) && plane_pixel(0x26, 1, 0));
     assert((find(0x26, 1)->data[0] & 0xc0U) == 0x40U);
     assert(d.pixel_budget.pending == 0);
@@ -210,6 +260,45 @@ static void test_long_phase_voltage_bits(void) {
     assert(find(0x32, 0)->data[85] == 0x60);
     assert(find(0x32, 0)->data[127] == 0xa0);
     assert(memcmp(find(0x32, 0)->data, find(0xb2, 0)->data, 227) == 0);
+    free_budget(&d);
+}
+static void test_moving_window_clears_old_mask(void) {
+    epd_ssd1683_t d = display();
+    assert(epd_ssd1683_set_controller_mode(&d, "drive-cycles=1") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    capture_count = 0;
+    pixel(5, 10, false);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    /* First custom activation replaces native RAM globally, making settled
+     * white pixels neutral rather than accidentally selecting white drive.
+     */
+    assert(count(0x24) == 1 && count(0xa4) == 1);
+    assert(find(0x24, 0)->size == 13600 && find(0xa4, 0)->size == 13600);
+    assert(!ram_pixel(0, 700, 100) && !ram_pixel(1, 700, 100));
+    assert(ram_pixel(1, 5, 10));
+    capture_count = 0;
+    pixel(5, 10, true); pixel(405, 12, false);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    assert(ram_pixel(0, 5, 10) && !ram_pixel(1, 5, 10));
+    assert(!ram_pixel(0, 405, 12) && ram_pixel(1, 405, 12));
+    capture_count = 0;
+    pixel(405, 12, true);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    assert(!ram_pixel(0, 5, 10) && !ram_pixel(1, 5, 10));
+    assert(ram_pixel(0, 405, 12) && !ram_pixel(1, 405, 12));
+    capture_count = 0;
+    pixel(420, 13, false);
+    assert(ssd1683_refresh(&d) == ESP_OK);
+    /* A later right-only move clears the preceding drive and shrinks to
+     * three padded columns by two rows, without rewriting the left chip.
+     */
+    assert(count(0x24) == 0 && count(0x26) == 0);
+    assert(find(0xa4, 0)->size == 6 && find(0xa6, 0)->size == 6);
+    assert(!ram_pixel(0, 405, 12) && !ram_pixel(1, 405, 12));
+    assert(!ram_pixel(0, 420, 13) && ram_pixel(1, 420, 13));
+    capture_count = 0;
+    assert(ssd1683_refresh(&d) == ESP_OK && capture_count == 0);
     free_budget(&d);
 }
 static void test_cleanup_failure_and_capability(void) {
@@ -251,6 +340,7 @@ int main(void) {
     test_native(); test_pulse_and_restore(); test_default_drive_budget();
     test_settled_pixels_replace_mask();
     test_long_phase_voltage_bits();
+    test_moving_window_clears_old_mask();
     test_cleanup_failure_and_capability();
     puts("SSD1683 dual native/pulse transport tests: ok");
 }

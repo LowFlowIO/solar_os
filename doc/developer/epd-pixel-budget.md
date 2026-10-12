@@ -31,6 +31,10 @@ reuses them between identical cycles with RAM ping-pong disabled, holds seam pad
 neutral, and serializes tuning with presentation. It completes pending cycles
 synchronously. The common model also supports retargeting between cycles for
 a future scan worker, but supplies no optical feedback or grayscale model.
+The first custom activation clears native image bits from all four RAM planes.
+Later writes cover the union of the current and preceding active bounds, so
+old drive bits become neutral before another activation. This restricts SPI
+traffic, not the controller's physical gate scan.
 SSD1677 and UltraChip profiles need their own validated waveform adapters
 before enabling the same controls. Matching a controller family alone does
 not establish a panel's electrical or optical compatibility.
