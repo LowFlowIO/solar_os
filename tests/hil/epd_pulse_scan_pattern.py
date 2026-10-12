@@ -8,6 +8,7 @@ from solaros import gfx, time
 
 FRAME_MS = 100
 FRAMES = 120
+FINAL_HOLD_MS = 60000
 
 gfx.begin()
 try:
@@ -34,6 +35,8 @@ try:
         if delay > 0:
             time.sleep_ms(delay)
     print("queued", FRAMES, "targets; inspect driver scan timings")
-    time.sleep_ms(4000)  # Final target must continue settling without presents.
+    # Leave the final target visible long enough for a human to inspect erasure.
+    # Ending gfx ownership lets the foreground screen replace this result.
+    time.sleep_ms(FINAL_HOLD_MS)
 finally:
     gfx.end()
