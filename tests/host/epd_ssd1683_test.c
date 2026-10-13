@@ -749,6 +749,12 @@ static epd_ssd1683_t green_display(void) {
     const epd_ssd1683_config_t config = {.panel_variant = d.panel_variant,
         .spi_clock_hz = 10000000};
     ssd1683_pulse_defaults(&d, &config);
+    /* Keep transport cases at their explicit calibration values; defaults and
+     * startup policy are exercised independently below. */
+    d.pulse_tuning.drive_cycles = 3;
+    d.pulse_tuning.waveform_fr = 9;
+    d.pulse_tuning.cleanup_every = 64;
+    d.pulse_tuning.cleanup_adaptive = true;
     d.u8g2.u8x8.display_info = &ssd1683_display_info;
     return d;
 }
@@ -800,7 +806,7 @@ static void test_green_detection_and_native_busy(void) {
     d.busy_level = 1; /* Board configuration starts with SSD1683 polarity. */
     assert(ssd1683_controller_init(&d) == ESP_OK);
     assert(d.panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER && d.busy_level == 0);
-    assert(d.scan_async && d.pulse_tuning.waveform_fr == 9);
+    assert(d.scan_async && d.pulse_tuning.waveform_fr == 12);
     assert(ssd1683_refresh(&d) == ESP_OK);
     assert(time_us >= busy_until && d.shadow_valid);
     single_pixel(0, 0, false); no_busy = true;
@@ -836,6 +842,33 @@ static void test_green_async_failure_and_idle_cleanup(void) {
     assert(memcmp(d.shadow, d.buffer, d.buffer_size) == 0);
     epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
 }
+static void test_green_startup_pulse_defaults(void) {
+    epd_ssd1683_config_t config = {.panel_variant = EPD_SSD1683_PANEL_GREEN_STICKER,
+        .spi_clock_hz = 10000000, .startup_pulse = true};
+    epd_ssd1683_t d = green_display();
+    ssd1683_pulse_defaults(&d, &config);
+    assert(d.pulse_tuning.drive_cycles == 8 && d.pulse_tuning.pulse_frames == 8);
+    assert(d.pulse_tuning.waveform_fr == 12 && d.pulse_tuning.cleanup_every == 8);
+    assert(!d.pulse_tuning.cleanup_adaptive && !d.pulse_power_hold);
+    assert(d.scan_async && d.scan_period_ms == 10 && d.pulse_ramp_fast);
+    assert(d.pulse_spi_clock_hz == 20000000);
+    config.startup_pulse = false;
+    ssd1683_start_default_refresh(&d, &config);
+    assert(d.refresh_mode == EPD_SSD1683_REFRESH_AUTO && d.scan_worker.task == NULL);
+    config.startup_pulse = true; worker_init_fail = true;
+    ssd1683_start_default_refresh(&d, &config);
+    assert(d.refresh_mode == EPD_SSD1683_REFRESH_AUTO && !d.scan_submit_ready);
+    worker_init_fail = false;
+    ssd1683_start_default_refresh(&d, &config);
+    assert(d.refresh_mode == EPD_SSD1683_REFRESH_PULSE && d.scan_worker.task);
+    assert(d.scan_worker.period_ms == 10 && d.scan_submit_ready && d.pulse_needs_cleanup);
+    assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+    assert(worker_tick(&d.scan_worker) == ESP_OK && d.shadow_valid);
+    epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
+    d = display(); d.panel_variant = EPD_SSD1683_PANEL_LEGACY;
+    ssd1683_start_default_refresh(&d, &config);
+    assert(d.refresh_mode == EPD_SSD1683_REFRESH_AUTO && d.scan_worker.task == NULL);
+}
 int main(void) {
     test_control_pin_sleep_retention();
     test_native(); test_pulse_and_restore(); test_default_drive_budget();
@@ -854,5 +887,6 @@ int main(void) {
     test_green_mask_waveform_and_power();
     test_green_detection_and_native_busy();
     test_green_async_failure_and_idle_cleanup();
+    test_green_startup_pulse_defaults();
     puts("SSD1683 single/dual native/pulse transport tests: ok");
 }

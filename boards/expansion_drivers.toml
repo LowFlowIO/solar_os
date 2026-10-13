@@ -654,6 +654,14 @@ role = "panel"
 min = 0
 max = 4
 
+[[drivers.ssd1683.bindings]]
+key = "startup-pulse"
+kind = "parameter"
+hint = "0|1"
+role = "startup-pulse"
+min = 0
+max = 1
+
 [drivers.ssd1677]
 summary = "SSD1677 800x480 e-paper"
 package = "expansion_ssd1677"

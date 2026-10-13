@@ -148,16 +148,19 @@ static epd_pulse_tuning_t ssd1683_default_pulse_tuning(epd_ssd1683_panel_variant
         tuning.waveform_fr = 4;
         tuning.cleanup_every = 64;
         tuning.cleanup_adaptive = true;
-    } else if (panel == EPD_SSD1683_PANEL_WAVESHARE_V2 ||
-               panel == EPD_SSD1683_PANEL_GREEN_STICKER) {
+    } else if (panel == EPD_SSD1683_PANEL_GREEN_STICKER) {
+        tuning.drive_cycles = 8;
+        tuning.pulse_frames = 8;
+        tuning.waveform_fr = 12;
+        tuning.cleanup_every = 8;
+        tuning.cleanup_adaptive = false;
+    } else if (panel == EPD_SSD1683_PANEL_WAVESHARE_V2) {
         /* Initial calibration preset for the single-controller 4.2-inch panel. */
         tuning.drive_cycles = 3;
         tuning.pulse_frames = 8;
         tuning.waveform_fr = 4;
         tuning.cleanup_every = 64;
         tuning.cleanup_adaptive = true;
-        if (panel == EPD_SSD1683_PANEL_GREEN_STICKER)
-            tuning.waveform_fr = 9; /* Vendor's 50 Hz PLL code. */
     }
     return tuning;
 }
@@ -166,13 +169,14 @@ static void ssd1683_pulse_defaults(epd_ssd1683_t *display,
                                     const epd_ssd1683_config_t *config)
 {
     const bool dual = config->panel_variant == EPD_SSD1683_PANEL_ELECROW_579_DUAL;
+    const bool green = config->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER;
     display->pulse_tuning = ssd1683_default_pulse_tuning(config->panel_variant);
     display->scan_async = dual || config->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2 ||
         config->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER;
-    display->scan_period_ms = dual ? 10 : 100;
+    display->scan_period_ms = dual || green ? 10 : 100;
     display->pulse_power_hold = dual;
-    display->pulse_ramp_fast = dual;
-    display->pulse_spi_clock_hz = dual ? 20000000 : config->spi_clock_hz;
+    display->pulse_ramp_fast = dual || green;
+    display->pulse_spi_clock_hz = dual || green ? 20000000 : config->spi_clock_hz;
 }
 
 static esp_err_t ssd1683_trigger_update(epd_ssd1683_t *display,
@@ -2064,6 +2068,18 @@ static bool ssd1683_config_valid(const epd_ssd1683_config_t *config)
     return true;
 }
 
+static void ssd1683_start_default_refresh(epd_ssd1683_t *display,
+                                         const epd_ssd1683_config_t *config)
+{
+    /* Resolve auto-detected panels before applying a board's startup policy.
+     * Unsupported panels and allocation failures retain a usable native mode. */
+    if (config->startup_pulse && ssd1683_pulse_profile(display) != NULL) {
+        const esp_err_t err = epd_ssd1683_set_controller_mode(display, "refresh=pulse");
+        if (err != ESP_OK)
+            ESP_LOGW(TAG, "startup pulse unavailable err=0x%x; retaining refresh=auto", (unsigned)err);
+    }
+}
+
 esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,
                            const epd_ssd1683_config_t *config)
 {
@@ -2169,6 +2185,8 @@ esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,
     }
     if (ret != ESP_OK) {
         epd_ssd1683_deinit(display);
+    } else {
+        ssd1683_start_default_refresh(display, config);
     }
     return ret;
 }

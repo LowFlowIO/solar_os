@@ -541,6 +541,7 @@ bindings = { gpio = 7 }
         self.assertIn('#include "solar_os_buttons.h"', header)
         self.assertIn("#define SOLAR_OS_BOARD_BUTTONS", header)
         self.assertIn(".miso_pin = GPIO_NUM_NC", header)
+        self.assertIn('.role = "startup-pulse", .value = 1', header)
 
     def test_elecrow_579_uses_dual_controller_geometry(self) -> None:
         board = load_board_manifest(

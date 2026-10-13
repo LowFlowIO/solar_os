@@ -46,6 +46,7 @@ typedef struct {
     int power_active_level;
     const u8g2_cb_t *rotation;
     epd_ssd1683_panel_variant_t panel_variant;
+    bool startup_pulse;
 } epd_ssd1683_config_t;
 
 typedef struct {

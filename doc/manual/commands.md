@@ -1252,7 +1252,7 @@ Waveshare 4.2-inch V2/revision-2.2 profiles also accept the optional
 sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
 duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
 `cleanup-every=<1..128>` sets the cleanup baseline.
-The default `cleanup-policy=adaptive` tracks actual successful drives per pixel.
+`cleanup-policy=adaptive` tracks actual successful drives per pixel.
 It cleans up when the most-driven pixel reaches `cleanup-every * drive-cycles`
 activations, or after `4 * cleanup-every` changed images, whichever comes first.
 `cleanup-policy=fixed` cleans up every `cleanup-every` changed images.
@@ -1281,11 +1281,12 @@ supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
 pulse timing logs support comparison on that panel.
 The Elecrow green-sticker profile uses its own OLD/NEW RAM and programmable
 waveform registers. It uploads both full RAM masks; neutral waveform entries
-leave unbudgeted pixels undriven. Its defaults are asynchronous, 100 ms requested
-interval, supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
-8 scan frames, and adaptive cleanup with baseline 64. For this profile,
-`waveform-fr` selects the raw PLL code: code 9 requests 50 Hz internal scan
-frames. Internal scan frequency is separate from image update rate.
+leave unbudgeted pixels undriven. Its defaults are asynchronous, 10 ms requested
+interval, supply cycling, fast ramp, 20000 kHz pulse SPI, 8 drive cycles,
+8 scan frames, raw PLL code 12, and fixed cleanup every 8 changed images.
+The Elecrow 4.2-inch board starts this revision in pulse mode. For this profile,
+`waveform-fr` selects a raw PLL code; internal scan frequency is separate from
+image update rate.
 The mode requires physical panel calibration; other EPD
 profiles reject it until they have a matching waveform adapter. See the
 [SolarWriter display controls](boards.md#solarwriter) and

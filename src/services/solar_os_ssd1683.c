@@ -23,6 +23,7 @@ typedef struct {
     int spi_clock_khz;
     int rotation;
     epd_ssd1683_panel_variant_t panel_variant;
+    bool startup_pulse;
 } ssd1683_binding_config_t;
 
 typedef struct {
@@ -156,6 +157,9 @@ static esp_err_t parse_bindings(const solar_os_expansion_binding_t *bindings,
                 config->rotation = binding->value;
             } else if (role_is(binding, "panel")) {
                 config->panel_variant = (epd_ssd1683_panel_variant_t)binding->value;
+            } else if (role_is(binding, "startup-pulse")) {
+                if (binding->value != 0 && binding->value != 1) return ESP_ERR_INVALID_ARG;
+                config->startup_pulse = binding->value != 0;
             } else {
                 return ESP_ERR_INVALID_ARG;
             }
@@ -315,6 +319,7 @@ esp_err_t solar_os_ssd1683_attach(const char *name,
         .power_active_level = 1,
         .rotation = rotation_callback(binding_config.rotation),
         .panel_variant = binding_config.panel_variant,
+        .startup_pulse = binding_config.startup_pulse,
     };
     esp_err_t ret = epd_ssd1683_init(&device->driver, &config);
     if (ret != ESP_OK) {

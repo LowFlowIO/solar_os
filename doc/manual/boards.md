@@ -851,12 +851,14 @@ pinout but requires a different reset, initialization, refresh, and sleep
 sequence. SolarOS detects the revision from its post-reset BUSY behavior and
 selects the matching command and waveform path automatically.
 
-The green-sticker revision also accepts `display mode display0 refresh=pulse`.
-It shares per-pixel drive budgets, asynchronous scanning, and adaptive cleanup
-with the other pulse-capable panels, using a separate waveform and RAM adapter.
-Start with the profile defaults, then tune `drive-cycles`, `pulse-frames`, and
-`waveform-fr` while checking contrast and erased content. Its raw PLL code 9
-requests 50 Hz internal scan frames; this is not the image update rate.
+The green-sticker revision starts in `refresh=pulse` by default. Its preset is
+8 drive cycles, 8 scan frames, raw PLL code 12, asynchronous scanning with a
+10 ms requested interval, supply cycling, fast ramp, and 20000 kHz pulse SPI.
+Fixed cleanup runs every 8 changed targets consumed by the worker.
+It shares per-pixel drive budgets and the scan worker with the other
+pulse-capable panels, using a separate waveform and RAM adapter. Runtime tuning
+remains available through `display mode display0`; internal scan frequency is
+separate from image update rate.
 Use `display mode display0 refresh=auto` to restore the native waveform.
 The original Elecrow 4.2-inch panel currently rejects pulse mode.
 
