@@ -1246,6 +1246,52 @@ initial cleanup and does not schedule periodic full refreshes. `refresh=fast`
 forces a fast full-frame waveform and `refresh=full` forces the full cleanup
 waveform on every changed frame.
 
+The Elecrow 5.79-inch dual-SSD1683, Elecrow 4.2-inch green-sticker, and
+Waveshare 4.2-inch V2/revision-2.2 profiles also accept the optional
+`refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
+sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
+duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
+`cleanup-every=<1..128>` sets the cleanup baseline.
+`cleanup-policy=adaptive` tracks actual successful drives per pixel.
+It cleans up when the most-driven pixel reaches `cleanup-every * drive-cycles`
+activations, or after `4 * cleanup-every` changed images, whichever comes first.
+`cleanup-policy=fixed` cleans up every `cleanup-every` changed images.
+Synchronous mode counts completed changed presentations; asynchronous mode
+counts changed targets consumed by the worker. Identical targets do not advance
+the image count. At a limit, the asynchronous worker schedules a native cleanup
+without waiting for another presentation or for all pending pixels to settle.
+Mode output includes the policy, peak/limit drive cycles, and changed-image age.
+These counters estimate accumulated activity and do not measure ghosting.
+These runtime settings apply only to pulse mode and are listed by
+`display mode <target>`. `pulse-scan=sync` completes a presentation's pending
+cycles before returning. `pulse-scan=async` runs one cycle per scan in a
+persistent worker and accepts new targets while earlier pixels settle.
+`pulse-period=<10..1000>` requests the minimum scan interval in milliseconds;
+actual timing and submitted/coalesced image counts appear in the mode output.
+`pulse-power=<cycle,hold>` selects supply cycling or retention during settling,
+`pulse-ramp=<normal,fast>` selects booster duration, and
+`pulse-spi-khz=<100..20000>` overrides the SPI clock only for pulse operation.
+Elecrow 5.79-inch defaults are asynchronous, 10 ms requested interval, retained supplies, fast
+booster ramp, 20000 kHz pulse SPI, 6 drive cycles, 8 scan frames, FR code 4,
+and adaptive cleanup with a baseline of 64. The default refresh policy remains auto. Requested
+scan cadence is not a guarantee of achieved cadence or optical settling.
+Waveshare 4.2-inch defaults are asynchronous, 100 ms requested interval,
+supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
+8 scan frames, FR code 4, and adaptive cleanup with baseline 64. Native and
+pulse timing logs support comparison on that panel.
+The Elecrow green-sticker profile uses its own OLD/NEW RAM and programmable
+waveform registers. It uploads both full RAM masks; neutral waveform entries
+leave unbudgeted pixels undriven. Its defaults are asynchronous, 10 ms requested
+interval, supply cycling, fast ramp, 20000 kHz pulse SPI, 8 drive cycles,
+8 scan frames, raw PLL code 12, and fixed cleanup every 8 changed images.
+The Elecrow 4.2-inch board starts this revision in pulse mode. For this profile,
+`waveform-fr` selects a raw PLL code; internal scan frequency is separate from
+image update rate.
+The mode requires physical panel calibration; other EPD
+profiles reject it until they have a matching waveform adapter. See the
+[SolarWriter display controls](boards.md#solarwriter) and
+[Waveshare 4G E-paper](boards.md#waveshare-4g-e-paper) for behavior and recovery.
+
 Packet radio devices are datagram endpoints registered by expansion drivers, not
 byte-stream ports. The common radio layer preserves packet metadata such as RSSI
 and optional source/destination IDs. Radio frequency values are Hz by default

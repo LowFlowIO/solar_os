@@ -654,6 +654,14 @@ role = "panel"
 min = 0
 max = 4
 
+[[drivers.ssd1683.bindings]]
+key = "startup-pulse"
+kind = "parameter"
+hint = "0|1"
+role = "startup-pulse"
+min = 0
+max = 1
+
 [drivers.ssd1677]
 summary = "SSD1677 800x480 e-paper"
 package = "expansion_ssd1677"
@@ -1431,6 +1439,46 @@ kind = "gpio"
 hint = "gpio"
 required = true
 
+[drivers.inmp441]
+summary = "INMP441 microphone with optional shared I2S playback"
+package = "expansion_inmp441"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2s"]
+board_capabilities = ["audio_input"]
+board_driver = "audio_expansion"
+default_name = "mic0"
+
+[[drivers.inmp441.bindings]]
+key = "i2s"
+kind = "i2s_port"
+hint = "i2s0|i2s1"
+required = true
+[[drivers.inmp441.bindings]]
+key = "bck"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.inmp441.bindings]]
+key = "ws"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.inmp441.bindings]]
+key = "din"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.inmp441.bindings]]
+key = "dout"
+kind = "gpio"
+hint = "gpio"
+[[drivers.inmp441.bindings]]
+key = "slot"
+kind = "parameter"
+hint = "0|1"
+min = 0
+max = 1
+
 [drivers.es7210]
 summary = "ES7210 I2S microphone array"
 package = "expansion_es7210"
@@ -1923,6 +1971,51 @@ kind = "i2c_address"
 hint = "0x36"
 required = true
 allowed = [0x36]
+
+[drivers.lc709203f]
+summary = "LC709203F CRC-checked Li-ion fuel gauge"
+package = "lc709203f"
+targets = ["esp32", "esp32s3"]
+capabilities = ["i2c"]
+board_capabilities = ["battery"]
+board_driver = "battery_expansion"
+default_name = "battery0"
+
+[[drivers.lc709203f.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+[[drivers.lc709203f.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x0b"
+allowed = [0x0b]
+required = true
+[[drivers.lc709203f.bindings]]
+key = "capacity"
+kind = "parameter"
+hint = "1..100000mAh"
+min = 1
+max = 100000
+[[drivers.lc709203f.bindings]]
+key = "profile"
+kind = "parameter"
+hint = "0|1"
+min = 0
+max = 1
+[[drivers.lc709203f.bindings]]
+key = "temp"
+kind = "parameter"
+hint = "-200..600decic"
+min = -200
+max = 600
+[[drivers.lc709203f.bindings]]
+key = "apa"
+kind = "parameter"
+hint = "1..255"
+min = 1
+max = 255
 
 [drivers.cw2017]
 summary = "CW2017 fuel gauge"

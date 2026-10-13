@@ -642,6 +642,11 @@ label = "PCM1808 audio input"
 category = "Expansion hardware"
 members = ["expansion_pcm1808"]
 
+[groups.inmp441]
+label = "INMP441 microphone and shared I2S playback"
+category = "Expansion hardware"
+members = ["expansion_inmp441"]
+
 [groups.es7210]
 label = "ES7210 audio input"
 category = "Expansion hardware"
@@ -763,6 +768,11 @@ members = ["bq27220"]
 label = "MAX17048 fuel gauge"
 category = "Expansion hardware"
 members = ["max17048"]
+
+[groups.lc709203f]
+label = "LC709203F fuel gauge"
+category = "Expansion hardware"
+members = ["lc709203f"]
 
 [groups.cw2017]
 label = "CW2017 fuel gauge"
@@ -1553,11 +1563,22 @@ sources = [
 requires = ["esp_driver_gpio", "esp_driver_spi", "u8g2"]
 capabilities = ["expansion_gpio"]
 
+[packages.driver_epd_pixel_budget]
+label = "driver.epd_pixel_budget"
+targets = ["esp32", "esp32s3"]
+sources = ["drivers/epd_pixel_budget.c"]
+
+[packages.driver_epd_scan_worker]
+label = "driver.epd_scan_worker"
+targets = ["esp32", "esp32s3"]
+sources = ["drivers/epd_scan_worker.c"]
+requires = ["esp_timer"]
+
 [packages.expansion_ssd1683]
 label = "expansion.ssd1683"
 targets = ["esp32", "esp32s3"]
 expansion_drivers = ["solar_os_ssd1683_expansion_driver"]
-depends = ["service_expansion", "service_spi"]
+depends = ["service_expansion", "service_spi", "driver_epd_pixel_budget", "driver_epd_scan_worker"]
 sources = [
   "board/solar_os_board_display_expansion.c",
   "drivers/epd_ssd1683.c",
@@ -1906,6 +1927,19 @@ sources = [
 requires = ["esp_driver_i2c"]
 capabilities = ["i2c"]
 
+[packages.lc709203f]
+label = "expansion.lc709203f"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_lc709203f_expansion_driver"]
+depends = ["service_battery", "service_expansion", "service_i2c"]
+sources = [
+  "drivers/lc709203f.c",
+  "services/solar_os_lc709203f.c",
+  "services/solar_os_lc709203f_driver.c",
+]
+requires = ["esp_driver_i2c"]
+capabilities = ["i2c"]
+
 [packages.cw2017]
 label = "expansion.cw2017"
 targets = ["esp32", "esp32s3"]
@@ -2055,6 +2089,19 @@ sources = [
   "drivers/pcm1808.c",
   "services/solar_os_pcm1808.c",
   "services/solar_os_pcm1808_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_i2s"]
+capabilities = ["expansion_i2s"]
+
+[packages.expansion_inmp441]
+label = "expansion.inmp441"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_inmp441_expansion_driver"]
+depends = ["service_audio", "service_expansion"]
+sources = [
+  "drivers/inmp441.c",
+  "services/solar_os_inmp441.c",
+  "services/solar_os_inmp441_driver.c",
 ]
 requires = ["esp_driver_gpio", "esp_driver_i2s"]
 capabilities = ["expansion_i2s"]

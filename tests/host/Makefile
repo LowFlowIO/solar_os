@@ -47,6 +47,36 @@ TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
 TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
+TARGETS += inmp441_test
+TARGETS += epd_pixel_budget_test
+TARGETS += epd_scan_worker_test
+TARGETS += epd_ssd1683_test
+
+epd_ssd1683_test: epd_ssd1683_test.c $(ROOT)/src/drivers/epd_ssd1683.c $(ROOT)/src/drivers/epd_ssd1683.h $(ROOT)/src/drivers/epd_pixel_budget.c $(ROOT)/src/drivers/epd_pixel_budget.h $(wildcard epd_stubs/*.h epd_stubs/driver/*.h)
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib -I$(ROOT)/src/drivers -I$(ROOT)/src/services epd_ssd1683_test.c $(ROOT)/src/drivers/epd_pixel_budget.c -Wl,--gc-sections -o $@
+
+epd_pixel_budget_test: epd_pixel_budget_test.c $(ROOT)/src/drivers/epd_pixel_budget.c $(ROOT)/src/drivers/epd_pixel_budget.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers epd_pixel_budget_test.c $(ROOT)/src/drivers/epd_pixel_budget.c -o $@
+
+epd_scan_worker_test: epd_scan_worker_test.c $(ROOT)/src/drivers/epd_scan_worker.c $(ROOT)/src/drivers/epd_scan_worker.h $(wildcard epd_scan_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread -Iepd_scan_stubs -I. -I$(ROOT)/src/drivers epd_scan_worker_test.c $(ROOT)/src/drivers/epd_scan_worker.c -o $@
+TARGETS += lc709203f_test
+TARGETS += battery_service_default_test
+
+battery_service_default_test: battery_service_test.c $(ROOT)/src/services/solar_os_battery.c $(ROOT)/src/services/solar_os_battery.h $(ROOT)/src/services/solar_os_battery_trend.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DSOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH=3000U -include compat.h -I. -I$(ROOT)/src/services \
+		battery_service_test.c $(ROOT)/src/services/solar_os_battery.c $(ROOT)/src/services/solar_os_battery_trend.c -o $@
+
+lc709203f_test: lc709203f_test.c $(ROOT)/src/drivers/lc709203f.c $(ROOT)/src/drivers/lc709203f.h \
+        $(ROOT)/src/services/solar_os_lc709203f.c $(ROOT)/src/services/solar_os_lc709203f.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iinmp441_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/src/drivers -I$(ROOT)/src/services lc709203f_test.c $(ROOT)/src/drivers/lc709203f.c \
+		$(ROOT)/src/services/solar_os_lc709203f.c -o $@
+
+inmp441_test: inmp441_test.c $(ROOT)/src/drivers/inmp441.c $(ROOT)/src/drivers/inmp441.h $(wildcard inmp441_stubs/*/*.h) \
+        $(ROOT)/src/services/solar_os_inmp441.c $(ROOT)/src/services/solar_os_inmp441.h $(ROOT)/src/services/solar_os_stream.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iinmp441_stubs -I. -I$(ROOT)/src/drivers -I$(ROOT)/src/services \
+		inmp441_test.c $(ROOT)/src/drivers/inmp441.c $(ROOT)/src/services/solar_os_inmp441.c $(ROOT)/src/services/solar_os_stream.c -o $@
 TARGETS += apple2_app_test
 TARGETS += apple2_app_entry_test
 
@@ -966,6 +996,12 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 
 test: $(TARGETS)
 	./i2c_buses_test
+	./inmp441_test
+	./epd_pixel_budget_test
+	./epd_scan_worker_test
+	./epd_ssd1683_test
+	./lc709203f_test
+	./battery_service_default_test
 	./apple2_app_test
 	./apple2_app_entry_test
 	./cw2017_test

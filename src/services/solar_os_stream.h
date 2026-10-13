@@ -195,6 +195,8 @@ typedef struct {
 esp_err_t solar_os_stream_init(void);
 esp_err_t solar_os_stream_register(const solar_os_stream_driver_t *driver);
 esp_err_t solar_os_stream_unregister(const char *id);
+/* Remove related endpoints atomically; a busy or missing endpoint removes none. */
+esp_err_t solar_os_stream_unregister_many(const char *const *ids, size_t count);
 size_t solar_os_stream_count(void);
 bool solar_os_stream_get(size_t index, solar_os_stream_info_t *info);
 esp_err_t solar_os_stream_get_info(const char *id, solar_os_stream_info_t *info);

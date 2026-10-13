@@ -10,6 +10,7 @@ static const solar_os_expansion_binding_spec_t binding_specs[] = {
     {.key = "clock", .value_hint = "khz", .kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER, .role = "clock", .has_value_range = true, .min_value = 100, .max_value = 20000},
     {.key = "rotation", .value_hint = "0..3", .kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER, .role = "rotation", .has_value_range = true, .min_value = 0, .max_value = 3},
     {.key = "panel", .value_hint = "0..4", .kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER, .role = "panel", .has_value_range = true, .min_value = 0, .max_value = 4},
+    {.key = "startup-pulse", .value_hint = "0|1", .kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER, .role = "startup-pulse", .has_value_range = true, .min_value = 0, .max_value = 1},
 };
 
 const solar_os_expansion_driver_t solar_os_ssd1683_expansion_driver = {

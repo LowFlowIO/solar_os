@@ -1,4 +1,5 @@
 #include "solar_os_battery.h"
+#include "solar_os_board.h"
 
 #include <stddef.h>
 #include <stdint.h>
@@ -22,8 +23,12 @@
 #define BATTERY_CAPACITY_MAX_MAH 100000U
 #define BATTERY_VOLTAGE_AVG_WINDOW 8U
 
+#ifndef SOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH
+#define SOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH 0U
+#endif
+
 static solar_os_battery_config_t battery_config = {
-    .capacity_mah = 0,
+    .capacity_mah = SOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH,
     .min_voltage_mv = BATTERY_DEFAULT_MIN_MV,
     .max_voltage_mv = BATTERY_DEFAULT_MAX_MV,
 };
