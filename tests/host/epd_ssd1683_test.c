@@ -454,10 +454,10 @@ static void test_adaptive_cleanup(void) {
         assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
         assert(worker_tick(&d.scan_worker) == ESP_OK);
         assert(d.pulse_updates == x + 1 && d.pixel_budget.peak_drive_cycles == 1);
-        assert(!ssd1683_dual_pulse_cleanup_due(&d) || x == 7);
+        assert(!ssd1683_pulse_cleanup_due(&d) || x == 7);
         assert(find(0x22, 0)->data[0] == 0xcf);
     }
-    assert(ssd1683_dual_pulse_cleanup_due(&d)); /* Bounded age at 4*N. */
+    assert(ssd1683_pulse_cleanup_due(&d)); /* Bounded age at 4*N. */
     assert(worker_pending); /* Real worker must continue despite zero pending pixels. */
     capture_count = 0;
     assert(worker_tick(&d.scan_worker) == ESP_OK); /* No new presentation required. */
@@ -470,7 +470,7 @@ static void test_adaptive_cleanup(void) {
         assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
         assert(worker_tick(&d.scan_worker) == ESP_OK);
     }
-    assert(d.pixel_budget.peak_drive_cycles == 2 && ssd1683_dual_pulse_cleanup_due(&d));
+    assert(d.pixel_budget.peak_drive_cycles == 2 && ssd1683_pulse_cleanup_due(&d));
     assert(worker_pending);
     const char *mode = epd_ssd1683_controller_mode(&d);
     assert(strstr(mode, "cleanup-policy=adaptive") && strstr(mode, "cleanup-peak-cycles=2"));

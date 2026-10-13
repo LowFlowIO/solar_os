@@ -47,6 +47,12 @@ Disable the worker during native operation and join it before releasing panel
 resources. The mailbox lock must never be held while acquiring a panel lock.
 
 The dual-SSD1683 5.79-inch adapter is the first consumer. It programs both
+controllers through a panel profile supplying physical geometry, RAM-plane size,
+native-target transfer, drive-mask transfer, and waveform setup callbacks.
+Budget allocation, retargeting, cleanup, scan scheduling, and failure recovery
+use that profile rather than assuming the dual panel's dimensions. Retargeting
+ignores non-visible bits in U8g2's final padded tile row.
+The dual profile programs both
 controllers, replaces both RAM planes whenever the active drive mask changes,
 reuses them between identical cycles with RAM ping-pong disabled, holds seam padding
 neutral, and serializes tuning with panel operations. The adapter uses its scan
