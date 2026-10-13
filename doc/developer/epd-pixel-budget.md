@@ -40,7 +40,8 @@ The dual-SSD1683 5.79-inch adapter is the first consumer. It programs both
 controllers, replaces both RAM planes whenever the active drive mask changes,
 reuses them between identical cycles with RAM ping-pong disabled, holds seam padding
 neutral, and serializes tuning with panel operations. The default adapter
-completes pending cycles synchronously. Its optional scan worker consumes one
+uses its scan worker by default in pulse mode; synchronous completion remains
+selectable. The scan worker consumes one
 cycle per callback, retargets only changed image bits, and keeps a copied target
 independent of the renderer's buffer. The mailbox is separate from the panel
 lock, so BUSY waits do not block submissions. DRAW_TILE is a no-op; REFRESH

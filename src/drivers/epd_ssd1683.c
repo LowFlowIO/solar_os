@@ -132,8 +132,21 @@ static epd_pulse_tuning_t ssd1683_default_pulse_tuning(epd_ssd1683_panel_variant
         tuning.drive_cycles = 6;
         tuning.pulse_frames = 8;
         tuning.waveform_fr = 4;
+        tuning.cleanup_every = 64;
     }
     return tuning;
+}
+
+static void ssd1683_pulse_defaults(epd_ssd1683_t *display,
+                                    const epd_ssd1683_config_t *config)
+{
+    const bool dual = config->panel_variant == EPD_SSD1683_PANEL_ELECROW_579_DUAL;
+    display->pulse_tuning = ssd1683_default_pulse_tuning(config->panel_variant);
+    display->scan_async = dual;
+    display->scan_period_ms = dual ? 10 : 100;
+    display->pulse_power_hold = dual;
+    display->pulse_ramp_fast = dual;
+    display->pulse_spi_clock_hz = dual ? 20000000 : config->spi_clock_hz;
 }
 
 static esp_err_t ssd1683_trigger_update(epd_ssd1683_t *display,
@@ -1713,10 +1726,8 @@ esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,
     memset(display, 0, sizeof(*display));
     display->last_error = ESP_OK;
     display->refresh_mode = EPD_SSD1683_REFRESH_AUTO;
-    display->pulse_tuning = ssd1683_default_pulse_tuning(config->panel_variant);
-    display->scan_period_ms = 100;
+    ssd1683_pulse_defaults(display, config);
     display->spi_clock_hz = config->spi_clock_hz;
-    display->pulse_spi_clock_hz = config->spi_clock_hz;
     display->spi_applied_hz = config->spi_clock_hz;
     display->lock = xSemaphoreCreateMutexStatic(&display->lock_storage);
     display->panel_variant = config->panel_variant;
@@ -1966,9 +1977,18 @@ esp_err_t epd_ssd1683_set_controller_mode(epd_ssd1683_t *display, const char *mo
     } else if (strcmp(mode, "refresh=full") == 0) {
         display->refresh_mode = EPD_SSD1683_REFRESH_FULL;
     } else if (strcmp(mode, "refresh=pulse") == 0 && ssd1683_is_dual(display)) {
-        display->refresh_mode = EPD_SSD1683_REFRESH_PULSE;
-        if (before != display->refresh_mode)
-            display->pulse_needs_cleanup = true;
+        /* The default async preset creates its worker only when selected. */
+        if (display->scan_async && display->scan_worker.task == NULL) {
+            err = epd_scan_worker_init(&display->scan_worker, display->buffer_size,
+                                        ssd1683_scan_process, display);
+            if (err == ESP_OK)
+                err = epd_scan_worker_set_period(&display->scan_worker, display->scan_period_ms);
+        }
+        if (err == ESP_OK) {
+            display->refresh_mode = EPD_SSD1683_REFRESH_PULSE;
+            if (before != display->refresh_mode)
+                display->pulse_needs_cleanup = true;
+        }
     } else if (ssd1683_is_dual(display)) {
         const epd_pulse_tuning_t previous = display->pulse_tuning;
         const bool was_async = display->scan_async;

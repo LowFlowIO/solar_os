@@ -490,6 +490,31 @@ static void test_pulse_tuning_preserves_native_idle(void) {
     assert(ssd1683_refresh(&d) == ESP_OK && capture_count == 0);
     epd_scan_worker_deinit(&d.scan_worker);
 }
+static void test_default_async_activation(void) {
+    epd_ssd1683_t d = display();
+    epd_ssd1683_config_t config = {.panel_variant = d.panel_variant, .spi_clock_hz = 10000000};
+    ssd1683_pulse_defaults(&d, &config);
+    assert(d.scan_async && d.scan_period_ms == 10 && d.scan_worker.task == NULL);
+    assert(d.pulse_power_hold && d.pulse_ramp_fast && d.pulse_spi_clock_hz == 20000000);
+    assert(d.pulse_tuning.drive_cycles == 6 && d.pulse_tuning.pulse_frames == 8);
+    assert(d.pulse_tuning.waveform_fr == 4 && d.pulse_tuning.cleanup_every == 64);
+    assert(ssd1683_refresh(&d) == ESP_OK && capture_count == 0); /* Auto unchanged. */
+    worker_init_fail = true;
+    assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_ERR_NO_MEM);
+    assert(d.refresh_mode == EPD_SSD1683_REFRESH_AUTO && !d.scan_submit_ready);
+    worker_init_fail = false;
+    assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
+    assert(d.scan_worker.task && d.scan_worker.period_ms == 10 && d.scan_submit_ready);
+    assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+    assert(worker_tick(&d.scan_worker) == ESP_OK); /* Baseline from submitted copy. */
+    epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
+    memset(&d, 0, sizeof(d));
+    config.panel_variant = EPD_SSD1683_PANEL_WAVESHARE_V2;
+    ssd1683_pulse_defaults(&d, &config);
+    assert(!d.scan_async && d.scan_period_ms == 100);
+    assert(!d.pulse_power_hold && !d.pulse_ramp_fast && d.pulse_spi_clock_hz == 10000000);
+    assert(d.pulse_tuning.cleanup_every == 32);
+}
 static void test_cleanup_failure_and_capability(void) {
     epd_ssd1683_t d = display();
     assert(epd_ssd1683_set_controller_mode(&d, "cleanup-every=1") == ESP_OK);
@@ -533,6 +558,7 @@ int main(void) {
     test_async_retarget_and_recovery(); test_hold_power_and_fast_ramp();
     test_async_cleanup_during_continuous_changes();
     test_async_sleep_and_resume();
+    test_default_async_activation();
     test_pulse_tuning_preserves_native_idle();
     test_cleanup_failure_and_capability();
     puts("SSD1683 dual native/pulse transport tests: ok");
