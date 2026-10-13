@@ -2,8 +2,8 @@
 id = "lua.hardware"
 title = "Lua gpio and peripherals API"
 section = "api"
-summary = "GPIO and peripherals: gpio, onewire, led, adc, pwm, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC"
-keywords = "lua solaros api hardware gpio onewire led adc pwm i2c spi uart neopixel battery charger sensors gnss haptic imu nfc"
+summary = "GPIO and peripherals: gpio, onewire, led, adc, pwm, servo, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC"
+keywords = "lua solaros api hardware gpio onewire led adc pwm servo i2c spi uart neopixel battery charger sensors gnss haptic imu nfc"
 packages_any = ["app_lua"]
 agent_reference_sections = true
 +++
@@ -129,7 +129,37 @@ end
 
 ## `solaros.pwm`
 
-- `solaros.pwm`: constants `FREQ_MIN`, `FREQ_MAX`; functions `status`, `set`, `off` when PWM support is compiled
+- Constants: `FREQ_MIN`, `FREQ_MAX` describe the native backend's range.
+- `providers()`: return records with `name`, `driver`, `outputs`, and `detachable`.
+- `status()`: return records with `pin`, `allowed`, `active`, `channel`,
+  `provider`, `output`, `frequency_group`, `owner`, `freq_hz`, `duty_percent`,
+  `enabled`, `reserved`, `resolution_bits`, and
+  `pulse_width_us`. Pulse width reports configured hardware duty, even when
+  disabled. Reserved outputs remain active while disabled.
+  `pin` is a native GPIO number, or `-1` for outputs without a GPIO mapping.
+  `frequency_group` identifies outputs sharing timing within that provider.
+- `set(output, freq_hz, duty_percent)`: start or update PWM with duty `0..100`.
+- `pulse(output, freq_hz, pulse_us)`: command an integer pulse width in
+  microseconds, rounded to hardware ticks. The pulse must be shorter than
+  the period; zero is accepted.
+- `off(output)`: stop general PWM output.
+
+Pass an output string such as `"native:1"` to set, pulse, and off. An integer
+selects a native GPIO. Providers enforce their own shared frequency groups;
+conflicting requests are rejected within a group.
+
+## `solaros.servo`
+
+Available when the servo service is compiled. Use `list()`, `status(name)`,
+`open(name, output, min_us, max_us, min_deg, max_deg[, freq_hz[, inverted]])`,
+`set(name, angle_deg)`, `pulse(name, pulse_us)`, `disable(name)`, and
+`close(name)` for calibrated positional outputs. Use a boolean for inversion.
+Opening sends no pulses; commands start output. Outputs belong to their
+creating runtime and are closed on interpreter exit. Status reports
+commanded position.
+
+See [Servo outputs](servo.md) for calibration, record fields, examples,
+and resource limits.
 
 ## `solaros.neopixel`
 
@@ -166,5 +196,5 @@ count is not sampled.
 
 ## Quick reference
 
-Use `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.charger`, `solaros.sensors`, `solaros.gnss`, `solaros.haptic`, `solaros.imu`, and `solaros.nfc` for gpio and peripherals.
+Use `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.servo`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.charger`, `solaros.sensors`, `solaros.gnss`, `solaros.haptic`, `solaros.imu`, and `solaros.nfc` for gpio and peripherals.
 See `man lua` for runtime conventions and service availability.

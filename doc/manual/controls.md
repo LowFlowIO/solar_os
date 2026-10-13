@@ -9,10 +9,9 @@ packages_any = ["service_controls"]
 +++
 # Continuous controls
 
-SolarOS controls turn scalar streams into named normalized values. A control
-can drive one or more native foreground-app parameters or MIDI Control Change
-messages. This keeps ADC calibration, smoothing, deadband, inversion, and
-pickup behavior independent of the destination.
+A control maps a measurement or script value to an app setting or MIDI
+controller. For example, a potentiometer can change Synth's filter cutoff.
+You can calibrate its range, smooth noisy readings, or reverse its direction.
 
 List the scalar streams that exist on the running board:
 
@@ -35,9 +34,8 @@ potentiometer does not reach 0 or 3300 mV.
 
 ## Native application parameters
 
-A running native application can publish tunable parameters with stable paths,
-ranges, units, steps, and linear or logarithmic curves. Inspect the parameters
-that are currently available:
+Parameters are named settings published by running native apps, with defined
+ranges and units. List the currently available settings:
 
 ```text
 control parameters
@@ -120,10 +118,9 @@ Python and Lua can perform the same management with
 subscription, so a script can observe messages without stealing them from
 Synth or another subscriber.
 
-Up to 16 MIDI CC streams can be configured. Explicit registration avoids
-reserving stream-registry entries for all 2,048 possible channel/controller
-pairs. A new stream reports `waiting` until its first matching message. It
-returns to that state whenever the MIDI job stops or restarts.
+You can configure up to 16 MIDI CC streams. A new stream reports `waiting`
+until its first matching message. It returns to `waiting` when the MIDI job
+stops or restarts.
 
 Inspect or remove the definitions with:
 
@@ -134,7 +131,8 @@ midi stream clear
 ```
 
 MIDI CC stream definitions are volatile. Restore `midi stream add` commands
-from `/.shell/startup` with the related control and job commands when needed.
+from the startup script selected by `setterm startup`, together with the
+related control and job commands.
 
 ## Manual and script controls
 
@@ -195,8 +193,8 @@ job stop controls
 the last source error. `control bindings` reports target state, pickup state,
 application counts, and the last target error. `control unbind <name>` removes
 all parameter and MIDI targets owned by that control. Control and binding
-definitions are runtime configuration; place the creation, binding, and
-job-start commands in `/.shell/startup` to restore them after reboot.
+definitions last until reboot. Run `setterm startup` to find the script in
+which to save their creation, binding, and job-start commands.
 
 ## Quick reference
 

@@ -1,0 +1,66 @@
+# Apple II Plus foreground app
+
+External SolarOS foreground app based on [Reinette II Plus](https://github.com/ArthurFerreira2/reinette-II-plus).
+Upstream snapshot: `b272efd` (2023-09-10). MIT notices and the license are retained
+under `main/vendor`. Apple II Plus and Disk II firmware ROMs are embedded in
+the module; see [ROM provenance](rom/README.md). Disk images are supplied separately.
+
+The module emulates an Apple II Plus with 64 KiB RAM including the language
+card, 40-column text, lores/hires and mixed graphics, two Disk II drives,
+paddles and the speaker. It supports NIB disk images. Undocumented CPU opcodes
+act as NOPs. The font is derived from upstream `assets/font-normal.bmp`.
+
+Build with ESP-IDF 5.5 for ESP32-S3:
+
+```sh
+idf.py set-target esp32s3
+idf.py build
+cmake --build build --target typed_elf
+```
+
+The manifest declares a resumable GUI app, a 16 KiB worker stack and priority 1.
+Launch admission checks its internal-memory and PSRAM requirements.
+
+Artifact: `build/solaros_native_apple2.app.elf`. Copy it to storage and run:
+
+```text
+load /sdcard/solaros_native_apple2.app.elf /sdcard/apple2/dos33.nib
+```
+
+Use `pkg install apple2` to install from the module catalog, or copy the artifact
+to `/sdcard/modules/apps/apple2.elf`. Start BASIC or boot one or two disks:
+
+```text
+apple2
+apple2 dos33.nib
+apple2 dos33.nib data.nib
+session create apple2 display0 /sdcard/apple2/dos33.nib
+```
+
+No separate ROM files are needed. NIB images must be exactly 232960 bytes.
+Disk paths are relative to the launching shell's current directory, or absolute.
+The existing `apple2 <disk-directory> [drive1.nib] [drive2.nib]` form also
+works; relative disk names then use that directory. Files opens `.nib` images
+with the installed module. The firmware must provide `resolve_path`.
+
+F1 saves drive 1; Alt+F1 saves drive 2. F2 shows status, F3 toggles disk
+acceleration, F4 mutes, F10 pauses, F11 resets the guest, and F12 shows help.
+Ctrl+Alt+Del or Ctrl+] exits to the SolarOS shell. Exit discards unsaved disk
+changes. The module requires firmware providing the foreground `stop_requested` callback.
+See the [Apple II Plus user guide](../../doc/manual/app.apple2.md) and
+[native app reference](../../doc/manual/native-app.md).
+
+`Alt+Tab` or `Alt+Right` switches to the next SolarOS session; `Alt+Left`
+switches to the previous session. Resume with these shortcuts or `session fg ID`.
+Switching pauses the guest and releases display, keyboard and audio resources;
+CPU, RAM and disk state, including unsaved changes, remain allocated. F10 pause
+is retained across session switches. The firmware must provide `enable_suspend`,
+`suspend_requested` and `suspend`.
+
+The module uses the SolarOS foreground app service for display, keyboard, storage, timing
+and optional audio. Text and overlays follow terminal colors on color displays
+and use black on white on monochrome displays. Graphics retain their Apple II
+palettes. Native color displays use black aspect-ratio bars.
+The firmware must provide `text_colors` and `video_open_ex`.
+Changed frames are submitted asynchronously at up to 25 Hz.
+F2 includes guest speed, interpreter throughput and frame-rendering time.

@@ -35,6 +35,10 @@ tests/host/nmea_gnss_test
 /tests/host/epd_uc8279_test
 /tests/host/uc8279_expansion_test
 /tests/host/frontlight_pwm_test
+/tests/host/pwm_servo_test
+/tests/host/pwm_provider_test
+/tests/host/pca9685_test
+/tests/host/pca9685_expansion_test
 /tests/host/epd_xteink_identify_test
 /tests/host/x4pro_expansion_test
 /tests/host/gt911_test
@@ -63,3 +67,6 @@ tests/host/native_inference_api_test
 tests/host/native_video_api_test
 tests/host/native_video_rtsp_api_test
 tests/host/tab5_keyboard_test
+tests/host/apple2_vm_test
+tests/host/apple2_vm_entry_test
+tests/host/indexed_raster_test

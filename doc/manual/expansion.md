@@ -9,53 +9,17 @@ packages_any = ["service_expansion"]
 +++
 # Expansion drivers and attached devices
 
-Expansion drivers turn named buses and safe GPIO slots into active displays,
-radios, sensors, or manual resource profiles. Drivers are package-gated, so the
-available list depends on the firmware and board.
+Expansion drivers let you add displays, keyboards, sensors, audio devices,
+and other hardware while SolarOS is running. A driver can serve both built-in
+and added hardware. Its availability depends on the board and firmware.
 
-Control-line bindings such as device power may use either a native ESP GPIO
-number or a named GPIO-controller line such as `gpiox0:12`. Expanded GPIO lines
-are digital control resources only. They cannot replace native ESP pins in SPI,
-I2C, UART, I2S, PWM, interrupt, or other bus/peripheral-signal bindings.
+Built-in devices attach at boot and appear in `expansion devices` as fixed
+attachments. They cannot be detached. Runtime attachments use named buses and
+available pins; detach them when finished to release those resources.
 
-Integrated hardware uses the same composition model. A board profile declares
-its fixed buses and default attachments, which are created at boot, shown by
-`expansion devices`, and cannot be detached. For example, Freenove `touch0` is
-an `ft6336` attachment; Waveshare `rtc0` and `environment0` use `pcf85063` and
-`shtc3`. Battery boards expose `battery0` through `battery-adc`, `max17048`,
-`bq27220`, or an integrated controller adapter. TTGO VGA32 `keyboard0` is a
-`ps2-keyboard` attachment. Built-in audio also appears as `audio0`: SolarTerm
-uses `es8311-es7210`, Freenove uses
-`es8311-duplex`, T-Deck Plus uses `i2s-output` with a separate `es7210` capture
-device, and classic ESP32 audio boards use `esp32-dac`. CL-32 declares its
-integrated AVR as fixed `core0`; its polled event FIFO supplies the `keyboard0`
-input source and its voltage and power-status registers supply `battery0`.
-Generic input, time, sensor, battery, and audio services consume the same
-runtime providers whether the attachment came from the board profile or the
-shell.
-
-Built-in displays follow the same rule and appear as fixed `display0`
-attachments: Waveshare uses `st7305`, Freenove uses `st7796`, ODROID-GO uses
-`ili9341`, Elecrow CrowPanel boards use `ssd1683`, ESP32-WROVER v3.0 uses `cvbs-pal`,
-T-LoRa-Pager uses `st7796`, T-Deck Plus uses `st7789`, and TTGO VGA32 uses
-`vga32`. They attach before the splash and primary display service start.
-
-Built-in SDMMC slots also appear as fixed `storage0` attachments. SolarTerm,
-Waveshare ESP32-S3-SIM7670G-4G, and ESP32-WROVER v3.0 use one-bit bindings;
-Freenove uses four-bit bindings. The attachment claims and configures the pins
-early, while the normal storage phase still probes and mounts the card. The
-Waveshare 4G target also registers fixed `battery0`, `pixels0`, and `modem0`
-attachments through the MAX17048, NeoPixel, and SIM7670 drivers.
-The Waveshare 4G/e-paper profile also attaches a Tab5 keyboard as fixed
-`keyboard0` on `i2c0` at `0x6d`, with INT on GPIO41.
-
-Elecrow CrowPanel, CL-32, T-LoRa-Pager, and T-Deck Plus use fixed `sdspi`
-attachments instead. Their built-in SPI devices share named buses while
-claiming separate chip-select resources.
-
-Named MIDI connections are created as buses rather than attached drivers. Use
-`expansion bus create midi <name> tx=<gpio> rx=<gpio>`; SolarOS chooses the UART
-backend and the `midi` background job owns the connection while it runs.
+Digital control lines, such as a device's power switch, may use an ESP32 GPIO
+or a GPIO-expander line such as `gpiox0:12`. Bus signals, PWM, interrupts, and
+other peripheral signals still require suitable native ESP32 pins.
 
 ## Discover what is present
 
@@ -75,12 +39,9 @@ existing named buses; create, attach, detach, or remove buses in the `io` app.
 `expansion status` retains the textual capabilities, buses, devices, and claims
 report for scripts and terminal inspection.
 
-`expansion drivers` groups registered drivers under bold Audio, Display, Input,
-Power, Radio, Sensor, Storage, and Utility headings, with driver names sorted
-inside each category. Its aligned rows also show probe support, bus type, and
-the driver summary. `expansion devices` prints each attached device in a
-separate block, with its name in bold followed by origin, readiness, startup
-mode, attachment policy, and bindings.
+`expansion drivers` lists the included drivers by category. `expansion devices`
+shows attached instances, their wiring, readiness, and whether they start at
+boot.
 
 From a script, inspect `solaros.expansion.drivers()` and
 `solaros.expansion.devices()`. A driver existing in firmware does not mean a
@@ -114,65 +75,21 @@ description instead of copying startup commands:
 expansion export /sdcard/my-hardware.toml
 ```
 
-The versioned `solaros-expansion` manifest contains the current board ID plus
-runtime-created buses and runtime-attached catalog devices. References to
-board-owned buses remain references, so the base board hardware is not
-duplicated. Readiness, leases, service state, secrets, and shell startup
-commands are not part of the file. A `manual` attachment cannot be exported
-because it has no catalog driver contract that the board compiler can validate.
-The destination is written through a temporary file and atomically replaced.
+The file records runtime buses and driver attachments, plus the base board
+identity. It omits secrets, service state, and startup commands. Attachments
+using the `manual` resource profile cannot be exported.
 
-The export format is a strict TOML contract. Schema 1 has this shape:
-
-```toml
-schema = 1
-kind = "solaros-expansion"
-
-[base]
-board = "waveshare_esp32_s3_sim7670g_4g"
-firmware = "4.13.1"
-
-[[buses]]
-name = "spi0"
-protocol = "spi"
-sharing = "shared"
-host = "SPI2_HOST"
-sclk = 7
-mosi = 8
-miso = 3
-cs = [9]
-max_transfer_size = 4096
-
-[[devices]]
-driver = "ssd1683"
-name = "display0"
-bindings = { spi = "spi0", cs = 9, dc = 10, reset = 11, busy = 12 }
-```
-
-`base.board` selects the manifest that the generated target inherits;
-`base.firmware` records export provenance and is not a compatibility gate.
-Only runtime-created I2C, SPI, UART, MIDI, 1-Wire, and PS/2 buses appear in
-`buses`. Each bus carries its concrete controller and protocol-specific wiring.
-Only runtime catalog devices appear in `devices`; each device carries the
-normalized string or integer bindings accepted by its driver. Board-owned
-buses may still be referenced by an exported device without being duplicated.
-The importer rejects unsupported schema versions, unknown fields, duplicate
-names, missing base boards, unavailable controllers or pins, unknown drivers,
-invalid bindings, and conflicts with existing board resources. Treat the file
-as generated interchange data; make lasting hardware changes in the resulting
-board manifest.
-
-Move the file to a SolarOS source tree and run:
+Copy it to a SolarOS source tree and run:
 
 ```sh
 python3 scripts/board_config.py --expansion-manifest my-hardware.toml
 ```
 
-The configurator loads the recorded base manifest, asks for the new board
-identity, validates the combined pin and bus ownership, and writes a small
-inherited board profile. Imported hardware then starts as board-owned after the
-custom target is built and flashed. Remove any matching temporary startup
-commands yourself; they are intentionally outside the export contract.
+The configurator asks for a new board identity and checks the combined wiring.
+After you build and flash that target, the imported devices attach at boot.
+Remove matching temporary startup commands yourself. See
+[Promoting a runtime configuration](boards.md#promoting-a-tested-runtime-configuration)
+for the manifest format and build steps.
 
 A Waveshare 4.2-inch V2 monochrome e-paper module uses the SSD1683 expansion
 driver and registers a 400x300 display target:
@@ -230,11 +147,8 @@ expansion detach rtc0
 The PCF85063 `irq=<gpio>` binding is optional. The Waveshare board profile
 reserves its routed RTC interrupt on GPIO15; external modules can omit `irq`
 when only clock and calendar access is required.
-The generic RTC service discovers alarm, countdown, and interrupt-status
-support from the attached chip adapter, so applications do not depend on the
-PCF85063 register interface.
-The generic sensor service similarly exposes provider names, driver names, and
-temperature/humidity capabilities without exposing a chip register interface.
+Use `rtc` to inspect the attached clock's alarm and timer support. Use
+`temperature list` and `humidity list` to find available sensor providers.
 
 `battery-adc` takes an ADC pin and a divider ratio in thousandths. For a 2:1
 resistive divider, use `divider=2000`:

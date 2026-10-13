@@ -7,7 +7,42 @@ aliases = ["board", "targets"]
 keywords = "boards targets custom board profile fixed expansion platformio waveshare epaper e-paper ssd1677 devkit odroid elecrow freenove wrover ttgo vga32 composite vga capabilities porting validation"
 packages_any = []
 +++
-# Defining SolarOS Boards
+# Boards and hardware targets
+
+Run `board` to identify your target and its capabilities. Commands and apps
+also depend on the firmware flavor; use `pkg`, `apps`, and `jobs` to check it.
+For attaching hardware to an existing board, start with [Expansion](expansion.md).
+
+## Built-In Targets
+
+The current tree includes these board targets:
+
+| Target | PlatformIO env | Hardware | Highlights |
+| --- | --- | --- | --- |
+| `solar_term` | `solar_term` | [SolarTerm](https://github.com/nilseuropa/solar_term), built from the Waveshare ESP32-S3-RLCD-4.2 | Primary ST7305 reflective display target with SDMMC, CDC, UART, RTC, SHTC3, battery ADC, ES8311/ES7210 audio, expansion I2C/SPI/UART/GPIO/ADC/PWM, and runtime-routable SPI3 on GPIO1/GPIO2/GPIO3/GPIO17. SolarOS refers to this hardware configuration as SolarTerm. |
+| `solar_writer` | `solar_writer` | SolarWriter, built from the Elecrow CrowPanel 5.79-inch | 792x272 dual-SSD1683 display, INMP441 microphone, shared PCM5102 line output and MAX98357 speaker output, LC709203F fuel gauge, microSD, CH340/UART console, and GPIO21 reserved for jack detect. |
+| `freenove_esp32_s3_display_4_0` | `freenove_esp32_s3_display_4_0` | Freenove ESP32-S3 Display 4.0-inch (FNK0104S) | Integrated 480x320 ST7796 display, FT6336 capacitive pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, native USB CDC, and UART/I2C/GPIO expansion connectors. |
+| `qdtech_es3c28p` | `qdtech_es3c28p` | [QDtech ES3C28P 2.8-inch ESP32-S3 Touch Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Capacitive-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, FT6336 pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
+| `qdtech_es3n28p` | `qdtech_es3n28p` | [QDtech ES3N28P 2.8-inch ESP32-S3 Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Non-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
+| `elecrow_crowpanel_esp32_s3_4_2_epaper` | `elecrow_crowpanel_esp32_s3_4_2_epaper` | Elecrow CrowPanel ESP32-S3 4.2-inch E-paper | ESP32-S3-WROOM-1-N8R8 target with a 400x300 SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
+| `elecrow_crowpanel_esp32_s3_5_79_epaper` | `elecrow_crowpanel_esp32_s3_5_79_epaper` | [Elecrow CrowPanel ESP32-S3 5.79-inch E-paper](https://www.elecrow.com/wiki/CrowPanel_ESP32_E-paper_5.79-inch_HMI_Display.html) | ESP32-S3-WROOM-1-N8R8 target with a 792x272 dual-SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
+| `waveshare_esp32_s3_epaper_3_97` | `waveshare_esp32_s3_epaper_3_97` | [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97) | ESP32-S3-WROOM-1-N16R8 target with an SSD1677 e-paper display that defaults to 800x480 landscape, AXP2101 battery/charger monitoring, QMI8658 six-axis IMU, four-bit SDMMC, native USB CDC, UART, PCF85063 RTC, SHTC3 temperature/humidity sensor, ES8311 speaker/microphone audio, rotary navigation, Wi-Fi, BLE, and expansion I2C/UART. |
+| `xteink_x4_pro` | `xteink_x4_pro` | Xteink X4 Pro | ESP32-S3 target with 16 MB flash, 8 MB OPI PSRAM, an 800x480 landscape e-paper display with cached SSD1677/UC8179/UC8279 identification, fixed-mix frontlight brightness, GT911 touch and Home pad, one-bit SDMMC, BM8563-compatible RTC, CW2017 gauge, native USB CDC, UART0, navigation buttons, Wi-Fi, and BLE. |
+| `cl_32` | `cl_32` | CL-32 | ESP32-S3-WROOM-1-N16R8 target with a 384x168 ST7305 reflective LCD, an ATmega808-backed keyboard and battery monitor, native USB CDC, UART, microSD over SDSPI, PCF85063 RTC, onboard PWM buzzer, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S. |
+| `odroid_go` | `odroid_go` | Hardkernel ODROID-GO | Classic ESP32 target with ILI9341 display, SD over VSPI/SDSPI, battery ADC, ESP32 DAC speaker, buttons, ADC D-pad, status LED, display brightness, expansion I2C/SPI/UART/GPIO/PWM, and runtime GPIO4/GPIO15. |
+| `freenove_esp32_wrover_v3` | `freenove_esp32_wrover_v3` | Freenove ESP32-WROVER v3.0 (FNK0060) | Classic ESP32 target with 8 MB PSRAM, CH340/UART console, one-bit SDMMC, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, and a 384x288 monochrome PAL composite display on GPIO25. |
+| `ttgo_vga32_v14` | `ttgo_vga32_v14` | LilyGO TTGO VGA32 v1.4 | ESP32-PICO-D4 desktop target with 8 MB external PSRAM, build-selectable 320x200@70Hz, 320x240@60Hz, 640x400@70Hz, or 640x480@60Hz VGA output through the onboard RGB222 resistor DAC, GPIO25 mono DAC audio, a default-attached PS/2 keyboard, v1.4 microSD wiring over HSPI, USB-UART, Wi-Fi, BLE disabled by default, and two input-only expansion GPIOs. |
+| `esp32_s3_devkitc1_n16r8` | `esp32_s3_devkitc1_n16r8` | Espressif ESP32-S3-DevKitC-1-N16R8 | Headless ESP32-S3 target with CDC, UART, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, expansion I2C/SPI/UART/GPIO/ADC/PWM, graphics through attachable display targets, and no primary display or onboard sensors. |
+| `goouuu_esp32_s3cam` | `goouuu_esp32_s3cam` | GOOUUU ESP32-S3CAM | Headless ESP32-S3 camera target with 16 MB flash, 8 MB PSRAM, native USB CDC, CH340/UART console, one-bit SDMMC, an onboard WS2812, Wi-Fi, BLE, and fixed DVP/SCCB camera wiring. Its required `driver.camera-esp32` package exposes OV2640 probing and bounded QVGA/VGA JPEG capture through `service.camera`; `cam-webd` adds a single-client MJPEG stream and JPEG snapshots with optional authentication over the shared HTTP server. |
+| `esp32_devkitc_v4_wrover` | `esp32_devkitc_v4_wrover` | Espressif ESP32-DevKitC V4 with ESP32-WROVER-E | Headless classic ESP32 target with PSRAM, UART, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S, graphics through attachable display targets, and no built-in peripherals. |
+| `devkitc1_epaper_workbench` | `esp32_s3_devkitc1_n16r8` with `SOLAR_OS_BOARD=devkitc1_epaper_workbench` | ESP32-S3 DevKitC-1 E-paper Workbench | Manifest-generated development target with fixed CardKB, 400x300 SSD1683 display, and SDSPI storage attachments. |
+| `t_lora_pager` | `t_lora_pager` | LilyGO T-LoRa-Pager (SX1262) | ESP32-S3-WROOM-1-N16R8 target with a 480x222 ST7796 display, a TCA8418 4x10 matrix keyboard, an SX1262 LoRa radio, PCF85063 RTC, microSD over SDSPI, ES8311 audio, a BQ27220 battery gauge, a BQ25896 charger, a rotary encoder, an XL9555 I2C GPIO controller for integrated power rails, a MIA-M10Q GNSS receiver, an ST25R3916 NFC-A reader, a BHI260AP IMU, a DRV2605 haptic controller, native USB CDC, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM. SD power and its external pull-up start enabled; GNSS and NFC power start disabled and are enabled with `gnss power on` and `nfc power on`. Use `haptic play EFFECT` for DRV2605 ROM effects 1 through 117. The Pager fixes BQ25896 fast-charge current at 704 mA during attachment; inspect or explicitly change charger settings with `charger`. |
+| `thinknode_m9` | `thinknode_m9` | [Elecrow ThinkNode M9](https://www.elecrow.com/wiki/ThinkNode_M9_Meshtastic_Communication_Terminal_with_Full_Keyboard.html) | ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 ST7789 display, a 37-key STC8H-scanned QWERTY keypad with backlight, microSD over SDSPI, PCF8563 RTC, ATGM336H or BM72A GNSS over NMEA, battery ADC, passive buzzer, CH340C-class (CH340K) USB/UART console, Wi-Fi, and BLE. The keypad I2C address identifies the board revision (0x6c is v1.0, 0x6d is v1.1). The GNSS enable rail is active-low on v1.0, which the manifest declares; a v1.1 board, active-high, sets `active = 1` on `gnss0`. GNSS power starts disabled and is enabled with `gnss power on`. The keypad's Home key exits the foreground app, Back is escape, Messages/Maps/Pin are F1/F2/F3, long-press Pin is F4, and the Message key arms the one-shot compose layer that supplies tab, pipe, backslash, brackets, and the other characters the keypad cannot type directly. Composed up and down page through the scrollback and composed right is tab (see the `stc8h-keyboard` driver reference). The onboard LR1110 LoRa radio has no SolarOS driver yet; its pins are reserved. |
+| `t_deck_plus` | `t_deck_plus` | LilyGO T-Deck Plus | ESP32-S3FN16R8 target with a 320x240 ST7789 display, GT911 touch, I2C keyboard, five-way trackball, separate I2S speaker output and ES7210 microphone capture, SX1262 LoRa radio, microSD over SDSPI, battery ADC, internal GPS UART, native USB CDC, Wi-Fi, and BLE. |
+| `waveshare_esp32_s3_sim7670g_4g` | `waveshare_esp32_s3_sim7670g_4g` | [Waveshare ESP32-S3-SIM7670G-4G V2.0](https://www.waveshare.com/esp32-s3-sim7670g-4g.htm) | Headless ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, CH343/UART console, SIM7670G AT, GNSS, and IPv4 PPP access over UART1, MAX17048 battery gauge, one-bit SDMMC, one WS2812B, Wi-Fi, BLE, and expansion GPIO/ADC/PWM/SPI/I2S. Set the DIP switches to CAM OFF, HUB ON, 4G OFF, USB OFF. With CAM off, the unused camera signal pins are available as expansion GPIOs and can form runtime SPI or I2S buses; GPIO15/GPIO16 remain the shared MAX17048 I2C bus and GPIO46 remains blocked as an input-only strapping pin. SolarOS drives GPIO21 active-high to control the modem VBAT rail; leave the 4G switch OFF to avoid contention and permit software power-off/reset. The modem UART belongs exclusively to PPP while connected; disconnect it before AT or GNSS use. Camera support is not included. |
+| `waveshare_esp32_s3_sim7670g_4g_epaper` | `waveshare_esp32_s3_sim7670g_4g` with `SOLAR_OS_BOARD=waveshare_esp32_s3_sim7670g_4g_epaper` | Waveshare ESP32-S3-SIM7670G-4G E-paper workbench | Expansion-export reference target with a fixed M5Stack TAB5 keyboard on the board-owned I2C bus at address `0x6d`, INT on GPIO41, and a fixed primary 400x300 SSD1683 display on SPI2 using GPIO3/GPIO7 through GPIO12. GPIO40 remains available for expansion. |
+
+## Define a custom board
 
 New board profiles use one versioned TOML manifest in
 `boards/manifests/<target>.toml`. The manifest contains identity, MCU family,
@@ -194,34 +229,6 @@ expansion devices
 A successful manifest validation and build do not prove wiring, polarity,
 power control, or peripheral behavior. Test the generated profile on its
 physical target.
-
-## Built-In Targets
-
-The current tree includes these board targets:
-
-| Target | PlatformIO env | Hardware | Highlights |
-| --- | --- | --- | --- |
-| `solar_term` | `solar_term` | [SolarTerm](https://github.com/nilseuropa/solar_term), built from the Waveshare ESP32-S3-RLCD-4.2 | Primary ST7305 reflective display target with SDMMC, CDC, UART, RTC, SHTC3, battery ADC, ES8311/ES7210 audio, expansion I2C/SPI/UART/GPIO/ADC/PWM, and runtime-routable SPI3 on GPIO1/GPIO2/GPIO3/GPIO17. SolarOS refers to this hardware configuration as SolarTerm. |
-| `freenove_esp32_s3_display_4_0` | `freenove_esp32_s3_display_4_0` | Freenove ESP32-S3 Display 4.0-inch (FNK0104S) | Integrated 480x320 ST7796 display, FT6336 capacitive pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, native USB CDC, and UART/I2C/GPIO expansion connectors. |
-| `qdtech_es3c28p` | `qdtech_es3c28p` | [QDtech ES3C28P 2.8-inch ESP32-S3 Touch Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Capacitive-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, FT6336 pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
-| `qdtech_es3n28p` | `qdtech_es3n28p` | [QDtech ES3N28P 2.8-inch ESP32-S3 Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Non-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
-| `elecrow_crowpanel_esp32_s3_4_2_epaper` | `elecrow_crowpanel_esp32_s3_4_2_epaper` | Elecrow CrowPanel ESP32-S3 4.2-inch E-paper | ESP32-S3-WROOM-1-N8R8 target with a 400x300 SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
-| `elecrow_crowpanel_esp32_s3_5_79_epaper` | `elecrow_crowpanel_esp32_s3_5_79_epaper` | [Elecrow CrowPanel ESP32-S3 5.79-inch E-paper](https://www.elecrow.com/wiki/CrowPanel_ESP32_E-paper_5.79-inch_HMI_Display.html) | ESP32-S3-WROOM-1-N8R8 target with a 792x272 dual-SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
-| `waveshare_esp32_s3_epaper_3_97` | `waveshare_esp32_s3_epaper_3_97` | [Waveshare ESP32-S3-ePaper-3.97](https://docs.waveshare.com/ESP32-S3-ePaper-3.97) | ESP32-S3-WROOM-1-N16R8 target with an SSD1677 e-paper display that defaults to 800x480 landscape, AXP2101 battery/charger monitoring, QMI8658 six-axis IMU, four-bit SDMMC, native USB CDC, UART, PCF85063 RTC, SHTC3 temperature/humidity sensor, ES8311 speaker/microphone audio, rotary navigation, Wi-Fi, BLE, and expansion I2C/UART. |
-| `xteink_x4_pro` | `xteink_x4_pro` | Xteink X4 Pro | ESP32-S3 target with 16 MB flash, 8 MB OPI PSRAM, an 800x480 landscape e-paper display with cached SSD1677/UC8179/UC8279 identification, fixed-mix frontlight brightness, GT911 touch and Home pad, one-bit SDMMC, BM8563-compatible RTC, CW2017 gauge, native USB CDC, UART0, navigation buttons, Wi-Fi, and BLE. |
-| `cl_32` | `cl_32` | CL-32 | ESP32-S3-WROOM-1-N16R8 target with a 384x168 ST7305 reflective LCD, an ATmega808-backed keyboard and battery monitor, native USB CDC, UART, microSD over SDSPI, PCF85063 RTC, onboard PWM buzzer, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S. |
-| `odroid_go` | `odroid_go` | Hardkernel ODROID-GO | Classic ESP32 target with ILI9341 display, SD over VSPI/SDSPI, battery ADC, ESP32 DAC speaker, buttons, ADC D-pad, status LED, display brightness, expansion I2C/SPI/UART/GPIO/PWM, and runtime GPIO4/GPIO15. |
-| `freenove_esp32_wrover_v3` | `freenove_esp32_wrover_v3` | Freenove ESP32-WROVER v3.0 (FNK0060) | Classic ESP32 target with 8 MB PSRAM, CH340/UART console, one-bit SDMMC, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, and a 384x288 monochrome PAL composite display on GPIO25. |
-| `ttgo_vga32_v14` | `ttgo_vga32_v14` | LilyGO TTGO VGA32 v1.4 | ESP32-PICO-D4 desktop target with 8 MB external PSRAM, build-selectable 320x200@70Hz, 320x240@60Hz, 640x400@70Hz, or 640x480@60Hz VGA output through the onboard RGB222 resistor DAC, GPIO25 mono DAC audio, a default-attached PS/2 keyboard, v1.4 microSD wiring over HSPI, USB-UART, Wi-Fi, BLE disabled by default, and two input-only expansion GPIOs. |
-| `esp32_s3_devkitc1_n16r8` | `esp32_s3_devkitc1_n16r8` | Espressif ESP32-S3-DevKitC-1-N16R8 | Headless ESP32-S3 target with CDC, UART, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, expansion I2C/SPI/UART/GPIO/ADC/PWM, graphics through attachable display targets, and no primary display or onboard sensors. |
-| `goouuu_esp32_s3cam` | `goouuu_esp32_s3cam` | GOOUUU ESP32-S3CAM | Headless ESP32-S3 camera target with 16 MB flash, 8 MB PSRAM, native USB CDC, CH340/UART console, one-bit SDMMC, an onboard WS2812, Wi-Fi, BLE, and fixed DVP/SCCB camera wiring. Its required `driver.camera-esp32` package exposes OV2640 probing and bounded QVGA/VGA JPEG capture through `service.camera`; `cam-webd` adds a single-client MJPEG stream and JPEG snapshots with optional authentication over the shared HTTP server. |
-| `esp32_devkitc_v4_wrover` | `esp32_devkitc_v4_wrover` | Espressif ESP32-DevKitC V4 with ESP32-WROVER-E | Headless classic ESP32 target with PSRAM, UART, Wi-Fi, BLE, a GPIO0 BOOT/KEY button, expansion I2C/SPI/UART/GPIO/ADC/PWM/I2S, graphics through attachable display targets, and no built-in peripherals. |
-| `devkitc1_epaper_workbench` | `esp32_s3_devkitc1_n16r8` with `SOLAR_OS_BOARD=devkitc1_epaper_workbench` | ESP32-S3 DevKitC-1 E-paper Workbench | Manifest-generated development target with fixed CardKB, 400x300 SSD1683 display, and SDSPI storage attachments. |
-| `t_lora_pager` | `t_lora_pager` | LilyGO T-LoRa-Pager (SX1262) | ESP32-S3-WROOM-1-N16R8 target with a 480x222 ST7796 display, a TCA8418 4x10 matrix keyboard, an SX1262 LoRa radio, PCF85063 RTC, microSD over SDSPI, ES8311 audio, a BQ27220 battery gauge, a BQ25896 charger, a rotary encoder, an XL9555 I2C GPIO controller for integrated power rails, a MIA-M10Q GNSS receiver, an ST25R3916 NFC-A reader, a BHI260AP IMU, a DRV2605 haptic controller, native USB CDC, Wi-Fi, BLE, and expansion I2C/SPI/UART/GPIO/ADC/PWM. SD power and its external pull-up start enabled; GNSS and NFC power start disabled and are enabled with `gnss power on` and `nfc power on`. Use `haptic play EFFECT` for DRV2605 ROM effects 1 through 117. The Pager fixes BQ25896 fast-charge current at 704 mA during attachment; inspect or explicitly change charger settings with `charger`. |
-| `thinknode_m9` | `thinknode_m9` | [Elecrow ThinkNode M9](https://www.elecrow.com/wiki/ThinkNode_M9_Meshtastic_Communication_Terminal_with_Full_Keyboard.html) | ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 ST7789 display, a 37-key STC8H-scanned QWERTY keypad with backlight, microSD over SDSPI, PCF8563 RTC, ATGM336H or BM72A GNSS over NMEA, battery ADC, passive buzzer, CH340C-class (CH340K) USB/UART console, Wi-Fi, and BLE. The keypad I2C address identifies the board revision (0x6c is v1.0, 0x6d is v1.1). The GNSS enable rail is active-low on v1.0, which the manifest declares; a v1.1 board, active-high, sets `active = 1` on `gnss0`. GNSS power starts disabled and is enabled with `gnss power on`. The keypad's Home key exits the foreground app, Back is escape, Messages/Maps/Pin are F1/F2/F3, long-press Pin is F4, and the Message key arms the one-shot compose layer that supplies tab, pipe, backslash, brackets, and the other characters the keypad cannot type directly. Composed up and down page through the scrollback and composed right is tab (see the `stc8h-keyboard` driver reference). The onboard LR1110 LoRa radio has no SolarOS driver yet; its pins are reserved. |
-| `t_deck_plus` | `t_deck_plus` | LilyGO T-Deck Plus | ESP32-S3FN16R8 target with a 320x240 ST7789 display, GT911 touch, I2C keyboard, five-way trackball, separate I2S speaker output and ES7210 microphone capture, SX1262 LoRa radio, microSD over SDSPI, battery ADC, internal GPS UART, native USB CDC, Wi-Fi, and BLE. |
-| `waveshare_esp32_s3_sim7670g_4g` | `waveshare_esp32_s3_sim7670g_4g` | [Waveshare ESP32-S3-SIM7670G-4G V2.0](https://www.waveshare.com/esp32-s3-sim7670g-4g.htm) | Headless ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, CH343/UART console, SIM7670G AT, GNSS, and IPv4 PPP access over UART1, MAX17048 battery gauge, one-bit SDMMC, one WS2812B, Wi-Fi, BLE, and expansion GPIO/ADC/PWM/SPI/I2S. Set the DIP switches to CAM OFF, HUB ON, 4G OFF, USB OFF. With CAM off, the unused camera signal pins are available as expansion GPIOs and can form runtime SPI or I2S buses; GPIO15/GPIO16 remain the shared MAX17048 I2C bus and GPIO46 remains blocked as an input-only strapping pin. SolarOS drives GPIO21 active-high to control the modem VBAT rail; leave the 4G switch OFF to avoid contention and permit software power-off/reset. The modem UART belongs exclusively to PPP while connected; disconnect it before AT or GNSS use. Camera support is not included. |
-| `waveshare_esp32_s3_sim7670g_4g_epaper` | `waveshare_esp32_s3_sim7670g_4g` with `SOLAR_OS_BOARD=waveshare_esp32_s3_sim7670g_4g_epaper` | Waveshare ESP32-S3-SIM7670G-4G E-paper workbench | Expansion-export reference target with a fixed M5Stack TAB5 keyboard on the board-owned I2C bus at address `0x6d`, INT on GPIO41, and a fixed primary 400x300 SSD1683 display on SPI2 using GPIO3/GPIO7 through GPIO12. GPIO40 remains available for expansion. |
 
 ## Generated Build Interface
 
@@ -844,6 +851,17 @@ pinout but requires a different reset, initialization, refresh, and sleep
 sequence. SolarOS detects the revision from its post-reset BUSY behavior and
 selects the matching command and waveform path automatically.
 
+The green-sticker revision starts in `refresh=pulse` by default. Its preset is
+8 drive cycles, 8 scan frames, raw PLL code 12, asynchronous scanning with a
+10 ms requested interval, supply cycling, fast ramp, and 20000 kHz pulse SPI.
+Fixed cleanup runs every 8 changed targets consumed by the worker.
+It shares per-pixel drive budgets and the scan worker with the other
+pulse-capable panels, using a separate waveform and RAM adapter. Runtime tuning
+remains available through `display mode display0`; internal scan frequency is
+separate from image update rate.
+Use `display mode display0 refresh=auto` to restore the native waveform.
+The original Elecrow 4.2-inch panel currently rejects pulse mode.
+
 The board's USB-C data lines terminate at a CH340C USB-to-UART bridge. SolarOS
 therefore uses `uart0` on GPIO43/GPIO44 for the serial console and does not
 claim native USB Serial/JTAG CDC. The BAT connector supplies the board but the
@@ -928,6 +946,207 @@ actual serial-device path reported by the host when it differs.
 
 The same 8 MB OTA and serial partition layouts documented for the 4.2-inch
 CrowPanel apply to this board.
+
+## SolarWriter
+
+The `solar_writer` target combines the Elecrow CrowPanel 5.79-inch N8R8 board
+with a GY-INMP441 microphone, Adafruit PCM5102 DAC, Adafruit I2S Amplifier BFF
+(MAX98357), and Adafruit LC709203F battery gauge. It inherits the CrowPanel's
+792x272 dual-SSD1683 display, microSD, controls, CH340/UART console, Wi-Fi, BLE,
+8 MB flash, and 8 MB OPI PSRAM. The default firmware flavor is `writerdeck`.
+
+The following connections are fixed in this target:
+
+| Function | GPIO | U5 pin | Module connection |
+| --- | --- | --- | --- |
+| I2C SDA | 8 | 20 | LC709203F SDI/SDA |
+| I2C SCL | 9 | 2 | LC709203F SCL |
+| Shared I2S bit clock | 14 | 19 | INMP441 SCK, PCM5102 BCK, BFF A2 |
+| Shared I2S word select | 15 | 3 | INMP441 WS, PCM5102 WSEL, BFF A1 |
+| Playback data | 16 | 18 | PCM5102 DIN and BFF A0 |
+| Microphone data | 17 | 4 | INMP441 SD |
+| Jack detect, reserved | 21 | 6 | Future isolated switch to GND, active low |
+
+U5 pins 11–14 supply regulated **3.3 V** and pins 7–10 are GND, as connected
+in Elecrow's published schematic. Power the microphone VDD, PCM5102 VIN,
+fuel-gauge VIN, and amplifier BFF's **5V input pad** from 3.3 V for this
+configuration. The BFF's 3V pad does not supply the amplifier. Use short power
+wiring and allow for speaker current when sizing the supply. Higher-power
+speaker operation requires a suitable separate supply with common ground;
+do not inject 5 V into U5's 3.3 V rail.
+
+The battery connects through the LC709203F's parallel battery sockets to the
+CrowPanel BAT connector. Use a polarity-correct adapter for the different
+connectors. The gauge chip is battery-powered; its VIN connection sets the
+I2C logic level. No thermistor or interrupt wire is required. Fuel-gauge
+compensation uses an assumed 25.0 °C, not a measured temperature.
+
+`audio0` attaches automatically through the reusable `inmp441` driver. It
+appears as **INMP441 mic + I2S DAC/amp** in audio device information and
+publishes `audio0.capture` as 16 kHz mono and `audio0.playback` as 16 kHz
+stereo. The microphone uses received slot 1. The DAC and amplifier share one
+playback data stream; the DAC provides stereo line output and the amplifier
+plays its default mono mix. The PCM5102 jack requires a line-level load,
+such as powered speakers or a headphone amplifier.
+
+The 5.79-inch dual-SSD1683 display has an optional monochrome pulse mode.
+It uses the shared EPD pixel-budget layer and a waveform specific to this
+panel profile. Select it and tune it with:
+
+```text
+display mode display0 refresh=pulse
+display mode display0 drive-cycles=6
+display mode display0 pulse-frames=8
+display mode display0 waveform-fr=4
+display mode display0 cleanup-every=64
+display mode display0 cleanup-policy=adaptive
+display mode display0 pulse-scan=async
+display mode display0 pulse-period=10
+display mode display0 pulse-power=hold
+display mode display0 pulse-ramp=fast
+display mode display0 pulse-spi-khz=20000
+display mode display0
+```
+
+Each changed pixel receives `drive-cycles` completed waveform activations
+(1–32). Settled pixels select the neutral waveform; submitting the same target
+does not refill its budget. `pulse-frames` is the scan-frame duration of each
+drive phase (1–32); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
+frequency in Hz. Defaults are 6 cycles, 8 scan frames, code 4, and adaptive
+cleanup with `cleanup-every=64`. Each successful drive accumulates in a per-pixel
+history since the last native cleanup. Adaptive cleanup runs when the most-driven
+pixel reaches `cleanup-every * drive-cycles` activations (384 at the defaults),
+or after `4 * cleanup-every` changed images (256 at the defaults), whichever
+comes first. Sparse changes can therefore run longer than repeated transitions
+at the same pixels. The age bound also limits time spent applying neutral
+waveforms to unchanged pixels; it is an activity heuristic, not an optical
+ghost detector. Idle time and repeated identical targets do not age cleanup.
+
+Use `cleanup-policy=fixed` to clean up every `cleanup-every` changed images.
+Synchronous mode counts completed changed presentations; asynchronous mode
+counts changed targets consumed by the worker. At either limit, the asynchronous
+worker schedules a native cleanup even without another presentation. Cleanup
+uses its newest consumed target and can interrupt unfinished budgets.
+`display mode display0` reports `cleanup-policy`, `cleanup-peak-cycles`,
+`cleanup-limit-cycles`, and `cleanup-age` for tuning. The cycle limit applies
+only in adaptive mode. Drive history counts completed activations, including
+reversals; it supplies no measurement of ink settling.
+Settings are runtime-only. Pulse mode is
+experimental: its speed, polarity, ghosting, and optical settling require
+verification on the physical panel. It does not provide native grayscale.
+Lower budgets can complete without
+visibly moving the ink, so a successful BUSY cycle does not prove optical
+settling. Reduce the cycle budget and frame duration only while inspecting the
+screen in both transition directions.
+
+With `pulse-scan=sync`, the driver completes all pending cycles before
+returning from a presentation. Increasing the cycle budget increases that
+presentation's blocking time. The default `pulse-scan=async` submits the newest
+image to a persistent scan worker. It delivers one pulse per scan and continues
+settling without further presentations. New targets can arrive between cycles;
+queued images coalesce to the latest target. Settling can span several scans.
+Select asynchronous operation with:
+
+```text
+display mode display0 pulse-scan=async
+display mode display0 pulse-period=10
+```
+
+`pulse-period` requests a minimum start-to-start interval of 10–1000 ms;
+the default is 10 ms. Hardware work can exceed that interval, so 10 ms does not
+establish a 100 scans/s capability.
+`display mode display0` reports `scan-last-us`, `scan-interval-us`, completed
+`scan-count`, submitted/coalesced image counts, and pending pixel count. These
+measure actual completed scan work; image submission rate is separate from
+scan rate and optical settling.
+
+Additional panel-specific controls are `pulse-power=<cycle,hold>`,
+`pulse-ramp=<normal,fast>`, and `pulse-spi-khz=<100..20000>`. The default power
+policy is `hold`, which retains the supply stages during a settling sequence
+and powers down when all budgets finish. The normal booster ramp uses
+approximately 40/40/10 ms phases; the default `fast` uses 10/10/10 ms with the
+same current settings and voltage targets. Both ramp settings require optical
+calibration. Pulse SPI speed defaults to 20000 kHz;
+its override applies only in pulse mode, with the normal clock restored for
+native operation. These controls do not guarantee a particular frame rate.
+
+The first presentation
+establishes a native full-refresh baseline. Logs report changed pixel count,
+completed cycles or scans, SPI transfer time, and waveform BUSY time separately in
+`log show`.
+Asynchronous scan logs also report the interval between waveform activations.
+A failed transfer or waveform does not consume the failed cycle's budget and
+returns the driver to `refresh=auto`. Synchronous mode recovers on the next
+paint; asynchronous mode immediately performs a native recovery of the newest
+accepted target. Sleep suspends scans; waking reseeds from a native baseline.
+Use `display mode display0 refresh=auto` to restore the standard waveform;
+the next presentation resets the controller and performs a full cleanup.
+The pattern script `tests/hil/epd_pulse_pattern.py` exercises both transition
+directions and moves patches across both controller halves. Its printed
+messages mark queued presentations; `gfx.present()` returns before physical
+completion. Read the driver timings in `log show` and judge optical settling
+and ghosting on the actual screen.
+`tests/hil/epd_pulse_scan_pattern.py` queues moving-patch targets at 100 ms
+intervals for asynchronous cadence tests, then holds the final image so its
+pixels can settle. Use the driver statistics and physical screen to assess it.
+
+`battery0` attaches automatically at I2C address `0x0b`. Battery capacity
+defaults to 3000 mAh and remains configurable:
+
+```text
+expansion devices
+audio devices
+battery status
+battery capacity 3000
+```
+
+GPIO21 is reserved in the pin metadata and is not available for general GPIO
+or PWM. Plug detection and automatic output switching are not enabled in this
+profile. The PCM5102 board ties its jack switch contacts to audio nets; a
+separate isolated detection circuit is required. Both outputs receive playback
+regardless of plug insertion. GPIO18, GPIO19, GPIO20, and GPIO38 remain free;
+the optional DAC mute and fuel-gauge interrupt signals are not claimed.
+
+Build with `pio run -e solar_writer`. The target uses the same 8 MB OTA and
+serial partition layouts as the base CrowPanel.
+
+## Waveshare 4G E-paper
+
+The `waveshare_esp32_s3_sim7670g_4g_epaper` target uses the monochrome
+Waveshare 4.2-inch V2/revision-2.2 SSD1683 profile at 400x300. Native refresh
+defaults to `auto`, with dirty-window partial updates and periodic full cleanup.
+The display remains on its existing board-owned SPI bus and pins.
+
+The optional experimental pulse adapter uses row-major transfers on one
+controller, the shared per-pixel drive budget and history, asynchronous scans,
+and adaptive native cleanup. Select it with:
+
+```text
+display mode display0 refresh=pulse
+display mode display0
+```
+
+Initial pulse defaults are 3 drive cycles, 8 scan frames, FR code 4,
+asynchronous operation, a 100 ms requested minimum scan interval, supply
+cycling, normal booster ramp, the configured board SPI clock, and adaptive
+cleanup with a baseline of 64. These values are a calibration starting point;
+optical contrast, erasure, ghosting, and achieved cadence require inspection
+on the physical panel. The requested interval is not a measured frame rate.
+
+The adapter exposes the same pulse controls as
+[SolarWriter](#solarwriter), including `drive-cycles`, `pulse-frames`,
+`waveform-fr`, `cleanup-every`, `cleanup-policy`, `pulse-scan`, `pulse-period`,
+`pulse-power`, `pulse-ramp`, and `pulse-spi-khz`. Mode output reports scan timings,
+pending pixels, and cleanup counters. `log show` includes native transfer/drive
+timings and pulse scan timings for comparison. Faster ramp, held supplies, and
+higher SPI clocks require separate panel and wiring validation.
+
+The waveform uses the power rails and VCOM setting published for Waveshare's
+4.2-inch V2 custom-LUT path; it is a monochrome differential drive waveform,
+not native grayscale. Switching back with
+`display mode display0 refresh=auto` resets the controller and cleans up on
+the next presentation. A failed asynchronous pulse disables scanning and
+immediately restores the newest accepted target with a native full refresh.
 
 ## Waveshare ESP32-S3-ePaper-3.97
 

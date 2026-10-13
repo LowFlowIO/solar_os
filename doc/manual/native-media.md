@@ -125,7 +125,7 @@ descriptors must remain valid throughout the call.
 
 ## Errors, cancellation and lifetime
 
-The new tables return `SOLAR_OS_NATIVE_OK` or the negative result constants in
+The service tables return `SOLAR_OS_NATIVE_OK` or the negative result constants in
 `solar_os_native_service_abi.h`; they do not expose ESP-IDF error numbers.
 Admission contention returns `SOLAR_OS_NATIVE_ERROR_INVALID_STATE`.
 Cooperative cancellation and expired deadlines return
@@ -167,5 +167,5 @@ int main(int argc, char **argv)
 }
 ```
 
-`modules/vision-check` contains a standalone client of all six tables, including
+`modules/examples/vision-check` contains a standalone client of all six tables, including
 model reuse and leased video decoding.

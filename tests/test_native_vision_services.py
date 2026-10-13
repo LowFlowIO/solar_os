@@ -27,6 +27,7 @@ class NativeVisionServicesTest(unittest.TestCase):
                               '#include "solar_os_memory.h"\n'
                               'void *solar_os_memory_alloc(size_t n, solar_os_memory_class_t k, const char *t) { (void)n; (void)k; (void)t; return 0; }\n'
                               'void solar_os_memory_free(void *p) { (void)p; }\n'
+                              'bool solar_os_memory_is_external(const void *p) { (void)p; return false; }\n'
                               'int main(void) { assert(!solar_os_native_media_get_service("image", 1, 0)); }\n')
             binary = Path(tmp) / "disabled"
             subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
@@ -44,10 +45,10 @@ class NativeVisionServicesTest(unittest.TestCase):
         self.assertIn("solar_os_native_media_get_service(name", native)
 
     def test_acceptance_module_declares_extended_host_requirement(self):
-        manifest = tomllib.loads((ROOT / "modules/vision-check/module.toml").read_text())
+        manifest = tomllib.loads((ROOT / "modules/examples/vision-check/module.toml").read_text())
         self.assertEqual(manifest["native_abi"], 1)
         self.assertEqual(manifest["minimum_host_api_size"], 24)
-        source = (ROOT / "modules/vision-check/main/vision_check.c").read_text()
+        source = (ROOT / "modules/examples/vision-check/main/vision_check.c").read_text()
         self.assertIn("solar_os_native_host_v1()", source)
         self.assertNotIn('#include "esp_', source)
 

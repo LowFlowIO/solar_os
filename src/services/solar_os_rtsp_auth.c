@@ -39,15 +39,6 @@ static void hex_encode(const uint8_t *in, size_t len, char *out)
     out[len * 2] = '\0';
 }
 
-static const char *strcasestr_local(const char *hay, const char *needle)
-{
-    if (!hay || !needle || !*needle) return hay;
-    size_t n = strlen(needle);
-    for (; *hay; hay++)
-        if (!strncasecmp(hay, needle, n)) return hay;
-    return NULL;
-}
-
 static uint32_t md5_rot(uint32_t x, uint32_t n) { return (x << n) | (x >> (32 - n)); }
 
 static void md5(const uint8_t *data, size_t len, uint8_t out[16])
@@ -134,50 +125,76 @@ static size_t base64(const uint8_t *in, size_t len, char *out, size_t cap)
     return o;
 }
 
-static bool copy_token(char *dst, size_t cap, const char *src, size_t len)
+static bool token_char(unsigned char c)
 {
-    if (!dst || len >= cap) return false;
-    memcpy(dst, src, len);
-    dst[len] = '\0';
-    return true;
+    return c && (isalnum(c) || strchr("!#$%&'*+-.^_`|~", c));
 }
 
-static const char *param(const char *header, const char *name, char *out, size_t cap, bool *quoted)
+/* Commas delimit parameters/challenges only outside quoted strings. A scheme
+ * is a whole token followed by whitespace, rather than a parameter's '='. */
+static const char *challenge_fields(const char *www, const char *scheme, const char **end)
 {
-    size_t nlen = strlen(name);
-    const char *p = header;
-    if (quoted) *quoted = false;
-    while (p && *p) {
+    const char *fields = NULL, *p = www;
+    while (*p) {
         while (*p == ' ' || *p == '\t' || *p == ',') p++;
-        if (!strncasecmp(p, name, nlen) && (p[nlen] == '=' || p[nlen] == ' ')) {
-            p += nlen;
-            while (*p == ' ' || *p == '\t') p++;
-            if (*p != '=') return NULL;
-            p++;
-            while (*p == ' ' || *p == '\t') p++;
-            if (*p == '"') {
-                if (quoted) *quoted = true;
-                p++;
-                const char *end = p;
-                while (*end && *end != '"') {
-                    if (*end == '\\' && end[1]) end++;
-                    end++;
-                }
-                size_t o = 0;
-                for (const char *s = p; s < end && o + 1 < cap; s++) {
-                    if (*s == '\\' && s + 1 < end) s++;
-                    out[o++] = *s;
-                }
-                if (o + 1 >= cap) return NULL;
-                out[o] = '\0';
-                return out;
+        const char *token = p, *after = p;
+        while (token_char((unsigned char)*after)) after++;
+        const char *value = after;
+        while (*value == ' ' || *value == '\t') value++;
+        if (after > token && value > after && *value != '=') {
+            if (fields) {
+                *end = token;
+                return fields;
             }
-            const char *end = p;
-            while (*end && *end != ',' && *end != ' ' && *end != '\t') end++;
-            return copy_token(out, cap, p, (size_t)(end - p)) ? out : NULL;
+            size_t len = (size_t)(after - token);
+            if (len == strlen(scheme) && !strncasecmp(token, scheme, len)) fields = value;
         }
-        p = strchr(p, ',');
-        if (p) p++;
+        bool quoted = false;
+        while (*p) {
+            if (quoted && *p == '\\' && p[1]) { p += 2; continue; }
+            if (*p == '"') quoted = !quoted;
+            if (*p == ',' && !quoted) { p++; break; }
+            p++;
+        }
+        if (quoted) return NULL;
+    }
+    *end = p;
+    return fields;
+}
+
+static const char *param(const char *p, const char *end, const char *name, char *out, size_t cap)
+{
+    while (p < end) {
+        while (p < end && (*p == ' ' || *p == '\t' || *p == ',')) p++;
+        if (p == end) break;
+        const char *token = p;
+        while (p < end && token_char((unsigned char)*p)) p++;
+        size_t len = (size_t)(p - token);
+        bool match = len == strlen(name) && !strncasecmp(token, name, len);
+        while (p < end && (*p == ' ' || *p == '\t')) p++;
+        if (!len || p == end || *p++ != '=') return NULL;
+        while (p < end && (*p == ' ' || *p == '\t')) p++;
+        bool quoted = p < end && *p == '"';
+        if (quoted) p++;
+        size_t used = 0;
+        while (p < end && (quoted ? *p != '"' : token_char((unsigned char)*p))) {
+            unsigned char c = (unsigned char)*p++;
+            if (quoted && c == '\\') {
+                if (p == end) return NULL;
+                c = (unsigned char)*p++;
+            }
+            if (c < 32 || c == 127) return NULL;
+            if (match) {
+                if (used + 1 >= cap) return NULL;
+                out[used++] = (char)c;
+            }
+        }
+        if (quoted) {
+            if (p == end || *p++ != '"') return NULL;
+        } else if (!used && match) return NULL;
+        while (p < end && (*p == ' ' || *p == '\t')) p++;
+        if (p < end && *p != ',') return NULL;
+        if (match) { out[used] = '\0'; return out; }
     }
     return NULL;
 }
@@ -186,20 +203,19 @@ esp_err_t solar_os_rtsp_auth_challenge(const char *www, solar_os_rtsp_auth_chall
 {
     if (!www || !c || !*www) return ESP_ERR_INVALID_ARG;
     memset(c, 0, sizeof(*c));
-    const char *digest = strcasestr_local(www, "Digest");
-    const char *basic = strcasestr_local(www, "Basic");
-    if (digest) {
+    const char *end;
+    const char *fields = challenge_fields(www, "Digest", &end);
+    if (fields) {
         char qop[64] = "", algorithm[32] = "", stale[8] = "";
-        const char *fields = digest + 6;
         c->digest = true;
-        if (!param(fields, "realm", c->realm, sizeof(c->realm), NULL) ||
-            !param(fields, "nonce", c->nonce, sizeof(c->nonce), NULL))
+        if (!param(fields, end, "realm", c->realm, sizeof(c->realm)) ||
+            !param(fields, end, "nonce", c->nonce, sizeof(c->nonce)))
             return ESP_ERR_INVALID_RESPONSE;
-        (void)param(fields, "opaque", c->opaque, sizeof(c->opaque), NULL);
-        if (param(fields, "algorithm", algorithm, sizeof(algorithm), NULL) &&
+        (void)param(fields, end, "opaque", c->opaque, sizeof(c->opaque));
+        if (param(fields, end, "algorithm", algorithm, sizeof(algorithm)) &&
             algorithm[0] && strcasecmp(algorithm, "MD5"))
             return ESP_ERR_NOT_SUPPORTED;
-        if (param(fields, "qop", qop, sizeof(qop), NULL) && qop[0]) {
+        if (param(fields, end, "qop", qop, sizeof(qop)) && qop[0]) {
             bool auth = false, other = false;
             for (char *tok = qop; *tok;) {
                 while (*tok == ' ' || *tok == ',') tok++;
@@ -215,12 +231,36 @@ esp_err_t solar_os_rtsp_auth_challenge(const char *www, solar_os_rtsp_auth_chall
             if (!auth) return other ? ESP_ERR_NOT_SUPPORTED : ESP_ERR_INVALID_RESPONSE;
             c->qop_auth = true;
         }
-        if (param(fields, "stale", stale, sizeof(stale), NULL))
+        if (param(fields, end, "stale", stale, sizeof(stale)))
             c->stale = !strcasecmp(stale, "true");
         return ESP_OK;
     }
-    if (basic) return ESP_OK;
+    if (challenge_fields(www, "Basic", &end)) return ESP_OK;
     return ESP_ERR_NOT_SUPPORTED;
+}
+
+static bool append_text(char *header, size_t capacity, size_t *used, const char *text)
+{
+    size_t len = strlen(text);
+    if (*used >= capacity || len >= capacity - *used) return false;
+    memcpy(header + *used, text, len + 1);
+    *used += len;
+    return true;
+}
+
+static bool append_quoted(char *header, size_t capacity, size_t *used,
+                          const char *name, const char *value)
+{
+    if (!append_text(header, capacity, used, name) ||
+        !append_text(header, capacity, used, "=\"")) return false;
+    for (; *value; value++) {
+        unsigned char c = (unsigned char)*value;
+        if (c < 32 || c == 127) return false;
+        if ((c == '"' || c == '\\') && !append_text(header, capacity, used, "\\")) return false;
+        char byte[] = {(char)c, '\0'};
+        if (!append_text(header, capacity, used, byte)) return false;
+    }
+    return append_text(header, capacity, used, "\"");
 }
 
 esp_err_t solar_os_rtsp_authorization(const solar_os_rtsp_auth_challenge_t *c,
@@ -229,7 +269,8 @@ esp_err_t solar_os_rtsp_authorization(const solar_os_rtsp_auth_challenge_t *c,
                                      char *header, size_t capacity)
 {
     if (!c || !method || !uri || !user || !password || !header) return ESP_ERR_INVALID_ARG;
-    if (strchr(user, '"') || strchr(uri, '"')) return ESP_ERR_INVALID_ARG;
+    if (!capacity) return ESP_ERR_INVALID_SIZE;
+    header[0] = '\0';
     if (!c->digest) {
         char raw[SOLAR_OS_RTSP_AUTH_USER_MAX + SOLAR_OS_RTSP_AUTH_PASSWORD_MAX + 2];
         char encoded[256];
@@ -262,21 +303,29 @@ esp_err_t solar_os_rtsp_authorization(const solar_os_rtsp_auth_challenge_t *c,
     md5_hex(material, response);
     solar_os_rtsp_auth_wipe(material, sizeof(material));
     solar_os_rtsp_auth_wipe(ha1, sizeof(ha1));
-    if (c->qop_auth) {
-        n = snprintf(header, capacity,
-            "Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", "
-            "algorithm=MD5, response=\"%s\", qop=auth, nc=%08lx, cnonce=\"%s\"%s%s%s",
-            user, c->realm, c->nonce, uri, response, (unsigned long)(c->nc ? c->nc : 1),
-            c->cnonce, c->opaque[0] ? ", opaque=\"" : "", c->opaque, c->opaque[0] ? "\"" : "");
-    } else {
-        n = snprintf(header, capacity,
-            "Digest username=\"%s\", realm=\"%s\", nonce=\"%s\", uri=\"%s\", "
-            "algorithm=MD5, response=\"%s\"%s%s%s",
-            user, c->realm, c->nonce, uri, response,
-            c->opaque[0] ? ", opaque=\"" : "", c->opaque, c->opaque[0] ? "\"" : "");
+    size_t used = 0;
+    bool ok = append_text(header, capacity, &used, "Digest ") &&
+        append_quoted(header, capacity, &used, "username", user) &&
+        append_text(header, capacity, &used, ", ") &&
+        append_quoted(header, capacity, &used, "realm", c->realm) &&
+        append_text(header, capacity, &used, ", ") &&
+        append_quoted(header, capacity, &used, "nonce", c->nonce) &&
+        append_text(header, capacity, &used, ", ") &&
+        append_quoted(header, capacity, &used, "uri", uri) &&
+        append_text(header, capacity, &used, ", algorithm=MD5, ") &&
+        append_quoted(header, capacity, &used, "response", response);
+    if (ok && c->qop_auth) {
+        char counts[40];
+        snprintf(counts, sizeof(counts), ", qop=auth, nc=%08lx, ", (unsigned long)(c->nc ? c->nc : 1));
+        ok = append_text(header, capacity, &used, counts) &&
+            append_quoted(header, capacity, &used, "cnonce", c->cnonce);
     }
+    if (ok && c->opaque[0])
+        ok = append_text(header, capacity, &used, ", ") &&
+            append_quoted(header, capacity, &used, "opaque", c->opaque);
     solar_os_rtsp_auth_wipe(response, sizeof(response));
-    return n > 0 && (size_t)n < capacity ? ESP_OK : ESP_ERR_INVALID_SIZE;
+    if (!ok) { header[0] = '\0'; return ESP_ERR_INVALID_SIZE; }
+    return ESP_OK;
 }
 
 static bool host_equal(const char *a, const char *b)

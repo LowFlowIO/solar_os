@@ -99,13 +99,8 @@ The board ID is explicit because the ESP ROM reports the chip family, not the
 physical board or its pin/display/storage layout. A matching chip is therefore
 necessary but is not enough to choose a board artifact safely.
 
-## Resource use
-
-The flasher has no boot-time task and keeps no catalog or transfer buffers in
-memory while unused. It allocates its app state, catalog model, worker stack,
-HTTP buffers, UART loader context, and transfer buffer only after `flash` is
-opened, and releases them when the app exits. UART and optional GPIO resources
-are also claimed only for the active programming operation.
+Close Flash when finished to release its working memory. The programming
+operation owns the selected UART and optional control pins until it completes.
 
 ## Quick reference
 

@@ -332,12 +332,18 @@ using the original output-only prefix remain compatible. Arbitrary SolarOS
 internals are not exported through this interface. Native ELF code is not sandboxed; `load` is for trusted,
 maintainer-produced modules only.
 
-The `load` runner is for short-lived command-style modules. A module must stop
+ELFs declaring lifecycle-2 app metadata launch through the
+[foreground app runtime](native-app.md), retaining their image while suspended.
+Installed apps launch by module name.
+Ctrl+Alt+Del, Ctrl+] or closing the session requests cooperative shutdown.
+The host restarts the device if shutdown does not finish within five seconds.
+
+The ordinary `load` runner is for short-lived command-style modules. A module must stop
 all of its work and release every callback and resource before its entry point
 returns, because the runner immediately unloads its code and data. Installed
 jobs and drivers use separate resident lifecycle ABIs instead of this runner.
 
-The standalone `modules/hello` ESP-IDF project builds a small acceptance
+The standalone `modules/examples/hello` ESP-IDF project builds a small acceptance
 module.
 
 Official native-module catalogs are versioned with the host firmware. `pkg`
@@ -346,15 +352,17 @@ and native ABI match the running firmware. Each downloaded ELF must match the
 signed size and SHA-256, pass the same ELF validation as `load`, and is staged
 before atomic activation. The signed type selects the storage and lifecycle
 boundary: application modules use `/modules/apps/<module>.elf`, jobs use
-`/modules/jobs`, and drivers use `/modules/drivers`. Every entry separately
+`/modules/jobs`, drivers use `/modules/drivers`. Every entry separately
 declares its lifecycle ABI and its type-specific native host API size.
 Application lifecycle ABI 1 is the synchronous `main(argc, argv)`
 run-and-unload contract. Job lifecycle ABI 1 registers start, stop, and tick
 callbacks and keeps the ELF resident until the stopped job is removed. Driver
 lifecycle ABI 1 registers a zero-binding utility driver contract and keeps the
 ELF resident until all devices are detached and the module is removed.
-Installed jobs and drivers are reactivated during boot. The default repository is
-`https://solar-os.eu/ota/modules`.
+Application lifecycle ABI 2 declares a foreground app manifest and runs
+`main(argc, argv)` on its declared worker. Display, input, storage, timing and
+optional audio are provided by the versioned foreground service. Resumable apps
+retain their ELF and guest state across session switches.
 
 Run `pkg` without arguments to open the package manager. It refreshes the
 signed catalog in a worker, marks installed entries with `*`, and lets you
@@ -697,7 +705,9 @@ same job again stops the previous instance and starts it with the new arguments.
 | `disk` | `disk [status]` | Show persistent-storage status. |
 | `disk` | `disk lsblk` | List internal flash and detected removable block devices and partitions. |
 | `disk` | `disk mount [flash\|sd0pN] [mount]` | Mount the default volume or an explicit persistent volume. |
-| `disk` | `disk umount [flash\|sd0pN\|mount]` | Unmount the default volume or an explicit volume/mount point. |
+| `disk` | `disk mount <image.img> <mount> [partition]` | Mount a raw FAT image; select an MBR primary partition from 1 to 4 if needed. |
+| `disk` | `disk create <image.img> <MiB>` | Create a new MBR/FAT hard-disk image without overwriting an existing file. |
+| `disk` | `disk umount [flash\|sd0pN\|imgN\|mount]` | Unmount the default volume or an explicit volume/image/mount point. |
 | `disk` | `disk format <flash\|sd0\|sd0pN> --force` | Create a FAT filesystem, permanently erasing the unmounted target. |
 | `ramfs` | `ramfs [status]` | List PSRAM-backed volatile filesystem mounts. |
 | `ramfs` | `ramfs mount /path size` | Mount a volatile filesystem that reserves PSRAM, such as `ramfs mount / 1m`. |
@@ -1140,9 +1150,16 @@ available for the compiled board.
 | `dpad` | `dpad [status]` | Show ADC D-pad pins, raw values, zones, and calibration thresholds. |
 | `dpad` | `dpad calibrate [idle]` | Calibrate the current D-pad idle value. |
 | `dpad` | `dpad calibrate reset` | Restore the compiled D-pad calibration. |
-| `pwm` | `pwm status` | Show PWM state. |
-| `pwm` | `pwm set <pin> <freq-hz> <duty-percent>` | Start LEDC PWM on a runtime pin. |
-| `pwm` | `pwm off <pin>` | Stop PWM on a pin. |
+| `pwm` | `pwm providers` | List registered PWM controllers. |
+| `pwm` | `pwm status` | Show named outputs and their frequency groups. |
+| `pwm` | `pwm set <output> <freq-hz> <duty-percent>` | Start PWM on provider:number, or a native GPIO number. |
+| `pwm` | `pwm pulse <output> <freq-hz> <pulse-us>` | Command a pulse width in microseconds. |
+| `pwm` | `pwm off <output>` | Stop a general PWM output. |
+| `servo` | `servo list` | Show names, outputs, enabled state, and owners in a compact list. |
+| `servo` | `servo status [name]` | Show calibration, frequency, inversion, and the last accepted command for all servos or one named servo. |
+| `servo` | `servo open <name> <output> <min-us> <max-us> <min-deg> <max-deg> [freq-hz [inverted:0\|1]]` | Reserve an output without pulses; see [Servo outputs](servo.md). |
+| `servo` | `servo set <name> <angle-deg>` / `servo pulse <name> <pulse-us>` | Command a calibrated angle or pulse width. |
+| `servo` | `servo disable <name>` / `servo close <name>` | Stop pulses, retaining or releasing the reservation. |
 | `i2c` | `i2c [status [bus]]` | Show every named I2C bus, or one selected bus. |
 | `i2c` | `i2c speed [bus] [hz]` | Show or change a named bus clock; defaults to `i2c0` and accepts 1 through 1000000 Hz. |
 | `i2c` | `i2c scan [bus]` | Scan a named bus; defaults to `i2c0`. |
@@ -1231,6 +1248,52 @@ controller transfers both RAM halves with its `0xDC` partial waveform after the
 initial cleanup and does not schedule periodic full refreshes. `refresh=fast`
 forces a fast full-frame waveform and `refresh=full` forces the full cleanup
 waveform on every changed frame.
+
+The Elecrow 5.79-inch dual-SSD1683, Elecrow 4.2-inch green-sticker, and
+Waveshare 4.2-inch V2/revision-2.2 profiles also accept the optional
+`refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
+sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
+duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
+`cleanup-every=<1..128>` sets the cleanup baseline.
+`cleanup-policy=adaptive` tracks actual successful drives per pixel.
+It cleans up when the most-driven pixel reaches `cleanup-every * drive-cycles`
+activations, or after `4 * cleanup-every` changed images, whichever comes first.
+`cleanup-policy=fixed` cleans up every `cleanup-every` changed images.
+Synchronous mode counts completed changed presentations; asynchronous mode
+counts changed targets consumed by the worker. Identical targets do not advance
+the image count. At a limit, the asynchronous worker schedules a native cleanup
+without waiting for another presentation or for all pending pixels to settle.
+Mode output includes the policy, peak/limit drive cycles, and changed-image age.
+These counters estimate accumulated activity and do not measure ghosting.
+These runtime settings apply only to pulse mode and are listed by
+`display mode <target>`. `pulse-scan=sync` completes a presentation's pending
+cycles before returning. `pulse-scan=async` runs one cycle per scan in a
+persistent worker and accepts new targets while earlier pixels settle.
+`pulse-period=<10..1000>` requests the minimum scan interval in milliseconds;
+actual timing and submitted/coalesced image counts appear in the mode output.
+`pulse-power=<cycle,hold>` selects supply cycling or retention during settling,
+`pulse-ramp=<normal,fast>` selects booster duration, and
+`pulse-spi-khz=<100..20000>` overrides the SPI clock only for pulse operation.
+Elecrow 5.79-inch defaults are asynchronous, 10 ms requested interval, retained supplies, fast
+booster ramp, 20000 kHz pulse SPI, 6 drive cycles, 8 scan frames, FR code 4,
+and adaptive cleanup with a baseline of 64. The default refresh policy remains auto. Requested
+scan cadence is not a guarantee of achieved cadence or optical settling.
+Waveshare 4.2-inch defaults are asynchronous, 100 ms requested interval,
+supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
+8 scan frames, FR code 4, and adaptive cleanup with baseline 64. Native and
+pulse timing logs support comparison on that panel.
+The Elecrow green-sticker profile uses its own OLD/NEW RAM and programmable
+waveform registers. It uploads both full RAM masks; neutral waveform entries
+leave unbudgeted pixels undriven. Its defaults are asynchronous, 10 ms requested
+interval, supply cycling, fast ramp, 20000 kHz pulse SPI, 8 drive cycles,
+8 scan frames, raw PLL code 12, and fixed cleanup every 8 changed images.
+The Elecrow 4.2-inch board starts this revision in pulse mode. For this profile,
+`waveform-fr` selects a raw PLL code; internal scan frequency is separate from
+image update rate.
+The mode requires physical panel calibration; other EPD
+profiles reject it until they have a matching waveform adapter. See the
+[SolarWriter display controls](boards.md#solarwriter) and
+[Waveshare 4G E-paper](boards.md#waveshare-4g-e-paper) for behavior and recovery.
 
 Packet radio devices are datagram endpoints registered by expansion drivers, not
 byte-stream ports. The common radio layer preserves packet metadata such as RSSI

@@ -463,6 +463,40 @@ kind = "gpio_line"
 hint = "gpio|controller:line"
 role = "power"
 
+[drivers.pca9685]
+summary = "NXP PCA9685 16-channel PWM controller"
+package = "pca9685"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2c"]
+default_name = "servos0"
+
+[[drivers.pca9685.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+
+[[drivers.pca9685.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x40"
+required = true
+allowed = [0x40, 0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50, 0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x5b, 0x5c, 0x5d, 0x5e, 0x5f, 0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76, 0x77]
+
+[[drivers.pca9685.bindings]]
+key = "oe"
+kind = "gpio_line"
+hint = "gpio|controller:line"
+role = "oe"
+
+[[drivers.pca9685.bindings]]
+key = "osc_hz"
+kind = "parameter"
+hint = "25000000"
+role = "osc_hz"
+min = 20000000
+max = 30000000
+
 [drivers.bq25896]
 summary = "TI BQ25896 battery charger"
 package = "bq25896"
@@ -619,6 +653,14 @@ hint = "0..4"
 role = "panel"
 min = 0
 max = 4
+
+[[drivers.ssd1683.bindings]]
+key = "startup-pulse"
+kind = "parameter"
+hint = "0|1"
+role = "startup-pulse"
+min = 0
+max = 1
 
 [drivers.ssd1677]
 summary = "SSD1677 800x480 e-paper"
@@ -1397,6 +1439,46 @@ kind = "gpio"
 hint = "gpio"
 required = true
 
+[drivers.inmp441]
+summary = "INMP441 microphone with optional shared I2S playback"
+package = "expansion_inmp441"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2s"]
+board_capabilities = ["audio_input"]
+board_driver = "audio_expansion"
+default_name = "mic0"
+
+[[drivers.inmp441.bindings]]
+key = "i2s"
+kind = "i2s_port"
+hint = "i2s0|i2s1"
+required = true
+[[drivers.inmp441.bindings]]
+key = "bck"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.inmp441.bindings]]
+key = "ws"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.inmp441.bindings]]
+key = "din"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.inmp441.bindings]]
+key = "dout"
+kind = "gpio"
+hint = "gpio"
+[[drivers.inmp441.bindings]]
+key = "slot"
+kind = "parameter"
+hint = "0|1"
+min = 0
+max = 1
+
 [drivers.es7210]
 summary = "ES7210 I2S microphone array"
 package = "expansion_es7210"
@@ -1889,6 +1971,51 @@ kind = "i2c_address"
 hint = "0x36"
 required = true
 allowed = [0x36]
+
+[drivers.lc709203f]
+summary = "LC709203F CRC-checked Li-ion fuel gauge"
+package = "lc709203f"
+targets = ["esp32", "esp32s3"]
+capabilities = ["i2c"]
+board_capabilities = ["battery"]
+board_driver = "battery_expansion"
+default_name = "battery0"
+
+[[drivers.lc709203f.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+[[drivers.lc709203f.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x0b"
+allowed = [0x0b]
+required = true
+[[drivers.lc709203f.bindings]]
+key = "capacity"
+kind = "parameter"
+hint = "1..100000mAh"
+min = 1
+max = 100000
+[[drivers.lc709203f.bindings]]
+key = "profile"
+kind = "parameter"
+hint = "0|1"
+min = 0
+max = 1
+[[drivers.lc709203f.bindings]]
+key = "temp"
+kind = "parameter"
+hint = "-200..600decic"
+min = -200
+max = 600
+[[drivers.lc709203f.bindings]]
+key = "apa"
+kind = "parameter"
+hint = "1..255"
+min = 1
+max = 255
 
 [drivers.cw2017]
 summary = "CW2017 fuel gauge"

@@ -164,8 +164,17 @@ int main(void)
     assert(solar_os_stream_get_info("audio0.playback", &info) == ESP_OK);
     assert(info.written_units == 8U);
     assert(strcmp(info.owner, "synth") == 0);
+    assert(solar_os_stream_register(&scalar) == ESP_OK);
+    const char *related[] = {"sensor0", "audio0.playback"};
+    assert(solar_os_stream_unregister_many(related, 2U) == ESP_ERR_INVALID_STATE);
+    assert(solar_os_stream_get_info("sensor0", &info) == ESP_OK);
+    const char *missing[] = {"sensor0", "missing"};
+    assert(solar_os_stream_unregister_many(missing, 2U) == ESP_ERR_NOT_FOUND);
+    assert(solar_os_stream_get_info("sensor0", &info) == ESP_OK);
     solar_os_stream_close(&first);
-    assert(solar_os_stream_unregister("audio0.playback") == ESP_OK);
+    assert(solar_os_stream_unregister_many(related, 2U) == ESP_OK);
+    assert(solar_os_stream_get_info("sensor0", &info) == ESP_ERR_NOT_FOUND);
+    assert(solar_os_stream_get_info("audio0.playback", &info) == ESP_ERR_NOT_FOUND);
 
     puts("stream registry tests: ok");
     return 0;

@@ -9,9 +9,20 @@ packages_any = ["service_resources"]
 +++
 # Named runtime buses
 
-Named buses let scripts and expansion drivers share one description of a
-physical I2C, SPI, UART, MIDI, OneWire, or PS/2 connection. The registry records pins,
-readiness, sharing policy, and active leases.
+A named bus describes a hardware connection: I2C, SPI, UART, MIDI, 1-Wire,
+or PS/2. Scripts and attached devices refer to its name instead of repeating
+its wiring. SolarOS tracks which devices use it.
+
+## Inspect from the shell
+
+```text
+expansion bus list
+i2c status i2c0
+i2c scan i2c0
+```
+
+Use the names shown on your device. The `io` app can create and manage buses;
+[Expansion reference](expansion.reference.md) lists the wiring arguments.
 
 ## Inspect before creating
 
@@ -34,13 +45,12 @@ i2c speed i2c0 400000
 i2c status i2c0
 ```
 
-The change is serialized with transfers and applies to subsequent transactions,
-including when attached devices retain shared leases. The `io` app exposes the
-same operation as `Set I2C speed` on a selected I2C bus.
+The new speed applies to subsequent transfers, including those from attached
+devices. In `io`, select the bus and choose `Set I2C speed`.
 
 ## Transfer through the registry
 
-Use the family matching the descriptor: `i2c_scan`, `spi_xfer`, `uart_read`, or
+Use the API for the bus type: `i2c_scan`, `spi_xfer`, `uart_read`, or
 `onewire_scan`. Inspect the result and release any lease even when a transfer
 fails.
 

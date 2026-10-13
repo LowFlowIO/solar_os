@@ -44,11 +44,88 @@ class FlavorPackagesTest(unittest.TestCase):
         for flavor in built_in_flavors:
             _, _, groups, packages = self.resolve(flavor)
             expected = flavor == "full"
-            self.assertEqual(groups["gameboy"], expected, flavor)
             self.assertEqual(packages["app_invaders"], expected,
                              flavor)
-            self.assertEqual(packages["app_gameboy"], expected,
-                             flavor)
+            self.assertNotIn("gameboy", groups, flavor)
+            self.assertNotIn("app_gameboy", packages, flavor)
+
+    def test_servo_is_optional_and_native_backend_requires_pwm_gpio(self):
+        _, _, core_groups, core_packages = self.resolve("core")
+        self.assertFalse(core_groups["servo"])
+        self.assertFalse(core_packages["service_servo"])
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["servo"])
+        self.assertTrue(packages["service_servo"])
+        self.assertTrue(packages["service_resources"])
+        for capabilities, enabled in (({"pwm", "gpio"}, True),
+                                      ({"gpio"}, False), ({"pwm"}, False)):
+            with self.subTest(capabilities=capabilities):
+                _, pruned = generate_flavor_config.apply_board_capability_pruning(
+                    self.catalog, groups, packages, capabilities
+                )
+                self.assertTrue(pruned["service_servo"])
+                self.assertTrue(pruned["service_pwm"])
+                self.assertEqual(pruned["driver_pwm_native"], enabled)
+
+    def test_pca9685_is_optional_and_uses_i2c_without_native_pwm(self):
+        _, _, core_groups, core_packages = self.resolve("core")
+        self.assertFalse(core_groups["pca9685"])
+        self.assertFalse(core_packages["pca9685"])
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["pca9685"])
+        for target in ("esp32", "esp32s3"):
+            target_packages = generate_flavor_config.apply_target_pruning(self.catalog, packages, target)
+            _, supported = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, target_packages, {"i2c", "expansion_i2c"})
+            self.assertTrue(supported["pca9685"])
+            self.assertTrue(supported["service_pwm"])
+            self.assertFalse(supported["driver_pwm_native"])
+            _, unsupported = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, target_packages, {"i2c"})
+            self.assertFalse(unsupported["pca9685"])
+
+    def test_backlight_drivers_link_pwm_without_native_pwm_capability(self):
+        board = tomllib.loads(
+            (REPOSITORY / "boards" / "manifests" /
+             "waveshare_esp32_s3_epaper_3_97.toml").read_text()
+        )
+        _, _, groups, packages = self.resolve("full")
+        cases = (
+            (board["target"]["mcu"], set(board["build"]["capabilities"]),
+             ("expansion_lilygo_pager_keyboard", "driver_display_ili9341",
+              "driver_display_st7796", "driver_display_st7789")),
+            ("esp32", {"gfx", "spi", "expansion_gpio"},
+             ("driver_display_ili9341", "driver_display_st7796")),
+        )
+        for target, capabilities, consumers in cases:
+            with self.subTest(target=target, capabilities=capabilities):
+                target_packages = generate_flavor_config.apply_target_pruning(
+                    self.catalog, packages, target
+                )
+                pruned_groups, pruned = generate_flavor_config.apply_board_capability_pruning(
+                    self.catalog, groups, target_packages, capabilities
+                )
+                self.assertFalse(pruned["driver_pwm_native"])
+                for consumer in consumers:
+                    self.assertTrue(pruned[consumer], consumer)
+                    selected = generate_flavor_config.enable_required_packages(
+                        self.catalog, dict.fromkeys(packages, False), {consumer}
+                    )
+                    _, selected = generate_flavor_config.apply_board_capability_pruning(
+                        self.catalog, groups, selected, capabilities
+                    )
+                    self.assertIn("drivers/pwm_port.c", generate_flavor_config.collect_sources(
+                        self.catalog, groups, selected
+                    ), consumer)
+                sources = generate_flavor_config.collect_sources(
+                    self.catalog, pruned_groups, pruned
+                )
+                self.assertIn("drivers/pwm_port.c", sources)
+                self.assertIn("drivers/gpio_port.c", sources)
+                self.assertNotIn("services/solar_os_pwm_native.c", sources)
+                self.assertIn("esp_driver_ledc", generate_flavor_config.collect_requires(
+                    self.catalog, pruned_groups, pruned
+                ))
 
     def test_odroid_runtime_i2c_survives_board_and_target_pruning(self):
         board = tomllib.loads(
@@ -489,10 +566,6 @@ class FlavorPackagesTest(unittest.TestCase):
             ("job_meshcore_ble",),
         )
         self.assertEqual(
-            self.catalog.group_defs["gameboy"].members,
-            ("app_gameboy",),
-        )
-        self.assertEqual(
             self.catalog.group_defs["pcm1808"].members,
             ("expansion_pcm1808",),
         )
@@ -593,7 +666,7 @@ class FlavorPackagesTest(unittest.TestCase):
         )
         self.assertEqual(
             self.catalog.package_defs["expansion_ssd1683"].depends,
-            ("service_expansion", "service_spi"),
+            ("service_expansion", "service_spi", "driver_epd_pixel_budget", "driver_epd_scan_worker"),
         )
         self.assertEqual(
             self.catalog.package_defs["expansion_ssd1683"].capabilities,
@@ -677,10 +750,6 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertEqual(
             self.catalog.package_defs["job_espnow_link"].capabilities,
             ("wifi",),
-        )
-        self.assertEqual(
-            self.catalog.package_defs["app_gameboy"].depends,
-            (),
         )
 
     def test_writerdeck_selects_writing_media_scripting_and_file_transfer(self):
@@ -1005,9 +1074,7 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertFalse(rover_packages["job_sump"])
         self.assertFalse(rover_packages["app_agent"])
         self.assertFalse(rover_packages["app_logic"])
-        self.assertFalse(rover_groups["gameboy"])
         self.assertFalse(rover_packages["app_invaders"])
-        self.assertFalse(rover_packages["app_gameboy"])
         self.assertFalse(rover_packages["app_python"])
         self.assertFalse(rover_packages["app_lua"])
 
@@ -1035,7 +1102,7 @@ class FlavorPackagesTest(unittest.TestCase):
         for package in ("app_reader", "app_writer", "app_files", "app_notes"):
             self.assertTrue(full_packages[package], package)
 
-    def test_gameboy_requires_a_streaming_display(self):
+    def test_gameboy_is_external_to_all_firmware_packages(self):
         _, _, groups, packages = self.resolve("full")
         _, pruned = generate_flavor_config.apply_board_capability_pruning(
             self.catalog,
@@ -1044,7 +1111,7 @@ class FlavorPackagesTest(unittest.TestCase):
             {"gfx", "psram", "sd"},
         )
         self.assertTrue(pruned["app_invaders"])
-        self.assertFalse(pruned["app_gameboy"])
+        self.assertNotIn("app_gameboy", pruned)
 
         _, capable = generate_flavor_config.apply_board_capability_pruning(
             self.catalog,
@@ -1052,7 +1119,9 @@ class FlavorPackagesTest(unittest.TestCase):
             packages,
             {"gfx", "psram", "sd", "streaming_display"},
         )
-        self.assertTrue(capable["app_gameboy"])
+        self.assertNotIn("app_gameboy", capable)
+        sources = generate_flavor_config.collect_sources(self.catalog, groups, capable)
+        self.assertFalse(any("gameboy" in source for source in sources))
 
 if __name__ == "__main__":
     unittest.main()

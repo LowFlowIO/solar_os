@@ -331,6 +331,8 @@ size_t solar_os_input_get_pressed(solar_os_input_key_event_t *keys, size_t key_c
 
 /* Exclusive source capture before desktop shortcuts/character decoding. */
 esp_err_t solar_os_input_capture_keyboard(const char *name, const void *owner);
+/* Capture guest keys while leaving desktop session shortcuts to SolarOS. */
+esp_err_t solar_os_input_capture_keyboard_with_shortcuts(const char *name, const void *owner);
 void solar_os_input_release_keyboard(const void *owner);
 bool solar_os_input_capture_key_event(const solar_os_input_key_event_t *event);
 /* Main-loop wake/idle accounting for events queued directly by drivers. */

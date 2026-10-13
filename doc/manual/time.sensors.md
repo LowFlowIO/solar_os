@@ -14,7 +14,7 @@ battery values exist only when the board and firmware provide their services.
 `solaros.rtc` exposes optional alarm/timer hardware; `solaros.schedule` provides
 portable alarms and recurring actions whether or not that hardware exists.
 
-## Check time integrity
+## Use the clock
 
 ```python
 import solaros

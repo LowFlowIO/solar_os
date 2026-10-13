@@ -2,6 +2,55 @@
 
 ## 4.x
 
+- **4.16.9** — 2026-10-13 — Added the SolarWriter board profile for the
+  Elecrow 5.79-inch CrowPanel with microphone, shared DAC/amplifier output,
+  and battery gauge. Added reusable INMP441 expansion audio with 16 kHz mono
+  capture and optional shared-clock stereo playback, and the LC709203F fuel
+  gauge with CRC-checked voltage/state of charge and configurable battery
+  capacity. Corrected shared I2S playback clock ownership.
+  Added monochrome `refresh=pulse` for Elecrow 5.79-inch dual-SSD1683,
+  Waveshare 4.2-inch V2/rev2.2, and Elecrow 4.2-inch green-sticker panels.
+  Pulse mode provides per-pixel drive budgets, asynchronous updates while
+  pixels settle, manual waveform/SPI/power tuning, and fixed or adaptive
+  native cleanup. Failed pulse scans recover through native refresh.
+  The green-sticker board starts in pulse mode with its calibrated preset
+  and fixed cleanup every eight changed targets. Corrected its active-low
+  BUSY handling and preserved CrowPanel display control pins during automatic
+  light sleep.
+- **4.16.8** — 2026-10-12 — Apple II Plus now bundles its system and Disk II
+  ROMs. `apple2` starts BASIC without external assets; `apple2 file.nib`
+  boots a disk, and Files opens NIB images with the installed module.
+  Added the resumable Tiny386 module with embedded SeaBIOS, bootable PC
+  floppy and IDE hard-disk images, with direct storage access and synced writes.
+  Raw FAT `.img` files can be mounted for host file edits, and `disk create`
+  makes new MBR/FAT images. Native apps can query foreground
+  display dimensions; Tiny386 text follows the selected display resolution.
+  Simplified the manual around usage and added an architecture overview.
+- **4.16.7** — 2026-10-11 — Added resumable external foreground apps on
+  ESP32-S3 devices with PSRAM. Installed apps appear in the app registry and
+  launch by name, through `session create`, or directly with `load`.
+  Apps declare their worker and memory requirements before launch; switching
+  sessions retains their state while releasing display and audio ownership.
+  Added the Apple II Plus module with text and graphics, two NIB disk drives,
+  keyboard, paddles, speaker, and explicit disk saves. Game Boy is now an
+  external app with cartridge saves, held-button input, four-shade video, and
+  optional stereo audio. Files opens `.gb` ROMs through the installed module.
+  ROM and disk images are supplied separately. The module catalog contains
+  apps, jobs, and drivers; both emulators use the common foreground app
+  lifecycle. Foreground modules gain asynchronous indexed video, joined audio
+  callbacks, and input release/reset events. Corrected PWM dependencies for
+  display backlight drivers in focused builds.
+- **4.16.6** — 2026-10-11 — Added calibrated positional servo control
+  through the `servo` command and `solaros.servo` in Python and Lua, with
+  explicit angle/pulse limits, optional inversion, and named outputs.
+  Opening reserves an output without pulses; disable retains the reservation,
+  while close releases it. Scripts close their servos on interpreter exit.
+  PWM gains provider discovery, `provider:number` output names, and pulse-width
+  commands while retaining native GPIO shorthand. Added the reusable PCA9685
+  I2C expansion driver with 16 PWM channels, usable for general PWM or servos.
+  Outputs enforce their controller's shared-frequency constraints; all PCA9685
+  channels share one frequency. Servo support and the PCA9685 driver are
+  included in the full flavor where supported.
 - **4.16.5** — 2026-10-10 — Added Elecrow ThinkNode M9 support with a
   320x240 ST7789 display, backlit STC8H QWERTY keypad, microSD, PCF8563 RTC,
   NMEA GNSS, battery ADC, PWM buzzer, USB/UART console, Wi-Fi, and BLE.

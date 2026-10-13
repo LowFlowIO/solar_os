@@ -50,6 +50,9 @@ const solar_os_app_registry_entry_t *solar_os_app_registry_get(size_t index);
 const solar_os_app_registry_entry_t *solar_os_app_registry_find(const char *name);
 const solar_os_app_registry_entry_t *solar_os_app_registry_find_by_app(const solar_os_app_t *app);
 const solar_os_app_registry_entry_t *solar_os_app_registry_find_opener(const char *path);
+// Installed command modules and foreground apps from the shared discovery cache.
+void solar_os_app_registry_foreach_module(bool (*visit)(const char *id, void *user),
+                                          void *user);
 size_t solar_os_app_discovery_count(bool include_playground);
 bool solar_os_app_discovery_get(size_t index,
                                 bool include_playground,

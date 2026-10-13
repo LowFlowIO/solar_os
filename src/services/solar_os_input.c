@@ -128,12 +128,15 @@ static size_t input_capture_head;
 static size_t input_capture_count;
 static bool input_capture_reset;
 static bool input_capture_activity;
+static bool input_capture_session_shortcuts;
+static uint8_t input_capture_shortcut_keys;
 
 static void input_capture_reset_locked(solar_os_input_source_t source)
 {
     if (input_capture_owner != NULL && input_capture_source == source) {
         input_capture_head = input_capture_count = 0;
         input_capture_reset = true;
+        input_capture_shortcut_keys = input_capture_session_shortcuts ? 0x1fU : 0U;
     }
 }
 
@@ -143,6 +146,33 @@ static bool input_capture_push_locked(const solar_os_input_key_event_t *event)
         input_capture_source == SOLAR_OS_INPUT_SOURCE_INVALID ||
         event->source != input_capture_source) {
         return false;
+    }
+    if (input_capture_session_shortcuts) {
+        /* The desktop needs modifier transitions to close its focus overlay.
+         * It forwards these events to apps that accept structured keys. */
+        if (event->key == 0U) return false;
+        uint8_t navigation = 0;
+        switch (event->key) {
+        case '\t': navigation = 1U; break;
+        case SOLAR_OS_KEY_LEFT: case SOLAR_OS_KEY_CTRL_LEFT: navigation = 2U; break;
+        case SOLAR_OS_KEY_RIGHT: case SOLAR_OS_KEY_CTRL_RIGHT: navigation = 4U; break;
+        case SOLAR_OS_KEY_UP: case SOLAR_OS_KEY_CTRL_UP: navigation = 8U; break;
+        case SOLAR_OS_KEY_DOWN: case SOLAR_OS_KEY_CTRL_DOWN: navigation = 16U; break;
+        default: break;
+        }
+        bool alt = (event->modifiers & SOLAR_OS_INPUT_MOD_ALT) != 0;
+        bool ctrl = (event->modifiers & SOLAR_OS_INPUT_MOD_CTRL) != 0;
+        bool shortcut = navigation && alt &&
+            (navigation < 8U || ctrl);
+        if (navigation && !alt && event->action == SOLAR_OS_INPUT_KEY_PRESS)
+            input_capture_shortcut_keys &= (uint8_t)~navigation;
+        if (shortcut || (navigation && (input_capture_shortcut_keys & navigation))) {
+            /* Both source queuing and desktop dispatch check capture. Keep
+             * release passthrough until the next ordinary press or release of
+             * capture, even when Alt itself was released first. */
+            input_capture_shortcut_keys |= navigation;
+            return false;
+        }
     }
     if (input_capture_count == INPUT_CAPTURE_QUEUE_MAX) {
         input_capture_reset_locked(event->source);
@@ -1815,7 +1845,7 @@ bool solar_os_input_pointer_filter_event(
     return filter != NULL && filter(event, context);
 }
 
-esp_err_t solar_os_input_capture_keyboard(const char *name, const void *owner)
+static esp_err_t input_capture_keyboard(const char *name, const void *owner, bool shortcuts)
 {
     if (name == NULL || owner == NULL) {
         return ESP_ERR_INVALID_ARG;
@@ -1831,13 +1861,22 @@ esp_err_t solar_os_input_capture_keyboard(const char *name, const void *owner)
                 strcmp(input_sources[i].name, name) == 0) {
                 input_capture_owner = owner;
                 input_capture_source = (solar_os_input_source_t)(i + 1U);
+                input_capture_session_shortcuts = shortcuts;
+                /* Releases from the shortcut that brought this session into
+                 * focus must still reach the desktop, even if Alt went up
+                 * before capture. Ordinary presses establish guest ownership. */
+                input_capture_shortcut_keys = shortcuts ? 0x1fU : 0U;
                 /* Discard selected-source input queued before the claim. */
                 const size_t queued = input_queue_count;
                 for (size_t n = 0; n < queued; n++) {
                     const solar_os_input_key_event_t pending = input_queue[input_queue_head];
                     input_queue_head = (input_queue_head + 1U) % INPUT_QUEUE_MAX;
                     input_queue_count--;
-                    if (pending.source != input_capture_source) {
+                    bool desktop_release = shortcuts && pending.action == SOLAR_OS_INPUT_KEY_RELEASE &&
+                        (pending.key == 0U || pending.key == '\t' ||
+                         (pending.key >= SOLAR_OS_KEY_UP && pending.key <= SOLAR_OS_KEY_RIGHT) ||
+                         (pending.key >= SOLAR_OS_KEY_CTRL_UP && pending.key <= SOLAR_OS_KEY_CTRL_RIGHT));
+                    if (pending.source != input_capture_source || desktop_release) {
                         const size_t tail = (input_queue_head + input_queue_count) % INPUT_QUEUE_MAX;
                         input_queue[tail] = pending;
                         input_queue_count++;
@@ -1854,6 +1893,16 @@ esp_err_t solar_os_input_capture_keyboard(const char *name, const void *owner)
     return err;
 }
 
+esp_err_t solar_os_input_capture_keyboard(const char *name, const void *owner)
+{
+    return input_capture_keyboard(name, owner, false);
+}
+
+esp_err_t solar_os_input_capture_keyboard_with_shortcuts(const char *name, const void *owner)
+{
+    return input_capture_keyboard(name, owner, true);
+}
+
 void solar_os_input_release_keyboard(const void *owner)
 {
     portENTER_CRITICAL(&input_lock);
@@ -1862,6 +1911,8 @@ void solar_os_input_release_keyboard(const void *owner)
         input_capture_source = SOLAR_OS_INPUT_SOURCE_INVALID;
         input_capture_head = input_capture_count = 0;
         input_capture_reset = false;
+        input_capture_session_shortcuts = false;
+        input_capture_shortcut_keys = 0;
     }
     portEXIT_CRITICAL(&input_lock);
 }

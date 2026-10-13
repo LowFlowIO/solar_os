@@ -15,7 +15,7 @@ runtimes. It exposes only tools allowed by the current firmware and tool policy.
 
 ## Configure it
 
-The Responses API is recommended for OpenAI reasoning models:
+Set your provider endpoint, model name, and API key. For a Responses endpoint:
 
 ```text
 agent config endpoint https://api.openai.com/v1/responses
@@ -80,12 +80,9 @@ Which background jobs are running, and which stopped jobs could start now?
 Why is email-sync waiting?
 ```
 
-The answer is based on the same worker-stack admission policy used by SolarOS.
-It includes current internal and PSRAM headroom, each job's declared stack
-placement, generation, current resource claims, start disposition, and last
-error. A `ready` disposition covers declared worker-stack admission only; a
-job may still need dynamic buffers or an argument-selected resource when it
-actually starts.
+The answer reports memory, resource owners, and job errors. A job shown as
+`ready` has enough declared worker-stack memory at that moment; it may still
+need more buffers or an available resource when it starts.
 
 ## Troubleshooting
 

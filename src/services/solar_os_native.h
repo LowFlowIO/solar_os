@@ -21,7 +21,16 @@ typedef esp_err_t (*solar_os_native_write_fn)(const char *text,
 typedef struct {
     solar_os_native_write_fn write;
     void *write_user;
+    const void *(*get_service)(const char *name, uint32_t abi,
+                               uint32_t minimum_size, void *user);
+    void *service_user;
+    /* Runs on the module's task before removing its scope or unloading ELF. */
+    void (*cleanup)(void *user);
+    const solar_os_native_app_manifest_v2_t *expected_manifest;
 } solar_os_native_run_options_t;
+
+/* Only the calling execution task can obtain its host-owned service state. */
+void *solar_os_native_run_service_user(void);
 
 typedef struct {
     solar_os_native_elf_info_t elf;

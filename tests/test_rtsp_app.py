@@ -34,7 +34,7 @@ class RtspAppTest(unittest.TestCase):
                 "-D_POSIX_C_SOURCE=200809L",
                 "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                 f"-I{tmp}", f"-I{ROOT / 'tests/host'}", f"-I{ROOT / 'src'}",
-                f"-I{ROOT / 'src/services'}",
+                f"-I{ROOT / 'src/services'}", "-idirafter", str(ROOT / "include"),
                 str(ROOT / "tests/host/rtsp_app_ui_test.c"),
                 str(ROOT / "src/services/solar_os_rtsp_receiver.c"),
                 str(ROOT / "src/services/solar_os_rtsp.c"),

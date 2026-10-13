@@ -9,10 +9,9 @@ packages_any = ["service_i2c", "service_spi", "service_uart", "service_onewire"]
 +++
 # Compatibility I/O modules
 
-The compatibility modules expose the board's traditional single I2C, SPI,
-UART, and OneWire services. They are useful for simple scripts and existing
-code. New applications that need multiple or dynamically attached buses should
-prefer `solaros.buses`.
+Use `solaros.i2c`, `solaros.spi`, `solaros.uart`, and `solaros.onewire` for
+simple scripts on the board's default connections. Use [named buses](buses.md)
+with `solaros.buses` when you need multiple connections or runtime wiring.
 
 The default I2C bus uses the board's primary controller and SDA/SCL pins.
 Starting another named I2C bus does not change this default. Board-defined

@@ -29,4 +29,7 @@ typedef struct {
     uint32_t abi_version, struct_size;
     void *(*alloc)(size_t bytes);
     void (*free)(void *buffer);
+    /* Optional hot state/cache allocation in internal memory. Returns NULL
+     * when the reserve cannot be preserved. free accepts either heap. */
+    void *(*alloc_internal)(size_t bytes);
 } solar_os_native_memory_api_v1_t;

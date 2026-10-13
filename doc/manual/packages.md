@@ -2,160 +2,62 @@
 id = "packages"
 title = "Firmware packages and flavors"
 section = "build"
-summary = "Understand package ownership, groups, flavors, and custom builds"
+summary = "Choose firmware features and create custom builds"
 aliases = ["flavors"]
 keywords = "packages flavors groups capabilities build custom firmware pkg"
 packages_any = []
 +++
 # Firmware Packages and Flavors
 
-SolarOS package selection is declared in `packages/solar_os_packages.toml`.
-Flavor files normally select granular groups. The generator translates those
-groups into internal packages, resolves package dependencies, and removes
-packages unsupported by the target board. A maintainer can use individual
-package overrides for unusual build work, but packages are not part of the
-normal flavor-configurator workflow.
+A **flavor** selects which features are compiled into a firmware image.
+A **group** is a convenient selection, such as `scripting` or `vision`.
+A **package** supplies a particular app, job, service, or driver.
+Required dependencies are included automatically; unsupported packages are
+removed for the selected board.
 
-`service.ppp` owns PPP network negotiation, authentication, DNS, routing, and
-ESP-NETIF state independently of any modem. A consumer supplies byte-stream
-write access and either a read callback or received byte chunks. Optional link
-start and stop hooks let a modem dial and hang up around the same generic PPP
-session. `expansion.sim7670` composes this service with its UART and AT-command
-adapter; other serial, USB, or radio transports can reuse it without registering
-a cellular modem.
+## Inspect the running image
 
-`service.streams` owns the dynamic typed endpoint registry. Sensor, port, and
-audio and camera providers register their endpoints there at runtime. Video
-sources expose JPEG frame acquire/release operations, not byte-stream reads;
-listing endpoints does not open them or allocate capture buffers. `service.audio`
-also owns audio-device discovery; devices refer to their capture and playback
-stream IDs instead of exposing a board-specific global data path. It has no
-board-audio capability requirement. Concrete audio driver packages publish
-devices and endpoints when attached, including immutable board-default
-attachments for built-in hardware. The independent `service.audio-codecs`
-package owns incremental compressed-audio decoding, so file players and
-network sources can share the same decoder without owning an audio device.
+```text
+pkg system
+board
+apps
+jobs
+```
 
-`service.camera` owns camera configuration, exclusive owner tokens, subordinate
-frame leases, capture status, and the `camera` shell command.
-`driver.camera-esp32` is the ESP32-S3
-DVP/SCCB expansion adapter backed by the pinned Espressif component. Explicit
-GPIO bindings and optional named I2C control buses make it reusable on
-PSRAM-equipped ESP32-S3 boards, without a
-fitted-camera capability requirement. GOOUUU declares a fixed `camera0` board
-instance; runtime instances use the attached device name as their video stream
-ID. Detach fails while the camera or its stream is leased. Camera consumers
-must release each borrowed frame before reconfiguration or another capture;
-the initial backend uses one JPEG framebuffer in PSRAM and supports QVGA and
-VGA stills only.
+`pkg system` shows compiled packages. `pkg installed` lists separately installed
+native modules. A compiled driver is available to use, but does not mean its
+hardware is attached; check `expansion devices`.
 
-The `vision` group selects `service.vision` for QR decoding and
-`service.imlib` for image statistics, segmentation, filters, morphology,
-differences, and blobs on PSRAM-equipped boards. Both use the native image
-service and expose Python and Lua bindings under `solaros.vision`.
+## Choose features
 
-The `inference` group selects `service.inference` on ESP32-S3 with PSRAM.
-It owns shared resident ESP-DL models, named tensors, checked model bundles,
-image preparation, and built-in result adapters. The `zoo` group adds the
-networked model-bundle catalog and installer. The `pipelines` group adds
-OS-owned QR or model processing jobs through `service.pipeline`; select
-`vision` or `inference` for the processor being used. RTSP input also needs
-`service.rtsp-client`. The full flavor enables all four groups where supported.
-Installing Python or Lua alone does not enable these optional services.
-Neither a camera nor a display is required to process stored images.
+Use the [SolarOS Builder](#solaros-builder) to select a board and flavor, or
+create a custom flavor below. The `full` flavor includes these optional groups
+where the board supports them:
 
-`service.http-server` owns the shared inbound HTTP listener, route registry,
-and access-code authentication. Long-lived handlers use asynchronous routes so
-the server task remains available to other endpoints. An asynchronous consumer
-must complete every accepted request exactly once; its route stays referenced
-until completion so package or job teardown cannot invalidate live state.
+| Group | Use | Guide |
+| --- | --- | --- |
+| `vision` | Decode QR codes and process images. | [Computer vision](vision.md) |
+| `inference` | Run resident models on ESP32-S3 with PSRAM. | [Model inference](inference.md) |
+| `zoo` | Browse and install model bundles. | [Zoo](apps.md#zoo) |
+| `pipelines` | Process images or video in the background. Also select the desired processor. | [Image pipelines](pipelines.md) |
+| `servo` | Control calibrated positional servos. | [Servo outputs](servo.md) |
+| `pwm` | Use native PWM outputs where supported. | [GPIO and PWM](gpio.analog.md) |
+| `pca9685` | Add 16 PWM outputs over expansion I2C. | [PCA9685](servo.md#pca9685-expansion-controller) |
 
-`expansion.audio-pwm` depends on the generic audio and expansion services. On a
-board with expansion PWM it can therefore add a runtime playback device even
-when no built-in codec or DAC exists.
-`expansion.pcm5102` follows the same ownership model on boards with the
-`expansion_i2s` capability and provides both the PCM5102-specific and generic
-`i2s-output` playback drivers. `expansion.pcm1808` uses that model for a
-four-GPIO I2S capture device, while `expansion.es7210` adds I2C-controlled
-ES7210 stereo capture. The capability guarantees a spare I2S controller and
-runtime-safe GPIOs; individual driver binding validation enforces the required
-signal count. These packages are pruned from boards such as ODROID-GO that
-cannot expose an I2S controller for expansion use.
-`driver.audio-es8311` provides the `es8311-es7210` and `es8311-duplex` drivers
-only for ESP32-S3 targets with I2C and expansion I2S resources.
-`driver.audio-esp32-dac` provides `esp32-dac` only for classic ESP32 targets.
-Both use the generic audio backend; a board with built-in audio declares a
-fixed default attachment instead of compiling a separate board adapter.
-The `driver.display-st7305`, `driver.display-st7796`,
-`driver.display-st7789`, `driver.display-ili9341`, `driver.display-cvbs-pal`,
-`driver.display-vga32`, `expansion.ssd1677`, and `expansion.ssd1683` packages use
-the same model.
-Each package registers an expansion driver and a board with that integrated
-panel declares an immutable early `display0` attachment. SSD1683, ST7305,
-ST7796, and ILI9341 are available on both ESP32 and ESP32-S3; ST7789 is
-currently ESP32-S3-only. The I2S-based CVBS PAL and VGA32 implementations
-remain specific to classic ESP32. Generic services do not select these
-implementations with driver-specific preprocessor branches.
-`expansion.ssd1683` uses a named SPI bus and claimed CS, D/C, reset, BUSY, and
-optional power pins. Runtime attachments register an auxiliary display target;
-Elecrow declares the same driver as its fixed primary display. Automatic mode
-uses changed-frame partial windows when the panel profile supports them; the
-dual-controller 792x272 profile transfers both RAM halves with the panel's
-partial-update waveform.
-`expansion.ssd1677` follows the same resource model for 800x480 panels. Its
-automatic mode uses byte-aligned dirty windows and periodic full cleanup
-refreshes. It can control a GPIO power gate or the AXP2101 ALDO3 rail used by
-the Waveshare ESP32-S3-ePaper-3.97 fixed `display0`. PMIC-controlled panels use
-the attached `expansion.axp2101` service, which owns the I2C address and serializes
-rail control with battery and charger operations. The panel holds an exclusive
-ALDO3 lease and prevents PMIC detach until the panel is detached.
-`expansion.axp2101` verifies the PMIC identity, enables its battery ADC and fuel
-gauge, and publishes battery percentage, voltage, external-power, charging,
-and charger-control data through the common battery and charger services. The
-Waveshare board declares it as the fixed early `power0` attachment and exposes
-the charger as `charger0`.
-`expansion.qmi8658` configures the six-axis IMU for the Waveshare reference
-profile's 8 g accelerometer and 512 degrees-per-second gyroscope ranges at
-1 kHz, then publishes SI-unit acceleration and angular velocity through
-`imu0`. It polls the data-ready register, so the fixed board attachment does
-not claim either interrupt pin. It attaches after the early display setup and
-uses the board-device retry policy if the sensor is not ready at startup.
-`expansion.cardkb` polls the M5Stack Unit CardKB at its fixed I2C address and
-publishes its character taps and navigation keys through the shared input
-service used by shells and foreground apps.
-`expansion.inputronic-keyboard` polls the Soldered Inputronic KEYBOARD's
-TCA8418 8x10 matrix at `0x34` on a named I2C bus. It publishes physical
-press/release events, modifiers, and logical keys through the common input
-service, including key repeat. It uses the shared TCA8418 backend and input-source
-mapper. It needs no interrupt GPIO and is selectable
-as the `inputronic_keyboard` expansion hardware group on ESP32 and ESP32-S3.
-`expansion.tca8418` provides a generic reference mapping with configurable
-matrix geometry; `expansion.lilygo-pager-keyboard` provides the Pager's fixed
-4x10 wiring, symbol layer, and optional PWM backlight. Their expansion hardware
-groups are `tca8418` and `lilygo_pager_keyboard`. All three drivers share
-`service.tca8418` for controller transactions and `service.input-keymap` for
-source mapping, modifier/layer state, and validated mapping files.
-The `input_keymap` group can select the latter independently of any expansion
-controller; it requires no I2C or PWM capability. `input keymap` reports which
-sources register mapping support. See [source keymaps](input.keymap.md).
-`board.cl32-core` is required only by the CL-32 profile. Its fixed `core0`
-attachment polls the integrated ATmega808 keyboard FIFO and publishes
-press/release transitions through `keyboard0`. It also publishes the AVR's
-battery-voltage, USB-power, and charging measurements through `battery0`; it is
-not a selectable expansion hardware group.
-`expansion.gpio-keys`, `expansion.ps2-keyboard`, and `expansion.ps2-mouse`
-compose physical buttons, keyboards, and relative mice through the same device
-lifecycle. `expansion.analog-joystick` consumes two scalar streams and publishes
-normalized axes without synthesizing key events. Board-integrated devices use
-the same drivers as default board-selected attachments.
-`expansion.sdspi` adds removable SPI microSD storage to boards that do not have
-built-in SD hardware. It uses a named expansion SPI bus and mounts at
-`/sdcard` without changing the internal-flash root filesystem.
-`expansion.sdmmc` provides the native SD/MMC host on ESP32 and ESP32-S3. Boards
-with an integrated slot declare a fixed early `storage0` attachment; boards
-without one can attach the same driver at runtime. Classic ESP32 accepts only
-its native slot-1 pinout, while ESP32-S3 can route the signals through its GPIO
-matrix.
+Python or Lua alone does not enable optional media, vision, or inference
+services. Stored-image processing needs no camera or display. Audio can use
+an expansion output on a board without a built-in speaker.
+
+For external hardware, select its driver group and check the board's expansion
+capabilities and available pins. Built-in hardware uses fixed instances of the
+same drivers. See [Expansion](expansion.md) for attachment commands and
+[Boards](boards.md) for hardware limits.
+
+## Build reference
+
+Package definitions live in `packages/solar_os_packages.toml`; flavor files
+normally select groups. The following rules apply when maintaining these build
+files.
 
 ## Ownership Rules
 
@@ -194,7 +96,7 @@ matrix.
 
 Groups are the user-facing feature units shared by flavor TOML files and the
 configurator. They are deliberately granular: examples include `http_client`,
-`ftp`, `logging`, `gameboy`, `pcm1808`, and `st7305`. Categories such as
+`ftp`, `logging`, `invaders`, `pcm1808`, and `st7305`. Categories such as
 Networking, Maintenance, Games, and Expansion hardware only organize the
 configurator; categories cannot be selected and do not appear in a flavor.
 Dormant engineering packages such as USB HID are not exposed as groups.
@@ -217,12 +119,10 @@ shared storage browser are package dependencies, while mutable app and canvas
 state remain cold until the app starts. The four-shade canvas is converted into
 a cold-allocated monochrome XBM buffer for one opaque graphics blit per redraw.
 
-The separate `invaders` and `gameboy` groups select those games independently.
-Game Boy additionally requires PSRAM, SD storage, and the `streaming_display`
-board capability. Its
-fixed-frequency emulator submits compact INDEX2 frames to the shared bounded-
-cadence presenter. When `service.synth` is present, Game Boy also uses the
-MiniGB APU through the shared synth and audio services.
+The `invaders` group selects the built-in Invaders game. Game Boy and Apple II
+are installed as [external foreground apps](native-app.md) through the module
+catalog and require native-module support in the firmware. They do not add
+firmware flavor groups.
 
 The `writerdeck` flavor targets the Elecrow e-paper boards with editing,
 pagination, Files, Reader, Writer, Notes, View, Python, Playground, audio
@@ -266,7 +166,7 @@ not part of either embedded scripting runtime.
 streaming response events, cross-task cancellation, per-I/O timeouts, and an
 end-to-end deadline.
 Callers continue to own their worker task and response consumer; see
-[HTTP Client Service](../http_client.md) for the native API and lifecycle.
+[HTTP Client Service](https://github.com/nilseuropa/solar_os/blob/main/doc/http_client.md) for the native API and lifecycle.
 
 `service.webradio` owns the disk-backed user station catalog on the current
 storage root. `app.webradio`

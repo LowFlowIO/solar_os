@@ -2,7 +2,7 @@
 id = "agent.service"
 title = "Agent service and tool reference"
 section = "app"
-summary = "Provider contract, typed tools, policy, resource bounds, and roadmap"
+summary = "Configure providers, inspect tools, and understand request limits"
 aliases = ["agent.tools"]
 keywords = "agent service responses api tools policy memory bounds provider"
 packages_any = ["app_agent"]
@@ -13,9 +13,8 @@ packages_any = ["app_agent"]
 language models. `app.agent` is a resumable foreground chat frontend for
 display and port shells.
 
-The first provider supports both the OpenAI Responses API and compatible Chat
-Completions endpoints. Configure the complete endpoint URL rather than a
-provider base URL. Responses is recommended for OpenAI reasoning models:
+The agent supports Responses and compatible Chat Completions endpoints.
+Set the complete endpoint URL and a model supported by that provider:
 
 ```text
 agent config endpoint https://api.openai.com/v1/responses
@@ -66,19 +65,10 @@ on internal flash or `1` through `8` on SD; once full, the oldest slot is
 replaced atomically. Exiting and launching bare `agent` again
 still starts a new conversation; restoring an old one is always explicit.
 
-Each provider adapter declares its resume mode. Responses resumes from the
-saved provider response ID. Chat Completions rebuilds a bounded request from
-normalized local user and assistant messages. Restoring the visible transcript
-streams checked records from storage rather than placing the entire
-conversation in internal SRAM.
-
-Only completed turns are committed. Each conversation is an independently
-checksummed file replaced through temporary and backup names, so an interrupted
-write cannot damage other conversations. With internal flash selected, the
-store keeps at most three 10 KiB conversations; with SD selected, it keeps at
-most eight 48 KiB conversations. Oldest conversations are evicted
-deterministically. Provider, model, title, timestamps, messages, tool summaries,
-and continuation IDs are stored; the bearer key remains only in NVS.
+Responses resumes with the saved provider response ID. Chat Completions uses
+local message history. Only completed turns are saved. Each slot holds up to
+10 KiB on flash or 48 KiB on SD; a new conversation replaces the oldest slot
+when full. API keys stay in NVS and are not copied into conversation files.
 
 For a single request, use:
 
@@ -90,8 +80,7 @@ The one-request frontend stays open after completion so the response remains
 readable. It is not persisted. Use `Esc` or the app-exit key to return to the
 shell.
 
-On full builds, the same 16 KiB foreground worker can run a Python or Lua
-source string or file through the reusable script-runner contract:
+With Python or Lua included, run a source string or file:
 
 ```text
 agent script python -c "print(6 * 7)"
@@ -292,12 +281,9 @@ largest internal blocks, and PSRAM before and at request completion. The
 completion sample still includes the foreground worker stack; run `mem policy`
 after the app returns to confirm that the task stack was reclaimed.
 
-The agent package requires Wi-Fi and PSRAM but does not require Python or Lua.
-The manual command and model tool are advertised only when the corresponding
-runtime is in the firmware; the agent app supplies the optional adapter callback
-without making either interpreter a package dependency. Larger-file editing,
-mutating job/network/hardware operations, additional providers, remote
-interfaces, and scheduling are later phases.
+The agent requires Wi-Fi and PSRAM. Python and Lua execution is available only
+when the corresponding runtime is included in the firmware. See `agent tools`
+for available operations and their policy.
 
 ## Quick reference
 

@@ -679,15 +679,18 @@ static void display_cmd_mode(solar_os_shell_io_t *term, int argc, char **argv)
     }
 
     if (argc == 3) {
-        solar_os_shell_io_printf(term, "mode: %s\n", current != NULL ? current : "unknown");
-        solar_os_shell_io_printf(term, "values: %s\n", values != NULL ? values : "-");
+        solar_os_shell_io_write(term, "mode: ");
+        solar_os_shell_io_writeln(term, current != NULL ? current : "unknown");
+        solar_os_shell_io_write(term, "values: ");
+        solar_os_shell_io_writeln(term, values != NULL ? values : "-");
         return;
     }
 
     err = solar_os_display_set_controller_mode(argv[2], argv[3]);
     if (err == ESP_ERR_NOT_FOUND) {
         solar_os_shell_io_printf(term, "display mode: unknown mode %s\n", argv[3]);
-        solar_os_shell_io_printf(term, "values: %s\n", values != NULL ? values : "-");
+        solar_os_shell_io_write(term, "values: ");
+        solar_os_shell_io_writeln(term, values != NULL ? values : "-");
         return;
     }
     if (err != ESP_OK) {

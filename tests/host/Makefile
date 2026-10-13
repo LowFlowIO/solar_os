@@ -4,6 +4,7 @@ CFLAGS ?= -std=c11 -O2 -Wall -Wextra -Werror
 ROOT := ../..
 override CFLAGS += -idirafter $(ROOT)/include
 WRITER_DIR := $(ROOT)/src/apps
+GAMEBOY_DIR := $(ROOT)/modules/gameboy/main
 TARGETS := writer_buffer_test writer_files_test file_shortcuts_test sketch_canvas_test launcher_layout_test display_layout_test gfx_icons_test text_search_test doc_layout_test shell_parse_test shell_launch_test shell_line_test shell_completion_test shell_diag_test shell_startup_policy_test scheduler_test schedule_test script_lifecycle_test app_file_types_test gameboy_support_test storage_mounts_test json_scan_test native_elf_test keys_test input_test unistroke_test graffiti_test board_caps_test hid_keyboard_report_test ble_keyboard_scan_policy_test ps2_keyboard_test ps2_mouse_test cardkb_codec_test inputronic_keyboard_test matrix_keyboard_test input_keymap_service_test cl32_keyboard_test battery_service_test battery_trend_test charger_service_test sensors_service_test midi_codec_test midi_service_test parameters_test controls_test osc_test dsp_test stream_test resources_test gpio_controller_test expansion_registry_test expansion_command_test audio_codec_test webradio_catalog_test gif_decode_stack_test nvs_backup_test agent_reference_test manual_external_metadata_test terminal_geometry_test app_exit_result_test terminal_preferences_test tui_widgets_test wireguard_crypto_test meshcore_channel_key_test meshcore_stream_codec_test meshcore_ble_protocol_test link_repeater_test time_timezone_test rtc_service_test rtc_pcf85063_test ubx_test gnss_service_test modem_service_test haptic_service_test imu_service_test bhi260ap_codec_test qmi8658_test drv2605_test bq25896_test axp2101_test max17048_test mgc3130_test sim7670_test xl9555_test st25r3916_test nfc_service_test
 
 MANUAL_GENERATED_DIR := generated/solar_os
@@ -17,6 +18,8 @@ TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble
 TARGETS += input_action_match_test gesture_completion_test
 TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
 TARGETS += frontlight_pwm_test epd_xteink_identify_test x4pro_expansion_test
+TARGETS += pwm_servo_test pwm_provider_test
+TARGETS += pca9685_test pca9685_expansion_test
 TARGETS += gt911_test
 TARGETS += sdmmc_expansion_test
 TARGETS += axp2101_service_test
@@ -28,6 +31,7 @@ TARGETS += rtsp_client_test
 TARGETS += rtsp_auth_test
 TARGETS += gfx_mono_raster_test
 TARGETS += rgb565_raster_test
+TARGETS += indexed_raster_test
 TARGETS += rtspd_completion_test
 TARGETS += script_media_test script_media_rtsp_test
 TARGETS += raster_image_test
@@ -44,6 +48,49 @@ TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
 TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
+TARGETS += inmp441_test
+TARGETS += epd_pixel_budget_test
+TARGETS += epd_scan_worker_test
+TARGETS += epd_ssd1683_test
+
+epd_ssd1683_test: epd_ssd1683_test.c $(ROOT)/src/drivers/epd_ssd1683.c $(ROOT)/src/drivers/epd_ssd1683.h $(ROOT)/src/drivers/epd_pixel_budget.c $(ROOT)/src/drivers/epd_pixel_budget.h $(wildcard epd_stubs/*.h epd_stubs/driver/*.h)
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib -I$(ROOT)/src/drivers -I$(ROOT)/src/services epd_ssd1683_test.c $(ROOT)/src/drivers/epd_pixel_budget.c -Wl,--gc-sections -o $@
+
+epd_pixel_budget_test: epd_pixel_budget_test.c $(ROOT)/src/drivers/epd_pixel_budget.c $(ROOT)/src/drivers/epd_pixel_budget.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers epd_pixel_budget_test.c $(ROOT)/src/drivers/epd_pixel_budget.c -o $@
+
+epd_scan_worker_test: epd_scan_worker_test.c $(ROOT)/src/drivers/epd_scan_worker.c $(ROOT)/src/drivers/epd_scan_worker.h $(wildcard epd_scan_stubs/freertos/*.h)
+	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread -Iepd_scan_stubs -I. -I$(ROOT)/src/drivers epd_scan_worker_test.c $(ROOT)/src/drivers/epd_scan_worker.c -o $@
+TARGETS += lc709203f_test
+TARGETS += battery_service_default_test
+
+battery_service_default_test: battery_service_test.c $(ROOT)/src/services/solar_os_battery.c $(ROOT)/src/services/solar_os_battery.h $(ROOT)/src/services/solar_os_battery_trend.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DSOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH=3000U -include compat.h -I. -I$(ROOT)/src/services \
+		battery_service_test.c $(ROOT)/src/services/solar_os_battery.c $(ROOT)/src/services/solar_os_battery_trend.c -o $@
+
+lc709203f_test: lc709203f_test.c $(ROOT)/src/drivers/lc709203f.c $(ROOT)/src/drivers/lc709203f.h \
+        $(ROOT)/src/services/solar_os_lc709203f.c $(ROOT)/src/services/solar_os_lc709203f.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iinmp441_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/src/drivers -I$(ROOT)/src/services lc709203f_test.c $(ROOT)/src/drivers/lc709203f.c \
+		$(ROOT)/src/services/solar_os_lc709203f.c -o $@
+
+inmp441_test: inmp441_test.c $(ROOT)/src/drivers/inmp441.c $(ROOT)/src/drivers/inmp441.h $(wildcard inmp441_stubs/*/*.h) \
+        $(ROOT)/src/services/solar_os_inmp441.c $(ROOT)/src/services/solar_os_inmp441.h $(ROOT)/src/services/solar_os_stream.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iinmp441_stubs -I. -I$(ROOT)/src/drivers -I$(ROOT)/src/services \
+		inmp441_test.c $(ROOT)/src/drivers/inmp441.c $(ROOT)/src/services/solar_os_inmp441.c $(ROOT)/src/services/solar_os_stream.c -o $@
+TARGETS += apple2_app_test
+TARGETS += apple2_app_entry_test
+
+APPLE2_DIR := $(ROOT)/modules/apple2/main
+APPLE2_ROMS := generated/apple2/roms_data.c
+apple2_app_test: apple2_app_test.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h $(APPLE2_DIR)/font.h
+	$(CC) $(CFLAGS) -I$(APPLE2_DIR) $(filter %.c,$^) -o $@
+
+apple2_app_entry_test: apple2_app_entry_test.c $(APPLE2_DIR)/apple2.c $(APPLE2_DIR)/machine.c $(APPLE2_DIR)/video.c $(APPLE2_DIR)/vendor/puce6502.c $(APPLE2_DIR)/machine.h $(APPLE2_DIR)/roms.h $(APPLE2_ROMS)
+	$(CC) $(CFLAGS) -I$(APPLE2_DIR) -Dmain=apple2_app_entry $(filter %.c,$^) -o $@
+
+$(APPLE2_ROMS): $(APPLE2_DIR)/../scripts/embed_roms.py $(APPLE2_DIR)/../rom/appleII+.rom $(APPLE2_DIR)/../rom/diskII.rom $(APPLE2_DIR)/roms.h
+	python3 -B $< $(APPLE2_DIR)/../rom $@
 
 tab5_keyboard_test: tab5_keyboard_test.c $(wildcard $(ROOT)/src/services/solar_os_tab5_keyboard*) \
         $(ROOT)/src/drivers/tab5_keyboard.c $(ROOT)/src/drivers/tab5_keyboard.h \
@@ -126,6 +173,21 @@ gt911_test: gt911_test.c $(ROOT)/src/drivers/gt911.c $(ROOT)/src/drivers/gt911.h
 
 frontlight_pwm_test: frontlight_pwm_test.c $(ROOT)/src/drivers/frontlight_pwm.c $(ROOT)/src/drivers/frontlight_pwm.h
 	$(CC) $(CFLAGS) -Ix4pro_stubs -Iepd_stubs -I. frontlight_pwm_test.c -o $@
+
+pwm_servo_test: $(ROOT)/src/services/solar_os_pwm_native.c pwm_servo_test.c $(ROOT)/src/drivers/pwm_port.c $(ROOT)/src/drivers/pwm_port.h $(ROOT)/src/services/solar_os_pwm.c $(ROOT)/src/services/solar_os_pwm.h $(ROOT)/src/services/solar_os_servo.c $(ROOT)/src/services/solar_os_servo.h $(ROOT)/src/services/solar_os_resources.c
+pwm_servo_test: $(wildcard pwm_stubs/*.h pwm_stubs/driver/*.h pwm_stubs/soc/*.h)
+pwm_servo_test: pwm_stubs/freertos/semphr.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DESP_ERR_NOT_ALLOWED=0x10b \
+		-DSOLAR_OS_BOARD_HAS_PWM=1 -include compat.h \
+		-Ipwm_stubs -I. -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		pwm_servo_test.c $(ROOT)/src/drivers/pwm_port.c $(ROOT)/src/services/solar_os_pwm.c \
+		$(ROOT)/src/services/solar_os_pwm_native.c \
+		$(ROOT)/src/services/solar_os_servo.c $(ROOT)/src/services/solar_os_resources.c -lm -o $@
+
+pwm_provider_test: pwm_provider_test.c $(ROOT)/src/services/solar_os_pwm.c $(ROOT)/src/services/solar_os_pwm.h $(ROOT)/src/services/solar_os_servo.c $(ROOT)/src/services/solar_os_servo.h pwm_stubs/freertos/semphr.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DESP_ERR_NOT_ALLOWED=0x10b -DSOLAR_OS_PACKAGE_DRIVER_PWM_NATIVE=0 \
+		-Ipwm_stubs -I. -I$(ROOT)/src/services pwm_provider_test.c \
+		$(ROOT)/src/services/solar_os_pwm.c $(ROOT)/src/services/solar_os_servo.c -pthread -lm -o $@
 
 epd_xteink_identify_test: epd_xteink_identify_test.c $(ROOT)/src/drivers/epd_xteink_identify.c $(ROOT)/src/drivers/epd_xteink_identify.h
 	$(CC) $(CFLAGS) -Iepd_stubs -I. epd_xteink_identify_test.c -o $@
@@ -274,6 +336,9 @@ script_media_test script_media_rtsp_test: $(SCRIPT_MEDIA_TEST_SOURCES)
 
 rtspd_completion_test: rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.h $(ROOT)/src/services/solar_os_stream.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services -I$(ROOT)/src/shell rtspd_completion_test.c $(ROOT)/src/shell/solar_os_shell_rtspd_completion.c -o $@
+
+indexed_raster_test: indexed_raster_test.c $(ROOT)/src/services/solar_os_indexed_raster.h $(ROOT)/src/services/solar_os_display_surface.h
+	$(CC) $(CFLAGS) -I$(ROOT)/src/services indexed_raster_test.c -o $@
 
 rgb565_raster_test: rgb565_raster_test.c $(ROOT)/src/services/solar_os_rgb565.h $(ROOT)/src/services/solar_os_display_surface.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services $< -o $@
@@ -473,12 +538,12 @@ app_file_types_test: app_file_types_test.c $(ROOT)/src/apps/solar_os_app_file_ty
 	$(CC) $(CFLAGS) -I$(ROOT)/src/apps \
 		app_file_types_test.c $(ROOT)/src/apps/solar_os_app_file_types.c -o $@
 
-gameboy_support_test: gameboy_support_test.c $(WRITER_DIR)/solar_os_gameboy_rom.c $(WRITER_DIR)/solar_os_gameboy_rom.h $(WRITER_DIR)/solar_os_gameboy_video.c $(WRITER_DIR)/solar_os_gameboy_video.h $(WRITER_DIR)/solar_os_gameboy_apu.c $(ROOT)/src/vendor/peanut_gb/peanut_gb.h $(ROOT)/src/vendor/peanut_gb/minigb_apu.c $(ROOT)/src/vendor/peanut_gb/minigb_apu.h
+gameboy_support_test: gameboy_support_test.c $(GAMEBOY_DIR)/solar_os_gameboy_rom.c $(GAMEBOY_DIR)/solar_os_gameboy_rom.h $(GAMEBOY_DIR)/solar_os_gameboy_video.c $(GAMEBOY_DIR)/solar_os_gameboy_video.h $(GAMEBOY_DIR)/apu.c $(GAMEBOY_DIR)/vendor/peanut_gb/peanut_gb.h $(GAMEBOY_DIR)/vendor/peanut_gb/minigb_apu.c $(GAMEBOY_DIR)/vendor/peanut_gb/minigb_apu.h
 	$(CC) $(CFLAGS) -Wno-unused-function -Wno-unused-variable \
-		-DSOLAR_OS_GAMEBOY_APU_HOST_TEST -I$(ROOT)/src -I$(WRITER_DIR) \
-		gameboy_support_test.c $(WRITER_DIR)/solar_os_gameboy_rom.c \
-		$(WRITER_DIR)/solar_os_gameboy_video.c \
-		$(WRITER_DIR)/solar_os_gameboy_apu.c -o $@
+		-I$(GAMEBOY_DIR) \
+		gameboy_support_test.c $(GAMEBOY_DIR)/solar_os_gameboy_rom.c \
+		$(GAMEBOY_DIR)/solar_os_gameboy_video.c \
+		$(GAMEBOY_DIR)/apu.c -o $@
 
 storage_mounts_test: storage_mounts_test.c $(ROOT)/src/services/solar_os_storage.c $(ROOT)/src/services/solar_os_storage.h esp_log.h ff.h solar_os_board.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -ffunction-sections -fdata-sections -include compat.h \
@@ -494,11 +559,11 @@ native_elf_test: native_elf_test.c $(ROOT)/src/services/solar_os_native_elf.c $(
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/services \
 		native_elf_test.c $(ROOT)/src/services/solar_os_native_elf.c -o $@
 
-keys_test: keys_test.c $(ROOT)/src/services/solar_os_keys.c $(ROOT)/src/services/solar_os_keys.h
+keys_test: keys_test.c $(ROOT)/src/services/solar_os_keys.c $(ROOT)/src/services/solar_os_keys.h $(ROOT)/include/solar_os_key_codes.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services \
 		keys_test.c $(ROOT)/src/services/solar_os_keys.c -o $@
 
-input_test: input_test.c $(ROOT)/src/services/solar_os_input.c $(ROOT)/src/services/solar_os_input.h $(ROOT)/src/services/solar_os_keys.c $(ROOT)/src/services/solar_os_keys.h $(ROOT)/src/services/solar_os_memory.h esp_timer.h nvs.h freertos/FreeRTOS.h
+input_test: input_test.c $(ROOT)/src/services/solar_os_input.c $(ROOT)/src/services/solar_os_input.h $(ROOT)/src/services/solar_os_keys.c $(ROOT)/src/services/solar_os_keys.h $(ROOT)/include/solar_os_key_codes.h $(ROOT)/src/services/solar_os_memory.h esp_timer.h nvs.h freertos/FreeRTOS.h
 	$(CC) $(CFLAGS) -include compat.h -I. -I$(ROOT)/src -I$(ROOT)/src/services \
 		input_test.c $(ROOT)/src/services/solar_os_input.c \
 		$(ROOT)/src/services/solar_os_keys.c -o $@
@@ -648,6 +713,21 @@ http_server_test: http_server_test.c $(ROOT)/src/services/solar_os_http_server.c
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -pthread -include compat.h \
 		-Ihttp_server_stubs -I. -I$(ROOT)/src/services \
 		http_server_test.c $(ROOT)/src/services/solar_os_http_server.c -o $@
+
+pca9685_test: pca9685_test.c $(ROOT)/src/drivers/pca9685.c $(ROOT)/src/drivers/pca9685.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
+		pca9685_test.c $(ROOT)/src/drivers/pca9685.c -o $@
+
+pca9685_expansion_test: pca9685_expansion_test.c $(ROOT)/src/drivers/pca9685.c $(ROOT)/src/drivers/pca9685.h \
+		$(ROOT)/src/services/solar_os_pca9685.c $(ROOT)/src/services/solar_os_pca9685.h \
+		$(ROOT)/src/services/solar_os_pca9685_driver.c $(ROOT)/src/services/solar_os_pwm.c \
+		$(ROOT)/src/services/solar_os_pwm.h $(ROOT)/src/services/solar_os_servo.c $(ROOT)/src/services/solar_os_servo.h \
+		pwm_stubs/freertos/semphr.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -DESP_ERR_NOT_ALLOWED=0x10b -DSOLAR_OS_PACKAGE_DRIVER_PWM_NATIVE=0 \
+		-include compat.h -Ipwm_stubs -Iexpansion_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/drivers -I$(ROOT)/src/services \
+		pca9685_expansion_test.c $(ROOT)/src/drivers/pca9685.c $(ROOT)/src/services/solar_os_pca9685.c \
+		$(ROOT)/src/services/solar_os_pca9685_driver.c $(ROOT)/src/services/solar_os_pwm.c \
+		$(ROOT)/src/services/solar_os_servo.c -pthread -lm -o $@
 
 drv2605_test: drv2605_test.c $(ROOT)/src/drivers/drv2605.c $(ROOT)/src/drivers/drv2605.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
@@ -920,6 +1000,14 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 
 test: $(TARGETS)
 	./i2c_buses_test
+	./inmp441_test
+	./epd_pixel_budget_test
+	./epd_scan_worker_test
+	./epd_ssd1683_test
+	./lc709203f_test
+	./battery_service_default_test
+	./apple2_app_test
+	./apple2_app_entry_test
 	./cw2017_test
 	./rtc_pcf8563_test
 	./axp2101_service_test
@@ -990,6 +1078,7 @@ test: $(TARGETS)
 	./rtsp_client_test
 	./gfx_mono_raster_test
 	./rgb565_raster_test
+	./indexed_raster_test
 	./rtspd_completion_test
 	./mjpeg_test
 	./http_server_test
@@ -1034,6 +1123,10 @@ test: $(TARGETS)
 	./axp2101_test
 	./epd_ssd1677_test
 	./frontlight_pwm_test
+	./pwm_servo_test
+	./pwm_provider_test
+	./pca9685_test
+	./pca9685_expansion_test
 	./epd_xteink_identify_test
 	./x4pro_expansion_test
 	./gt911_test
