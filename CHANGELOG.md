@@ -2,6 +2,21 @@
 
 ## 4.x
 
+- **4.16.9** — 2026-10-13 — Added the SolarWriter board profile for the
+  Elecrow 5.79-inch CrowPanel with microphone, shared DAC/amplifier output,
+  and battery gauge. Added reusable INMP441 expansion audio with 16 kHz mono
+  capture and optional shared-clock stereo playback, and the LC709203F fuel
+  gauge with CRC-checked voltage/state of charge and configurable battery
+  capacity. Corrected shared I2S playback clock ownership.
+  Added monochrome `refresh=pulse` for Elecrow 5.79-inch dual-SSD1683,
+  Waveshare 4.2-inch V2/rev2.2, and Elecrow 4.2-inch green-sticker panels.
+  Pulse mode provides per-pixel drive budgets, asynchronous updates while
+  pixels settle, manual waveform/SPI/power tuning, and fixed or adaptive
+  native cleanup. Failed pulse scans recover through native refresh.
+  The green-sticker board starts in pulse mode with its calibrated preset
+  and fixed cleanup every eight changed targets. Corrected its active-low
+  BUSY handling and preserved CrowPanel display control pins during automatic
+  light sleep.
 - **4.16.8** — 2026-10-12 — Apple II Plus now bundles its system and Disk II
   ROMs. `apple2` starts BASIC without external assets; `apple2 file.nib`
   boots a disk, and Files opens NIB images with the installed module.
