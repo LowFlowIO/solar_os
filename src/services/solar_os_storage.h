@@ -73,6 +73,7 @@ typedef enum {
     SOLAR_OS_STORAGE_MOUNT_SD,
     SOLAR_OS_STORAGE_MOUNT_FLASH,
     SOLAR_OS_STORAGE_MOUNT_RAMFS,
+    SOLAR_OS_STORAGE_MOUNT_IMAGE,
 } solar_os_storage_mount_type_t;
 
 typedef struct {
@@ -82,6 +83,10 @@ typedef struct {
 } solar_os_storage_mount_info_t;
 
 esp_err_t solar_os_storage_init(void);
+// Changes made through this service invalidate cached filesystem discovery.
+// Streaming/VFS writers can notify after closing a changed file.
+uint32_t solar_os_storage_revision(void);
+void solar_os_storage_notify_changed(void);
 esp_err_t solar_os_storage_mount(void);
 esp_err_t solar_os_storage_mount_volume(const char *name, const char *mount_point);
 esp_err_t solar_os_storage_unmount(void);

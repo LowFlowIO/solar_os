@@ -1,6 +1,8 @@
 #include "solar_os_shell_commands.h"
 
 #include "solar_os_native.h"
+#include "solar_os_native_foreground.h"
+#include <string.h>
 #include "solar_os_module_packages.h"
 #include "solar_os_shell.h"
 #include "solar_os_shell_common.h"
@@ -14,6 +16,25 @@ static esp_err_t native_shell_write(const char *text, size_t text_len, void *use
     }
 
     return solar_os_shell_io_write_len(io, text, text_len);
+}
+
+static esp_err_t native_shell_launch_foreground(solar_os_context_t *ctx,
+                                        const char *command,
+                                        const char *path,
+                                        const solar_os_app_t *app,
+                                        int argc, char **argv)
+{
+    solar_os_shell_io_t *io = solar_os_shell_command_io(ctx);
+    esp_err_t err = ESP_ERR_INVALID_ARG;
+    if (argc >= 1 && argc <= SOLAR_OS_APP_ARG_MAX) {
+        char *module_argv[SOLAR_OS_APP_ARG_MAX] = { (char *)path };
+        for (int i = 1; i < argc; ++i) module_argv[i] = argv[i];
+        err = solar_os_native_foreground_launch(ctx, app, argc, module_argv);
+    }
+    if (err == ESP_OK) solar_os_shell_session_prepare_foreground_launch(ctx, true);
+    else solar_os_shell_diag_esp(io, command, err,
+        "foreground apps require a display shell and at most seven arguments", NULL);
+    return err;
 }
 
 static esp_err_t native_shell_run(solar_os_shell_io_t *io,
@@ -77,6 +98,19 @@ void solar_os_shell_cmd_load(solar_os_context_t *ctx, int argc, char **argv)
         module_argv[i - 1] = argv[i];
     }
 
+    const solar_os_app_t *app = NULL;
+    char detail[160] = {0};
+    const esp_err_t inspected = solar_os_native_foreground_resolve(path,
+        &app, detail, sizeof(detail));
+    if (inspected != ESP_OK) {
+        solar_os_shell_diag_esp(io, "load", inspected, detail, NULL);
+        return;
+    }
+    if (app != NULL) {
+        (void)native_shell_launch_foreground(ctx, "load", path, app, module_argc, module_argv);
+        return;
+    }
+
     solar_os_native_run_result_t result;
     const esp_err_t err = native_shell_run(io,
                                            "load",
@@ -107,18 +141,28 @@ bool solar_os_shell_try_native_module(solar_os_context_t *ctx,
     if (matched != NULL) {
         *matched = false;
     }
-    if (ctx == NULL || argc < 1 || argv == NULL || argv[0] == NULL ||
-        solar_os_module_package_path(SOLAR_OS_MODULE_TYPE_APP,
-                                     argv[0],
-                                     path,
-                                     sizeof(path)) != ESP_OK ||
-        solar_os_storage_stat(path, &metadata) != ESP_OK ||
-        metadata.type != SOLAR_OS_STORAGE_ENTRY_FILE) {
+    if (ctx == NULL || argc < 1 || argv == NULL || argv[0] == NULL) {
         return true;
     }
+    const bool found = solar_os_module_package_path(SOLAR_OS_MODULE_TYPE_APP,
+        argv[0], path, sizeof(path)) == ESP_OK &&
+        solar_os_storage_stat(path, &metadata) == ESP_OK &&
+        metadata.type == SOLAR_OS_STORAGE_ENTRY_FILE;
+    if (!found) return true;
 
     if (matched != NULL) {
         *matched = true;
+    }
+    const solar_os_app_t *app = NULL;
+    char detail[160] = {0};
+    const esp_err_t inspected = solar_os_native_foreground_resolve(path,
+        &app, detail, sizeof(detail));
+    if (inspected != ESP_OK) {
+        solar_os_shell_diag_esp(solar_os_shell_command_io(ctx), argv[0], inspected, detail, NULL);
+        return true;
+    }
+    if (app != NULL) {
+        return native_shell_launch_foreground(ctx, argv[0], path, app, argc, argv) != ESP_OK;
     }
     (void)native_shell_run(solar_os_shell_command_io(ctx),
                            argv[0],

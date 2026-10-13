@@ -1,0 +1,91 @@
+schema = 1
+extends = "elecrow_crowpanel_esp32_s3_5_79_epaper"
+
+[board]
+id = "solar_writer"
+name = "SolarWriter"
+vendor = "nilseuropa"
+
+[target]
+platformio_board = "solar_writer"
+
+[build]
+drivers = ["audio_expansion", "battery_expansion"]
+capabilities = ["audio", "audio_input", "battery"]
+
+[defines]
+SOLAR_OS_BOARD_I2C_PORT = "I2C_NUM_0"
+SOLAR_OS_BOARD_PIN_I2C_SDA = "GPIO_NUM_8"
+SOLAR_OS_BOARD_PIN_I2C_SCL = "GPIO_NUM_9"
+SOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH = "3000U"
+SOLAR_OS_BOARD_PIN_AUDIO_JACK_DETECT = "GPIO_NUM_21"
+SOLAR_OS_BOARD_AUDIO_JACK_DETECT_ACTIVE_LEVEL = "0"
+
+[[buses]]
+name = "i2c0"
+protocol = "i2c"
+sharing = "shared"
+port = "I2C_NUM_0"
+sda = 8
+scl = 9
+speed_hz = 100000
+
+# One transport owns shared microphone / PCM5102 / MAX98357 clocks.
+[[devices]]
+driver = "inmp441"
+name = "audio0"
+bindings = { i2s = 1, bck = 14, ws = 15, din = 17, dout = 16, slot = 1 }
+
+[[devices]]
+driver = "lc709203f"
+name = "battery0"
+bindings = { i2c = "i2c0", addr = 0x0b, capacity = 3000, profile = 1, temp = 250 }
+
+[[pins]]
+gpio = 8
+policy = "fixed"
+role = "fuel gauge I2C SDA"
+user = false
+adc = false
+pwm = false
+[[pins]]
+gpio = 9
+policy = "fixed"
+role = "fuel gauge I2C SCL"
+user = false
+adc = false
+pwm = false
+[[pins]]
+gpio = 14
+policy = "fixed"
+role = "shared audio I2S BCK"
+user = false
+adc = false
+pwm = false
+[[pins]]
+gpio = 15
+policy = "fixed"
+role = "shared audio I2S WS"
+user = false
+adc = false
+pwm = false
+[[pins]]
+gpio = 16
+policy = "fixed"
+role = "PCM5102 / MAX98357 I2S data"
+user = false
+adc = false
+pwm = false
+[[pins]]
+gpio = 17
+policy = "fixed"
+role = "INMP441 I2S data"
+user = false
+adc = false
+pwm = false
+[[pins]]
+gpio = 21
+policy = "fixed"
+role = "jack detect (reserved)"
+user = false
+pwm = false

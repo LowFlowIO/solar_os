@@ -55,7 +55,7 @@ class FlavorConfigTest(unittest.TestCase):
         self.assertIn("http_client", names)
         self.assertIn("ftp", names)
         self.assertIn("meshcore", names)
-        self.assertIn("gameboy", names)
+        self.assertNotIn("gameboy", names)
         self.assertNotIn("ota", names)
         self.assertNotIn("usb_hid", names)
         self.assertEqual(len(groups), len(names))
@@ -285,10 +285,10 @@ class FlavorConfigTest(unittest.TestCase):
         model = flavor_config.SelectionModel(
             self.catalog, (), board.required_packages, board.target, board.capabilities
         )
-        gameboy = self.catalog.group_defs["gameboy"]
-        self.assertFalse(model.group_supported(gameboy))
-        self.assertIn("requires", model.unsupported_reason(gameboy))
-        self.assertIn("streaming_display", model.unsupported_reason(gameboy))
+        buttons = self.catalog.group_defs["board_buttons"]
+        self.assertFalse(model.group_supported(buttons))
+        self.assertIn("requires", model.unsupported_reason(buttons))
+        self.assertIn("buttons", model.unsupported_reason(buttons))
 
     def test_rendered_flavor_uses_groups_and_round_trips(self):
         members = set(self.catalog.group_defs["ssh"].members)

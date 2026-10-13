@@ -10,7 +10,8 @@
 #define SOLAR_OS_RTSP_AUTH_USER_MAX 64U
 #define SOLAR_OS_RTSP_AUTH_PASSWORD_MAX 64U
 #define SOLAR_OS_RTSP_AUTH_CAPACITY 4U
-#define SOLAR_OS_RTSP_AUTH_HEADER_MAX 768U
+/* Includes worst-case quoted-string escaping of every bounded Digest field. */
+#define SOLAR_OS_RTSP_AUTH_HEADER_MAX 1536U
 
 typedef struct {
     bool digest;

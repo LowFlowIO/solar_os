@@ -5,7 +5,9 @@
 typedef int StaticSemaphore_t;
 typedef StaticSemaphore_t *SemaphoreHandle_t;
 
+#ifndef portMAX_DELAY
 #define portMAX_DELAY 0xffffffffU
+#endif
 
 static inline SemaphoreHandle_t xSemaphoreCreateMutexStatic(
     StaticSemaphore_t *storage)

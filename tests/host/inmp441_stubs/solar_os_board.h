@@ -1,0 +1,2 @@
+#pragma once
+#define SOLAR_OS_BOARD_RUNTIME_I2S_PORT_MASK 2U

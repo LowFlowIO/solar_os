@@ -93,7 +93,8 @@ Storage functions expose SD mount and filesystem service operations.
 - `remove(path)`: remove a file.
 - `rename(old_path, new_path)`: rename or move a file or directory.
 - `copy(source_path, dest_path)`: copy a file.
-- `mount_volume(name[, mount_point])`: mount a named block or partition.
+- `mount_volume(name[, mount_point])`: mount a named block or partition, or a
+  raw FAT disk image at an explicit mount point.
 - `unmount_volume(target)`: unmount by volume name or mount point.
 
 Example:

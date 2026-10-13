@@ -95,20 +95,30 @@ class ScriptNetBindingsTest(unittest.TestCase):
     def test_both_interpreters_close_channels_before_vm_teardown(self):
         self.assertIn(
             "python_net_destroy();\n#endif\n"
+            "    python_inference_destroy();\n"
             "    python_media_destroy();\n"
             "#if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT\n"
             "    python_http_stream_destroy();\n"
             "    python_http_session_destroy();\n#endif\n"
+            "#if SOLAR_OS_PACKAGE_SERVICE_SERVO\n"
+            "    const esp_err_t servo_cleanup = solar_os_servo_release_owner(\"python\");\n"
+            "    if (servo_cleanup != ESP_OK) SOLAR_OS_LOGW(TAG, \"Servo cleanup: %s\", esp_err_to_name(servo_cleanup));\n"
+            "#endif\n"
             "    solar_os_rtc_release_owner(\"python\");\n"
             "    mp_embed_deinit();",
             PYTHON_SOURCE,
         )
         self.assertIn(
             "solua_net_destroy();\n#endif\n"
+            "    solua_inference_destroy();\n"
             "    solua_media_destroy();\n"
             "#if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT\n"
             "    solua_http_stream_destroy();\n"
             "    solua_http_session_destroy();\n#endif\n"
+            "#if SOLAR_OS_PACKAGE_SERVICE_SERVO\n"
+            "    const esp_err_t servo_cleanup = solar_os_servo_release_owner(\"lua\");\n"
+            "    if (servo_cleanup != ESP_OK) SOLAR_OS_LOGW(TAG, \"Servo cleanup: %s\", esp_err_to_name(servo_cleanup));\n"
+            "#endif\n"
             "    solar_os_rtc_release_owner(\"lua\");\n"
             "    lua_close(L);",
             LUA_SOURCE,

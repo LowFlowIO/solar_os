@@ -6,6 +6,10 @@
 
 #include "driver/spi_master.h"
 #include "esp_err.h"
+#include "epd_pixel_budget.h"
+#include "epd_scan_worker.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/semphr.h"
 #include "u8g2.h"
 
 #ifdef __cplusplus
@@ -16,6 +20,7 @@ typedef enum {
     EPD_SSD1683_REFRESH_AUTO = 0,
     EPD_SSD1683_REFRESH_FAST,
     EPD_SSD1683_REFRESH_FULL,
+    EPD_SSD1683_REFRESH_PULSE,
 } epd_ssd1683_refresh_mode_t;
 
 typedef enum {
@@ -41,6 +46,7 @@ typedef struct {
     int power_active_level;
     const u8g2_cb_t *rotation;
     epd_ssd1683_panel_variant_t panel_variant;
+    bool startup_pulse;
 } epd_ssd1683_config_t;
 
 typedef struct {
@@ -57,6 +63,7 @@ typedef struct {
     epd_ssd1683_panel_variant_t panel_variant;
     uint8_t fast_refresh_count;
     uint8_t refresh_log_count;
+    int cs_pin;
     int dc_pin;
     int reset_pin;
     int busy_pin;
@@ -69,6 +76,27 @@ typedef struct {
     bool shadow_valid;
     bool partial_refresh_active;
     bool powered;
+    epd_pulse_tuning_t pulse_tuning;
+    epd_pixel_budget_t pixel_budget;
+    uint8_t *pulse_planes;
+    bool pulse_window_valid;
+    uint8_t pulse_x_start, pulse_x_end;
+    uint16_t pulse_y_start, pulse_y_end;
+    size_t pulse_mask_pending;
+    bool pulse_mask_dirty;
+    bool pulse_power_hold, pulse_ramp_fast, pulse_analog_on;
+    bool scan_async;
+    uint32_t scan_submit_ready;
+    uint16_t scan_period_ms;
+    uint32_t spi_clock_hz, pulse_spi_clock_hz, spi_applied_hz;
+    int64_t pulse_last_drive_start, pulse_drive_interval;
+    epd_scan_worker_t scan_worker;
+    uint32_t pulse_updates;
+    bool pulse_lut_loaded;
+    bool pulse_needs_cleanup;
+    SemaphoreHandle_t lock;
+    StaticSemaphore_t lock_storage;
+    char mode_description[640];
 } epd_ssd1683_t;
 
 esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,

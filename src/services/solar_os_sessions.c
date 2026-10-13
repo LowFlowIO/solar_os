@@ -99,6 +99,7 @@ typedef struct {
     void *output_user;
     solar_os_app_class_t app_class;
     bool graphics_active;
+    const solar_os_app_t *app;
 } solar_os_session_context_snapshot_t;
 
 typedef enum {
@@ -286,6 +287,7 @@ static void session_context_capture(solar_os_session_context_snapshot_t *snapsho
         .output_user = output_user,
         .app_class = solar_os_context_app_class(session_state.ctx),
         .graphics_active = solar_os_context_graphics_active(session_state.ctx),
+        .app = session_state.ctx->app,
     };
 }
 
@@ -303,6 +305,7 @@ static void session_context_restore(const solar_os_session_context_snapshot_t *s
                                         snapshot->output_user);
     solar_os_context_set_app_class(session_state.ctx, snapshot->app_class);
     session_restore_graphics_state(snapshot->graphics_active);
+    session_state.ctx->app = snapshot->app;
 }
 
 static bool launch_should_use_display_sessions(void)
@@ -340,6 +343,7 @@ static void session_prepare_context(solar_os_session_entry_t *session)
     }
 
     set_current_terminal(session->terminal);
+    session_state.ctx->app = session->app;
     solar_os_context_set_gfx(session_state.ctx,
                              session->gfx != NULL ? session->gfx : session_state.default_gfx);
     session_restore_graphics_state(session->graphics_active);
@@ -393,6 +397,7 @@ static bool session_owns_current_context(const solar_os_session_entry_t *session
 
 static void session_restore_base_context(void)
 {
+    session_state.ctx->app = NULL;
     set_current_terminal(NULL);
     solar_os_context_set_gfx(session_state.ctx, session_state.default_gfx);
     solar_os_context_set_shell_io(session_state.ctx, NULL);

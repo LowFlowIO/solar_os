@@ -27,6 +27,10 @@ restart without a cursor if the directory changes between calls.
 `makedirs(path[, exist_ok])` creates missing parents. `exist_ok` defaults to
 `true`.
 
+`mount_volume(image_path, mount_point)` also mounts a raw FAT disk image.
+Use `unmount_volume(mount_point)` before opening the image in a guest.
+See [disk images](storage.md#disk-images).
+
 ## Creating, saving, and loading files
 
 `write_file(path, data[, append])` creates or overwrites a regular file and

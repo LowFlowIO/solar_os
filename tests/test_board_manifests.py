@@ -45,6 +45,166 @@ class BoardManifestTest(unittest.TestCase):
                 board = load_board_manifest(path, self.manifest_dir)
                 validate_board(board, self.drivers)
 
+    def test_inmp441_capture_and_shared_playback_bindings(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        for pin in board["pins"]:
+            if pin["gpio"] in (14, 15, 16, 17):
+                pin.update(policy="fixed", user=False, adc=False, pwm=False)
+        device = {"driver": "inmp441", "name": "audio0", "bindings":
+                  {"i2s": 1, "bck": 14, "ws": 15, "din": 17, "dout": 16, "slot": 1}}
+        board.setdefault("devices", []).append(device)
+        validate_board(board, self.drivers)
+        self.assertIn("expansion_inmp441", required_packages(board, self.drivers))
+        self.assertIn('.driver = "inmp441", .name = "audio0"', generate_header(board, self.drivers))
+        for slot in (-1, 2):
+            device["bindings"]["slot"] = slot
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+        device["bindings"]["slot"] = 0
+        del device["bindings"]["dout"]
+        validate_board(board, self.drivers)
+
+    def test_lc709203f_configuration_and_fixed_address(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        device = {"driver": "lc709203f", "name": "battery0", "bindings":
+                  {"i2c": "i2c0", "addr": 0x0b, "capacity": 3000, "temp": 250, "profile": 1}}
+        board.setdefault("devices", []).append(device)
+        validate_board(board, self.drivers)
+        self.assertIn("lc709203f", required_packages(board, self.drivers))
+        for key, bad_value in (("addr", 0x0c), ("capacity", 0), ("temp", 601), ("profile", 2)):
+            original = device["bindings"][key]
+            device["bindings"][key] = bad_value
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+            device["bindings"][key] = original
+
+    def test_solar_writer_preserves_wiring_and_reserves_jack_detect(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "solar_writer.toml", self.manifest_dir)
+        validate_board(board, self.drivers)
+        self.assertEqual(board["board"]["name"], "SolarWriter")
+        self.assertEqual(board["target"]["platformio_board"], "solar_writer")
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(devices["audio0"]["bindings"],
+                         {"i2s": 1, "bck": 14, "ws": 15, "din": 17, "dout": 16, "slot": 1})
+        self.assertEqual(devices["battery0"]["bindings"]["addr"], 0x0b)
+        self.assertEqual(devices["battery0"]["bindings"]["capacity"], 3000)
+        self.assertEqual({"display0", "storage0", "audio0", "battery0"}, set(devices))
+        bus = next(bus for bus in board["buses"] if bus["name"] == "i2c0")
+        self.assertEqual((bus["sda"], bus["scl"], bus["speed_hz"]), (8, 9, 100000))
+        for pin in board["pins"]:
+            if pin["gpio"] in (8, 9, 14, 15, 16, 17, 21):
+                self.assertEqual(pin["policy"], "fixed")
+                self.assertFalse(pin.get("user", False))
+                self.assertFalse(pin.get("pwm", False))
+        power = [pin for pin in board["connectors"] if 11 <= pin["position"] <= 14]
+        self.assertEqual([pin["label"] for pin in power], ["3V3"] * 4)
+        header = generate_header(board, self.drivers)
+        self.assertIn("SOLAR_OS_BOARD_DEFAULT_BATTERY_CAPACITY_MAH 3000U", header)
+        self.assertIn("SOLAR_OS_BOARD_PIN_AUDIO_JACK_DETECT GPIO_NUM_21", header)
+        self.assertIn("SOLAR_OS_BOARD_USER_GPIO_LIST \"18 19 20 38\"", header)
+        self.assertIn("expansion_inmp441", required_packages(board, self.drivers))
+        self.assertIn("lc709203f", required_packages(board, self.drivers))
+        image = json.loads((ROOT / "boards/solar_writer.json").read_text())
+        base = json.loads((ROOT / "boards/elecrow_crowpanel_esp32_s3_5_79_epaper.json").read_text())
+        self.assertEqual(image["build"], base["build"])
+        self.assertEqual(image["upload"], base["upload"])
+
+    def test_pca9685_overlay_and_calibration_bindings(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        device = {"driver": "pca9685", "name": "servos0",
+                  "bindings": {"i2c": "i2c0", "addr": 0x40, "osc_hz": 26000000}}
+        board.setdefault("devices", []).append(device)
+        validate_board(board, self.drivers)
+        self.assertIn("pca9685", required_packages(board, self.drivers))
+        header = generate_header(board, self.drivers)
+        self.assertIn('.driver = "pca9685", .name = "servos0"', header)
+        self.assertIn('.role = "osc_hz"', header)
+        for address in (0x3f, 0x70, 0x78):
+            device["bindings"]["addr"] = address
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+        device["bindings"]["addr"] = 0x40
+        for frequency in (19999999, 30000001):
+            device["bindings"]["osc_hz"] = frequency
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+
+    def test_inputronic_keyboard_overlay_uses_named_bus(self) -> None:
+        for profile in ("esp32_s3_devkitc1_n16r8", "esp32_devkitc_v4_wrover", "cl_32"):
+            with self.subTest(profile=profile):
+                board = load_board_manifest(
+                    self.manifest_dir / f"{profile}.toml", self.manifest_dir)
+                board.setdefault("devices", []).append({
+                    "driver": "inputronic-keyboard", "name": "keyboard1",
+                    "bindings": {"i2c": "i2c0", "addr": 0x34},
+                })
+                validate_board(board, self.drivers)
+                self.assertIn("expansion_inputronic_keyboard", required_packages(board, self.drivers))
+                self.assertIn('.driver = "inputronic-keyboard", .name = "keyboard1"',
+                              generate_header(board, self.drivers))
+                board["devices"][-1]["bindings"]["addr"] = 0x35
+                with self.assertRaises(ManifestError):
+                    validate_board(board, self.drivers)
+
+    def test_tab5_keyboard_named_bus_optional_irq_and_address_range(self) -> None:
+        for profile in ("esp32_s3_devkitc1_n16r8", "esp32_devkitc_v4_wrover"):
+            board = load_board_manifest(self.manifest_dir / f"{profile}.toml", self.manifest_dir)
+            device = {"driver": "tab5-keyboard", "name": "keyboard1",
+                      "bindings": {"i2c": "i2c0", "addr": 0x6d}}
+            board.setdefault("devices", []).append(device)
+            validate_board(board, self.drivers)
+            self.assertIn("expansion_tab5_keyboard", required_packages(board, self.drivers))
+            self.assertIn('.driver = "tab5-keyboard", .name = "keyboard1"',
+                          generate_header(board, self.drivers))
+            if profile == "esp32_s3_devkitc1_n16r8":
+                device["bindings"]["irq"] = 1
+                pin = next(pin for pin in board["pins"] if pin["gpio"] == 1)
+                pin.update(policy="fixed", adc=False, pwm=False)
+                validate_board(board, self.drivers)
+            for address in (0x08, 0x77):
+                device["bindings"]["addr"] = address
+                validate_board(board, self.drivers)
+            for address in (0x07, 0x78):
+                device["bindings"]["addr"] = address
+                with self.assertRaises(ManifestError):
+                    validate_board(board, self.drivers)
+
+    def test_generic_tca8418_geometry_and_pager_profile(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_devkitc_v4_wrover.toml",
+                                    self.manifest_dir)
+        board.setdefault("devices", []).append({
+            "driver": "tca8418", "name": "keyboard1",
+            "bindings": {"i2c": "i2c0", "addr": 0x34, "rows": 3, "cols": 3},
+        })
+        validate_board(board, self.drivers)
+        self.assertIn("tca8418", required_packages(board, self.drivers))
+        for key, value in (("rows", 9), ("cols", 0)):
+            with self.subTest(key=key):
+                previous = board["devices"][-1]["bindings"][key]
+                board["devices"][-1]["bindings"][key] = value
+                with self.assertRaises(ManifestError):
+                    validate_board(board, self.drivers)
+                board["devices"][-1]["bindings"][key] = previous
+        pager = load_board_manifest(self.manifest_dir / "t_lora_pager.toml", self.manifest_dir)
+        keyboard = next(device for device in pager["devices"] if device["name"] == "keyboard0")
+        self.assertEqual(keyboard["driver"], "lilygo-pager-keyboard")
+        self.assertEqual(keyboard["bindings"]["backlight"], 46)
+        self.assertIn('.driver = "lilygo-pager-keyboard"', generate_header(pager, self.drivers))
+
+    def test_4g_epaper_initializes_tab5_on_board_bus(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "waveshare_esp32_s3_sim7670g_4g_epaper.toml",
+            self.manifest_dir)
+        keyboard = next(device for device in board["devices"]
+                        if device["name"] == "keyboard0")
+        self.assertEqual(keyboard["driver"], "tab5-keyboard")
+        self.assertEqual(keyboard["bindings"],
+                         {"i2c": "i2c0", "addr": 0x6d, "irq": 41})
+        self.assertIn("expansion_tab5_keyboard", required_packages(board, self.drivers))
+        self.assertEqual(next(pin for pin in board["pins"] if pin["gpio"] == 40)["policy"], "free")
+        self.assertNotIn("expansion_cardkb", required_packages(board, self.drivers))
+        validate_board(board, self.drivers)
+
     def test_display_manifests_define_logical_geometry(self) -> None:
         required = {
             "SOLAR_OS_BOARD_DISPLAY_CONTROLLER",
@@ -88,6 +248,31 @@ class BoardManifestTest(unittest.TestCase):
         })
         self.assertIn('.driver = "esp32-camera", .name = "camera0"',
                       generate_header(board, self.drivers))
+
+    def test_camera_accepts_named_board_bus_and_rejects_mixed_control_bindings(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "goouuu_esp32_s3cam.toml",
+                                    self.manifest_dir)
+        board["buses"].append({"name": "i2c0", "protocol": "i2c", "sharing": "shared",
+                                "port": "I2C_NUM_0", "sda": 4, "scl": 5,
+                                "speed_hz": 100000})
+        camera = next(device for device in board["devices"] if device["name"] == "camera0")
+        camera["bindings"].pop("siod")
+        camera["bindings"].pop("sioc")
+        camera["bindings"]["i2c"] = "i2c0"
+        validate_board(board, self.drivers)
+        self.assertIn('.target = "i2c0"', generate_header(board, self.drivers))
+        for control in ({}, {"siod": 4}, {"sioc": 5},
+                        {"i2c": "i2c0", "siod": 4},
+                        {"i2c": "i2c0", "sioc": 5},
+                        {"i2c": "i2c0", "siod": 4, "sioc": 5}):
+            with self.subTest(control=control):
+                broken = deepcopy(board)
+                bindings = next(device["bindings"] for device in broken["devices"]
+                                if device["name"] == "camera0")
+                bindings.pop("i2c")
+                bindings.update(control)
+                with self.assertRaisesRegex(ManifestError, "either i2c or both siod and sioc"):
+                    validate_board(broken, self.drivers)
 
     def test_qdtech_es3n28p_uses_non_touch_fixed_hardware(self) -> None:
         board = load_board_manifest(
@@ -356,6 +541,7 @@ bindings = { gpio = 7 }
         self.assertIn('#include "solar_os_buttons.h"', header)
         self.assertIn("#define SOLAR_OS_BOARD_BUTTONS", header)
         self.assertIn(".miso_pin = GPIO_NUM_NC", header)
+        self.assertIn('.role = "startup-pulse", .value = 1', header)
 
     def test_elecrow_579_uses_dual_controller_geometry(self) -> None:
         board = load_board_manifest(
@@ -582,7 +768,7 @@ bindings = { gpio = 7 }
         )
         packages = required_packages(board, self.drivers)
         self.assertIn("xl9555", packages)
-        self.assertIn("tca8418", packages)
+        self.assertIn("expansion_lilygo_pager_keyboard", packages)
         self.assertIn("ublox_mia_m10q", packages)
         self.assertIn("st25r3916", packages)
         self.assertIn("drv2605", packages)

@@ -240,6 +240,37 @@ esp_err_t solar_os_stream_unregister(const char *id)
     return ESP_OK;
 }
 
+esp_err_t solar_os_stream_unregister_many(const char *const *ids, size_t count)
+{
+    if (ids == NULL || count == 0U || count > SOLAR_OS_STREAM_MAX) return ESP_ERR_INVALID_ARG;
+    for (size_t i=0; i<count; ++i) {
+        if (!stream_text_valid(ids[i], SOLAR_OS_STREAM_ID_MAX, true)) return ESP_ERR_INVALID_ARG;
+        for (size_t j=0; j<i; ++j) {
+            if (strcmp(ids[i], ids[j]) == 0) return ESP_ERR_INVALID_ARG;
+        }
+    }
+    esp_err_t err = stream_ensure_init();
+    if (err != ESP_OK) return err;
+    int indexes[SOLAR_OS_STREAM_MAX];
+    stream_lock();
+    for (size_t i=0; i<count; ++i) {
+        indexes[i] = stream_find_locked(ids[i]);
+        if (indexes[i] < 0 || streams[indexes[i]].active_handles != 0U) {
+            err = indexes[i] < 0 ? ESP_ERR_NOT_FOUND : ESP_ERR_INVALID_STATE;
+            stream_unlock();
+            return err;
+        }
+    }
+    for (size_t i=0; i<count; ++i) {
+        stream_entry_t *entry = &streams[indexes[i]];
+        const uint32_t generation = entry->generation;
+        memset(entry, 0, sizeof(*entry));
+        entry->generation = generation;
+    }
+    stream_unlock();
+    return ESP_OK;
+}
+
 size_t solar_os_stream_count(void)
 {
     if (stream_ensure_init() != ESP_OK) {

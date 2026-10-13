@@ -77,6 +77,7 @@ esp_err_t solar_os_app_start(const solar_os_app_t *app,
         return app_start_failure(app, ctx, ESP_ERR_INVALID_STATE);
     }
     solar_os_context_set_app_class(ctx, app->app_class);
+    ctx->app = app;
     if ((app->state_size == 0U) != (app->state_slot == NULL) ||
         (app->state_size > 0U &&
          app->state_storage == SOLAR_OS_APP_STATE_NONE) ||
@@ -118,6 +119,7 @@ void solar_os_app_stop(const solar_os_app_t *app, solar_os_context_t *ctx)
     if (app == NULL) {
         return;
     }
+    if (ctx != NULL) ctx->app = app;
     if (app->stop != NULL) {
         app->stop(ctx);
     }
@@ -159,6 +161,8 @@ void solar_os_context_init(solar_os_context_t *ctx,
     ctx->status_message[0] = '\0';
     ctx->app_class = SOLAR_OS_APP_CLASS_UNSPECIFIED;
     ctx->argc = 0;
+    ctx->launch_cwd[0] = '\0';
+    ctx->app = NULL;
     memset(ctx->argv, 0, sizeof(ctx->argv));
 }
 
@@ -395,6 +399,7 @@ esp_err_t solar_os_context_request_launch_ex(solar_os_context_t *ctx,
         strlcpy(ctx->argv[i], argv[i], sizeof(ctx->argv[i]));
     }
     ctx->argc = argc;
+    ctx->launch_cwd[0] = '\0';
     ctx->requested_app = app;
     ctx->launch_policy = policy;
     ctx->exit_requested = false;

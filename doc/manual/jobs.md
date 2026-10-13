@@ -2,7 +2,7 @@
 id = "jobs"
 title = "Background jobs"
 section = "job"
-summary = "Inspect and control bounded background workers"
+summary = "Start, inspect, and stop background workers"
 aliases = ["job", "background"]
 keywords = "python lua jobs background task process start stop state waiting failed memory stack"
 packages_any = []
@@ -13,40 +13,44 @@ Jobs are named background workers such as logging, acquisition, bridges, NTP,
 and HTTP serving. They are not foreground applications and continue when you
 switch shell or app sessions.
 
-## Inspect memory and ownership
-
-Run `jobs` for the compact overview and `job status NAME` for details:
+## Start, inspect, and stop
 
 ```text
 jobs
-job status log
+job start batmon 60
+job status batmon
+job stop batmon
 ```
 
-The status includes the worker stack size and whether it uses internal RAM or
-PSRAM. Detailed status also shows the current start-admission disposition and
-reason using the same centralized policy that launches jobs. It shows claimed
-resources and the last error. Check `mem` before starting several
-internal-stack jobs together.
+This starts battery monitoring every 60 seconds. Available jobs depend on the
+board and firmware. Only one instance of each job name can run; starting it
+again replaces the previous invocation.
 
-## Waiting and failed
-
-`waiting` means the requested worker has not passed launch admission yet. It
-may run later when the required memory or resource becomes available.
-
-`failed` means launch or runtime work ended with an error. Inspect `last_error`
-and the resource owner before retrying.
-
-## Start and stop
+Use `job status NAME` to see errors and the ports, files, or streams it owns.
+For example, a logger can write to a file:
 
 ```text
-job start batmon 60
 job start log file /logs/system.log info
-job start midi midi0
+job status log
 job stop log
 ```
 
-Only one instance of each registered job name is active. Starting it again
-replaces the previous invocation.
+Create the destination directory first. Jobs stop at reboot; add their start
+commands to the selected startup script to restore them. Run `setterm startup`
+to find that script. See [Job reference](jobs.reference.md) for each job's
+arguments.
+
+## Understand the state
+
+| State | What to do |
+| --- | --- |
+| `running` | The job started successfully. Inspect its status for progress. |
+| `waiting` | SolarOS retained the start request and will retry when enough worker memory is available. |
+| `failed` | A start or runtime error occurred. Check `job status NAME`, resolve the error, then restart. |
+| `stopped` | No job or pending start request is active. |
+
+The `STACK` column reports worker-stack bytes, not total memory use. Use `mem`
+when a job waits or reports no memory. Stop unused jobs to free their resources.
 
 ## Quick reference
 

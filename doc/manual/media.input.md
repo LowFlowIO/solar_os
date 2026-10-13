@@ -15,18 +15,10 @@ operation.
 
 ## Keyboard input
 
-Local hardware input uses structured press, release, and repeat events. The
-input service tracks held keys by source and stable physical identity, while
-legacy shell and text applications continue to receive translated characters.
-BLE, PS/2, CardKB, and the integrated CL-32 keyboard, fixed board buttons,
-`gpio-keys`, and ADC D-pads share one repeat policy. Configure it with
-`setterm keyrate`; the setting applies even on a build without BLE. Analog
-joysticks are different: they publish normalized axes and never synthesize key
-events.
-
-Keyboard transports can additionally supply a canonical USB HID usage and
-modifier mask. This keeps physical controls independent of the selected text
-layout and lets BLE and PS/2 share the same US or German keymap.
+BLE, PS/2, CardKB, integrated keyboards, board buttons, `gpio-keys`, and ADC
+D-pads feed the same input service. Use `setterm keyboard us` or `de` to choose
+a text layout, and `setterm keyrate` to set key repeat. Analog joysticks report
+axes; they do not generate arrow keys.
 
 On a board with absolute touch and PSRAM, `job start graffiti` turns the whole
 display into a Palm Graffiti handwriting keyboard without drawing an overlay.
@@ -44,8 +36,7 @@ not a count of currently held keys. Character-only devices such as CardKB emit
 one press and one release per character, so one tap normally adds two events.
 Their last event has `physical=0` and `usage=0`; `key=10` is newline/Enter.
 
-CL-32 `core0` polls the integrated AVR event FIFO every 10 ms and registers
-`keyboard0`. It preserves press and release transitions. Shift and Fn cycle
+On CL-32, Shift and Fn cycle
 through one-shot, locked, and off states. File is left Alt, Menu is left Ctrl,
 OK is Enter, Cancel is Escape, and Fn with keypad 1 through 0 produces F1
 through F10.
@@ -91,10 +82,8 @@ input test touch0
 
 Touch and other absolute pointers report positions; mice report relative
 deltas; analog joysticks report normalized X/Y axes; gesture sensors report
-recognized motions and taps. Pointer, axis, and gesture queues
-are allocated only when the first matching source attaches. `input test`
-retains counters and the most recent accepted event, so it also works for
-polling touch controllers while the shell is active.
+recognized motions and taps. `input test` shows counters and the latest event
+while the shell is active.
 
 Native foreground applications opt in to structured pointer input with
 `SOLAR_OS_APP_FLAG_POINTER_EVENTS` and to axis input with
@@ -115,11 +104,8 @@ Applications without the matching flag do not receive those structured events.
 
 Gesture bindings observe the same events without taking them away from the
 foreground application. A binding can match one source or every source, one
-gesture kind, and optionally one direction. Its command runs on a single
-on-demand background worker, so two gestures never execute shell commands
-concurrently. The worker releases its internal stack after the command queue
-becomes idle. The cooldown suppresses repeated sensor reports; it defaults to
-250 ms.
+gesture kind, and optionally one direction. Commands run one at a time. The
+cooldown suppresses repeated reports and defaults to 250 ms.
 
 ```text
 gesture bind source=gesture0 gesture=flick direction=east -- input emit ALT+RIGHT
@@ -234,9 +220,7 @@ enable it; TTGO VGA32 v1.4 disables it to preserve internal heap. Use `setterm
 ble on|off|default` to select an explicit next-boot value or return to the board
 default. The compatible `ble enable`, `ble disable`, and `ble default` commands
 provide the same settings. These commands leave the current boot unchanged and
-do not forget the remembered keyboard or its bond. On a BLE-disabled boot, the
-unused Bluetooth controller and host memory is returned to the internal heap
-before normal service initialization.
+do not forget the remembered keyboard or its bond. Disabling BLE also frees internal memory for other work on the next boot.
 `ble forget` erases the remembered keyboard from SolarOS NVS and removes its BLE
 bond and cached GATT service database. This forces service rediscovery when the
 same keyboard address is paired again, including after keyboard firmware changes

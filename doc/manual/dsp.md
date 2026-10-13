@@ -9,16 +9,12 @@ packages_any = ["service_dsp"]
 +++
 # Digital signal processing
 
-`service.dsp` is a synchronous library service for signed 16-bit signal
-processing. Callers own FIR, decimator, and FFT contexts. The service does not
-run a worker task and does not retain global stream state.
+Use `solaros.dsp` to scale, mix, filter, or analyze signed 16-bit samples from
+Python or Lua. Create a FIR, decimator, or FFT processor for repeated work, and
+close it when finished. Native C APIs are listed below.
 
-The public operation selects its backend. Applications must not select SIMD
-directly. ESP32-S3 builds report `esp32s3-pie` and can use ESP-DSP PIE routines
-for eligible gain, window, and signed 16-bit FFT blocks. Other operations,
-small blocks, unaligned blocks, unavailable runtime work memory, and other
-targets use the portable implementation. `service.engines` records the
-operation under the `dsp` owner and reports `cpu` or `simd` use.
+SolarOS selects acceleration automatically where available on ESP32-S3.
+The same API works with the portable backend on other boards.
 
 ## Numeric contract
 

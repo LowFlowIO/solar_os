@@ -2,8 +2,8 @@
 id = "python.hardware"
 title = "Python gpio and peripherals API"
 section = "api"
-summary = "GPIO and peripherals: gpio, onewire, led, adc, pwm, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC"
-keywords = "python solaros api hardware gpio onewire led adc pwm i2c spi uart neopixel battery charger sensors gnss haptic imu nfc"
+summary = "GPIO and peripherals: gpio, onewire, led, adc, pwm, servo, i2c, spi, uart, neopixel, battery, charger, sensors, GNSS, haptic, IMU, NFC"
+keywords = "python solaros api hardware gpio onewire led adc pwm servo i2c spi uart neopixel battery charger sensors gnss haptic imu nfc"
 packages_any = ["app_python"]
 agent_reference_sections = true
 +++
@@ -258,12 +258,24 @@ print(solaros.adc.read(1))
 
 ## `solaros.pwm`
 
-PWM functions expose LEDC PWM output on runtime-safe expansion pins. Active PWM outputs share one LEDC timer, so changing the frequency changes the frequency for all active PWM outputs.
+PWM functions address named outputs as `"provider:number"`. An integer selects
+`native:<GPIO>`, preserving the GPIO API. Providers enforce their own shared
+frequency groups; conflicts are rejected within a group.
 
-- Constants: `FREQ_MIN`, `FREQ_MAX`.
-- `status()`: return dictionaries with `pin`, `allowed`, `active`, `channel`, `freq_hz`, and `duty_percent`.
-- `set(pin, freq_hz, duty_percent)`: start or update PWM on a pin. Duty is `0..100`.
-- `off(pin)`: stop PWM on a pin.
+- Constants: `FREQ_MIN`, `FREQ_MAX` describe the native backend's range.
+- `providers()`: return records with `name`, `driver`, `outputs`, and `detachable`.
+- `status()`: return dictionaries with `pin`, `allowed`, `active`, `channel`,
+  `provider`, `output`, `frequency_group`, `owner`, `freq_hz`, `duty_percent`,
+  `enabled`, `reserved`, `resolution_bits`, and
+  `pulse_width_us`. Reserved outputs remain active while disabled. Pulse width
+  reflects the configured hardware duty, even while pulses are disabled.
+  `pin` is the native GPIO number, or `-1` for outputs without a GPIO mapping.
+  `frequency_group` identifies outputs sharing timing within that provider.
+- `set(output, freq_hz, duty_percent)`: start or update a general PWM output. Duty is `0..100`.
+- `pulse(output, freq_hz, pulse_us)`: start or update PWM with an integer pulse
+  width in microseconds, rounded to hardware ticks. The pulse must be shorter
+  than the period; zero is accepted.
+- `off(output)`: stop a general PWM output.
 
 Example:
 
@@ -274,6 +286,18 @@ solaros.pwm.set(1, 1000, 50)
 print(solaros.pwm.status())
 solaros.pwm.off(1)
 ```
+
+## `solaros.servo`
+
+Available when the servo service is compiled. Use `list()`, `status(name)`,
+`open(name, output, min_us, max_us, min_deg, max_deg[, freq_hz[, inverted]])`,
+`set(name, angle_deg)`, `pulse(name, pulse_us)`, `disable(name)`, and
+`close(name)` for calibrated positional outputs. Opening sends no pulses;
+commands start output. Outputs belong to their creating runtime and are
+closed on interpreter exit. Status reports commanded position.
+
+See [Servo outputs](servo.md) for calibration, record fields, examples,
+and resource limits.
 
 ## `solaros.neopixel`
 
@@ -368,5 +392,5 @@ print(solaros.uart.read(64, 500))
 
 ## Quick reference
 
-Use `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.charger`, `solaros.sensors`, `solaros.gnss`, `solaros.haptic`, `solaros.imu`, and `solaros.nfc` for gpio and peripherals.
+Use `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.servo`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.charger`, `solaros.sensors`, `solaros.gnss`, `solaros.haptic`, `solaros.imu`, and `solaros.nfc` for gpio and peripherals.
 See `man python` for runtime conventions and service availability.

@@ -4,6 +4,7 @@
 #include <stdint.h>
 
 #include "esp_err.h"
+#include "solar_os_native_app_abi.h"
 
 #ifdef __cplusplus
 extern "C" {
@@ -18,6 +19,8 @@ typedef struct {
     uint16_t machine;
     uint16_t program_count;
     uint16_t section_count;
+    bool foreground;
+    solar_os_native_app_manifest_v2_t app;
 } solar_os_native_elf_info_t;
 
 esp_err_t solar_os_native_elf_validate(const uint8_t *data,

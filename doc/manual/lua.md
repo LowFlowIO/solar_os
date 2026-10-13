@@ -21,7 +21,15 @@ print("SolarOS " .. solaros.version())
 print(solaros.identity.format())
 ```
 
-Lua allocations prefer PSRAM. Host-facing Lua `io`, `os`, and dynamic package loading are intentionally not opened; scripts should use SolarOS services for hardware, storage, networking, and foreground UI.
+Run the interpreter or a saved script from the shell:
+
+```text
+lua
+lua /apps/demo.lua argument
+```
+
+Use SolarOS services for files, hardware, networking, and UI. Lua's host
+`io`, `os`, and dynamic package loading are unavailable.
 
 ## API topics
 
@@ -34,7 +42,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Time and scheduling](lua.time.md) | `solaros.time`, `solaros.rtc`, `solaros.schedule` |
 | [Networking](lua.network.md) | `solaros.wifi`, `solaros.mqtt`, `solaros.http`, `solaros.net`, `solaros.ftp`, `solaros.sftpsync`, `solaros.ssh_keys` |
 | [Bluetooth](lua.ble.md) | `solaros.ble` |
-| [GPIO and peripherals](lua.hardware.md) | `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.sensors`, `solaros.gnss`, `solaros.nfc` |
+| [GPIO and peripherals](lua.hardware.md) | `solaros.gpio`, `solaros.onewire`, `solaros.led`, `solaros.adc`, `solaros.pwm`, `solaros.servo`, `solaros.i2c`, `solaros.spi`, `solaros.uart`, `solaros.neopixel`, `solaros.battery`, `solaros.sensors`, `solaros.gnss`, `solaros.nfc` |
 | [Buses and expansion](lua.buses.md) | `solaros.buses`, `solaros.expansion` |
 | [Audio and control](lua.audio.md) | `solaros.audio`, `solaros.speech`, `solaros.synth`, `solaros.dsp`, `solaros.controls`, `solaros.parameters`, `solaros.midi`, `solaros.osc` |
 | [Input and clipboard](lua.input.md) | `solaros.input`, `solaros.hid`, `solaros.clipboard` |
@@ -43,6 +51,9 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Text user interfaces](lua.tui.md) | `solaros.tui` |
 | [Graphics and raster images](lua.gfx.md) | `solaros.gfx`, `solaros.image` |
 | [Camera, streams, and RTSP](lua.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
+| [Computer vision](vision.md) | `solaros.vision` |
+| [Model inference](inference.md) | `solaros.inference` |
+| [Native image pipelines](pipelines.md) | `solaros.pipeline` |
 
 ## Top-Level Helpers
 
@@ -62,26 +73,28 @@ change it.
 
 ## Service availability
 
-Lua mirrors the Python `solaros` module structure:
+Lua requires PSRAM. Optional `solaros` tables appear only when their services
+are included in the firmware. Check `pkg` and `board`, or test a table before
+using it:
 
-`solaros.streams` provides local owned handles. `solaros.camera` and
-`solaros.rtsp` are present only when their native services are compiled; see
-[Camera, streams, and RTSP](lua.media.md). Image decode and native presentation
-remain gated by `media.image`.
+```lua
+if solaros.wifi then
+    print(solaros.wifi.status())
+end
+```
 
-The Lua runtime package requires PSRAM. Hardware and network tables are present
-only when the board/flavor includes the corresponding service package. For
-example, an ODROID-GO full build includes Lua with `solaros.spi` and
-`solaros.onewire`, while omitting `solaros.adc` and `solaros.i2c` because those
-service packages are not available on that board.
+Vision, inference, and pipelines need their own packages; adding Lua alone
+does not enable them. See [Packages and flavors](packages.md).
 
-Lua strings are binary-safe, so byte-oriented APIs such as `uart.read`, `i2c.read_reg`, `clipboard.get`, and `mqtt.read().payload` return Lua strings.
+Lua strings can contain arbitrary bytes. Byte-oriented calls such as
+`uart.read`, `i2c.read_reg`, and `mqtt.read().payload` return strings.
 
 ## Conventions
 
 Lua tables returned as lists use normal Lua 1-based array indexes. Direct block lookup with `solaros.storage.block(index)` follows the underlying storage service index, matching Python's 0-based `block(index)`.
 
-The Lua bridge intentionally does not expose raw SSH/SCP session handles. Those need explicit object lifetime and event-loop rules before becoming scriptable.
+Raw SSH/SCP session handles are unavailable in scripts. Use the `ssh` and
+`scp` applications for remote access and file transfers.
 
 ## Quick reference
 

@@ -27,6 +27,7 @@ typedef struct {
     unsigned flags;
     size_t length;
     size_t rxlength;
+    uint32_t override_freq_hz;
     uint8_t tx_data[4];
     const void *tx_buffer;
     void *rx_buffer;
