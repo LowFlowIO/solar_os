@@ -1246,7 +1246,8 @@ initial cleanup and does not schedule periodic full refreshes. `refresh=fast`
 forces a fast full-frame waveform and `refresh=full` forces the full cleanup
 waveform on every changed frame.
 
-The Elecrow 5.79-inch dual-SSD1683 profile also accepts the optional
+The Elecrow 5.79-inch dual-SSD1683 and Waveshare 4.2-inch V2/revision-2.2
+profiles also accept the optional
 `refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
 sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
 duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
@@ -1270,13 +1271,18 @@ actual timing and submitted/coalesced image counts appear in the mode output.
 `pulse-power=<cycle,hold>` selects supply cycling or retention during settling,
 `pulse-ramp=<normal,fast>` selects booster duration, and
 `pulse-spi-khz=<100..20000>` overrides the SPI clock only for pulse operation.
-Defaults are asynchronous, 10 ms requested interval, retained supplies, fast
+Elecrow 5.79-inch defaults are asynchronous, 10 ms requested interval, retained supplies, fast
 booster ramp, 20000 kHz pulse SPI, 6 drive cycles, 8 scan frames, FR code 4,
 and adaptive cleanup with a baseline of 64. The default refresh policy remains auto. Requested
 scan cadence is not a guarantee of achieved cadence or optical settling.
+Waveshare 4.2-inch defaults are asynchronous, 100 ms requested interval,
+supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
+8 scan frames, FR code 4, and adaptive cleanup with baseline 64. Native and
+pulse timing logs support comparison on that panel.
 The mode requires physical panel calibration; other EPD
 profiles reject it until they have a matching waveform adapter. See the
-[SolarWriter display controls](boards.md#solarwriter) for behavior and recovery.
+[SolarWriter display controls](boards.md#solarwriter) and
+[Waveshare 4G E-paper](boards.md#waveshare-4g-e-paper) for behavior and recovery.
 
 Packet radio devices are datagram endpoints registered by expansion drivers, not
 byte-stream ports. The common radio layer preserves packet metadata such as RSSI

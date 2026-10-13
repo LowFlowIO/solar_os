@@ -78,6 +78,19 @@ The first custom activation clears native image bits from all four RAM planes.
 Later writes cover the union of the current and preceding active bounds, so
 old drive bits become neutral before another activation. This restricts SPI
 traffic, not the controller's physical gate scan.
+The Waveshare V2/revision-2.2 4.2-inch profile supplies a single-controller
+400x300 adapter with X-fast, increasing-Y row-major RAM windows. Its first mask
+replaces both full RAM planes; later writes cover the union of active and prior
+bounds. Its native target transfer mirrors the image into both planes.
+The pulse loader explicitly selects both-plane B/W LUT mapping (0x21=00/00),
+disables RAM ping-pong, and uses VCOM 0x30, VGH 0x17, source levels 41/A8/32,
+and booster strengths 8B/9C/A4 from
+[Waveshare's EPD_4in2_V2 custom-LUT setup](https://github.com/waveshareteam/e-Paper/blob/master/RaspberryPi_JetsonNano/c/lib/e-Paper/EPD_4in2_V2.c).
+SolarOS generates its own differential waveform and uses the SSD1683's documented
+two-frame discharge sequence. This profile starts with normal ramp and supply
+cycling and leaves native auto refresh as the boot policy. Native operation is
+restored by reset before resuming the existing partial/full path.
+
 SSD1677 and UltraChip profiles need their own validated waveform adapters
 before enabling the same controls. Matching a controller family alone does
 not establish a panel's electrical or optical compatibility.

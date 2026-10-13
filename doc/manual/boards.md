@@ -1099,6 +1099,44 @@ the optional DAC mute and fuel-gauge interrupt signals are not claimed.
 Build with `pio run -e solar_writer`. The target uses the same 8 MB OTA and
 serial partition layouts as the base CrowPanel.
 
+## Waveshare 4G E-paper
+
+The `waveshare_esp32_s3_sim7670g_4g_epaper` target uses the monochrome
+Waveshare 4.2-inch V2/revision-2.2 SSD1683 profile at 400x300. Native refresh
+defaults to `auto`, with dirty-window partial updates and periodic full cleanup.
+The display remains on its existing board-owned SPI bus and pins.
+
+The optional experimental pulse adapter uses row-major transfers on one
+controller, the shared per-pixel drive budget and history, asynchronous scans,
+and adaptive native cleanup. Select it with:
+
+```text
+display mode display0 refresh=pulse
+display mode display0
+```
+
+Initial pulse defaults are 3 drive cycles, 8 scan frames, FR code 4,
+asynchronous operation, a 100 ms requested minimum scan interval, supply
+cycling, normal booster ramp, the configured board SPI clock, and adaptive
+cleanup with a baseline of 64. These values are a calibration starting point;
+optical contrast, erasure, ghosting, and achieved cadence require inspection
+on the physical panel. The requested interval is not a measured frame rate.
+
+The adapter exposes the same pulse controls as
+[SolarWriter](#solarwriter), including `drive-cycles`, `pulse-frames`,
+`waveform-fr`, `cleanup-every`, `cleanup-policy`, `pulse-scan`, `pulse-period`,
+`pulse-power`, `pulse-ramp`, and `pulse-spi-khz`. Mode output reports scan timings,
+pending pixels, and cleanup counters. `log show` includes native transfer/drive
+timings and pulse scan timings for comparison. Faster ramp, held supplies, and
+higher SPI clocks require separate panel and wiring validation.
+
+The waveform uses the power rails and VCOM setting published for Waveshare's
+4.2-inch V2 custom-LUT path; it is a monochrome differential drive waveform,
+not native grayscale. Switching back with
+`display mode display0 refresh=auto` resets the controller and cleans up on
+the next presentation. A failed asynchronous pulse disables scanning and
+immediately restores the newest accepted target with a native full refresh.
+
 ## Waveshare ESP32-S3-ePaper-3.97
 
 The built-in `waveshare_esp32_s3_epaper_3_97` target covers Waveshare's 3.97-inch
