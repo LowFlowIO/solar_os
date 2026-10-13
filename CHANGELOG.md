@@ -2,6 +2,15 @@
 
 ## 4.x
 
+- **4.16.10** — 2026-10-13 — Added RTSP client Basic and Digest MD5
+  authentication with inline URL credentials or up to four saved accounts
+  managed by `rtsp-auth`. Player titles and connection messages hide URL
+  passwords. FTP, SFTP, and Telnet now complete hostname aliases from
+  `.ssh/hosts`, including SFTP `user@` prefixes and Telnet raw mode.
+  FTP and SFTP gain `PgUp`/`PgDn` paging, Backspace parent navigation,
+  and `h` to toggle hidden files and directories in both panes.
+  The default BLE device name now uses the configured hostname and is
+  restored when a BLE peripheral app closes.
 - **4.16.9** — 2026-10-13 — Added the SolarWriter board profile for the
   Elecrow 5.79-inch CrowPanel with microphone, shared DAC/amplifier output,
   and battery gauge. Added reusable INMP441 expansion audio with 16 kHz mono
