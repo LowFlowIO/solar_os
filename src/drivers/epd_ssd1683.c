@@ -63,9 +63,13 @@ typedef struct {
     esp_err_t (*write_target)(epd_ssd1683_t *, const uint8_t *);
     esp_err_t (*write_mask)(epd_ssd1683_t *);
     esp_err_t (*load_waveform)(epd_ssd1683_t *);
+    esp_err_t (*activate)(epd_ssd1683_t *);
+    esp_err_t (*power_down)(epd_ssd1683_t *);
 } ssd1683_pulse_profile_t;
 
 static const ssd1683_pulse_profile_t *ssd1683_pulse_profile(const epd_ssd1683_t *display);
+static esp_err_t ssd1683_pulse_activate(epd_ssd1683_t *display);
+static esp_err_t ssd1683_pulse_power_off(epd_ssd1683_t *display);
 
 /*
  * Elecrow ships two electrically compatible panel revisions. The current
@@ -144,13 +148,16 @@ static epd_pulse_tuning_t ssd1683_default_pulse_tuning(epd_ssd1683_panel_variant
         tuning.waveform_fr = 4;
         tuning.cleanup_every = 64;
         tuning.cleanup_adaptive = true;
-    } else if (panel == EPD_SSD1683_PANEL_WAVESHARE_V2) {
+    } else if (panel == EPD_SSD1683_PANEL_WAVESHARE_V2 ||
+               panel == EPD_SSD1683_PANEL_GREEN_STICKER) {
         /* Initial calibration preset for the single-controller 4.2-inch panel. */
         tuning.drive_cycles = 3;
         tuning.pulse_frames = 8;
         tuning.waveform_fr = 4;
         tuning.cleanup_every = 64;
         tuning.cleanup_adaptive = true;
+        if (panel == EPD_SSD1683_PANEL_GREEN_STICKER)
+            tuning.waveform_fr = 9; /* Vendor's 50 Hz PLL code. */
     }
     return tuning;
 }
@@ -160,7 +167,8 @@ static void ssd1683_pulse_defaults(epd_ssd1683_t *display,
 {
     const bool dual = config->panel_variant == EPD_SSD1683_PANEL_ELECROW_579_DUAL;
     display->pulse_tuning = ssd1683_default_pulse_tuning(config->panel_variant);
-    display->scan_async = dual || config->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2;
+    display->scan_async = dual || config->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2 ||
+        config->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER;
     display->scan_period_ms = dual ? 10 : 100;
     display->pulse_power_hold = dual;
     display->pulse_ramp_fast = dual;
@@ -593,7 +601,17 @@ static esp_err_t ssd1683_controller_init(epd_ssd1683_t *display)
                  "detected %s panel revision",
                  display->panel_variant == EPD_SSD1683_PANEL_LEGACY ?
                      "legacy SSD1683" : "green-sticker");
+        const epd_ssd1683_config_t detected_config = {
+            .panel_variant = display->panel_variant,
+            .spi_clock_hz = (int)display->spi_clock_hz,
+        };
+        ssd1683_pulse_defaults(display, &detected_config);
     }
+
+    /* UC8276-family BUSY_N is active low; the legacy SSD1683 is active high.
+     * Revision detection above intentionally probes with the SSD1683 level. */
+    if (display->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER)
+        display->busy_level = 0;
 
     if (display->panel_variant == EPD_SSD1683_PANEL_LEGACY ||
         display->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2) {
@@ -1057,6 +1075,119 @@ static esp_err_t ssd1683_single_write_pulse(epd_ssd1683_t *display)
     return ESP_OK;
 }
 
+/* The green-sticker controller uses UC8276-family seven-byte LUT groups and
+ * OLD/NEW transmission commands, rather than SSD1683's RAM/window commands.
+ * DDX=01 keeps the vendor's white=1 convention: NEW/OLD=01 drives black,
+ * 10 drives white, and both equal combinations remain neutral. */
+static esp_err_t ssd1683_green_write_planes(epd_ssd1683_t *display,
+                                           const uint8_t *source)
+{
+    const size_t plane_size = SSD1683_PANEL_ROW_BYTES * SSD1683_HEIGHT;
+    for (unsigned plane = 0; plane < 2; ++plane) {
+        ESP_RETURN_ON_ERROR(ssd1683_cmd(display, plane ? 0x10 : 0x13),
+                            TAG, "green RAM command failed");
+        ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)display->dc_pin, 1),
+                            TAG, "green RAM D/C failed");
+        for (unsigned y = 0; y < SSD1683_HEIGHT; ++y) {
+            if (source != NULL)
+                ssd1683_convert_row(display, source, y);
+            else
+                memcpy(display->line_buffer, display->pulse_planes +
+                    plane * plane_size + y * SSD1683_PANEL_ROW_BYTES,
+                    SSD1683_PANEL_ROW_BYTES);
+            ESP_RETURN_ON_ERROR(ssd1683_tx_bytes(display, display->line_buffer,
+                SSD1683_PANEL_ROW_BYTES), TAG, "green RAM row failed");
+        }
+    }
+    return ESP_OK;
+}
+
+static esp_err_t ssd1683_green_write_target(epd_ssd1683_t *display,
+                                           const uint8_t *source)
+{
+    return ssd1683_green_write_planes(display, source);
+}
+
+static esp_err_t ssd1683_green_write_pulse(epd_ssd1683_t *display)
+{
+    const size_t plane_size = SSD1683_PANEL_ROW_BYTES * SSD1683_HEIGHT;
+    memset(display->pulse_planes, 0, 2U * plane_size);
+    for (size_t i = 0; i < display->pixel_budget.active_count; ++i) {
+        const size_t p = display->pixel_budget.active[i];
+        const epd_pixel_drive_t drive = epd_pixel_budget_drive(&display->pixel_budget, p);
+        if (drive == EPD_PIXEL_HOLD) continue;
+        const unsigned x = p % SSD1683_WIDTH, y = p / SSD1683_WIDTH;
+        const unsigned plane = drive == EPD_PIXEL_DRIVE_BLACK;
+        display->pulse_planes[plane * plane_size + y * SSD1683_PANEL_ROW_BYTES + x / 8U] |=
+            (uint8_t)(0x80U >> (x % 8U));
+    }
+    /* Full RAM uploads avoid depending on the panel's partial-window support.
+     * Neutral entries still ensure only budgeted pixels receive a drive. */
+    return ssd1683_green_write_planes(display, NULL);
+}
+
+static esp_err_t ssd1683_green_load_pulse_lut(epd_ssd1683_t *display)
+{
+    /* The native automatic GC sequence leaves this revision needing reset
+     * before a changed update. Reinitialize when entering a pulse waveform;
+     * preserve the software budgets and replace both hardware RAM masks. */
+    ssd1683_hardware_reset(display, SSD1683_RESET_PRE_HIGH_MS, SSD1683_RESET_LOW_MS);
+    ESP_RETURN_ON_ERROR(ssd1683_green_init(display), TAG, "green pulse initialization failed");
+    display->pulse_mask_dirty = true;
+    const uint8_t interval[] = {0xd7}; /* Floating border, DDX=01. */
+    const uint8_t pll[] = {(uint8_t)display->pulse_tuning.waveform_fr};
+    const uint8_t booster[] = {
+        display->pulse_ramp_fast ? 0x16 : 0x96,
+        display->pulse_ramp_fast ? 0x16 : 0x96, 0x29,
+    };
+    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x50, interval, sizeof(interval)),
+                        TAG, "green pulse data mapping failed");
+    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x30, pll, sizeof(pll)),
+                        TAG, "green pulse PLL failed");
+    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x06, booster, sizeof(booster)),
+                        TAG, "green pulse booster failed");
+    for (unsigned entry = 0; entry < 5; ++entry) {
+        uint8_t lut[42] = {0};
+        lut[0] = 1; /* One group, one state, drive followed by neutral frame. */
+        lut[1] = (uint8_t)display->pulse_tuning.pulse_frames;
+        if (entry == 2) lut[1] |= 0x80; /* NEW=1 OLD=0: white/VSL. */
+        if (entry == 3) lut[1] |= 0x40; /* NEW=0 OLD=1: black/VSH. */
+        lut[2] = 1;
+        lut[5] = 1;
+        ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x20U + entry, lut, sizeof(lut)),
+                            TAG, "green pulse LUT failed");
+    }
+    display->pulse_lut_loaded = true;
+    return ESP_OK;
+}
+
+static esp_err_t ssd1683_green_activate_pulse(epd_ssd1683_t *display)
+{
+    if (!display->pulse_power_hold) {
+        const uint8_t automatic[] = {0xa5};
+        display->pulse_analog_on = false;
+        return ssd1683_cmd_data(display, 0x17, automatic, sizeof(automatic));
+    }
+    if (!display->pulse_analog_on) {
+        const int idle = gpio_get_level((gpio_num_t)display->busy_pin);
+        ESP_RETURN_ON_ERROR(ssd1683_cmd(display, 0x04), TAG, "green pulse power-on failed");
+        if (!ssd1683_busy_asserted(display, SSD1683_BUSY_ASSERT_TIMEOUT_MS) ||
+            !ssd1683_busy_cleared(display, 2000)) {
+            SOLAR_OS_LOGE(TAG, "green pulse power-on BUSY timeout idle=%d now=%d expected=%d",
+                idle, gpio_get_level((gpio_num_t)display->busy_pin), display->busy_level);
+            return ESP_ERR_TIMEOUT;
+        }
+        display->pulse_analog_on = true;
+    }
+    return ssd1683_cmd(display, 0x12);
+}
+
+static esp_err_t ssd1683_green_pulse_power_off(epd_ssd1683_t *display)
+{
+    ESP_RETURN_ON_ERROR(ssd1683_cmd(display, 0x02), TAG, "green pulse power-off failed");
+    return ssd1683_busy_cleared(display, 2000) ? ESP_OK : ESP_ERR_TIMEOUT;
+}
+
 static const ssd1683_pulse_profile_t *ssd1683_pulse_profile(const epd_ssd1683_t *display)
 {
     static const ssd1683_pulse_profile_t dual = {
@@ -1065,6 +1196,8 @@ static const ssd1683_pulse_profile_t *ssd1683_pulse_profile(const epd_ssd1683_t 
         .write_target = ssd1683_dual_write_target,
         .write_mask = ssd1683_dual_write_pulse,
         .load_waveform = ssd1683_dual_load_pulse_lut,
+        .activate = ssd1683_pulse_activate,
+        .power_down = ssd1683_pulse_power_off,
     };
     static const ssd1683_pulse_profile_t single = {
         .width = SSD1683_WIDTH, .height = SSD1683_HEIGHT,
@@ -1072,8 +1205,21 @@ static const ssd1683_pulse_profile_t *ssd1683_pulse_profile(const epd_ssd1683_t 
         .write_target = ssd1683_single_write_target,
         .write_mask = ssd1683_single_write_pulse,
         .load_waveform = ssd1683_single_load_pulse_lut,
+        .activate = ssd1683_pulse_activate,
+        .power_down = ssd1683_pulse_power_off,
+    };
+    static const ssd1683_pulse_profile_t green = {
+        .width = SSD1683_WIDTH, .height = SSD1683_HEIGHT,
+        .plane_size = SSD1683_PANEL_ROW_BYTES * SSD1683_HEIGHT,
+        .write_target = ssd1683_green_write_target,
+        .write_mask = ssd1683_green_write_pulse,
+        .load_waveform = ssd1683_green_load_pulse_lut,
+        .activate = ssd1683_green_activate_pulse,
+        .power_down = ssd1683_green_pulse_power_off,
     };
     if (ssd1683_is_dual(display)) return &dual;
+    if (display != NULL && display->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER)
+        return &green;
     return display != NULL && display->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2 ? &single : NULL;
 }
 
@@ -1183,14 +1329,32 @@ static esp_err_t ssd1683_pulse_prepare(epd_ssd1683_t *display,
     return ESP_OK;
 }
 
-static esp_err_t ssd1683_pulse_powerdown(epd_ssd1683_t *display)
+static esp_err_t ssd1683_pulse_power_off(epd_ssd1683_t *display)
 {
-    if (!display->pulse_analog_on) return ESP_OK;
     const uint8_t off[] = {0x03};
     ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x22, off, 1), TAG, "pulse power-down setup failed");
     ESP_RETURN_ON_ERROR(ssd1683_cmd(display, 0x20), TAG, "pulse power-down failed");
     if (!ssd1683_busy_cleared(display, 2000)) return ESP_ERR_TIMEOUT;
+    return ESP_OK;
+}
+
+static esp_err_t ssd1683_pulse_powerdown(epd_ssd1683_t *display)
+{
+    if (!display->pulse_analog_on) return ESP_OK;
+    const ssd1683_pulse_profile_t *profile = ssd1683_pulse_profile(display);
+    if (profile == NULL) return ESP_ERR_NOT_SUPPORTED;
+    ESP_RETURN_ON_ERROR(profile->power_down(display), TAG, "pulse power-off failed");
     display->pulse_analog_on = false;
+    return ESP_OK;
+}
+
+static esp_err_t ssd1683_pulse_activate(epd_ssd1683_t *display)
+{
+    const uint8_t update[] = {display->pulse_power_hold ? 0xcc : 0xcf};
+    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x22, update, sizeof(update)),
+                        TAG, "pulse activation setup failed");
+    ESP_RETURN_ON_ERROR(ssd1683_cmd(display, 0x20), TAG, "pulse activation failed");
+    display->pulse_analog_on = display->pulse_power_hold;
     return ESP_OK;
 }
 
@@ -1213,13 +1377,11 @@ static esp_err_t ssd1683_pulse_cycle(epd_ssd1683_t *display,
     display->pulse_drive_interval = display->pulse_last_drive_start == 0 ? 0 :
         drive_started - display->pulse_last_drive_start;
     display->pulse_last_drive_start = drive_started;
-    const uint8_t update[] = {display->pulse_power_hold ? 0xcc : 0xcf};
-    ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x22, update, sizeof(update)),
-                        TAG, "pulse activation setup failed");
-    ESP_RETURN_ON_ERROR(ssd1683_cmd(display, 0x20), TAG, "pulse activation failed");
-    display->pulse_analog_on = display->pulse_power_hold;
+    const int busy_idle = gpio_get_level((gpio_num_t)display->busy_pin);
+    ESP_RETURN_ON_ERROR(profile->activate(display), TAG, "pulse activation failed");
     if (!ssd1683_busy_asserted(display, SSD1683_BUSY_ASSERT_TIMEOUT_MS)) {
-        SOLAR_OS_LOGE(TAG, "pulse activation did not assert BUSY");
+        SOLAR_OS_LOGE(TAG, "pulse activation did not assert BUSY idle=%d now=%d expected=%d",
+            busy_idle, gpio_get_level((gpio_num_t)display->busy_pin), display->busy_level);
         return ESP_ERR_TIMEOUT;
     }
     if (!ssd1683_busy_cleared(display, 2000)) {
@@ -1527,6 +1689,10 @@ static esp_err_t ssd1683_trigger_update(epd_ssd1683_t *display,
         ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x17, update, sizeof(update)),
                             TAG,
                             "green display update failed");
+        if (!ssd1683_busy_asserted(display, SSD1683_BUSY_ASSERT_TIMEOUT_MS)) {
+            SOLAR_OS_LOGE(TAG, "green native activation did not assert BUSY");
+            return ESP_ERR_INVALID_RESPONSE;
+        }
         return ssd1683_wait_ready(display);
     }
 
@@ -1728,7 +1894,8 @@ static esp_err_t ssd1683_refresh(epd_ssd1683_t *display)
     display->shadow_valid = true;
     display->partial_refresh_active = partial;
     display->fast_refresh_count = full ? 0 : (uint8_t)(display->fast_refresh_count + 1U);
-    if (display->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2) {
+    if (display->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2 ||
+        display->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER) {
         const int64_t finished = esp_timer_get_time();
         SOLAR_OS_LOGI(TAG, "native %s transfer=%lldus drive=%lldus total=%lldus",
             full ? "full" : (partial ? "partial" : "fast"),

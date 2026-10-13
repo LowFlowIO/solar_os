@@ -1246,8 +1246,8 @@ initial cleanup and does not schedule periodic full refreshes. `refresh=fast`
 forces a fast full-frame waveform and `refresh=full` forces the full cleanup
 waveform on every changed frame.
 
-The Elecrow 5.79-inch dual-SSD1683 and Waveshare 4.2-inch V2/revision-2.2
-profiles also accept the optional
+The Elecrow 5.79-inch dual-SSD1683, Elecrow 4.2-inch green-sticker, and
+Waveshare 4.2-inch V2/revision-2.2 profiles also accept the optional
 `refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
 sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
 duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
@@ -1279,6 +1279,13 @@ Waveshare 4.2-inch defaults are asynchronous, 100 ms requested interval,
 supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
 8 scan frames, FR code 4, and adaptive cleanup with baseline 64. Native and
 pulse timing logs support comparison on that panel.
+The Elecrow green-sticker profile uses its own OLD/NEW RAM and programmable
+waveform registers. It uploads both full RAM masks; neutral waveform entries
+leave unbudgeted pixels undriven. Its defaults are asynchronous, 100 ms requested
+interval, supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
+8 scan frames, and adaptive cleanup with baseline 64. For this profile,
+`waveform-fr` selects the raw PLL code: code 9 requests 50 Hz internal scan
+frames. Internal scan frequency is separate from image update rate.
 The mode requires physical panel calibration; other EPD
 profiles reject it until they have a matching waveform adapter. See the
 [SolarWriter display controls](boards.md#solarwriter) and

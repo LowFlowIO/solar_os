@@ -851,6 +851,15 @@ pinout but requires a different reset, initialization, refresh, and sleep
 sequence. SolarOS detects the revision from its post-reset BUSY behavior and
 selects the matching command and waveform path automatically.
 
+The green-sticker revision also accepts `display mode display0 refresh=pulse`.
+It shares per-pixel drive budgets, asynchronous scanning, and adaptive cleanup
+with the other pulse-capable panels, using a separate waveform and RAM adapter.
+Start with the profile defaults, then tune `drive-cycles`, `pulse-frames`, and
+`waveform-fr` while checking contrast and erased content. Its raw PLL code 9
+requests 50 Hz internal scan frames; this is not the image update rate.
+Use `display mode display0 refresh=auto` to restore the native waveform.
+The original Elecrow 4.2-inch panel currently rejects pulse mode.
+
 The board's USB-C data lines terminate at a CH340C USB-to-UART bridge. SolarOS
 therefore uses `uart0` on GPIO43/GPIO44 for the serial console and does not
 claim native USB Serial/JTAG CDC. The BAT connector supplies the board but the
