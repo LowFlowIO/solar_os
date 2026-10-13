@@ -7,9 +7,13 @@ static void test_sparse_matches_dense(void)
 {
     uint8_t dense_pixels[64], sparse_pixels[64];
     uint32_t active[64];
+    uint16_t dense_history[64], sparse_history[64];
     epd_pixel_budget_t dense, sparse;
     assert(epd_pixel_budget_init(&dense, dense_pixels, 64) == ESP_OK);
     assert(epd_pixel_budget_init(&sparse, sparse_pixels, 64) == ESP_OK);
+    assert(epd_pixel_budget_set_drive_history(&dense, dense_history, 64) == ESP_OK);
+    assert(epd_pixel_budget_set_drive_history(&sparse, sparse_history, 63) == ESP_ERR_INVALID_ARG);
+    assert(epd_pixel_budget_set_drive_history(&sparse, sparse_history, 64) == ESP_OK);
     assert(epd_pixel_budget_set_active_storage(&sparse, active, 63) == ESP_ERR_INVALID_ARG);
     assert(epd_pixel_budget_set_active_storage(&sparse, active, 64) == ESP_OK);
     uint32_t random = 12345;
@@ -34,6 +38,8 @@ static void test_sparse_matches_dense(void)
             epd_pixel_budget_target(&sparse, p, white, cycles);
         }
         assert(dense.pending == sparse.pending && sparse.active_count <= sparse.count);
+        assert(memcmp(dense_history, sparse_history, sizeof(dense_history)) == 0);
+        assert(dense.peak_drive_cycles == sparse.peak_drive_cycles);
         for (size_t i = 0; i < 64; ++i) {
             assert(epd_pixel_budget_drive(&dense, i) == epd_pixel_budget_drive(&sparse, i));
             assert(dense_pixels[i] == (sparse_pixels[i] & 0xbfU));
@@ -41,9 +47,38 @@ static void test_sparse_matches_dense(void)
     }
 }
 
+static void test_drive_history(void)
+{
+    uint8_t pixels[3];
+    uint16_t history[3];
+    epd_pixel_budget_t b;
+    assert(epd_pixel_budget_init(&b, pixels, 3) == ESP_OK);
+    assert(epd_pixel_budget_set_drive_history(&b, NULL, 3) == ESP_ERR_INVALID_ARG);
+    assert(epd_pixel_budget_set_drive_history(&b, history, 3) == ESP_OK);
+    epd_pixel_budget_seed(&b, 0, true);
+    epd_pixel_budget_target(&b, 0, false, 3);
+    assert(b.peak_drive_cycles == 0); /* Submissions do not age exposure. */
+    assert(epd_pixel_budget_set_drive_history(&b, history, 3) == ESP_ERR_INVALID_ARG);
+    epd_pixel_budget_advance(&b);
+    epd_pixel_budget_target(&b, 0, true, 2); /* Reverse an unfinished transition. */
+    epd_pixel_budget_advance(&b); epd_pixel_budget_advance(&b);
+    assert(history[0] == 3 && history[1] == 0 && b.peak_drive_cycles == 3);
+    epd_pixel_budget_advance(&b);
+    assert(history[0] == 3); /* Neutral/settled pixels do not accumulate drives. */
+    epd_pixel_budget_seed(&b, 0, true);
+    assert(history[0] == 3); /* Only a complete baseline reset clears history. */
+    history[0] = UINT16_MAX - 1;
+    epd_pixel_budget_target(&b, 0, false, 3);
+    for (unsigned i = 0; i < 3; ++i) epd_pixel_budget_advance(&b);
+    assert(history[0] == UINT16_MAX && b.peak_drive_cycles == UINT16_MAX);
+    epd_pixel_budget_reset(&b);
+    assert(b.peak_drive_cycles == 0 && history[0] == 0);
+}
+
 int main(void)
 {
     test_sparse_matches_dense();
+    test_drive_history();
     uint8_t pixels[4];
     epd_pixel_budget_t b;
     assert(epd_pixel_budget_init(&b, pixels, 4) == ESP_OK);
@@ -83,10 +118,13 @@ int main(void)
     assert(epd_pulse_tuning_set(&t, "pulse-frames=32") == ESP_OK && t.pulse_frames == 32);
     assert(epd_pulse_tuning_set(&t, "waveform-fr=4") == ESP_OK);
     assert(epd_pulse_tuning_set(&t, "cleanup-every=128") == ESP_OK);
+    assert(epd_pulse_tuning_set(&t, "cleanup-policy=adaptive") == ESP_OK && t.cleanup_adaptive);
+    assert(epd_pulse_tuning_set(&t, "cleanup-policy=fixed") == ESP_OK && !t.cleanup_adaptive);
     const epd_pulse_tuning_t before = t;
     const char *bad[] = {"drive-cycles=0", "drive-cycles=33", "drive-cycles=-1",
         "drive-cycles=+1", "drive-cycles=1x", "drive-cycles=99999999999999",
-        "drive-cycles=", "pulse-frames=0", "pulse-frames=33", "waveform-fr=13", "cleanup-every=129"};
+        "drive-cycles=", "pulse-frames=0", "pulse-frames=33", "waveform-fr=13", "cleanup-every=129",
+        "cleanup-policy=", "cleanup-policy=auto", "cleanup-policy=adaptive1"};
     for (size_t i = 0; i < sizeof(bad) / sizeof(bad[0]); ++i) {
         assert(epd_pulse_tuning_set(&t, bad[i]) == ESP_ERR_INVALID_ARG);
         assert(memcmp(&t, &before, sizeof(t)) == 0);

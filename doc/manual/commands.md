@@ -1250,11 +1250,17 @@ The Elecrow 5.79-inch dual-SSD1683 profile also accepts the optional
 `refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
 sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
 duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
-`cleanup-every=<1..128>` sets the native-cleanup interval in changed images
-(completed changed presentations in synchronous mode; changed targets consumed
-by the worker in asynchronous mode). Identical targets and continuation scans
-do not advance the count. Asynchronous cleanup can interrupt unfinished budgets
-so continuous motion does not postpone native cleanup indefinitely.
+`cleanup-every=<1..128>` sets the cleanup baseline.
+The default `cleanup-policy=adaptive` tracks actual successful drives per pixel.
+It cleans up when the most-driven pixel reaches `cleanup-every * drive-cycles`
+activations, or after `4 * cleanup-every` changed images, whichever comes first.
+`cleanup-policy=fixed` cleans up every `cleanup-every` changed images.
+Synchronous mode counts completed changed presentations; asynchronous mode
+counts changed targets consumed by the worker. Identical targets do not advance
+the image count. At a limit, the asynchronous worker schedules a native cleanup
+without waiting for another presentation or for all pending pixels to settle.
+Mode output includes the policy, peak/limit drive cycles, and changed-image age.
+These counters estimate accumulated activity and do not measure ghosting.
 These runtime settings apply only to pulse mode and are listed by
 `display mode <target>`. `pulse-scan=sync` completes a presentation's pending
 cycles before returning. `pulse-scan=async` runs one cycle per scan in a
@@ -1266,7 +1272,7 @@ actual timing and submitted/coalesced image counts appear in the mode output.
 `pulse-spi-khz=<100..20000>` overrides the SPI clock only for pulse operation.
 Defaults are asynchronous, 10 ms requested interval, retained supplies, fast
 booster ramp, 20000 kHz pulse SPI, 6 drive cycles, 8 scan frames, FR code 4,
-and cleanup every 64 changed images. The default refresh policy remains auto. Requested
+and adaptive cleanup with a baseline of 64. The default refresh policy remains auto. Requested
 scan cadence is not a guarantee of achieved cadence or optical settling.
 The mode requires physical panel calibration; other EPD
 profiles reject it until they have a matching waveform adapter. See the

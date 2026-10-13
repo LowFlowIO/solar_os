@@ -24,6 +24,7 @@ esp_err_t solar_os_log_write(solar_os_log_level_t level, const char *tag, const 
  * Here deterministic ticks exercise the adapter's hardware/state contract.
  */
 static bool worker_init_fail;
+static bool worker_pending;
 esp_err_t epd_scan_worker_init(epd_scan_worker_t *w, size_t size, epd_scan_process_fn fn, void *ctx) {
     if (worker_init_fail) return ESP_ERR_NO_MEM;
     memset(w, 0, sizeof(*w));
@@ -63,6 +64,7 @@ static esp_err_t worker_tick(epd_scan_worker_t *w) {
     if (fresh) memcpy(w->snapshot, w->latest, w->frame_size);
     w->has_target = false;
     esp_err_t err = w->process(w->context, w->snapshot, fresh, &pending, &scanned);
+    worker_pending = pending;
     if (scanned) ++w->stats.scans;
     return err;
 }
@@ -197,6 +199,7 @@ static bool plane_pixel(uint8_t cmd, unsigned x, unsigned y) {
 }
 static void free_budget(epd_ssd1683_t *d) {
     heap_caps_free(d->pixel_budget.active);
+    heap_caps_free(d->pixel_budget.drive_history);
     heap_caps_free(d->pixel_budget.pixels);
     heap_caps_free(d->pulse_planes);
     d->pulse_planes = NULL;
@@ -404,6 +407,7 @@ static void test_async_cleanup_during_continuous_changes(void) {
     assert(epd_ssd1683_set_controller_mode(&d, "pulse-scan=async") == ESP_OK);
     assert(epd_ssd1683_set_controller_mode(&d, "drive-cycles=8") == ESP_OK);
     assert(epd_ssd1683_set_controller_mode(&d, "cleanup-every=3") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "cleanup-policy=fixed") == ESP_OK);
     assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
     assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
     assert(worker_tick(&d.scan_worker) == ESP_OK);
@@ -431,6 +435,50 @@ static void test_async_cleanup_during_continuous_changes(void) {
     assert(d.pulse_updates == 0 && d.pixel_budget.pending == 0);
     assert(memcmp(d.shadow, d.buffer, d.buffer_size) == 0);
     for (unsigned x = 0; x < 4; ++x) assert(!ram_pixel(0, x, 0));
+    epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
+}
+static void test_adaptive_cleanup(void) {
+    epd_ssd1683_t d = display();
+    assert(epd_ssd1683_set_controller_mode(&d, "pulse-scan=async") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "drive-cycles=1") == ESP_OK);
+    assert(epd_ssd1683_set_controller_mode(&d, "cleanup-every=2") == ESP_OK);
+    assert(d.pulse_tuning.cleanup_adaptive);
+    assert(epd_ssd1683_set_controller_mode(&d, "cleanup-policy=bogus") == ESP_ERR_INVALID_ARG);
+    assert(d.pulse_tuning.cleanup_adaptive);
+    assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
+    assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+    assert(worker_tick(&d.scan_worker) == ESP_OK);
+    /* Unrelated changes exceed the fixed interval without native flashes. */
+    for (unsigned x = 0; x < 8; ++x) {
+        capture_count = 0; pixel(x, 0, false);
+        assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+        assert(worker_tick(&d.scan_worker) == ESP_OK);
+        assert(d.pulse_updates == x + 1 && d.pixel_budget.peak_drive_cycles == 1);
+        assert(!ssd1683_dual_pulse_cleanup_due(&d) || x == 7);
+        assert(find(0x22, 0)->data[0] == 0xcf);
+    }
+    assert(ssd1683_dual_pulse_cleanup_due(&d)); /* Bounded age at 4*N. */
+    assert(worker_pending); /* Real worker must continue despite zero pending pixels. */
+    capture_count = 0;
+    assert(worker_tick(&d.scan_worker) == ESP_OK); /* No new presentation required. */
+    assert(find(0x22, count(0x22) - 1)->data[0] == 0xf7);
+    assert(strstr(last_log, "reason=age") && d.pulse_updates == 0);
+    assert(!worker_pending);
+    /* The same pixel changing twice reaches its drive limit much sooner. */
+    for (unsigned i = 0; i < 2; ++i) {
+        pixel(0, 0, i == 0);
+        assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+        assert(worker_tick(&d.scan_worker) == ESP_OK);
+    }
+    assert(d.pixel_budget.peak_drive_cycles == 2 && ssd1683_dual_pulse_cleanup_due(&d));
+    assert(worker_pending);
+    const char *mode = epd_ssd1683_controller_mode(&d);
+    assert(strstr(mode, "cleanup-policy=adaptive") && strstr(mode, "cleanup-peak-cycles=2"));
+    assert(strstr(mode, "pending=0")); /* Long mode descriptions retain the tail. */
+    capture_count = 0;
+    assert(worker_tick(&d.scan_worker) == ESP_OK);
+    assert(strstr(last_log, "reason=pixel-drive"));
+    assert(d.pixel_budget.peak_drive_cycles == 0 && d.pixel_budget.pending == 0);
     epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
 }
 static void test_hold_power_and_fast_ramp(void) {
@@ -498,6 +546,7 @@ static void test_default_async_activation(void) {
     assert(d.pulse_power_hold && d.pulse_ramp_fast && d.pulse_spi_clock_hz == 20000000);
     assert(d.pulse_tuning.drive_cycles == 6 && d.pulse_tuning.pulse_frames == 8);
     assert(d.pulse_tuning.waveform_fr == 4 && d.pulse_tuning.cleanup_every == 64);
+    assert(d.pulse_tuning.cleanup_adaptive);
     assert(ssd1683_refresh(&d) == ESP_OK && capture_count == 0); /* Auto unchanged. */
     worker_init_fail = true;
     assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_ERR_NO_MEM);
@@ -531,6 +580,7 @@ static void test_cleanup_failure_and_capability(void) {
     pixel(0, 0, false); fail_command = 0xa6;
     assert(ssd1683_refresh(&d) == ESP_FAIL);
     assert(d.pixel_budget.pending == 1 && !d.shadow_valid && !d.controller_ready);
+    assert(d.pixel_budget.peak_drive_cycles == 0); /* Failed transfer is not exposure. */
     assert(d.refresh_mode == EPD_SSD1683_REFRESH_AUTO);
     capture_count = 0;
     assert(ssd1683_refresh(&d) == ESP_OK);
@@ -541,6 +591,7 @@ static void test_cleanup_failure_and_capability(void) {
     assert(ssd1683_refresh(&d) == ESP_OK);
     pixel(1, 0, false); no_busy = true; capture_count = 0;
     assert(ssd1683_refresh(&d) == ESP_ERR_TIMEOUT);
+    assert(d.pixel_budget.peak_drive_cycles == 0); /* Missing BUSY completion is not exposure. */
     assert(strstr(error_log, "did not assert BUSY") != NULL);
     assert(d.pixel_budget.pending == 1 && d.refresh_mode == EPD_SSD1683_REFRESH_AUTO);
     free_budget(&d);
@@ -557,6 +608,7 @@ int main(void) {
     test_moving_window_clears_old_mask();
     test_async_retarget_and_recovery(); test_hold_power_and_fast_ramp();
     test_async_cleanup_during_continuous_changes();
+    test_adaptive_cleanup();
     test_async_sleep_and_resume();
     test_default_async_activation();
     test_pulse_tuning_preserves_native_idle();

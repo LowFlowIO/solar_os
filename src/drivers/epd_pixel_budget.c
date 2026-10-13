@@ -8,13 +8,23 @@
 
 epd_pulse_tuning_t epd_pulse_default_tuning(void)
 {
-    return (epd_pulse_tuning_t){1, 1, 8, 32};
+    return (epd_pulse_tuning_t){.drive_cycles = 1, .pulse_frames = 1,
+        .waveform_fr = 8, .cleanup_every = 32, .cleanup_adaptive = false};
 }
 
 esp_err_t epd_pulse_tuning_set(epd_pulse_tuning_t *t, const char *mode)
 {
     if (t == NULL || mode == NULL)
         return ESP_ERR_INVALID_ARG;
+    if (strncmp(mode, "cleanup-policy=", 15) == 0) {
+        if (strcmp(mode + 15, "adaptive") == 0)
+            t->cleanup_adaptive = true;
+        else if (strcmp(mode + 15, "fixed") == 0)
+            t->cleanup_adaptive = false;
+        else
+            return ESP_ERR_INVALID_ARG;
+        return ESP_OK;
+    }
     struct option { const char *key; uint8_t *value; unsigned max; } options[] = {
         {"drive-cycles=", &t->drive_cycles, 32},
         {"pulse-frames=", &t->pulse_frames, 32},
@@ -62,6 +72,18 @@ esp_err_t epd_pixel_budget_set_active_storage(epd_pixel_budget_t *b,
     return ESP_OK;
 }
 
+esp_err_t epd_pixel_budget_set_drive_history(epd_pixel_budget_t *b,
+                                            uint16_t *storage, size_t entries)
+{
+    if (b == NULL || b->pixels == NULL || storage == NULL || entries < b->count ||
+        b->count > SIZE_MAX / sizeof(*storage) || b->pending != 0 || b->active_count != 0)
+        return ESP_ERR_INVALID_ARG;
+    b->drive_history = storage;
+    memset(storage, 0, b->count * sizeof(*storage));
+    b->peak_drive_cycles = 0;
+    return ESP_OK;
+}
+
 void epd_pixel_budget_reset(epd_pixel_budget_t *b)
 {
     if (b == NULL || b->pixels == NULL)
@@ -69,6 +91,9 @@ void epd_pixel_budget_reset(epd_pixel_budget_t *b)
     memset(b->pixels, 0, b->count);
     b->pending = 0;
     b->active_count = 0;
+    if (b->drive_history != NULL)
+        memset(b->drive_history, 0, b->count * sizeof(*b->drive_history));
+    b->peak_drive_cycles = 0;
 }
 
 void epd_pixel_budget_seed(epd_pixel_budget_t *b, size_t p, bool white)
@@ -107,6 +132,14 @@ epd_pixel_drive_t epd_pixel_budget_drive(const epd_pixel_budget_t *b, size_t p)
                                     EPD_PIXEL_DRIVE_BLACK;
 }
 
+static void epd_pixel_budget_record_drive(epd_pixel_budget_t *b, size_t p)
+{
+    if (b->drive_history == NULL) return;
+    if (b->drive_history[p] != UINT16_MAX) ++b->drive_history[p];
+    if (b->drive_history[p] > b->peak_drive_cycles)
+        b->peak_drive_cycles = b->drive_history[p];
+}
+
 void epd_pixel_budget_advance(epd_pixel_budget_t *b)
 {
     if (b == NULL)
@@ -116,6 +149,7 @@ void epd_pixel_budget_advance(epd_pixel_budget_t *b)
         for (size_t i = 0; i < b->active_count; ++i) {
             const size_t p = b->active[i];
             if ((b->pixels[p] & CYCLES_MASK) != 0) {
+                epd_pixel_budget_record_drive(b, p);
                 --b->pixels[p];
                 if ((b->pixels[p] & CYCLES_MASK) == 0)
                     --b->pending;
@@ -130,6 +164,7 @@ void epd_pixel_budget_advance(epd_pixel_budget_t *b)
     }
     for (size_t p = 0; p < b->count; ++p) {
         if ((b->pixels[p] & CYCLES_MASK) != 0) {
+            epd_pixel_budget_record_drive(b, p);
             --b->pixels[p];
             if ((b->pixels[p] & CYCLES_MASK) == 0)
                 --b->pending;

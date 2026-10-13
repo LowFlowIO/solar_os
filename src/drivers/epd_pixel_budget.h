@@ -20,7 +20,8 @@ typedef struct {
     uint8_t drive_cycles;   /* 1..32 successful waveforms per changed pixel */
     uint8_t pulse_frames;   /* 1..32 panel scan frames per drive phase */
     uint8_t waveform_fr;    /* 1..12 raw controller frame-rate code */
-    uint8_t cleanup_every;  /* 1..128 completed image updates */
+    uint8_t cleanup_every;  /* 1..128; adapter interprets by cleanup policy */
+    bool cleanup_adaptive;
 } epd_pulse_tuning_t;
 
 typedef struct {
@@ -29,6 +30,8 @@ typedef struct {
     size_t pending;
     uint32_t *active; /* Optional caller-owned sparse list, count entries. */
     size_t active_count;
+    uint16_t *drive_history; /* Optional caller-owned successful cycles/pixel. */
+    uint16_t peak_drive_cycles;
 } epd_pixel_budget_t;
 
 epd_pulse_tuning_t epd_pulse_default_tuning(void);
@@ -45,6 +48,12 @@ esp_err_t epd_pixel_budget_init(epd_pixel_budget_t *budget, uint8_t *storage,
  */
 esp_err_t epd_pixel_budget_set_active_storage(epd_pixel_budget_t *budget,
                                              uint32_t *storage, size_t entries);
+/* Attach before targeting. reset() clears history; seed() alone preserves it.
+ * Counters saturate and count actual drives, including interrupted/reversed
+ * targets, rather than submitted images. HOLD pixels accumulate no history.
+ */
+esp_err_t epd_pixel_budget_set_drive_history(epd_pixel_budget_t *budget,
+                                            uint16_t *storage, size_t entries);
 void epd_pixel_budget_reset(epd_pixel_budget_t *budget);
 void epd_pixel_budget_seed(epd_pixel_budget_t *budget, size_t pixel, bool white);
 void epd_pixel_budget_target(epd_pixel_budget_t *budget, size_t pixel, bool white,

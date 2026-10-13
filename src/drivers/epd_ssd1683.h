@@ -94,7 +94,7 @@ typedef struct {
     bool pulse_needs_cleanup;
     SemaphoreHandle_t lock;
     StaticSemaphore_t lock_storage;
-    char mode_description[384];
+    char mode_description[640];
 } epd_ssd1683_t;
 
 esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,

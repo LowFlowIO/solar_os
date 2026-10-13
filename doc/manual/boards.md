@@ -988,6 +988,7 @@ display mode display0 drive-cycles=6
 display mode display0 pulse-frames=8
 display mode display0 waveform-fr=4
 display mode display0 cleanup-every=64
+display mode display0 cleanup-policy=adaptive
 display mode display0 pulse-scan=async
 display mode display0 pulse-period=10
 display mode display0 pulse-power=hold
@@ -1000,12 +1001,25 @@ Each changed pixel receives `drive-cycles` completed waveform activations
 (1–32). Settled pixels select the neutral waveform; submitting the same target
 does not refill its budget. `pulse-frames` is the scan-frame duration of each
 drive phase (1–32); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
-frequency in Hz. Defaults are 6 cycles, 8 scan frames, code 4, and a native
-cleanup after 64 changed images. Synchronous mode counts completed changed
-presentations; asynchronous mode counts changed targets consumed by the scan
-worker, including targets received while earlier pixels are still settling.
-Repeated identical targets and continuation scans do not advance this count.
-Cleanup uses the newest consumed target and can interrupt unfinished budgets.
+frequency in Hz. Defaults are 6 cycles, 8 scan frames, code 4, and adaptive
+cleanup with `cleanup-every=64`. Each successful drive accumulates in a per-pixel
+history since the last native cleanup. Adaptive cleanup runs when the most-driven
+pixel reaches `cleanup-every * drive-cycles` activations (384 at the defaults),
+or after `4 * cleanup-every` changed images (256 at the defaults), whichever
+comes first. Sparse changes can therefore run longer than repeated transitions
+at the same pixels. The age bound also limits time spent applying neutral
+waveforms to unchanged pixels; it is an activity heuristic, not an optical
+ghost detector. Idle time and repeated identical targets do not age cleanup.
+
+Use `cleanup-policy=fixed` to clean up every `cleanup-every` changed images.
+Synchronous mode counts completed changed presentations; asynchronous mode
+counts changed targets consumed by the worker. At either limit, the asynchronous
+worker schedules a native cleanup even without another presentation. Cleanup
+uses its newest consumed target and can interrupt unfinished budgets.
+`display mode display0` reports `cleanup-policy`, `cleanup-peak-cycles`,
+`cleanup-limit-cycles`, and `cleanup-age` for tuning. The cycle limit applies
+only in adaptive mode. Drive history counts completed activations, including
+reversals; it supplies no measurement of ink settling.
 Settings are runtime-only. Pulse mode is
 experimental: its speed, polarity, ghosting, and optical settling require
 verification on the physical panel. It does not provide native grayscale.
@@ -1016,7 +1030,7 @@ screen in both transition directions.
 
 With `pulse-scan=sync`, the driver completes all pending cycles before
 returning from a presentation. Increasing the cycle budget increases that
-presentation's blocking time. The default `pulse-scan=async` instead submits the newest
+presentation's blocking time. The default `pulse-scan=async` submits the newest
 image to a persistent scan worker. It delivers one pulse per scan and continues
 settling without further presentations. New targets can arrive between cycles;
 queued images coalesce to the latest target. Settling can span several scans.
@@ -1037,10 +1051,10 @@ scan rate and optical settling.
 
 Additional panel-specific controls are `pulse-power=<cycle,hold>`,
 `pulse-ramp=<normal,fast>`, and `pulse-spi-khz=<100..20000>`. The default power
-policy is `hold`, which retains the supply stages during a
-settling sequence and powers down when all budgets finish. The normal booster
-ramp uses approximately 40/40/10 ms phases; the default `fast` uses 10/10/10 ms with the same
-current settings and voltage targets. Both ramp settings require optical
+policy is `hold`, which retains the supply stages during a settling sequence
+and powers down when all budgets finish. The normal booster ramp uses
+approximately 40/40/10 ms phases; the default `fast` uses 10/10/10 ms with the
+same current settings and voltage targets. Both ramp settings require optical
 calibration. Pulse SPI speed defaults to 20000 kHz;
 its override applies only in pulse mode, with the normal clock restored for
 native operation. These controls do not guarantee a particular frame rate.
