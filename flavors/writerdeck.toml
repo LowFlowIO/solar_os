@@ -55,7 +55,6 @@ agent = true
 espnow = true
 webradio = true
 ntp = true
-rtsp = true
 audio_commands = true
 reader = true
 writer = true
