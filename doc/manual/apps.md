@@ -841,6 +841,9 @@ ftp
 ftp HOST [PORT] [--user USER --password PASSWORD] [--remote PATH] [--local PATH]
 ```
 
+Press Tab after a host prefix to complete aliases from `.ssh/hosts` on the
+default storage.
+
 Anonymous login is the default (`anonymous` with `solaros@` as its password).
 Specify both `--user` and `--password` for an authenticated server. Passwords
 are plaintext on the network and remain in shell history when entered on the
@@ -892,6 +895,9 @@ Usage:
 sftp
 sftp [user@]HOST[:PATH] [PORT] [--user USER] [--password PASSWORD] [--remote PATH] [--local PATH]
 ```
+
+Press Tab after a host prefix to complete aliases from `.ssh/hosts` on the
+default storage. Completion preserves a supplied `user@` prefix.
 
 Starting without arguments opens the disconnected file manager. Press `F2`/`n`
 to enter the host, port, user, optional password, and initial remote path. Leave
@@ -1646,6 +1652,9 @@ Usage:
 telnet host [port]
 telnet -r host [port]
 ```
+
+Press Tab after a host prefix to complete aliases from `.ssh/hosts` on the
+default storage, including in raw mode.
 
 Controls:
 

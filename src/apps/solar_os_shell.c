@@ -95,6 +95,9 @@
 #include "solar_os_meshcore_stream.h"
 #endif
 #include "solar_os_ramfs.h"
+#if SOLAR_OS_PACKAGE_SERVICE_NET
+#include "solar_os_net.h"
+#endif
 #include "solar_os_schedule.h"
 #include "solar_os_sessions.h"
 #include "solar_os_storage.h"
@@ -7158,7 +7161,7 @@ static void shell_completion_init_state(solar_os_context_t *ctx,
     state->print = print;
 }
 
-#if SOLAR_OS_PACKAGE_APP_SSH || SOLAR_OS_PACKAGE_APP_SCP
+#if SOLAR_OS_PACKAGE_SERVICE_SSH || SOLAR_OS_PACKAGE_SERVICE_NET
 typedef struct {
     shell_completion_match_t *matches;
     const char *authority_prefix;
@@ -7234,10 +7237,31 @@ static bool SHELL_NOINLINE shell_complete_ssh_host_argument(
 #else
         false;
 #endif
-    if ((!ssh_command && !scp_command && !sftpsync_command) || prefix == NULL) {
+    const bool sftp_command =
+#if SOLAR_OS_PACKAGE_APP_SFTP
+        strcmp(effective_command, "sftp") == 0;
+#else
+        false;
+#endif
+    const bool ftp_command =
+#if SOLAR_OS_PACKAGE_APP_FTP
+        strcmp(effective_command, "ftp") == 0;
+#else
+        false;
+#endif
+    const bool telnet_command =
+#if SOLAR_OS_PACKAGE_APP_TELNET
+        strcmp(effective_command, "telnet") == 0;
+#else
+        false;
+#endif
+    const bool direct_host_command = ssh_command || sftp_command || ftp_command || telnet_command;
+    if ((!direct_host_command && !scp_command && !sftpsync_command) || prefix == NULL) {
         return false;
     }
-    if ((ssh_command && token_count != 1U) ||
+    const size_t host_position = telnet_command && token_count > 1U &&
+        strcmp(tokens[1], "-r") == 0 ? 2U : 1U;
+    if ((direct_host_command && token_count != host_position) ||
         ((scp_command || sftpsync_command) &&
          !shell_ssh_copy_host_position(tokens, token_count, sftpsync_command))) {
         return false;
@@ -7248,7 +7272,7 @@ static bool SHELL_NOINLINE shell_complete_ssh_host_argument(
     }
 
     const char *at = strchr(prefix, '@');
-    if (at == prefix) {
+    if (at == prefix || (at != NULL && (ftp_command || telnet_command))) {
         return false;
     }
     shell_completion_match_t matches;
@@ -7258,7 +7282,12 @@ static bool SHELL_NOINLINE shell_complete_ssh_host_argument(
         .authority_prefix = prefix,
         .authority_prefix_len = at != NULL ? (size_t)(at - prefix) + 1U : 0U,
     };
-    if (solar_os_ssh_hosts_visit(shell_completion_visit_ssh_host, &completion) != ESP_OK ||
+#if SOLAR_OS_PACKAGE_SERVICE_SSH
+    const esp_err_t visit_ret = solar_os_ssh_hosts_visit(shell_completion_visit_ssh_host, &completion);
+#else
+    const esp_err_t visit_ret = solar_os_net_hosts_visit(shell_completion_visit_ssh_host, &completion);
+#endif
+    if (visit_ret != ESP_OK ||
         matches.count == 0U) {
         return false;
     }
@@ -7293,7 +7322,11 @@ static bool SHELL_NOINLINE shell_complete_ssh_host_argument(
         strlcpy(original, shell_session(ctx)->input, sizeof(original));
         solar_os_shell_io_newline(shell_io(ctx));
         shell_completion_init_state(ctx, prefix, true, &matches);
+#if SOLAR_OS_PACKAGE_SERVICE_SSH
         (void)solar_os_ssh_hosts_visit(shell_completion_visit_ssh_host, &completion);
+#else
+        (void)solar_os_net_hosts_visit(shell_completion_visit_ssh_host, &completion);
+#endif
         shell_prompt(ctx);
         shell_replace_input(ctx, original);
     }
@@ -8486,7 +8519,7 @@ static bool shell_complete_argument(solar_os_context_t *ctx,
         prefix = parse->tokens[current_index];
     }
 
-#if SOLAR_OS_PACKAGE_APP_SSH || SOLAR_OS_PACKAGE_APP_SCP
+#if SOLAR_OS_PACKAGE_SERVICE_SSH || SOLAR_OS_PACKAGE_SERVICE_NET
     if (shell_complete_ssh_host_argument(ctx,
                                          effective_command,
                                          completed_tokens,
