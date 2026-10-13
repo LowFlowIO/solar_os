@@ -86,6 +86,8 @@ static unsigned ram_entry[2], ram_height;
 static uint32_t actual_spi_hz;
 static uint8_t ram[2][2][50U * 300U];
 static void (*activation_hook)(void);
+static uint64_t sleep_retained;
+static int retention_fail_pin = -1;
 
 void vTaskDelay(TickType_t ticks) { assert(ticks); time_us += ticks * 1000LL; }
 int64_t esp_timer_get_time(void) { return time_us; }
@@ -101,6 +103,12 @@ esp_err_t gpio_set_level(gpio_num_t pin, uint32_t value) {
 esp_err_t gpio_set_direction(gpio_num_t pin, int mode) { (void)pin; (void)mode; return ESP_OK; }
 esp_err_t gpio_set_pull_mode(gpio_num_t pin, int mode) { (void)pin; (void)mode; return ESP_OK; }
 esp_err_t gpio_config(const gpio_config_t *config) { assert(config->pin_bit_mask); return ESP_OK; }
+esp_err_t gpio_sleep_sel_dis(gpio_num_t pin) {
+    assert(pin >= 0 && pin < GPIO_NUM_MAX);
+    if (pin == retention_fail_pin) return ESP_FAIL;
+    sleep_retained |= 1ULL << pin;
+    return ESP_OK;
+}
 esp_err_t spi_device_polling_transmit(spi_device_handle_t device, spi_transaction_t *t) {
     assert(device);
     if (t->override_freq_hz) actual_spi_hz = t->override_freq_hz;
@@ -166,7 +174,7 @@ static epd_ssd1683_t display(void) {
     no_busy = stuck_busy = false; fail_command = 0;
     return (epd_ssd1683_t){.spi = (void *)1, .buffer = frame, .shadow = shadow,
         .line_buffer = line, .buffer_size = sizeof(frame), .shadow_size = sizeof(shadow),
-        .line_buffer_size = sizeof(line), .dc_pin = 46, .reset_pin = 47,
+        .line_buffer_size = sizeof(line), .cs_pin = 45, .dc_pin = 46, .reset_pin = 47,
         .busy_pin = 48, .busy_level = 1, .power_pin = 7, .powered = true,
         .panel_variant = EPD_SSD1683_PANEL_ELECROW_579_DUAL,
         .controller_ready = true, .shadow_valid = true,
@@ -709,7 +717,24 @@ static void test_single_async_retarget_and_recovery(void) {
     assert(!single_ram_pixel(0, 3, 0) && !single_ram_pixel(1, 3, 0));
     epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
 }
+static void test_control_pin_sleep_retention(void) {
+    epd_ssd1683_t d = display();
+    sleep_retained = 0;
+    assert(ssd1683_configure_pins(&d) == ESP_OK);
+    const uint64_t controls = (1ULL << 45) | (1ULL << 46) |
+        (1ULL << 47) | (1ULL << 48);
+    assert(sleep_retained == (controls | (1ULL << 7)));
+    assert(!d.powered);
+    d = single_display();
+    sleep_retained = 0;
+    assert(ssd1683_configure_pins(&d) == ESP_OK);
+    assert(sleep_retained == controls && d.powered);
+    retention_fail_pin = d.reset_pin;
+    assert(ssd1683_configure_pins(&d) == ESP_FAIL);
+    retention_fail_pin = -1;
+}
 int main(void) {
+    test_control_pin_sleep_retention();
     test_native(); test_pulse_and_restore(); test_default_drive_budget();
     test_settled_pixels_replace_mask();
     test_long_phase_voltage_bits();

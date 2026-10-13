@@ -327,6 +327,17 @@ static esp_err_t ssd1683_configure_pins(epd_ssd1683_t *display)
         .intr_type = GPIO_INTR_DISABLE,
     };
     ESP_RETURN_ON_ERROR(gpio_config(&busy_config), TAG, "BUSY GPIO config failed");
+    /* Automatic light sleep must not float the panel's power/reset or select
+     * it accidentally while its controller is driving an update. Preserve the
+     * active control configuration; the SPI bus owns its clock/data pins. */
+    const int control_pins[] = {display->cs_pin, display->dc_pin,
+        display->reset_pin, display->busy_pin, display->power_pin};
+    for (size_t i = 0; i < sizeof(control_pins) / sizeof(control_pins[0]); ++i) {
+        if (control_pins[i] >= 0) {
+            ESP_RETURN_ON_ERROR(gpio_sleep_sel_dis((gpio_num_t)control_pins[i]),
+                                TAG, "control GPIO sleep retention failed");
+        }
+    }
     ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)display->dc_pin, 1), TAG, "D/C idle failed");
     ESP_RETURN_ON_ERROR(gpio_set_level((gpio_num_t)display->reset_pin, 1), TAG, "reset idle failed");
     display->powered = true;
@@ -1901,6 +1912,7 @@ esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,
     display->spi_applied_hz = config->spi_clock_hz;
     display->lock = xSemaphoreCreateMutexStatic(&display->lock_storage);
     display->panel_variant = config->panel_variant;
+    display->cs_pin = config->cs_pin;
     display->dc_pin = config->dc_pin;
     display->reset_pin = config->reset_pin;
     display->busy_pin = config->busy_pin;

@@ -62,6 +62,7 @@ typedef struct {
     epd_ssd1683_panel_variant_t panel_variant;
     uint8_t fast_refresh_count;
     uint8_t refresh_log_count;
+    int cs_pin;
     int dc_pin;
     int reset_pin;
     int busy_pin;
