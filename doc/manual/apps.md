@@ -36,15 +36,24 @@ Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.
 ```text
 rtsp rtsp://192.168.1.238/media
 rtsp 192.168.1.238/media
-rtsp 192.168.1.192:8554/youtube
+rtsp user:secret@192.168.1.192:8554/youtube
 rtsp --audio-only rtsp://192.168.1.113/media
 rtsp --stats rtsp://192.168.1.192:8554/youtube
 rtsp --audio-only --stats rtsp://192.168.1.192:8554/youtube
+rtsp-auth set 192.168.1.50 admin camera-password
+rtsp rtsp://192.168.1.50/media
 ```
 
 The `rtsp://` prefix is optional. The RTSP control connection uses TCP port 554
 unless a port is supplied; RTP media uses negotiated UDP ports. Addresses without
 a path are accepted; include the publisher's path when required.
+
+Inline credentials use `user:password@host`; percent-encode spaces and reserved
+characters in the username or password.
+`rtsp-auth set <host[:port]> <user> <password>` saves up to four accounts
+for URLs without inline credentials.
+Run `rtsp-auth` to list accounts, or `rtsp-auth clear [host[:port]]` to remove
+one account or all accounts when the host is omitted. The player hides passwords.
 
 Graphical sessions show aspect-fit JPEG video when a video track is selected.
 Audio-only sessions use the common audio GUI oscilloscope, fed by playback PCM,
@@ -66,18 +75,21 @@ Suspending keeps audio playing and pauses video decoding until you return.
 Closing releases the audio output and network connection.
 
 Temporary connection failures retry up to six times. Unsupported codecs,
-authentication requests, and local memory or audio failures stop immediately.
+failed or unsupported authentication, and local memory or audio failures stop
+immediately.
 The shell diagnostic identifies the failing operation. Use `--stats` and
 `log show` for frame counts, drops, timings, audio buffering, and retry details.
 The `D` overlay works without logging; `--stats` also enables it initially.
 
 Requirements and limits:
 
-- IPv4 RTSP 1.0 with unicast UDP media and no authentication.
+- IPv4 RTSP 1.0 with unicast UDP media. Client authentication supports Basic
+  or Digest MD5 (`qop=auth` or no qop); the `rtspd` publisher remains
+  unauthenticated.
 - One JPEG video track and/or one L16 audio track (8–48 kHz, mono or stereo).
 - JPEG types 0/1 with explicit 8-bit quantization tables (Q=255); restart
   markers are supported.
-- TCP-interleaved media, multicast, encrypted RTSP, compressed audio, and
+- TCP interleaving, multicast, encrypted RTSP, compressed audio, and
   redirects are unsupported.
 - Five seconds without media triggers reconnection. Retry exhaustion returns
   an error to the shell.

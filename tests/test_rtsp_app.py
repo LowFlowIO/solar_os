@@ -31,10 +31,15 @@ class RtspAppTest(unittest.TestCase):
             binary = tmp / "rtsp_app_ui_test"
             subprocess.run([
                 "cc", "-std=c11", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
+                "-D_POSIX_C_SOURCE=200809L",
                 "-fsanitize=address,undefined", "-fno-sanitize-recover=all",
                 f"-I{tmp}", f"-I{ROOT / 'tests/host'}", f"-I{ROOT / 'src'}",
                 f"-I{ROOT / 'src/services'}", "-idirafter", str(ROOT / "include"),
                 str(ROOT / "tests/host/rtsp_app_ui_test.c"),
+                str(ROOT / "src/services/solar_os_rtsp_receiver.c"),
+                str(ROOT / "src/services/solar_os_rtsp.c"),
+                str(ROOT / "src/services/solar_os_rtp.c"),
+                str(ROOT / "src/services/solar_os_media.c"),
                 "-o", str(binary),
             ], check=True)
             subprocess.run([str(binary)], check=True, timeout=10)
@@ -46,7 +51,7 @@ class RtspAppTest(unittest.TestCase):
         self.assertIn("solar_os_rtsp_client_create(rtsp.url", APP)
         self.assertNotIn("strcpy(rtsp.url, url)", start)
         registry = (ROOT / "src/apps/solar_os_app_registry.c").read_text()
-        self.assertIn("<[rtsp://]host[:port][/path]>", registry)
+        self.assertIn("<[rtsp://][user[:pass]@]host[:port][/path]>", registry)
         manual = (ROOT / "doc/manual/apps.md").read_text()
         self.assertIn("rtsp 192.168.1.238/media", manual)
         self.assertIn("TCP port 554", manual)
