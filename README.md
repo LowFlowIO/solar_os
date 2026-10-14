@@ -125,12 +125,13 @@ pio run -t upload
 pio device monitor -b 115200
 ```
 
-The default build uses the full firmware flavor, except the e-paper HMI targets,
-which default to `writerdeck`, and the 4 MB VGA32 target, which defaults to
-`vga32`. For a smaller image or an explicit override:
+The standard flavor is `full`. E-paper HMI targets and the 4 MiB WROVER and
+VGA32 targets default to the compact `writerdeck` profile. Both profiles use
+the downloadable ESP-DL library for inference. For a smaller image or an
+explicit override:
 
 ```sh
-SOLAR_OS_FLAVOR=core pio run -e solar_term
+SOLAR_OS_FLAVOR=writerdeck pio run -e solar_term
 SOLAR_OS_FLAVOR=writerdeck pio run -e elecrow_crowpanel_esp32_s3_4_2_epaper
 SOLAR_OS_FLAVOR=writerdeck pio run -e elecrow_crowpanel_esp32_s3_5_79_epaper
 SOLAR_OS_FLAVOR=writerdeck pio run -e waveshare_esp32_s3_epaper_3_97

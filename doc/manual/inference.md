@@ -33,7 +33,8 @@ Camera, display, and image services are optional. No models are built into the
 firmware; put compatible `.espdl` files on a mounted SolarOS storage volume.
 
 The `inference_backend` group (`backend.inference-espdl`) includes the engine
-in firmware. `full` enables it; other standard flavors use the downloadable `espdl` library.
+in firmware. Custom flavors can enable it; the standard `full` and compact
+`writerdeck` profiles use the downloadable `espdl` library.
 Other custom flavors can select either configuration. The shell, Python, Lua,
 native clients, and bundle adapters use the same APIs in both configurations.
 

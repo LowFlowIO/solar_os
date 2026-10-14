@@ -1,6 +1,6 @@
 [flavor]
 name = "writerdeck"
-description = "SolarOS writing, reading, scripting, media, file-transfer, and RTSP viewer build."
+description = "Compact SolarOS build with package installation, Python, Playground, writing, media and communications."
 
 [groups]
 inference = true

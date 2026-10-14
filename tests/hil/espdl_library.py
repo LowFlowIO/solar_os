@@ -3,7 +3,7 @@
 
 Upload mode refuses pre-existing espdl modules and an active FTP job, and removes
 only its own files. --installed repeats a staged probe without FTP or removal;
-it also works with the core flavor. This tool does not build or flash firmware.
+it also works with writerdeck. This tool does not build or flash firmware.
 """
 import argparse
 import ftplib
