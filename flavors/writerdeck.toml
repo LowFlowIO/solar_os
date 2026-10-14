@@ -3,14 +3,12 @@ name = "writerdeck"
 description = "Compact SolarOS build with package installation, Python, Playground, writing, media and communications."
 
 [groups]
-inference = true
 hardware_shell = true
 filesystem = true
 wifi = true
 bluetooth = true
 sd_storage = true
 audio_support = true
-rtsp = true
 control_bindings = true
 vector_math = true
 gpio = true
@@ -72,3 +70,6 @@ pcm5102 = true
 pcm1808 = true
 inmp441 = true
 es8311 = true
+speech = true
+player = true
+recorder = true
