@@ -57,6 +57,12 @@ Toolchain upgrades require review of exception-frame relocation and runtime layo
 
 The frontend transfers its aligned model-file allocation to providers that
 support `load_owned_buffer`, avoiding a second file-sized allocation during load.
+
+Model weights and tensor descriptors remain loaded between calls. Activation
+workspace is acquired for each inference and released after its outputs are
+copied, including cancellation and error paths. Image decoding and other idle
+work can use that space between calls. Loaded-model memory estimates exclude
+the released workspace; execution still needs a contiguous workspace block.
 The original borrowed-buffer operation still copies its input. Both paths free
 the owned model source when the model closes, including failed construction.
 

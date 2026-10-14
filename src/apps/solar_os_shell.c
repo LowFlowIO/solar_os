@@ -845,7 +845,7 @@ static const char * const gesture_unbind_values[] = {"all"};
 #if SOLAR_OS_PACKAGE_SERVICE_ENGINES
 static const char * const engine_subcommands[] = {"status", "list", "reset"};
 #endif
-static const char * const mem_subcommands[] = {"policy"};
+static const char * const mem_subcommands[] = {"policy", "reclaim"};
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
 static const char * const pkg_subcommands[] = {
     "system", "available", "installed", "install", "remove", "unload",
@@ -2546,7 +2546,7 @@ static const char * const path_charger[] = {"charger"};
 static const char * const path_charger_enable[] = {"charger", "enable"};
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_INFERENCE
-static const char * const model_subcommands[] = {"list", "load", "bundle", "info", "mode", "unload"};
+static const char * const model_subcommands[] = {"backend", "list", "load", "bundle", "info", "mode", "unload"};
 static const char * const model_modes[] = {"single", "auto", "dual"};
 static const char * const model_unload_values[] = {"all"};
 static const char * const path_model[] = {"model"};

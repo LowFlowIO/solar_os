@@ -66,6 +66,11 @@ Bulk guest state and executable images use PSRAM. An app owns its allocations
 and frees them before returning. Worker resources are allocated on launch;
 no app-specific startup hook runs at boot.
 
+Large OS buffers use a managed PSRAM region that groups bulk buffers separately
+from resident executable images. `mem` shows its free space and largest block.
+Reclamation releases unused libraries; it does not discard running or suspended
+app state. A workload can still be refused when its allocations do not fit.
+
 ## Suspend, resume and close
 
 `Alt+Tab` and `Alt+Right` select the next session; `Alt+Left` selects the previous

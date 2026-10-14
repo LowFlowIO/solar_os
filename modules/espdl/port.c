@@ -59,6 +59,8 @@ static void *allocate(size_t bytes, size_t alignment, bool internal)
     return (void *)value;
 }
 void *malloc(size_t n) { return allocate(n, 16, false); }
+void *solar_os_memory_dl_alloc(size_t bytes) { return allocate(bytes, 16, false); }
+size_t solar_os_memory_dl_free_bytes(bool external) { return memory->free_bytes(external); }
 void free(void *buffer)
 {
     if (!buffer) return;

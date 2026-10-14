@@ -66,12 +66,12 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [log command](commands.md) — Show runtime log ring status.
 - [ls command](commands.md) — List files. Hidden files are shown only with -a; sizes are human-readable with -h.
 - [man command](commands.md) — Read or search the package-aware SolarOS manual.
-- [mem command](commands.md) — Print heap status; policy also shows allocation-class counters, guarded fallback limits, and the last tagged failure.
+- [mem command](commands.md) — Print heap and managed PSRAM status; policy also shows allocation-class counters, guarded fallback limits, and the last tagged failure.
 - [meshcore command](commands.md) — Show MeshCore identity, radio, packet, delivery, duplicate, memory, and stack state.
 - [messages command](commands.md) — Show bounded-store, persistence, drop, and live provider state.
 - [midi command](commands.md) — Show MIDI worker, traffic, parser, and queue status.
 - [mkdir command](commands.md) — Create directories.
-- [model command](commands.md) — Inspect OS-owned resident inference models and their interfaces, memory, mode, and references.
+- [model command](commands.md) — Check engine availability and inspect resident models, interfaces, memory, mode, and references.
 - [modem command](commands.md) — Open the modem status and settings TUI.
 - [mqtt command](commands.md) — Show broker, authentication, connection, traffic, queue, and error status without revealing the password.
 - [mv command](commands.md) — Rename or move a file or matched set.
@@ -97,6 +97,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [reboot command](commands.md) — Restart the board.
 - [rm command](commands.md) — Remove files. -f allows directories; -rf removes directories recursively.
 - [rtc command](commands.md) — Show the RTC provider, capabilities, interrupt wiring, and alarm/timer owners. Reports unavailable when no RTC is present.
+- [rtsp-auth command](commands.md) — List stored RTSP client accounts (host, port, username; never the password).
 - [say command](commands.md) — Queue text for offline speech, or stream a plain UTF-8 text file aloud with live progress. Pitch and speed default to 100. File mode submits bounded chunks through one continuous PicoTTS/audio session, completes paths with Tab, and remains responsive; press Esc or Ctrl+C to stop. Start speechd with a PicoTTS voice directory first.
 - [schedule command](commands.md) — List persistent alarms and scheduled shell scripts. Entries show their enabled state, trigger, and action.
 - [servo command](servo.md) — Show names, outputs, enabled state, and owners in a compact list.
@@ -104,6 +105,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [sessions command](commands.md) — List display app sessions, display shell sessions, and port shell sessions.
 - [setterm command](commands.md) — Open the terminal settings TUI from the display shell.
 - [sh command](commands.md) — Run a simple SolarOS shell script from storage.
+- [shutdown command](commands.md) — Stop apps and jobs, flush storage, and power down. Only the physical power/KEY button, RESET, or a power cycle starts a fresh boot.
 - [sleep command](commands.md) — Enter explicit light sleep.
 - [spi command](commands.md) — Show every named SPI bus, or one selected bus.
 - [sshkey command](commands.md) — Show default SSH key status.
@@ -174,7 +176,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [ssh application](apps.md#ssh) — Interactive SSH client. It supports password and key authentication, known hosts, hostname lookup through /.ssh/hosts, UTF-8 text, VT-style controls, and remote full-screen terminal applications. When user@ is omitted, SSH uses the NVS-backed SolarOS identity user. Tab completion reads aliases from /.ssh/hosts and preserves an explicit user@ prefix.
 - [synth application](apps.md#synth) — Open the native synthesizer and sound designer:
 - [telnet application](apps.md#telnet) — Telnet client for classic TCP terminal sessions. It supports basic Telnet option negotiation, terminal type reporting, window size reporting, and raw mode.
-- [Tiny386 application](app.tiny386.md) — Boot PC floppy images with the external 386 emulator
+- [Tiny386 application](app.tiny386.md) — Boot PC floppy and hard-disk images with the external 386 emulator
 - [view application](apps.md#view) — Graphical image viewer. It supports the image formats compiled into the current firmware, including common PNG/JPEG/GIF/WebP paths and automatic animated GIF playback when the media package is enabled. Images are decoded as RGB on a negotiated indexed-color display and as grayscale on a one-bit display. In the default fit mode, JPEG color conversion writes display-sized output directly, so a large source photograph does not require a full-size RGB destination.
 - [vplay application](apps.md#vplay) — Graphical MPEG-1 media player with optional MP2 audio. The bottom controls show playback status and elapsed time above the volume bar; full screen hides the controls and time. The middle Stop/Play icon indicates pause while paused.
 - [web application](apps.md#web) — Simple graphical web browser for lightweight HTML pages. It shares document and image rendering infrastructure with reader where possible. Embedded and direct PNG, JPEG, GIF, and WebP images retain color on indexed-color displays; one-bit displays keep the grayscale decode and dither path. Direct MJPEG URLs are shown as live video using the same JPEG renderer.
@@ -258,6 +260,7 @@ This is the canonical documentation used by GitHub, the generated solar-os.eu we
 - [Named runtime buses](buses.md) — Create and use resource-owned I2C, SPI, UART, MIDI, OneWire, and PS/2 buses
 - [Native foreground apps](native-app.md) — Install native apps, switch sessions, and use the foreground module API
 - [Native image pipelines](pipelines.md) — OS-owned QR and model processing jobs with bounded latest results and frame timings
+- [Native libraries](native-library.md) — Install reusable native libraries and manage their lifetime
 - [Native media and inference](native-media.md) — Versioned image, camera/RTSP, QR, imlib and resident-model interfaces for ELF modules
 - [Python API overview](python.md) — Runtime basics, conventions, and service API topic index
 - [Python apps, jobs, and identity API](python.system.md) — Apps, jobs, and identity: identity, jobs, sessions, apps

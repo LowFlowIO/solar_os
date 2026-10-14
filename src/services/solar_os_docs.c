@@ -67,6 +67,7 @@ typedef struct {
     size_t count;
     size_t blob_used;
     char *blob;
+    bool packed;
     solar_os_manual_page_t pages[];
 } docs_manual_index_t;
 
@@ -135,7 +136,7 @@ static docs_manual_index_t *docs_manual_retired_index;
 static void docs_manual_index_free(docs_manual_index_t *index)
 {
     if (index != NULL) {
-        solar_os_memory_free(index->blob);
+        if (!index->packed) solar_os_memory_free(index->blob);
         solar_os_memory_free(index);
     }
 }
@@ -715,6 +716,29 @@ static esp_err_t docs_manual_copy_string_array(
     return ESP_OK;
 }
 
+static void docs_manual_index_pack(docs_manual_index_t **slot)
+{
+    docs_manual_index_t *index = *slot;
+    size_t index_bytes = sizeof(*index) + index->count * sizeof(index->pages[0]);
+    docs_manual_index_t *packed = solar_os_memory_alloc(index_bytes + index->blob_used,
+        SOLAR_OS_MEMORY_EXTERNAL_RESIDENT, "docs.metadata");
+    if (!packed) return; /* Keep the valid index if the optional copy cannot fit. */
+    memcpy(packed, index, index_bytes);
+    packed->packed = true;
+    packed->blob = (char *)packed + index_bytes;
+    memcpy(packed->blob, index->blob, index->blob_used);
+    for (size_t i = 0; i < packed->count; i++) {
+        solar_os_manual_page_t *page = &packed->pages[i];
+        const char **fields[] = {&page->id, &page->title, &page->section,
+            &page->section_title, &page->summary, &page->aliases,
+            &page->keywords, &page->contract};
+        for (size_t j = 0; j < sizeof(fields) / sizeof(fields[0]); j++)
+            if (*fields[j]) *fields[j] = packed->blob + (*fields[j] - index->blob);
+    }
+    docs_manual_index_free(index);
+    *slot = packed;
+}
+
 static esp_err_t docs_build_manual_index(
     const solar_os_json_value_t *pages,
     size_t page_count,
@@ -962,6 +986,9 @@ static esp_err_t docs_verify_revision(const char *revision,
     solar_os_json_free(document);
     solar_os_memory_free(signature);
     solar_os_memory_free(catalog);
+    /* Parsing scratch must be gone before resident placement, so it cannot
+     * leave a hole above the compact, still-unpublished index. */
+    if (err == ESP_OK && manual_index != NULL) docs_manual_index_pack(manual_index);
     return err;
 }
 
@@ -1490,15 +1517,16 @@ esp_err_t solar_os_docs_update(solar_os_docs_progress_fn progress_fn,
         docs_report_progress(progress_fn, progress_user, &progress);
         err = docs_activate(&info);
     }
+    solar_os_json_free(document);
+    solar_os_memory_free(signature);
+    solar_os_memory_free(catalog);
     if (err == ESP_OK) {
+        docs_manual_index_pack(&manual_index);
         runtime_page_count = manual_index->count;
         docs_manual_index_replace(manual_index);
         manual_index = NULL;
     }
 
-    solar_os_json_free(document);
-    solar_os_memory_free(signature);
-    solar_os_memory_free(catalog);
     docs_manual_index_free(manual_index);
     if (err == ESP_OK) {
         docs_set_result(true,

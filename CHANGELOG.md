@@ -2,6 +2,22 @@
 
 ## 4.x
 
+- **4.16.13** — 2026-10-14 — Added managed PSRAM allocation that groups
+  large buffers separately from resident executable images and metadata,
+  merges adjacent free blocks, and reclaims unused native libraries under
+  memory pressure. Active library consumers and suspended application sessions
+  retain their state. `mem` reports managed PSRAM and its largest free block;
+  `mem reclaim` releases unused libraries, and `mem policy` shows SDK heap
+  availability separately.
+  ESP-DL now releases activation workspace between inference calls, allowing
+  image preprocessing to reuse that memory while weights remain loaded.
+  Reduced Zoo startup and exit delays by eliminating repeated catalog parsing
+  and improving allocation and cleanup of small objects.
+  Fixed silent short alarm tones and kept tone sequences on one audio stream
+  through pauses and playback completion.
+  Fixed Help updates with more than 256 pages; firmware and manual generation
+  now support up to 1024 pages. Packed resident Help metadata to reduce PSRAM
+  fragmentation.
 - **4.16.12** — 2026-10-14 — Added resident native libraries and the
   library module category on ESP32-S3 devices with PSRAM. Libraries load on
   demand, share APIs between consumers, and stay resident until explicitly
