@@ -5,6 +5,8 @@
 #include "solar_os_inference.h"
 #include "solar_os_model_bundle.h"
 #include "solar_os_keys.h"
+#include "solar_os_module_packages.h"
+#include "solar_os_storage.h"
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
 #include "solar_os_ble_keyboard.h"
 #endif
@@ -47,7 +49,20 @@ void solar_os_shell_cmd_model(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *io = solar_os_shell_command_io(ctx);
     if (argc < 2) {
-        solar_os_shell_io_writeln(io, "model list | load <file.espdl> | bundle <bundle.json> [timeout_ms] | info <handle> | mode <handle> <single|auto|dual> | unload <handle|all>");
+        solar_os_shell_io_writeln(io, "model backend | list | load <file.espdl> | bundle <bundle.json> [timeout_ms] | info <handle> | mode <handle> <single|auto|dual> | unload <handle|all>");
+        return;
+    }
+    if (!strcmp(argv[1], "backend") && argc == 2) {
+#if SOLAR_OS_PACKAGE_BACKEND_INFERENCE_ESPDL
+        solar_os_shell_io_printf(io, "ESP-DL %s: built into firmware\n", SOLAR_OS_INFERENCE_BACKEND_VERSION);
+#else
+        char path[SOLAR_OS_STORAGE_PATH_MAX]; solar_os_storage_metadata_t metadata;
+        bool installed = solar_os_module_package_path(SOLAR_OS_MODULE_TYPE_LIBRARY, "espdl", path, sizeof(path)) == ESP_OK &&
+            solar_os_storage_stat(path, &metadata) == ESP_OK && metadata.type == SOLAR_OS_STORAGE_ENTRY_FILE;
+        solar_os_shell_io_printf(io, "ESP-DL %s: library %s\n", SOLAR_OS_INFERENCE_BACKEND_VERSION,
+            installed ? "installed" : "missing");
+        if (!installed) solar_os_shell_io_writeln(io, "Install with: pkg install espdl");
+#endif
         return;
     }
     model_client_t state = {.ctx = ctx, .io = io}; solar_os_inference_t *client = NULL;

@@ -93,3 +93,26 @@ leases on dependencies.
 Firmware consumers use `solar_os_native_library_acquire`, `retain`, `release`,
 and `unload` through `solar_os_native.h`; they use the same stable result codes.
 These APIs do not expose arbitrary firmware symbols to external libraries.
+
+## Runtime helpers
+
+Providers can request these optional version-one tables through `get_service`.
+Pass the size of the public table and check for NULL before use:
+
+| Service | Header | Operations |
+| --- | --- | --- |
+| `time` | `solar_os_native_time_abi.h` | Monotonic microseconds and cooperative sleep on the calling task |
+| `thread` | `solar_os_native_thread_abi.h` | Normal/recursive mutexes, conditions, task-local keys and joinable workers |
+| `libc` | `solar_os_native_libc_abi.h` | Bounded formatting, float parsing and math helpers |
+
+Thread operations return POSIX error numbers. Destroy synchronization objects
+and clear task-local values before deleting their keys. Key deletion does not
+invoke destructors. Any task-exit destructor must finish while a lease still
+protects its code. `worker_start` creates a worker pinned to core 0 or 1 with
+an internal stack. The entry function must clear private task-local values and
+return. `worker_join` waits until its code has stopped executing and releases
+the stack and task storage. Keep the library lease through every worker join.
+
+The optional `memory` table extensions report free/largest internal or external
+heap blocks and identify external allocations. Check `struct_size` before using
+appended members. Heap snapshots include other OS users and do not reserve RAM.

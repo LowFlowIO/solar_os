@@ -3,6 +3,7 @@ name = "netrunner"
 description = "Minimal SolarOS build with hardware services, and network tools."
 
 [groups]
+inference = true
 hardware_shell = true
 filesystem = true
 wifi = true

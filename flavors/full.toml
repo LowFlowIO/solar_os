@@ -13,6 +13,7 @@ audio_support = true
 camera = true
 vision = true
 inference = true
+inference_backend = true
 zoo = true
 pipelines = true
 rtsp = true

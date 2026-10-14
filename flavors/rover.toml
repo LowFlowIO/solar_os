@@ -3,6 +3,7 @@ name = "rover"
 description = "Custom SolarOS flavor created for Rover."
 
 [groups]
+inference = true
 hardware_shell = true
 filesystem = true
 wifi = true

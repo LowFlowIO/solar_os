@@ -92,7 +92,7 @@ class InferenceIntegrationTest(unittest.TestCase):
         selected = flavors.enable_required_packages(catalog,
             {name: False for name in catalog.packages}, {"service_inference"})
         for target in ("esp32", "esp32s3", "esp32c3", "esp32p4"):
-            for capabilities in (set(), {"psram"}):
+            for capabilities in (set(), {"psram", "wifi"}):
                 _, packages = flavors.apply_board_capability_pruning(catalog, groups,
                     flavors.apply_target_pruning(catalog, selected, target), capabilities)
                 self.assertEqual(packages["service_inference"], target == "esp32s3" and bool(capabilities))
@@ -100,7 +100,8 @@ class InferenceIntegrationTest(unittest.TestCase):
                     self.assertFalse(packages[dependency])
         for name in ("core", "rover", "netrunner", "writerdeck", "full"):
             flavor = tomllib.loads((ROOT / f"flavors/{name}.toml").read_text())
-            self.assertEqual(flavor["groups"].get("inference", False), name == "full")
+            self.assertTrue(flavor["groups"].get("inference", False))
+            self.assertEqual(flavor["groups"].get("inference_backend", False), name == "full")
 
     def test_documented_python_examples_parse(self):
         for example in re.findall(r"```python\n(.*?)```", (ROOT / "doc/manual/inference.md").read_text(), re.S):

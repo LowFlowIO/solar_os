@@ -3,6 +3,7 @@ name = "writerdeck"
 description = "SolarOS writing, reading, scripting, media, file-transfer, and RTSP viewer build."
 
 [groups]
+inference = true
 hardware_shell = true
 filesystem = true
 wifi = true

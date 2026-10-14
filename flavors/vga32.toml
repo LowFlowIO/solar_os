@@ -3,6 +3,7 @@ name = "vga32"
 description = "Custom flavor for LilyGo VGA32"
 
 [groups]
+inference = true
 hardware_shell = true
 filesystem = true
 wifi = true

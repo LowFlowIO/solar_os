@@ -61,6 +61,11 @@ label = "Model inference"
 category = "Media"
 members = ["service_inference"]
 
+[groups.inference_backend]
+label = "Built-in inference engine"
+category = "Media"
+members = ["backend_inference_espdl"]
+
 [groups.zoo]
 label = "Model zoo"
 category = "Media"
@@ -875,7 +880,7 @@ sources = [
   "shell/solar_os_shell_native.c",
   "shell/solar_os_shell_pkg_tui.c",
 ]
-requires = ["espressif__elf_loader"]
+requires = ["espressif__elf_loader", "esp_timer", "pthread"]
 targets = ["esp32s3"]
 capabilities = ["psram"]
 
@@ -1178,8 +1183,16 @@ capabilities = ["psram"]
 
 [packages.service_inference]
 label = "service.inference"
-depends = ["service_json", "service_crypto"]
-sources = ["services/solar_os_inference.c", "services/solar_os_inference_espdl.cpp", "services/solar_os_tensor_image.c", "services/solar_os_model_bundle.c", "shell/solar_os_shell_model.c"]
+depends = ["service_json", "service_crypto", "service_native_modules"]
+sources = ["services/solar_os_inference.c", "services/solar_os_inference_backend.c", "services/solar_os_tensor_image.c", "services/solar_os_model_bundle.c", "shell/solar_os_shell_model.c"]
+requires = ["esp_timer"]
+capabilities = ["psram"]
+targets = ["esp32s3"]
+
+[packages.backend_inference_espdl]
+label = "backend.inference-espdl"
+depends = ["service_inference"]
+sources = ["services/solar_os_inference_espdl.cpp", "services/solar_os_inference_espdl_api.cpp"]
 requires = ["esp-dl", "espdl_schema", "esp_timer"]
 capabilities = ["psram"]
 targets = ["esp32s3"]

@@ -4,8 +4,16 @@
 #include <stdio.h>
 #include <string.h>
 #include <setjmp.h>
+#include <pthread.h>
+#include <errno.h>
+#include <stdlib.h>
+#include <math.h>
 
 #include "esp_elf.h"
+#include "esp_timer.h"
+#include "solar_os_native_time_abi.h"
+#include "solar_os_native_thread_abi.h"
+#include "solar_os_native_libc_abi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "sdkconfig.h"
@@ -122,6 +130,140 @@ static const solar_os_native_library_service_api_v1_t native_library_api = {
     .retain = solar_os_native_library_retain,
     .release = solar_os_native_library_release,
     .unload = solar_os_native_library_unload,
+};
+
+static void native_time_sleep_ms(uint32_t milliseconds)
+{
+    const uint64_t ticks = ((uint64_t)milliseconds * configTICK_RATE_HZ + 999U) / 1000U;
+    vTaskDelay(ticks > portMAX_DELAY - 1U ? portMAX_DELAY - 1U : (TickType_t)ticks);
+}
+static const solar_os_native_time_api_v1_t native_time_api = {
+    .abi_version = SOLAR_OS_NATIVE_TIME_ABI, .struct_size = sizeof(native_time_api),
+    .now_us = esp_timer_get_time, .sleep_ms = native_time_sleep_ms,
+};
+static const solar_os_native_libc_api_v1_t native_libc_api = {
+    .abi_version = SOLAR_OS_NATIVE_LIBC_ABI, .struct_size = sizeof(native_libc_api),
+    .format = vsnprintf, .parse_float = strtof, .floor_value = floor,
+    .exp_float = expf, .floor_float = floorf, .mod_float = fmodf,
+    .log_float = logf, .pow_float = powf, .sqrt_float = sqrtf,
+};
+
+static int native_thread_mutex_create(void **out, uint32_t recursive)
+{
+    if (!out || recursive > 1U) return EINVAL;
+    *out = NULL;
+    pthread_mutex_t *mutex = solar_os_memory_alloc(sizeof(*mutex),
+        SOLAR_OS_MEMORY_INTERNAL_CRITICAL, "native.mutex");
+    if (!mutex) return ENOMEM;
+    pthread_mutexattr_t attr;
+    int error = pthread_mutexattr_init(&attr);
+    if (error) { solar_os_memory_free(mutex); return error; }
+    if (recursive) error = pthread_mutexattr_settype(&attr, PTHREAD_MUTEX_RECURSIVE);
+    if (!error) error = pthread_mutex_init(mutex, &attr);
+    pthread_mutexattr_destroy(&attr);
+    if (error) { solar_os_memory_free(mutex); return error; }
+    *out = mutex;
+    return 0;
+}
+static int native_thread_mutex_lock(void *mutex)
+{ return mutex ? pthread_mutex_lock(mutex) : EINVAL; }
+static int native_thread_mutex_unlock(void *mutex)
+{ return mutex ? pthread_mutex_unlock(mutex) : EINVAL; }
+static int native_thread_mutex_destroy(void *mutex)
+{
+    if (!mutex) return EINVAL;
+    const int error = pthread_mutex_destroy(mutex);
+    if (!error) solar_os_memory_free(mutex);
+    return error;
+}
+static int native_thread_key_create(uint32_t *out, void (*destructor)(void *))
+{
+    if (!out) return EINVAL;
+    pthread_key_t key;
+    const int error = pthread_key_create(&key, destructor);
+    if (!error) *out = key;
+    return error;
+}
+static int native_thread_key_delete(uint32_t key) { return pthread_key_delete(key); }
+static void *native_thread_key_get(uint32_t key) { return pthread_getspecific(key); }
+static int native_thread_key_set(uint32_t key, const void *value)
+{ return pthread_setspecific(key, value); }
+static int native_thread_condition_create(void **out)
+{
+    if (!out) return EINVAL;
+    *out = NULL;
+    pthread_cond_t *condition = solar_os_memory_alloc(sizeof(*condition),
+        SOLAR_OS_MEMORY_INTERNAL_CRITICAL, "native.condition");
+    if (!condition) return ENOMEM;
+    int error = pthread_cond_init(condition, NULL);
+    if (error) { solar_os_memory_free(condition); return error; }
+    *out = condition;
+    return 0;
+}
+static int native_thread_condition_wait(void *condition, void *mutex)
+{ return condition && mutex ? pthread_cond_wait(condition, mutex) : EINVAL; }
+static int native_thread_condition_broadcast(void *condition)
+{ return condition ? pthread_cond_broadcast(condition) : EINVAL; }
+static int native_thread_condition_destroy(void *condition)
+{
+    if (!condition) return EINVAL;
+    int error = pthread_cond_destroy(condition);
+    if (!error) solar_os_memory_free(condition);
+    return error;
+}
+typedef struct {
+    StaticTask_t task_buffer;
+    TaskHandle_t task;
+    void (*entry)(void *);
+    void *argument;
+    StackType_t stack[];
+} native_thread_worker_t;
+static void native_thread_worker_entry(void *argument)
+{
+    native_thread_worker_t *worker = argument;
+    worker->entry(worker->argument);
+    /* The joining task deletes a suspended worker. Its stack/TCB cannot be
+     * released while the other CPU still executes the provider's epilogue. */
+    vTaskSuspend(NULL);
+}
+static int native_thread_worker_start(void **out, void (*entry)(void *), void *argument,
+                                     uint32_t stack_bytes, uint32_t core)
+{
+    if (!out) return EINVAL;
+    *out = NULL;
+    if (!entry || core >= CONFIG_FREERTOS_NUMBER_OF_CORES ||
+        stack_bytes < 2048 || stack_bytes > 16384 || stack_bytes % sizeof(StackType_t))
+        return EINVAL;
+    native_thread_worker_t *worker = solar_os_memory_calloc(1, sizeof(*worker) + stack_bytes,
+        SOLAR_OS_MEMORY_INTERNAL_CRITICAL, "native.worker");
+    if (!worker) return ENOMEM;
+    worker->entry = entry; worker->argument = argument;
+    worker->task = xTaskCreateStaticPinnedToCore(native_thread_worker_entry, "native_dl",
+        stack_bytes, worker, uxTaskPriorityGet(NULL), worker->stack, &worker->task_buffer, core);
+    if (!worker->task) { solar_os_memory_free(worker); return ENOMEM; }
+    *out = worker;
+    return 0;
+}
+static int native_thread_worker_join(void *value)
+{
+    native_thread_worker_t *worker = value;
+    if (!worker || worker->task == xTaskGetCurrentTaskHandle()) return EINVAL;
+    while (eTaskGetState(worker->task) != eSuspended) vTaskDelay(1);
+    vTaskDelete(worker->task);
+    solar_os_memory_free(worker);
+    return 0;
+}
+static const solar_os_native_thread_api_v1_t native_thread_api = {
+    .abi_version = SOLAR_OS_NATIVE_THREAD_ABI, .struct_size = sizeof(native_thread_api),
+    .mutex_create = native_thread_mutex_create, .mutex_lock = native_thread_mutex_lock,
+    .mutex_unlock = native_thread_mutex_unlock, .mutex_destroy = native_thread_mutex_destroy,
+    .key_create = native_thread_key_create, .key_delete = native_thread_key_delete,
+    .key_get = native_thread_key_get, .key_set = native_thread_key_set,
+    .condition_create = native_thread_condition_create,
+    .condition_wait = native_thread_condition_wait,
+    .condition_broadcast = native_thread_condition_broadcast,
+    .condition_destroy = native_thread_condition_destroy,
+    .worker_start = native_thread_worker_start, .worker_join = native_thread_worker_join,
 };
 
 static int native_register_job(
@@ -414,6 +556,15 @@ static const void *native_job_get_service(const char *name,
                                           uint32_t abi_version,
                                           uint32_t minimum_struct_size)
 {
+    if (name != NULL && strcmp(name, SOLAR_OS_NATIVE_TIME_SERVICE) == 0 &&
+        abi_version == SOLAR_OS_NATIVE_TIME_ABI && minimum_struct_size <= sizeof(native_time_api))
+        return &native_time_api;
+    if (name != NULL && strcmp(name, SOLAR_OS_NATIVE_THREAD_SERVICE) == 0 &&
+        abi_version == SOLAR_OS_NATIVE_THREAD_ABI && minimum_struct_size <= sizeof(native_thread_api))
+        return &native_thread_api;
+    if (name != NULL && strcmp(name, SOLAR_OS_NATIVE_LIBC_SERVICE) == 0 &&
+        abi_version == SOLAR_OS_NATIVE_LIBC_ABI && minimum_struct_size <= sizeof(native_libc_api))
+        return &native_libc_api;
     if (name != NULL && strcmp(name, SOLAR_OS_NATIVE_LIBRARY_SERVICE) == 0 &&
         abi_version == SOLAR_OS_NATIVE_LIBRARY_ABI &&
         minimum_struct_size <= sizeof(native_library_api)) {
