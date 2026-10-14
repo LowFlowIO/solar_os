@@ -29,10 +29,8 @@ SOLAR_OS_EXPANSION_DRIVER_SYMBOLS(SOLAR_OS_DECLARE_EXPANSION_DRIVER)
 #undef SOLAR_OS_DECLARE_EXPANSION_DRIVER
 
 #define SOLAR_OS_EXPANSION_DRIVER_POINTER(symbol) &symbol,
-extern const solar_os_expansion_driver_t solar_os_ssd1677_expansion_driver;
 static const solar_os_expansion_driver_t *const expansion_drivers[] = {
     &manual_expansion_driver,
-    &solar_os_ssd1677_expansion_driver,
     SOLAR_OS_EXPANSION_DRIVER_SYMBOLS(SOLAR_OS_EXPANSION_DRIVER_POINTER)
 };
 #undef SOLAR_OS_EXPANSION_DRIVER_POINTER

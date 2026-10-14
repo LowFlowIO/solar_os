@@ -18,8 +18,8 @@ drivers = [
   "battery_expansion",
   "i2c_esp_idf",
   "spi_esp_idf",
-  "rtc_pcf85063",
-  "sensors_shtc3",
+  "rtc_pcf8563",
+  "sensors_sht40",
   "gpio_esp_idf",
 ]
 capabilities = [
@@ -68,6 +68,7 @@ SOLAR_OS_BOARD_PIN_TOUCH_INT = "GPIO_NUM_21"
 SOLAR_OS_BOARD_PIN_TOUCH_RST = "GPIO_NUM_41"
 SOLAR_OS_BOARD_PIN_TOUCH_EN = "GPIO_NUM_42"
 SOLAR_OS_BOARD_PIN_KEY = "GPIO_NUM_4"
+SOLAR_OS_BOARD_PIN_BLE_PAIR = "GPIO_NUM_5"
 SOLAR_OS_BOARD_BUTTONS = '{{.pin = GPIO_NUM_4, .name = "AI-PWR", .key = SOLAR_OS_KEY_ENTER, .active_low = true, .emit_on_release = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, {.pin = GPIO_NUM_5, .name = "UP", .key = SOLAR_OS_KEY_UP, .active_low = true, .emit_on_release = true, .pull = SOLAR_OS_BUTTON_PULL_UP}, {.pin = GPIO_NUM_6, .name = "DOWN", .key = SOLAR_OS_KEY_DOWN, .active_low = true, .emit_on_release = true, .pull = SOLAR_OS_BUTTON_PULL_UP}}'
 SOLAR_OS_BOARD_PIN_PWR_HOLD = "GPIO_NUM_45"
 SOLAR_OS_BOARD_PIN_PWR_LOCK = "GPIO_NUM_46"
@@ -83,6 +84,16 @@ SOLAR_OS_BOARD_PIN_UART_RX = "GPIO_NUM_44"
 spi_hosts = ["SPI2_HOST"]
 uart_ports = ["UART_NUM_0"]
 i2c_ports = ["I2C_NUM_0"]
+
+
+[[buses]]
+name = "i2c0"
+protocol = "i2c"
+sharing = "shared"
+port = "I2C_NUM_0"
+sda = 1
+scl = 0
+speed_hz = "400000"
 
 [[buses]]
 name = "spi0"
