@@ -2,6 +2,16 @@
 
 ## 4.x
 
+- **4.16.14** — 2026-10-14 — Added a reusable DS3231 I2C real-time clock
+  expansion driver with named buses, optional active-low interrupt wiring,
+  a 2000–2099 UTC calendar, and second-resolution Alarm 1 support through
+  the existing time/RTC shell, Python, and Lua APIs. Reads accept 12-hour
+  and 24-hour clocks; oscillator-stop status marks time unreliable until
+  it is set. Countdown timers are unsupported.
+  SolarWriter now automatically attaches board-owned `rtc0` at `0x68`
+  on the shared fuel-gauge I2C bus (SDA GPIO8, SCL GPIO9). Its RTC driver
+  is included in every flavor, including `writerdeck`; INT/SQW is unbound
+  in the default profile.
 - **4.16.13** — 2026-10-14 — Added managed PSRAM allocation that groups
   large buffers separately from resident executable images and metadata,
   merges adjacent free blocks, and reclaims unused native libraries under
