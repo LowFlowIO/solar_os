@@ -1283,6 +1283,8 @@ summary = "DS3231 real-time clock"
 package = "driver_ds3231"
 targets = ["esp32", "esp32s3"]
 capabilities = ["i2c"]
+board_capabilities = ["rtc"]
+board_driver = "rtc_ds3231"
 default_name = "rtc0"
 [[drivers.ds3231.bindings]]
 key = "i2c"

@@ -347,6 +347,28 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertTrue(enabled["service_ps2"])
         self.assertTrue(enabled["service_resources"])
 
+    def test_solar_writer_rtc_survives_writerdeck_pruning(self):
+        from solaros_board_manifest import load_board_manifest, load_driver_catalog, required_packages
+        manifest_dir = REPOSITORY / "boards/manifests"
+        board = load_board_manifest(manifest_dir / "solar_writer.toml", manifest_dir)
+        drivers = load_driver_catalog(REPOSITORY / "boards/expansion_drivers.toml")
+        _, _, groups, packages = self.resolve("writerdeck")
+        self.assertFalse(packages["driver_ds3231"])
+        selected = generate_flavor_config.enable_required_packages(
+            self.catalog, packages, set(required_packages(board, drivers))
+        )
+        selected = generate_flavor_config.apply_target_pruning(
+            self.catalog, selected, board["target"]["mcu"]
+        )
+        groups, selected = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, selected, set(board["build"]["capabilities"])
+        )
+        for package in ("driver_ds3231", "service_rtc", "service_i2c", "service_expansion"):
+            self.assertTrue(selected[package], package)
+        sources = generate_flavor_config.collect_sources(self.catalog, groups, selected)
+        self.assertIn("drivers/rtc_ds3231.c", sources)
+        self.assertIn("services/solar_os_ds3231_driver.c", sources)
+
     def test_unknown_board_required_package_is_rejected(self):
         _, _, _, packages = self.resolve("writerdeck")
         with self.assertRaisesRegex(ValueError, "unknown board-required package"):
