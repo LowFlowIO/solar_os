@@ -28,7 +28,6 @@
 #endif
 
 #define DOCS_CATALOG_MAX (512U * 1024U)
-#define DOCS_PAGE_COUNT_MAX 256U
 #define DOCS_SIGNATURE_MAX 512U
 #define DOCS_ARCHIVE_MAX (2U * 1024U * 1024U)
 #define DOCS_URL_MAX 256U
@@ -535,7 +534,7 @@ static esp_err_t docs_parse_catalog(const char *catalog,
     if (info->page_count == 0U ||
         (require_current_version &&
          info->page_count < solar_os_manual_embedded_count()) ||
-        info->page_count > DOCS_PAGE_COUNT_MAX) {
+        info->page_count > SOLAR_OS_DOCS_PAGE_COUNT_MAX) {
         solar_os_json_free(*document);
         *document = NULL;
         return ESP_ERR_INVALID_RESPONSE;
