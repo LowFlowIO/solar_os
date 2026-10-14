@@ -45,6 +45,27 @@ class BoardManifestTest(unittest.TestCase):
                 board = load_board_manifest(path, self.manifest_dir)
                 validate_board(board, self.drivers)
 
+    def test_ds3231_overlay_and_fixed_address(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        device = {"driver": "ds3231", "name": "rtc0",
+                  "bindings": {"i2c": "i2c0", "addr": 0x68}}
+        board.setdefault("devices", []).append(device)
+        validate_board(board, self.drivers)
+        self.assertIn("driver_ds3231", required_packages(board, self.drivers))
+        self.assertIn('.driver = "ds3231", .name = "rtc0"', generate_header(board, self.drivers))
+        for pin in board["pins"]:
+            if pin["gpio"] == 10:
+                pin.update(policy="fixed", user=False, adc=False, pwm=False)
+        device["bindings"]["irq"] = 10
+        validate_board(board, self.drivers)
+        self.assertIn('.role = "irq"', generate_header(board, self.drivers))
+        for key, bad_value in (("addr", 0x69), ("i2c", "missing")):
+            original = device["bindings"][key]
+            device["bindings"][key] = bad_value
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+            device["bindings"][key] = original
+
     def test_inmp441_capture_and_shared_playback_bindings(self) -> None:
         board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
         for pin in board["pins"]:

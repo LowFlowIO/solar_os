@@ -46,6 +46,7 @@ TARGETS += messaging_service_test
 TARGETS += nmea_test nmea_gnss_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
+TARGETS += rtc_ds3231_test
 TARGETS += tab5_keyboard_test
 TARGETS += i2c_buses_test
 TARGETS += inmp441_test
@@ -102,6 +103,17 @@ tab5_keyboard_test: tab5_keyboard_test.c $(wildcard $(ROOT)/src/services/solar_o
 		$(ROOT)/src/services/solar_os_tab5_keyboard_profile.c \
 		$(ROOT)/src/services/solar_os_input_keymap.c $(ROOT)/src/services/solar_os_input_keymap_mapper.c \
 		$(ROOT)/src/services/solar_os_input_keymap_json.c $(CJSON_DIR)/cJSON.c -lm -o $@
+
+rtc_ds3231_test: rtc_ds3231_test.c $(ROOT)/src/drivers/rtc_ds3231.c \
+        $(ROOT)/src/drivers/rtc_ds3231.h $(ROOT)/src/services/solar_os_ds3231.c \
+        $(ROOT)/src/services/solar_os_ds3231.h $(ROOT)/src/services/solar_os_ds3231_driver.c \
+        $(ROOT)/src/services/solar_os_rtc.c $(ROOT)/src/services/solar_os_rtc.h \
+        $(ROOT)/src/services/solar_os_time.h freertos/FreeRTOS.h compat.h esp_err.h \
+        $(wildcard expansion_stubs/*.h expansion_stubs/driver/*.h expansion_stubs/soc/*.h)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iexpansion_stubs -I. \
+		-I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
+		rtc_ds3231_test.c $(ROOT)/src/drivers/rtc_ds3231.c $(ROOT)/src/services/solar_os_ds3231.c \
+		$(ROOT)/src/services/solar_os_ds3231_driver.c $(ROOT)/src/services/solar_os_rtc.c -o $@
 
 rtc_pcf8563_test: rtc_pcf8563_test.c $(ROOT)/src/drivers/rtc_pcf8563.c \
         $(ROOT)/src/drivers/rtc_pcf8563.h $(ROOT)/src/services/solar_os_pcf8563.c \
@@ -1014,6 +1026,7 @@ test: $(TARGETS)
 	./apple2_app_entry_test
 	./cw2017_test
 	./rtc_pcf8563_test
+	./rtc_ds3231_test
 	./axp2101_service_test
 	./messaging_service_test
 	./ble_service_test
