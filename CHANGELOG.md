@@ -2,6 +2,23 @@
 
 ## 4.x
 
+- **4.16.12** — 2026-10-14 — Added resident native libraries and the
+  library module category on ESP32-S3 devices with PSRAM. Libraries load on
+  demand, share APIs between consumers, and stay resident until explicitly
+  unloaded; active consumers prevent unloading or removal.
+  Added the downloadable ESP-DL inference engine through `pkg install espdl`,
+  with single, auto, and dual-core execution through the existing model,
+  Python, Lua, and native APIs. Models retain the engine until unloaded;
+  `model backend` reports the selected provider. Model loading uses the
+  installed library without downloading code automatically.
+  Consolidated firmware profiles to standard `full` and compact `writerdeck`,
+  retiring `vga32`, `rover`, `core`, and `netrunner`. Both profiles use the
+  downloadable engine; custom flavors can still include ESP-DL in firmware.
+  Writerdeck retains Python and Playground, plus `pkg` on supported targets,
+  and fits the smaller CrowPanel OTA slots and classic-ESP32 factory slots.
+  Added signed OTA flavor redirects for future renames, saving the resolved
+  target only after a successful verified upgrade. Writerdeck keeps its
+  published name for now; no redirect is enabled.
 - **4.16.11** — 2026-10-13 — Added `shutdown` on all targets, with
   app, job, and radio cleanup and persistent storage flushing and unmounting.
   Uses hardware cutoff on CL32, Waveshare ESP32-S3-ePaper-3.97, and
