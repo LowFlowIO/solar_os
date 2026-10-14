@@ -246,6 +246,24 @@ class FlavorPackagesTest(unittest.TestCase):
         )
         self.assertFalse(unavailable["driver_pcf8563"])
 
+    def test_ds3231_expansion_only_requires_i2c_hardware(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["ds3231"])
+        self.assertTrue(packages["driver_ds3231"])
+        _, _, core_groups, core_packages = self.resolve("writerdeck")
+        self.assertFalse(core_groups["ds3231"])
+        self.assertFalse(core_packages["driver_ds3231"])
+        _, supported = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"i2c"}
+        )
+        for target in ("esp32", "esp32s3"):
+            pruned = generate_flavor_config.apply_target_pruning(self.catalog, supported, target)
+            self.assertTrue(pruned["driver_ds3231"], target)
+        _, unavailable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, set()
+        )
+        self.assertFalse(unavailable["driver_ds3231"])
+
     def test_gesture_listener_job_is_part_of_the_core_runtime(self):
         for flavor in ("full", "writerdeck"):
             _, _, _, packages = self.resolve(flavor)
@@ -328,6 +346,28 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertTrue(enabled["job_ps2_keyboard"])
         self.assertTrue(enabled["service_ps2"])
         self.assertTrue(enabled["service_resources"])
+
+    def test_solar_writer_rtc_survives_writerdeck_pruning(self):
+        from solaros_board_manifest import load_board_manifest, load_driver_catalog, required_packages
+        manifest_dir = REPOSITORY / "boards/manifests"
+        board = load_board_manifest(manifest_dir / "solar_writer.toml", manifest_dir)
+        drivers = load_driver_catalog(REPOSITORY / "boards/expansion_drivers.toml")
+        _, _, groups, packages = self.resolve("writerdeck")
+        self.assertFalse(packages["driver_ds3231"])
+        selected = generate_flavor_config.enable_required_packages(
+            self.catalog, packages, set(required_packages(board, drivers))
+        )
+        selected = generate_flavor_config.apply_target_pruning(
+            self.catalog, selected, board["target"]["mcu"]
+        )
+        groups, selected = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, selected, set(board["build"]["capabilities"])
+        )
+        for package in ("driver_ds3231", "service_rtc", "service_i2c", "service_expansion"):
+            self.assertTrue(selected[package], package)
+        sources = generate_flavor_config.collect_sources(self.catalog, groups, selected)
+        self.assertIn("drivers/rtc_ds3231.c", sources)
+        self.assertIn("services/solar_os_ds3231_driver.c", sources)
 
     def test_unknown_board_required_package_is_rejected(self):
         _, _, _, packages = self.resolve("writerdeck")

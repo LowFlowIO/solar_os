@@ -20,7 +20,7 @@ The current tree includes these board targets:
 | Target | PlatformIO env | Hardware | Highlights |
 | --- | --- | --- | --- |
 | `solar_term` | `solar_term` | [SolarTerm](https://github.com/nilseuropa/solar_term), built from the Waveshare ESP32-S3-RLCD-4.2 | Primary ST7305 reflective display target with SDMMC, CDC, UART, RTC, SHTC3, battery ADC, ES8311/ES7210 audio, expansion I2C/SPI/UART/GPIO/ADC/PWM, and runtime-routable SPI3 on GPIO1/GPIO2/GPIO3/GPIO17. SolarOS refers to this hardware configuration as SolarTerm. |
-| `solar_writer` | `solar_writer` | SolarWriter, built from the Elecrow CrowPanel 5.79-inch | 792x272 dual-SSD1683 display, INMP441 microphone, shared PCM5102 line output and MAX98357 speaker output, LC709203F fuel gauge, microSD, CH340/UART console, and GPIO21 reserved for jack detect. |
+| `solar_writer` | `solar_writer` | SolarWriter, built from the Elecrow CrowPanel 5.79-inch | 792x272 dual-SSD1683 display, INMP441 microphone, shared PCM5102 line output and MAX98357 speaker output, LC709203F fuel gauge, DS3231 RTC, microSD, CH340/UART console, and GPIO21 reserved for jack detect. |
 | `freenove_esp32_s3_display_4_0` | `freenove_esp32_s3_display_4_0` | Freenove ESP32-S3 Display 4.0-inch (FNK0104S) | Integrated 480x320 ST7796 display, FT6336 capacitive pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, native USB CDC, and UART/I2C/GPIO expansion connectors. |
 | `qdtech_es3c28p` | `qdtech_es3c28p` | [QDtech ES3C28P 2.8-inch ESP32-S3 Touch Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Capacitive-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, FT6336 pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
 | `qdtech_es3n28p` | `qdtech_es3n28p` | [QDtech ES3N28P 2.8-inch ESP32-S3 Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Non-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
@@ -949,7 +949,8 @@ CrowPanel apply to this board.
 
 The `solar_writer` target combines the Elecrow CrowPanel 5.79-inch N8R8 board
 with a GY-INMP441 microphone, Adafruit PCM5102 DAC, Adafruit I2S Amplifier BFF
-(MAX98357), and Adafruit LC709203F battery gauge. It inherits the CrowPanel's
+(MAX98357), Adafruit LC709203F battery gauge, and DS3231 real-time clock.
+It inherits the CrowPanel's
 792x272 dual-SSD1683 display, microSD, controls, CH340/UART console, Wi-Fi, BLE,
 8 MB flash, and 8 MB OPI PSRAM. The default firmware flavor is `writerdeck`.
 
@@ -957,8 +958,8 @@ The following connections are fixed in this target:
 
 | Function | GPIO | U5 pin | Module connection |
 | --- | --- | --- | --- |
-| I2C SDA | 8 | 20 | LC709203F SDI/SDA |
-| I2C SCL | 9 | 2 | LC709203F SCL |
+| I2C SDA | 8 | 20 | LC709203F SDI/SDA and DS3231 SDA |
+| I2C SCL | 9 | 2 | LC709203F SCL and DS3231 SCL |
 | Shared I2S bit clock | 14 | 19 | INMP441 SCK, PCM5102 BCK, BFF A2 |
 | Shared I2S word select | 15 | 3 | INMP441 WS, PCM5102 WSEL, BFF A1 |
 | Playback data | 16 | 18 | PCM5102 DIN and BFF A0 |
@@ -967,7 +968,7 @@ The following connections are fixed in this target:
 
 U5 pins 11–14 supply regulated **3.3 V** and pins 7–10 are GND, as connected
 in Elecrow's published schematic. Power the microphone VDD, PCM5102 VIN,
-fuel-gauge VIN, and amplifier BFF's **5V input pad** from 3.3 V for this
+fuel-gauge VIN, DS3231 VCC, and amplifier BFF's **5V input pad** from 3.3 V for this
 configuration. The BFF's 3V pad does not supply the amplifier. Use short power
 wiring and allow for speaker current when sizing the supply. Higher-power
 speaker operation requires a suitable separate supply with common ground;
@@ -1097,6 +1098,24 @@ audio devices
 battery status
 battery capacity 3000
 ```
+
+`rtc0` attaches automatically through the reusable `ds3231` driver at `0x68`
+on the same 100 kHz `i2c0` bus as `battery0`. Its driver is included in every
+SolarWriter flavor. The clock stores UTC and supports calendar dates from
+2000–2099 and second-resolution alarms. Set the clock after first power-up or
+loss of backup power; oscillator-stop status leaves time unreliable until set.
+
+```text
+rtc status
+date
+ntp
+rtc alarm set 07:30:15
+```
+
+`ntp` needs a network connection and the NTP package. INT/SQW is not wired in
+this profile, so RTC alarms have no GPIO wake signal. The DS3231 has no
+countdown timer; use `schedule` for portable timed actions. See
+[DS3231 usage](expansion.md#ds3231-real-time-clock).
 
 GPIO21 is reserved in the pin metadata and is not available for general GPIO
 or PWM. Plug detection and automatic output switching are not enabled in this
