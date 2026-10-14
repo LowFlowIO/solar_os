@@ -21,6 +21,10 @@ volume is presented as `/`. On SD-backed boards, the primary SD card volume also
 has the internal mount path `/sdcard`, and the internal flash volume is mounted
 at `/flash`. On boards without SD support, internal flash is mounted as `/`.
 
+When the path displayed in the shell prompt exceeds half the terminal width,
+the prompt shows only the last directory, such as `/logs/`. The working
+directory and relative path resolution remain unchanged.
+
 Wildcard patterns are supported by selected filesystem commands, for example
 `*.txt`.
 

@@ -4040,7 +4040,10 @@ esp_err_t solar_os_shell_set_cwd(solar_os_context_t *ctx, const char *path)
     return ESP_OK;
 }
 
-static void shell_format_display_path(const char *path, char *display, size_t display_len)
+static void shell_format_display_path(const char *path,
+                                       char *display,
+                                       size_t display_len,
+                                       size_t columns)
 {
     char root[SOLAR_OS_STORAGE_MOUNT_POINT_MAX];
     if (solar_os_storage_path_mount_point(path, root, sizeof(root)) != ESP_OK) {
@@ -4073,6 +4076,18 @@ static void shell_format_display_path(const char *path, char *display, size_t di
             snprintf(display, display_len, "/%s/", relative);
         } else {
             snprintf(display, display_len, "%s/%s/", root, relative);
+        }
+    }
+
+    const size_t path_len = strlen(display);
+    if (columns > 0 && path_len > columns / 2U) {
+        char *leaf = display + path_len - 1U;
+        while (leaf > display && leaf[-1] != '/') {
+            leaf--;
+        }
+        if (leaf > display) {
+            leaf--;
+            memmove(display, leaf, strlen(leaf) + 1U);
         }
     }
 }
@@ -4122,7 +4137,10 @@ static void shell_prompt(solar_os_context_t *ctx)
     if (!shell_path_has_storage_prefix(shell_session(ctx)->cwd)) {
         shell_reset_cwd(shell_session(ctx));
     }
-    shell_format_display_path(shell_session(ctx)->cwd, display_path, sizeof(display_path));
+    shell_format_display_path(shell_session(ctx)->cwd,
+                               display_path,
+                               sizeof(display_path),
+                               solar_os_shell_io_cols(io));
     solar_os_identity_format(identity, sizeof(identity));
     snprintf(prompt, sizeof(prompt), "%s:%s ", identity, display_path);
     solar_os_shell_io_set_cursor_visible(io, true);
