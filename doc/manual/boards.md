@@ -183,7 +183,7 @@ If you select a firmware flavor explicitly, keep it on the upload invocation as
 well:
 
 ```sh
-SOLAR_OS_BOARD=devkitc1_epaper_workbench SOLAR_OS_FLAVOR=core \
+SOLAR_OS_BOARD=devkitc1_epaper_workbench SOLAR_OS_FLAVOR=writerdeck \
   pio run -e esp32_s3_devkitc1_n16r8 -t upload
 ```
 
@@ -583,7 +583,7 @@ centered 320x200 safe-area mode. Select it when building; the main and virtual
 display dimensions both change to 320x200:
 
 ```sh
-SOLAR_OS_FLAVOR=rover SOLAR_OS_CVBS_MODE=320x200 \
+SOLAR_OS_FLAVOR=writerdeck SOLAR_OS_CVBS_MODE=320x200 \
   pio run -e freenove_esp32_wrover_v3
 ```
 
@@ -591,20 +591,18 @@ Omit `SOLAR_OS_CVBS_MODE` (or set it to `384x288`) to build the default full
 PAL mode. Composite scanout requires the ESP32's full 240 MHz clock, so SolarOS
 clamps all power profiles to that board-specific CPU floor on this target.
 
-Use `os_builder` with the `rover` baseline to make a specialized Game Boy or
+Use `os_builder` with the compact `writerdeck` profile to make a specialized
 Synth image. Add the required group, remove unrelated groups until the measured
 image fits, then build and flash from the same TUI:
 
 ```sh
 python3 scripts/os_builder.py \
-  --input flavors/rover.toml \
+  --input flavors/writerdeck.toml \
   --board freenove_esp32_wrover_v3 \
   --layout single
 ```
 
-The default full PAL mode gives Game Boy the largest image. The 320x200
-safe-area mode also supports Game Boy; its presenter selects a smaller centered
-raster. For serial diagnostics, run:
+For serial diagnostics, run:
 
 ```text
 job start log uart0 debug
@@ -679,19 +677,19 @@ new image is copied. Changing `SOLAR_OS_VGA_MODE` causes PlatformIO to
 reconfigure CMake automatically.
 
 The board has 4 MB flash, so its PlatformIO environment defaults to the focused
-`rover` flavor instead of `full`:
+`writerdeck` profile instead of `full`:
 
 ```sh
 pio run -e ttgo_vga32_v14
 ```
 
-To create a compact Game Boy or another specialized build, start from `rover`
+To create a specialized build, start from `writerdeck`
 in `os_builder`, adjust the granular groups, and build against this board's
 single-image limit:
 
 ```sh
 python3 scripts/os_builder.py \
-  --input flavors/rover.toml \
+  --input flavors/writerdeck.toml \
   --board ttgo_vga32_v14 \
   --layout single
 ```

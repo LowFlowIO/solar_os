@@ -1,6 +1,6 @@
 [flavor]
 name = "full"
-description = "Default SolarOS build with all built-in packages enabled."
+description = "Standard SolarOS build with scripting, applications, hardware services and downloadable inference."
 
 [groups]
 x4pro = true
@@ -13,6 +13,7 @@ audio_support = true
 camera = true
 vision = true
 inference = true
+inference_backend = false
 zoo = true
 pipelines = true
 rtsp = true

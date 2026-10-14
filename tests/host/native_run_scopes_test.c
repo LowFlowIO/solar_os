@@ -5,6 +5,14 @@
 #include <stdlib.h>
 #include <string.h>
 #include "solar_os_native_elf.h"
+#include "solar_os_native_library_abi.h"
+static const solar_os_native_library_service_api_v1_t native_library_api = {0};
+#include "solar_os_native_time_abi.h"
+static const solar_os_native_time_api_v1_t native_time_api = {0};
+#include "solar_os_native_thread_abi.h"
+static const solar_os_native_thread_api_v1_t native_thread_api = {0};
+#include "solar_os_native_libc_abi.h"
+static const solar_os_native_libc_api_v1_t native_libc_api = {0};
 typedef void *TaskHandle_t;
 static TaskHandle_t current_task;
 static TaskHandle_t xTaskGetCurrentTaskHandle(void) { return current_task; }

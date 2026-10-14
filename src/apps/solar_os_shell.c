@@ -848,7 +848,7 @@ static const char * const engine_subcommands[] = {"status", "list", "reset"};
 static const char * const mem_subcommands[] = {"policy"};
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
 static const char * const pkg_subcommands[] = {
-    "system", "available", "installed", "install", "remove",
+    "system", "available", "installed", "install", "remove", "unload",
 };
 #else
 static const char * const pkg_subcommands[] = {"system"};
@@ -2023,6 +2023,7 @@ static const char * const path_pkg[] = {"pkg"};
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
 static const char * const path_pkg_install[] = {"pkg", "install"};
 static const char * const path_pkg_remove[] = {"pkg", "remove"};
+static const char * const path_pkg_unload[] = {"pkg", "unload"};
 #endif
 static const char * const path_nvs[] = {"nvs"};
 static const char * const path_nvs_backup[] = {"nvs", "backup"};
@@ -3265,6 +3266,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
     SHELL_COMPLETION_MODULES_AVAILABLE(path_pkg_install),
     SHELL_COMPLETION_MODULES_INSTALLED(path_pkg_remove),
+    SHELL_COMPLETION_MODULES_INSTALLED(path_pkg_unload),
 #endif
     SHELL_COMPLETION_STATIC(path_nvs, nvs_subcommands),
     SHELL_COMPLETION_PATH(path_nvs_backup, false),
@@ -6204,6 +6206,7 @@ static void shell_completion_emit_installed_modules(
         SOLAR_OS_MODULE_TYPE_APP,
         SOLAR_OS_MODULE_TYPE_JOB,
         SOLAR_OS_MODULE_TYPE_DRIVER,
+        SOLAR_OS_MODULE_TYPE_LIBRARY,
     };
     for (size_t i = 0U; i < SHELL_ARRAY_COUNT(types); i++) {
         (void)solar_os_module_package_foreach_installed(

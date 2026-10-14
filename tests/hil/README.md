@@ -1,8 +1,27 @@
 # Hardware checks
 
-These tests use live hardware. They do not flash or change persistent settings.
-Run with permission to use the relevant hardware resources. RTSP tests occupy
+These tests use live hardware. Each harness describes the resources and device
+state it changes. Run with permission to use those resources. RTSP tests occupy
 the publisher/viewer and receiver slots.
+
+## Native libraries
+
+`native_libraries.py` requires a signed maintainer catalog containing the
+`hello-library`, `library-check`, and `library-user` examples from
+`modules/examples`. Build their `typed_elf`, `elf`, and `typed_elf` targets,
+respectively. Configure the test firmware's `SOLAR_OS_MODULE_REPOSITORY_URL`
+to that catalog repository; its host version and target must match the device.
+
+```sh
+python3 -B tests/hil/native_libraries.py --telnet DEVICE_ADDRESS \
+  --output /tmp/native-libraries --runs 10
+```
+
+The output directory must not exist. The harness refuses to replace existing
+example installs, installs through the signed package manager, checks 300
+load/unload cycles and 25 cycles with a running job sharing the API, tests busy
+unload/remove/reinstall, and restarts the device to verify lazy boot behavior.
+It logs commands and memory snapshots, then removes only its own installs.
 
 ## Native image pipelines
 

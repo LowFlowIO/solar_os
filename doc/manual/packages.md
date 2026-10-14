@@ -38,6 +38,7 @@ where the board supports them:
 | --- | --- | --- |
 | `vision` | Decode QR codes and process images. | [Computer vision](vision.md) |
 | `inference` | Run resident models on ESP32-S3 with PSRAM. | [Model inference](inference.md) |
+| `inference_backend` | Include the ESP-DL engine in firmware; otherwise install the `espdl` library. | [Model inference](inference.md) |
 | `zoo` | Browse and install model bundles. | [Zoo](apps.md#zoo) |
 | `pipelines` | Process images or video in the background. Also select the desired processor. | [Image pipelines](pipelines.md) |
 | `servo` | Control calibrated positional servos. | [Servo outputs](servo.md) |
@@ -67,11 +68,14 @@ files.
   maintainer command, plus signed-catalog installation through `pkg`; target
   and capability pruning remove those services from other boards.
 - Native module manifests and signed catalogs carry an explicit `app`, `job`,
-  or `driver` type. Each type has a versioned runtime contract. Installed
+  `driver`, or `library` type. Each type has a versioned runtime contract. Installed
   artifacts use separate `/modules/apps`, `/modules/jobs`, and
-  `/modules/drivers` namespaces. Application modules run synchronously and
+  `/modules/drivers`, and `/modules/libraries` namespaces. Application modules run synchronously and
   unload; jobs and drivers remain resident while their callbacks are
-  registered. A per-entry lifecycle ABI is distinct from the native host ABI.
+  registered. Libraries load on first acquisition and remain resident until
+  unloaded; leases protect their API while consumers use it. See
+  [Native libraries](native-library.md). A per-entry lifecycle ABI is distinct
+  from the native host ABI.
 - Groups are selection shortcuts only. They cannot own source files or ESP-IDF
   component requirements.
 - Every source file and component requirement belongs to a package.
@@ -124,24 +128,24 @@ are installed as [external foreground apps](native-app.md) through the module
 catalog and require native-module support in the firmware. They do not add
 firmware flavor groups.
 
-The `writerdeck` flavor targets the Elecrow e-paper boards with editing,
-pagination, Files, Reader, Writer, Notes, View, Python, Playground, audio
-playback, and offline speech synthesis. Its transfer tools include FTP/FTPD,
-SSH, SCP, SFTP, SFTP Sync, and Curl. PCM5102/I2S and PWM audio
-output remain available for boards such as CrowPanel that expose audio-capable
-expansion pins but have no built-in speaker path. Hardware diagnostics, broad
-expansion-driver collections, external radio stacks, messaging servers, the
-graphical Web browser and spectrum-heavy music player, VPN, MQTT, SLIP, PPP,
-and OSC are omitted to preserve the smaller OTA slot and suit e-paper refresh.
+SolarOS provides two firmware profiles. `full` is the standard profile with
+the broad application and hardware-service selection. `writerdeck` is the
+compact profile for smaller application partitions, including e-paper boards
+with 8 MiB flash and classic-ESP32 boards with 4 MiB flash.
 
-The `rover` flavor targets the 4 MiB classic-ESP32 boards. It includes the
-expansion framework and drivers, networking, media viewing, writing and general
-utilities, Files, logging, Bridge, and GPIO Keys. It omits the battery monitor,
-DAQ, SUMP, Logic, games, scripting, Agent, and remote manual synchronization to
-fit the factory application slot and preserve internal-memory margin. The
-embedded `docs` application remains available. Specialized Rover images are
-created from this portable baseline with `os_builder` instead of being kept as
-separate checked-in `rover-*` flavors.
+`writerdeck` includes Python, Playground, editing, Files, Reader, Writer, Notes,
+View, audio playback, RTSP, Web, Agent, WireGuard, messaging, and file transfer.
+Its transfer tools include FTP/FTPD, SSH, SCP, SFTP, SFTP Sync, and Curl.
+PCM5102/I2S and PWM audio remain available for runtime expansion outputs.
+Broad expansion-driver collections, external radio stacks, Lua, built-in
+games, and speech synthesis are omitted. Board and target requirements still
+prune unsupported features from either profile.
+
+On ESP32-S3 boards with PSRAM, both profiles include `pkg` for installing
+native modules. Native-module installation is unavailable on classic ESP32;
+Python and Playground remain available on its PSRAM boards. Both profiles use
+the downloadable `espdl` library for inference. Custom profiles can select
+`inference_backend` to include the ESP-DL engine in firmware.
 
 Network ownership is intentionally split. `network.base`, `service.osc`, `job.osc`, `network.wireguard`, `network.mqtt`,
 `network.ssh`, `network.mail`, `messaging.gateway`, `network.http-client`, and
@@ -300,7 +304,7 @@ command line:
 
 ```sh
 python3 scripts/os_builder.py \
-  --input flavors/core.toml \
+  --input flavors/writerdeck.toml \
   --output flavors/my-flavor.toml \
   --board solar_term \
   --layout ota

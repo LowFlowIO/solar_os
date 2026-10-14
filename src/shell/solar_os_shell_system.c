@@ -29,6 +29,7 @@
 #if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
 #include "solar_os_log.h"
 #include "solar_os_module_packages.h"
+#include "solar_os_native.h"
 #endif
 #include "solar_os_power.h"
 #include "solar_os_ramfs.h"
@@ -588,9 +589,12 @@ static bool pkg_print_installed_module(const char *id, void *user)
 {
     pkg_installed_print_t *print = (pkg_installed_print_t *)user;
     solar_os_shell_io_printf(print->term,
-                             "%s %s\n",
+                             "%s %s%s\n",
                              solar_os_module_type_name(print->type),
-                             id);
+                             id,
+                             print->type == SOLAR_OS_MODULE_TYPE_LIBRARY ?
+                                 (solar_os_native_module_active(print->type, id) ?
+                                     " (loaded)" : " (on storage)") : "");
     print->count++;
     return true;
 }
@@ -601,6 +605,7 @@ static void pkg_print_installed(solar_os_shell_io_t *term)
         SOLAR_OS_MODULE_TYPE_APP,
         SOLAR_OS_MODULE_TYPE_JOB,
         SOLAR_OS_MODULE_TYPE_DRIVER,
+        SOLAR_OS_MODULE_TYPE_LIBRARY,
     };
     pkg_installed_print_t print = {
         .term = term,
@@ -678,14 +683,22 @@ void solar_os_shell_cmd_pkg(solar_os_context_t *ctx, int argc, char **argv)
         pkg_remove_module(term, argv[2]);
         return;
     }
+    if (argc == 3 && strcmp(argv[1], "unload") == 0) {
+        char detail[128] = {0};
+        const esp_err_t err = solar_os_native_module_deactivate(
+            SOLAR_OS_MODULE_TYPE_LIBRARY, argv[2], detail, sizeof(detail));
+        if (err != ESP_OK) solar_os_shell_diag_esp(term, "pkg unload", err, detail, NULL);
+        else solar_os_shell_io_printf(term, "pkg: unloaded library %s\n", argv[2]);
+        return;
+    }
     static const char * const subcommands[] = {
-        "system", "available", "installed", "install", "remove",
+        "system", "available", "installed", "install", "remove", "unload",
     };
     solar_os_shell_diag_subcommand(term,
                                    "pkg",
                                    argc,
                                    argv,
-                                   "pkg [system|available|installed|install <module>|remove <module>]",
+                                   "pkg [system|available|installed|install <module>|remove <module>|unload <library>]",
                                    subcommands,
                                    sizeof(subcommands) / sizeof(subcommands[0]));
 #else
