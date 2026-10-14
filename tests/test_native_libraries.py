@@ -20,6 +20,7 @@ class NativeLibrariesTest(unittest.TestCase):
             "native_library_link_lease", "native_library_acquire_loaded", "native_library_id_valid",
             "solar_os_native_library_acquire", "solar_os_native_library_retain",
             "solar_os_native_library_release", "solar_os_native_library_unload",
+            "native_reclaim_unused_libraries",
             "native_find_slot", "native_slot_count", "native_slot_add", "native_slot_remove",
             "native_unregister_resident", "solar_os_native_module_activate",
             "solar_os_native_module_deactivate", "solar_os_native_module_active"))

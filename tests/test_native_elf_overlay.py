@@ -19,10 +19,19 @@ class NativeElfOverlayTest(unittest.TestCase):
             source = component / "src/esp_elf.c"
             source.parent.mkdir()
             source.write_text(PATCH.OLD)
+            adapter = source.parent / "esp_elf_adapter.c"
+            adapter.write_text("void *allocate(size_t n, unsigned caps) {\n    return heap_caps_malloc(n, caps);\n}\n")
             PATCH.patch(component)
             self.assertEqual(source.read_text(), PATCH.NEW)
             PATCH.patch(component)
             self.assertEqual(source.read_text(), PATCH.NEW)
+            overlaid_adapter = adapter.read_text()
+            self.assertEqual(overlaid_adapter.count("solar_os_memory_elf_alloc(n)"), 1)
+            self.assertIn("#ifdef CONFIG_ELF_LOADER_LOAD_PSRAM", overlaid_adapter)
+            self.assertIn("#else\n    return heap_caps_malloc(n, caps);", overlaid_adapter)
+            adapter.write_text("changed allocation contract")
+            with self.assertRaisesRegex(ValueError, "resident allocation overlay"):
+                PATCH.patch(component)
             source.write_text("new loader implementation")
             with self.assertRaisesRegex(ValueError, "source changed"):
                 PATCH.patch(component)

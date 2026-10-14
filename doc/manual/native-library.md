@@ -30,13 +30,18 @@ stored under `modules/libraries/<library-id>.elf` in the preferred volume.
 
 Libraries are loaded when a consumer acquires their API. Acquisition reads the
 installed file; it does not download code. Loaded libraries use PSRAM and remain
-resident until explicitly unloaded or removed. Installed libraries are not
+resident until explicitly unloaded, removed, or reclaimed while unused under
+memory pressure. Installed libraries are not
 loaded by the boot scan. After restarting, consumers load them again as needed.
 
 `pkg unload` releases the resident image but keeps its installed file.
 `pkg remove` unloads the library and removes the file. Both refuse while a
 consumer holds a lease or the library cannot finish shutdown. Unload an unused
 library before reinstalling it.
+
+`mem reclaim` unloads unused libraries together and reports free PSRAM and the
+largest free block before and after cleanup. Active leases prevent reclamation.
+Application sessions, including suspended foreground apps, keep their state.
 
 ## Developer reference
 

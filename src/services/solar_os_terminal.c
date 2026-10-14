@@ -819,7 +819,7 @@ static void terminal_alloc_scrollback(solar_os_terminal_t *terminal)
 
     terminal->scrollback = solar_os_memory_calloc(SOLAR_OS_TERMINAL_SCROLLBACK_ROWS,
                                                   sizeof(terminal->scrollback[0]),
-                                                  SOLAR_OS_MEMORY_EXTERNAL_REQUIRED,
+                                                  SOLAR_OS_MEMORY_EXTERNAL_RESIDENT,
                                                   "terminal.text");
     terminal->scrollback_bold = solar_os_memory_calloc(SOLAR_OS_TERMINAL_SCROLLBACK_ROWS,
                                                        sizeof(terminal->scrollback_bold[0]),

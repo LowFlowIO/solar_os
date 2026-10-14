@@ -1857,17 +1857,30 @@ void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv)
     solar_os_shell_io_t *term = terminal(ctx);
     solar_os_memory_status_t status;
 
+    if (argc == 2 && strcmp(argv[1], "reclaim") == 0) {
+        solar_os_memory_status_t before;
+        solar_os_memory_get_status(&before);
+        const size_t released = solar_os_memory_reclaim();
+        solar_os_memory_get_status(&status);
+        solar_os_shell_io_printf(term,
+            "Released %u unused libraries\nPSRAM free: %u -> %u bytes\n"
+            "Largest free block: %u -> %u bytes\n",
+            (unsigned)released, (unsigned)before.external.free,
+            (unsigned)status.external.free, (unsigned)before.external.largest_free,
+            (unsigned)status.external.largest_free);
+        return;
+    }
     if (argc > 2 || (argc == 2 && strcmp(argv[1], "policy") != 0)) {
         if (argc > 2) {
-            solar_os_shell_diag_unexpected(term, "mem", argv[2], "mem [policy]");
+            solar_os_shell_diag_unexpected(term, "mem", argv[2], "mem [policy|reclaim]");
         } else {
-            static const char * const values[] = {"policy"};
+            static const char * const values[] = {"policy", "reclaim"};
             solar_os_shell_diag_unknown(term,
                                         "mem",
                                         "argument",
                                         argv[1],
-                                        solar_os_shell_suggest(argv[1], values, 1),
-                                        "mem [policy]");
+                                        solar_os_shell_suggest(argv[1], values, 2),
+                                        "mem [policy|reclaim]");
         }
         return;
     }
@@ -1876,10 +1889,20 @@ void solar_os_shell_cmd_mem(solar_os_context_t *ctx, int argc, char **argv)
     mem_print_region(term, "Internal", &status.internal);
     mem_print_region(term, "PSRAM", &status.external);
     mem_print_region(term, "DMA", &status.dma);
+    if (status.arena.total) {
+        solar_os_shell_io_printf(term,
+            "Managed PSRAM: total %u free %u largest %u resident %u bytes, %u allocations\n",
+            (unsigned)status.arena.total, (unsigned)status.arena.free,
+            (unsigned)status.arena.largest, (unsigned)status.arena.resident,
+            (unsigned)status.arena.allocations);
+    }
 
     if (argc == 1) {
         return;
     }
+
+    solar_os_shell_io_printf(term, "SDK PSRAM: free %u largest %u bytes\n",
+        (unsigned)status.external_sdk.free, (unsigned)status.external_sdk.largest_free);
 
     char reserve[16];
     char fallback_max[16];

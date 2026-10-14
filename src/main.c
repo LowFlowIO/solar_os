@@ -124,7 +124,7 @@ static void log_runtime_memory(void)
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_free_size(MALLOC_CAP_DMA | MALLOC_CAP_8BIT),
              (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_DMA | MALLOC_CAP_8BIT),
-             (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+             (unsigned)solar_os_memory_dl_free_bytes(true));
 }
 
 #if SOLAR_OS_BOARD_HAS_DISPLAY
@@ -1936,6 +1936,7 @@ static void start_headless_shell_if_needed(void)
 
 void app_main(void)
 {
+    solar_os_memory_init();
     ESP_ERROR_CHECK(init_nvs());
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {

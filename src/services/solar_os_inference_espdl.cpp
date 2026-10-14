@@ -12,6 +12,7 @@ extern "C" {
 #include <cstring>
 #include <memory>
 #include <new>
+#include <vector>
 
 /* All backend operations, including destruction, use service admission. */
 static size_t resident_backends;
@@ -22,6 +23,50 @@ struct solar_os_inference_backend {
     std::unique_ptr<fbs::FbsModel> fbs;
     std::unique_ptr<dl::Model> model;
     size_t layers = 0;
+    struct workspace_binding { dl::TensorBase *tensor; size_t offset; };
+    std::vector<workspace_binding> workspace_bindings;
+    size_t workspace_bytes = 0;
+    void release_workspace()
+    {
+        if (!workspace_bytes) return;
+        for (auto &binding : workspace_bindings) binding.tensor->data = nullptr;
+        model->module_context()->root_free();
+    }
+    bool acquire_workspace()
+    {
+        if (!workspace_bytes) return true;
+        auto *context = model->module_context();
+        if (!context->root_alloc(0, workspace_bytes)) return false;
+        auto *root = static_cast<uint8_t *>(context->get_psram_root());
+        for (auto &binding : workspace_bindings) binding.tensor->data = root + binding.offset;
+        return true;
+    }
+    void capture_workspace()
+    {
+        auto *context = model->module_context();
+        dl::mem_info_t memory = {};
+        context->get_variable_memory_size(memory);
+        if (memory.internal || !memory.psram) return;
+        const uintptr_t root = reinterpret_cast<uintptr_t>(context->get_psram_root());
+        /* Parameters are persistent. If a future memory planner places them
+         * in the root too, retain that root instead of discarding weights. */
+        for (auto *tensor : context->m_parameters) {
+            if (!tensor) continue;
+            const uintptr_t data = reinterpret_cast<uintptr_t>(tensor->data);
+            if (data >= root && data - root < memory.psram) return;
+        }
+        auto capture = [&](const std::vector<dl::TensorBase *> &tensors) {
+            for (auto *tensor : tensors) {
+                if (!tensor) continue;
+                const uintptr_t data = reinterpret_cast<uintptr_t>(tensor->data);
+                if (data >= root && data - root < memory.psram)
+                    workspace_bindings.push_back({tensor, data - root});
+            }
+        };
+        capture(context->m_variables);
+        workspace_bytes = memory.psram;
+        release_workspace();
+    }
     dl::runtime_mode_t mode = dl::RUNTIME_MODE_SINGLE_CORE;
     ~solar_os_inference_backend()
     {
@@ -89,8 +134,8 @@ static esp_err_t load_buffer(const uint8_t *data, size_t size, void *allocation,
     std::unique_ptr<void, decltype(&solar_os_memory_free)> owned(allocation, solar_os_memory_free);
     *out = nullptr;
     try {
-        const size_t internal_before = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-        const size_t external_before = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        const size_t internal_before = solar_os_memory_dl_free_bytes(false);
+        const size_t external_before = solar_os_memory_dl_free_bytes(true);
         esp_err_t error;
         if (!data || size < 16 || size > SOLAR_OS_INFERENCE_FILE_MAX)
             return ESP_ERR_INVALID_SIZE;
@@ -130,8 +175,11 @@ static esp_err_t load_buffer(const uint8_t *data, size_t size, void *allocation,
             ++info->output_count;
         }
         if (cancel(user)) return ESP_ERR_TIMEOUT;
-        const size_t internal_after = heap_caps_get_free_size(MALLOC_CAP_INTERNAL);
-        const size_t external_after = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+        /* Graph variables are activation scratch. Keep weights and tensor
+         * descriptors resident, and acquire scratch only while executing. */
+        b->capture_workspace();
+        const size_t internal_after = solar_os_memory_dl_free_bytes(false);
+        const size_t external_after = solar_os_memory_dl_free_bytes(true);
         info->model_bytes = size;
         info->internal_bytes = internal_before > internal_after ? internal_before - internal_after : 0;
         info->external_bytes = external_before > external_after ? external_before - external_after : 0;
@@ -188,6 +236,11 @@ extern "C" esp_err_t solar_os_espdl_backend_run(solar_os_inference_backend_t *b,
                     if (t.exponents[j] != found->second->exponent.get(j)) return ESP_ERR_INVALID_ARG;
             }
         }
+        struct WorkspaceLease {
+            solar_os_inference_backend *backend;
+            ~WorkspaceLease() { backend->release_workspace(); }
+        } workspace{b};
+        if (!b->acquire_workspace()) return ESP_ERR_NO_MEM;
         for (size_t i = 0; i < count; ++i) {
             auto found = ports.find(inputs[i].name);
             if (found == ports.end() || !found->second) return ESP_ERR_INVALID_ARG;

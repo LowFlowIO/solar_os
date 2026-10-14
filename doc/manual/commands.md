@@ -263,7 +263,8 @@ job for periodic polling.
 | `gesture` | `gesture unbind <id\|all>` | Remove one volatile gesture binding or all of them. |
 | `status` | `status` | Print a compact system summary, including the last foreground-app exit code. |
 | `uptime` | `uptime` | Print elapsed time since boot. |
-| `mem` | `mem [policy]` | Print heap status; `policy` also shows allocation-class counters, guarded fallback limits, and the last tagged failure. |
+| `mem` | `mem [policy]` | Print heap and managed PSRAM status; `policy` also shows allocation-class counters, guarded fallback limits, and the last tagged failure. |
+| `mem` | `mem reclaim` | Unload unused resident libraries and show recovered PSRAM and the largest free block before and after. Libraries in use and application sessions remain resident. |
 | `top` | `top` | Print a one-shot cumulative FreeRTOS task snapshot. Use `ltop` for live interval CPU, memory, and stack monitoring. |
 | `sleep` | `sleep` | Enter explicit light sleep. |
 | `deepsleep` | `deepsleep` | Turn off the ESP32 radios and enter deep sleep. KEY, an armed RTC or scheduled timer, or RESET starts a fresh boot. |

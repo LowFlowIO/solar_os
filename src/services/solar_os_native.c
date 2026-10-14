@@ -38,6 +38,7 @@
 
 static atomic_bool native_running;
 static atomic_bool native_symbols_registered;
+static size_t native_reclaim_unused_libraries(void);
 typedef struct native_run_scope {
     struct native_run_scope *next;
     TaskHandle_t task;
@@ -671,6 +672,7 @@ static esp_err_t native_register_symbols(char *detail, size_t detail_len)
         return ESP_FAIL;
     }
     atomic_store(&native_symbols_registered, true);
+    solar_os_memory_set_reclaimer(native_reclaim_unused_libraries);
     return ESP_OK;
 }
 
@@ -840,6 +842,27 @@ int solar_os_native_library_unload(const char *id)
 {
     return native_library_result(solar_os_native_module_deactivate(
         SOLAR_OS_MODULE_TYPE_LIBRARY, id, NULL, 0));
+}
+
+static size_t native_reclaim_unused_libraries(void)
+{
+    char ids[SOLAR_OS_NATIVE_RESIDENT_MAX][SOLAR_OS_MODULE_PACKAGE_ID_MAX];
+    size_t count = 0, released = 0;
+    portENTER_CRITICAL(&native_resident_lock);
+    for (native_resident_slot_t *slot = native_resident_slots; slot; slot = slot->next) {
+        if (slot->type == SOLAR_OS_MODULE_TYPE_LIBRARY && slot->active &&
+            !slot->deactivating && slot->callback_refs == 0U &&
+            count < SOLAR_OS_NATIVE_RESIDENT_MAX) {
+            memcpy(ids[count++], slot->id, sizeof(ids[0]));
+        }
+    }
+    portEXIT_CRITICAL(&native_resident_lock);
+    for (size_t i = 0; i < count; i++) {
+        /* Deactivation rechecks leases under lock and honors shutdown refusal.
+         * An acquisition racing this snapshot therefore remains protected. */
+        if (solar_os_native_library_unload(ids[i]) == SOLAR_OS_NATIVE_OK) released++;
+    }
+    return released;
 }
 
 static int native_register_job(

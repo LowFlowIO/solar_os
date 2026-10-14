@@ -184,12 +184,25 @@ static void *unloader(void *unused) {
 int main(void) {
     test_registration();
     test_lifecycle();
+    uint32_t lease; const void *table;
+    assert(solar_os_native_library_acquire("example", 7, sizeof(api), &lease, &table) == 0);
+    native_resident_slot_t retained_app = {.type = SOLAR_OS_MODULE_TYPE_APP, .id = "retained"};
+    assert(native_slot_add(&retained_app));
+    assert(native_reclaim_unused_libraries() == 0); /* Active client protects its provider. */
+    assert(solar_os_native_library_release(lease) == 0);
+    fail_shutdown = 1;
+    assert(native_reclaim_unused_libraries() == 0); /* Failed shutdown keeps code resident. */
+    fail_shutdown = 0;
+    assert(native_reclaim_unused_libraries() == 1);
+    assert(solar_os_native_module_active(SOLAR_OS_MODULE_TYPE_APP, "retained"));
+    native_slot_remove(&retained_app);
+    assert(!allocations && !images);
     pthread_t threads[4];
     for (unsigned i=0;i<3;++i) assert(!pthread_create(&threads[i], NULL, reader, NULL));
     assert(!pthread_create(&threads[3], NULL, unloader, NULL));
     for (unsigned i=0;i<4;++i) assert(!pthread_join(threads[i], NULL));
     int r = solar_os_native_library_unload("example"); assert(r == 0 || r == -5);
     assert(!allocations && !images && !native_library_leases && !native_library_lease_count);
-    puts("Native libraries: lifecycle, stale tokens, ABI gates, capacity, rollback and concurrent unload passed");
+    puts("Native libraries: lifecycle, leases, safe reclamation, rollback and concurrent unload passed");
     return 0;
 }
