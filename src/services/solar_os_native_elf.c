@@ -32,6 +32,7 @@ static const char *const native_host_symbols[] = {
     "solar_os_native_host_v1",
     "solar_os_native_job_host_v1",
     "solar_os_native_driver_host_v1",
+    "solar_os_native_library_host_v1",
 };
 
 typedef struct {

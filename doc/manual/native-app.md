@@ -47,7 +47,8 @@ removals, FTP changes, and storage commands refresh it on the next lookup.
 Changes made through direct file APIs may take up to 30 seconds to appear.
 The host still validates each ELF when launching it.
 
-The package catalog has application, job and driver categories.
+The package catalog has application, job, driver and
+[library](native-library.md) categories.
 
 ## Developer reference: resource declaration
 

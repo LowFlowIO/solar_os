@@ -239,9 +239,10 @@ job for periodic polling.
 | `pkg` | `pkg` | Open the native-module package manager. |
 | `pkg` | `pkg system` | Print compiled package groups and build units. |
 | `pkg` | `pkg available` | Verify the signed native-module catalog and print its compact module list. |
-| `pkg` | `pkg installed` | List installed application, job, and driver modules. |
+| `pkg` | `pkg installed` | List installed application, job, driver, and library modules. |
 | `pkg` | `pkg install <module>` | Download, verify, validate, and atomically install a native module; Ctrl+C, Esc, or the app-exit key cancels. |
 | `pkg` | `pkg remove <module>` | Remove an installed native module. |
+| `pkg` | `pkg unload <library>` | Unload an unused library while keeping its installed file. |
 | `load` | `load <file.elf> [args...]` | Validate, relocate, run, and unload one native ELF module from storage. |
 | `board` | `board` | Print board ID, name, and capabilities. |
 | `identity` | `identity [status]` | Show the configured user and hostname. |
@@ -342,7 +343,7 @@ The host restarts the device if shutdown does not finish within five seconds.
 The ordinary `load` runner is for short-lived command-style modules. A module must stop
 all of its work and release every callback and resource before its entry point
 returns, because the runner immediately unloads its code and data. Installed
-jobs and drivers use separate resident lifecycle ABIs instead of this runner.
+jobs, drivers, and libraries use separate resident lifecycle ABIs instead of this runner.
 
 The standalone `modules/examples/hello` ESP-IDF project builds a small acceptance
 module.
@@ -353,13 +354,18 @@ and native ABI match the running firmware. Each downloaded ELF must match the
 signed size and SHA-256, pass the same ELF validation as `load`, and is staged
 before atomic activation. The signed type selects the storage and lifecycle
 boundary: application modules use `/modules/apps/<module>.elf`, jobs use
-`/modules/jobs`, drivers use `/modules/drivers`. Every entry separately
+`/modules/jobs`, drivers use `/modules/drivers`, and libraries use
+`/modules/libraries`. Every entry separately
 declares its lifecycle ABI and its type-specific native host API size.
 Application lifecycle ABI 1 is the synchronous `main(argc, argv)`
 run-and-unload contract. Job lifecycle ABI 1 registers start, stop, and tick
 callbacks and keeps the ELF resident until the stopped job is removed. Driver
 lifecycle ABI 1 registers a zero-binding utility driver contract and keeps the
 ELF resident until all devices are detached and the module is removed.
+Library lifecycle ABI 1 registers a versioned API table. Consumers acquire
+leases that prevent unloading while calls, objects, or workers use that API.
+Libraries load on demand from installed storage; `pkg unload ID` unloads an
+unused library and retains its file. See [Native libraries](native-library.md).
 Application lifecycle ABI 2 declares a foreground app manifest and runs
 `main(argc, argv)` on its declared worker. Display, input, storage, timing and
 optional audio are provided by the versioned foreground service. Resumable apps
@@ -379,7 +385,7 @@ explicit paths and diagnostics. Reinstalling an application from the schema-v1
 layout moves it into `/modules/apps`; `pkg remove` also recognizes the legacy
 flat application path during this transition.
 
-The acceptance modules exercise all three paths. Use `pkg install hello-job`,
+The job and driver acceptance modules exercise their resident paths. Use `pkg install hello-job`,
 then `job start hello-job`, `job status hello-job`, and `job stop hello-job`.
 Use `pkg install hello-driver`, then `expansion attach hello-driver hello0` and
 `expansion detach hello0`. The hello driver claims no GPIO or bus. `pkg remove`

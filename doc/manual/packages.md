@@ -67,11 +67,14 @@ files.
   maintainer command, plus signed-catalog installation through `pkg`; target
   and capability pruning remove those services from other boards.
 - Native module manifests and signed catalogs carry an explicit `app`, `job`,
-  or `driver` type. Each type has a versioned runtime contract. Installed
+  `driver`, or `library` type. Each type has a versioned runtime contract. Installed
   artifacts use separate `/modules/apps`, `/modules/jobs`, and
-  `/modules/drivers` namespaces. Application modules run synchronously and
+  `/modules/drivers`, and `/modules/libraries` namespaces. Application modules run synchronously and
   unload; jobs and drivers remain resident while their callbacks are
-  registered. A per-entry lifecycle ABI is distinct from the native host ABI.
+  registered. Libraries load on first acquisition and remain resident until
+  unloaded; leases protect their API while consumers use it. See
+  [Native libraries](native-library.md). A per-entry lifecycle ABI is distinct
+  from the native host ABI.
 - Groups are selection shortcuts only. They cannot own source files or ESP-IDF
   component requirements.
 - Every source file and component requirement belongs to a package.
