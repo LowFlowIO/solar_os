@@ -2,6 +2,14 @@
 
 ## 4.x
 
+- **4.16.15** — 2026-10-14 — Added Files-style Space selection to both
+  FTP and SFTP panes. Copy, move, and delete operate on marked files and
+  directories; completed items are unmarked, and a failure stops the batch.
+  Delete now removes the character under the shell command-line cursor.
+  Prompt paths longer than half the terminal width show only the last directory,
+  without changing the working directory.
+  Writerdeck now includes speech, Player, and Recorder, and omits the inference
+  and RTSP groups.
 - **4.16.14** — 2026-10-14 — Added a reusable DS3231 I2C real-time clock
   expansion driver with named buses, optional active-low interrupt wiring,
   a 2000–2099 UTC calendar, and second-resolution Alarm 1 support through

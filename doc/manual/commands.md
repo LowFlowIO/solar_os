@@ -21,6 +21,10 @@ volume is presented as `/`. On SD-backed boards, the primary SD card volume also
 has the internal mount path `/sdcard`, and the internal flash volume is mounted
 at `/flash`. On boards without SD support, internal flash is mounted as `/`.
 
+When the path displayed in the shell prompt exceeds half the terminal width,
+the prompt shows only the last directory, such as `/logs/`. The working
+directory and relative path resolution remain unchanged.
+
 Wildcard patterns are supported by selected filesystem commands, for example
 `*.txt`.
 
@@ -30,6 +34,10 @@ Completed paths that contain spaces are inserted as quoted shell tokens.
 For `ssh` and `scp`, it also reads host aliases from `/.ssh/hosts`. An explicit
 `user@` prefix is preserved; a unique SCP host match appends `:` for the remote
 path.
+
+On display shells and VT100 port shells, `Backspace` removes the character
+before the command-line cursor. `Delete` removes the character under the cursor
+without moving it; it does nothing at the end of the line.
 
 `Ctrl+V` pastes the shared SolarOS clipboard at the command-line cursor. Line
 breaks and tabs become spaces, and a paste stops at the shell input limit; it

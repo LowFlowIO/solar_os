@@ -818,6 +818,8 @@ Controls:
   view, edit, copy, move, create a directory, delete, and create a zip archive.
   The function keys remain the primary map; the help bar shows the letter
   mnemonics within the action names.
+- `Space` toggles a mark on the current file or directory and advances to the
+  next item.
 - Copy, move, and delete operate on the current or marked entries.
   Copy and recursive delete scan their source trees first, then show measured
   progress with the current entry. Move shows progress across the selected
@@ -859,6 +861,10 @@ Controls:
 
 - Up/Down selects an item. `PgUp`/`PgDn` moves by one visible page, and
   Home/End selects the first/last item. `Tab`, Left, and Right switch panes.
+- `Space` toggles a mark on the current file or directory and advances to the
+  next item, as in Files. Marked items show `*`; each pane shows its mark count.
+  Copy, move, and delete use the active pane's marked items, or the current
+  item when none are marked. The parent entry cannot be marked.
 - `F2`/`n` opens the connection form. `Tab` or Up/Down selects a field, Enter
   connects, and Esc cancels the form.
 - `Enter` opens a directory; Backspace opens its parent. `r` refreshes the
@@ -868,17 +874,21 @@ Controls:
 - `F3`/`V` views a local file. For a remote file, FTP downloads a temporary hidden
   copy into the current local folder, opens its registered viewer, and removes
   the copy when control returns to FTP.
-- `F5`/`C` copies the current file or directory to the other pane. Directory
-  transfers are recursive. Copy and move show the same preparing/transfer
+- `F5`/`C` copies the current or marked files and directories to the other pane.
+  Directory transfers are recursive. Copy and move show the same preparing/transfer
   progress popup used by Files.
-- `F6`/`M` moves the current file or directory to the other pane by completing the
-  copy before deleting the source.
+- `F6`/`M` moves the current or marked files and directories to the other pane by
+  completing each item's copy before deleting its source.
 - `F7`/`k`/`K` creates a directory in the active pane.
-- `F8`/`D` recursively deletes the current item after confirmation. The help
-  bar emphasizes the same operation mnemonics used by Files and SFTP.
+- `F8`/`D` recursively deletes the current or marked items after confirmation.
+  The help bar emphasizes the same operation mnemonics used by Files and SFTP.
 - `q`, `F10`, or the app-exit key closes the connection and exits.
 - After an operation refreshes the current directories, both panes retain their
   cursor and scroll positions. Opening another directory starts at its top.
+  Marks survive refreshes in the same directory and pane switching. Opening
+  another directory clears that pane's marks; hiding hidden items clears their
+  marks. Completed items are unmarked. A failure stops the batch and leaves
+  remaining items marked.
 
 FTP is a resumable TUI on the display shell and VT100-compatible port shells.
 One operation runs at a time in its foreground worker. Existing destination
@@ -917,11 +927,12 @@ reopens the form on the password field instead of showing a low-level error.
 Controls are identical to FTP: `F2`/`n` opens connection setup; `F3`/`V` views,
 `F5`/`C` copies, `F6`/`M` moves, `F7`/`k`/`K` creates a directory, and `F8`/`D`
 deletes after confirmation. `PgUp`/`PgDn` moves by one visible page, Backspace
-opens the parent
-directory, and `h` toggles hidden files and directories in both panes. Transfers
-are recursive, show progress, retain both pane positions after refresh, and
-stage downloaded and
-uploaded files before replacement. `q`, `F10`, or the app-exit key closes the
+opens the parent directory, and `h` toggles hidden files and directories in both
+panes. `Space` marks or unmarks files and directories and advances the cursor,
+as in Files. Copy, move, and delete operate on marked items in the active pane,
+or the current item if none are marked. Transfers are recursive, show progress,
+retain both pane positions after refresh, and stage downloaded and uploaded
+files before replacement. `q`, `F10`, or the app-exit key closes the
 SSH connection and exits.
 
 ## flash
