@@ -4435,6 +4435,22 @@ static void shell_backspace(solar_os_context_t *ctx)
     shell_render_input(ctx);
 }
 
+static void shell_delete_char(solar_os_context_t *ctx)
+{
+    solar_os_shell_session_t *session = shell_session(ctx);
+    if (!shell_can_redraw_input(ctx) || session->input_cursor >= session->input_len) {
+        return;
+    }
+
+    memmove(&session->input[session->input_cursor],
+            &session->input[session->input_cursor + 1U],
+            session->input_len - session->input_cursor);
+    session->input_len--;
+    session->history_browsing = false;
+    session->history_index = -1;
+    shell_render_input(ctx);
+}
+
 static bool shell_make_state_path(char *path, size_t path_len, const char *leaf)
 {
     if (path == NULL || path_len == 0) {
@@ -10282,6 +10298,9 @@ static void shell_handle_char(solar_os_context_t *ctx, char ch)
         break;
     case '\t':
         shell_complete_command(ctx, repeated_tab);
+        break;
+    case SOLAR_OS_KEY_DELETE:
+        shell_delete_char(ctx);
         break;
     case 0x16U:
         shell_paste_clipboard(ctx);
