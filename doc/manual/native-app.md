@@ -139,7 +139,8 @@ are exported for synchronous interpreter error handling.
 See [Apple II Plus](app.apple2.md) for bundled ROMs, NIB disk requirements, controls, and
 explicit disk saves. See [Game Boy](app.gameboy.md) for cartridge compatibility,
 controls, and automatic cartridge RAM saves. See [Tiny386](app.tiny386.md) for
-bootable PC floppy and IDE images, embedded BIOS, and display requirements. For example,
+bootable PC floppy and IDE images, embedded BIOS, and display requirements.
+See [DOOM](app.doom.md) for IWAD requirements and keyboard controls. For example,
 with assets present:
 
 ```text
