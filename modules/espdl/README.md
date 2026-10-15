@@ -26,21 +26,29 @@ for Python, Lua, native clients, bundles, and execution modes.
 
 ## Build and catalog
 
-Use the project's ESP-IDF 5.5 toolchain with GCC 14.2.0. Build a completed S3
-firmware with inference enabled so its patched SDK archives and compile commands
-are available, then build the provider:
+Use the project's ESP-IDF 5.5 toolchain with GCC 14.2.0 and PlatformIO installed:
 
 ```sh
-pio run -e freenove_esp32_s3_display_4_0
 python3 modules/espdl/build.py
 ```
 
 Outputs are `.pio/modules/espdl/espdl.library.elf`, arithmetic and vision probes,
-a debug ELF, and `build.json` with artifact hashes. `--environment` selects a
-completed SDK build; `--output` selects a folder. CMake's `typed_elf` target wraps
+a debug ELF, and `build.json` with artifact hashes. The builder configures a
+separate SDK under `.pio/espdl-sdk/build/<environment>` using a generated copy
+of `full` with `inference_backend` enabled, then builds the ESP-DL and schema
+archives. It creates the compile commands automatically and refreshes the SDK
+on later runs. It does not compile or flash a firmware image or edit the
+checked-in flavor files.
+
+`--environment` selects an ESP32-S3 PlatformIO environment; `--output` selects a
+folder. `SOLAROS_PIO` can select the PlatformIO executable. To reuse an already
+prepared SDK instead, pass `--sdk-build-dir /path/to/build/<environment>`; it must
+contain both archives and ESP-DL compile commands from a build with the backend
+enabled. The standard `full` flavor uses downloadable inference and does not
+supply these prerequisites by itself. CMake's `typed_elf` target wraps
 the same builder. CID's module deployment pipeline accepts this module's
 `module.toml`, validates imports and ELF structure, and signs the catalog.
-`SOLAROS_ESPDL_ENVIRONMENT` selects its completed SDK build during deployment.
+`SOLAROS_ESPDL_ENVIRONMENT` selects the SDK environment during deployment.
 
 The builder makes private archive copies, replaces only the worker dispatcher,
 binds C++ symbols within the library, and verifies the final stripped ELF's

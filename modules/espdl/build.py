@@ -1,13 +1,16 @@
 #!/usr/bin/env python3
-"""Build the standalone ESP-DL provider from a completed full S3 SDK build.
+"""Build the standalone ESP-DL provider with a private S3 SDK build.
 
-No firmware flavors or managed source files are changed. Private copies of
-archives are used; only the library host and five standard C helpers are imports.
+The SDK uses the normal SolarOS dependency overlays and a generated private
+flavor. Private archive copies are used; only the library host and five standard
+C helpers are imports.
 """
 import argparse
 import hashlib
 import json
+import os
 from pathlib import Path
+import re
 import shlex
 import shutil
 import subprocess
@@ -20,12 +23,78 @@ from fix_frames import fix
 from verify import verify, remove_noop_relocations
 
 
-def build(environment, output):
-    output.mkdir(parents=True, exist_ok=True)
-    cached = ROOT / '.pio/build' / environment
+def prepare_sdk(environment):
+    """Configure separately from firmware builds and build only SDK archives."""
+    sdk_root = ROOT / '.pio/espdl-sdk'
+    sdk_root.mkdir(parents=True, exist_ok=True)
+    flavor, count = re.subn(r'^inference_backend = false$', 'inference_backend = true',
+                           (ROOT / 'flavors/full.toml').read_text(), flags=re.M)
+    if count != 1:
+        raise ValueError('Expected full flavor to select downloadable inference')
+    flavor_file = sdk_root / 'full.toml'
+    if not flavor_file.exists() or flavor_file.read_text() != flavor:
+        flavor_file.write_text(flavor)
+    build_root = sdk_root / 'build'
+    cached = build_root / environment
+    # Do not inherit the caller's firmware flavor, board, or build directory.
+    build_env = {key: value for key, value in os.environ.items()
+                 if not key.startswith('SOLAR_OS_')}
+    build_env.update(PLATFORMIO_BUILD_DIR=str(build_root), SOLAR_OS_FLAVOR='full',
+                     SOLAR_OS_FLAVOR_FILE=str(flavor_file), SOLAR_OS_LAYOUT='ota')
+    core = Path(os.environ.get('PLATFORMIO_CORE_DIR', Path.home() / '.platformio'))
+    pio = os.environ.get('SOLAROS_PIO') or str(core / 'penv/bin/pio')
+    if not Path(pio).is_file():
+        pio = shutil.which(pio) or shutil.which('pio')
+    if not pio:
+        raise ValueError('PlatformIO not found; set SOLAROS_PIO')
+    print(f'ESP-DL: configuring SDK for {environment} in {cached}', flush=True)
+    # envdump runs framework configuration without compiling firmware or writing
+    # a second compilation database into the checkout root.
+    log = sdk_root / 'configure.log'
+    with log.open('w') as stream:
+        result = subprocess.run([pio, 'run', '--project-dir', str(ROOT), '-e', environment,
+                                 '-t', 'envdump'], env=build_env, stdout=stream,
+                                stderr=subprocess.STDOUT)
+    if result.returncode:
+        raise ValueError(f'SDK configuration failed; see {log}\n{log.read_text()}')
+    # Configuration itself takes the same lock in the PlatformIO subprocess.
+    # Hold it for archive compilation and all subsequent provider compilation.
+    sys.path.insert(0, str(ROOT / 'scripts'))
+    from solaros_build_lock import acquire_project_build_lock
+    acquire_project_build_lock(ROOT, environment)
+    cache = (cached / 'CMakeCache.txt').read_text()
+    match = re.search(r'^CMAKE_COMMAND:INTERNAL=(.+)$', cache, re.M)
+    if match is None:
+        raise ValueError(f'CMake executable missing from {cached / "CMakeCache.txt"}')
+    cmake = match.group(1)
+    print('ESP-DL: building SDK archives', flush=True)
+    subprocess.run([cmake, '--build', str(cached), '--target',
+                    '__idf_espressif__esp-dl', '__idf_espdl_schema'],
+                   env=build_env, check=True)
+    return cached
+
+
+def load_sdk_commands(cached):
+    required = ('compile_commands.json',
+                'esp-idf/espressif__esp-dl/libespressif__esp-dl.a',
+                'esp-idf/espdl_schema/libespdl_schema.a')
+    missing = [name for name in required if not (cached / name).is_file()]
+    if missing:
+        raise ValueError(f'Incomplete ESP-DL SDK build at {cached}: missing {", ".join(missing)}. '
+                         'Omit --sdk-build-dir to prepare the SDK automatically.')
     commands = json.loads((cached / 'compile_commands.json').read_text())
-    adapter = next((c for c in commands if c['file'].endswith('solar_os_inference_espdl.cpp')),
-                   next(c for c in commands if c['file'].endswith('dl_model_base.cpp')))
+    adapter = next((c for name in ('solar_os_inference_espdl.cpp', 'dl_model_base.cpp')
+                    for c in commands if c['file'].endswith(name)), None)
+    if adapter is None:
+        raise ValueError(f'No ESP-DL compile commands in {cached}; enable inference_backend '
+                         'or omit --sdk-build-dir to prepare the SDK automatically.')
+    return commands, adapter
+
+
+def build(environment, output, sdk_build_dir=None):
+    output.mkdir(parents=True, exist_ok=True)
+    cached = sdk_build_dir if sdk_build_dir is not None else prepare_sdk(environment)
+    commands, adapter = load_sdk_commands(cached)
     compiler = shlex.split(adapter['command'])[0]
     prefix = compiler[:-3]  # g++
     if 'xtensa-esp32s3-elf-g++' not in compiler:
@@ -159,10 +228,15 @@ if __name__ == '__main__':
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--environment', default='freenove_esp32_s3_display_4_0')
     parser.add_argument('--firmware-project', type=Path, default=ROOT)
+    parser.add_argument('--sdk-build-dir', type=Path,
+                        help='Reuse a completed SDK build with inference_backend enabled')
     parser.add_argument('--output', type=Path, default=ROOT/'.pio/modules/espdl')
     args = parser.parse_args()
     ROOT = args.firmware_project.resolve()
     try:
-        build(args.environment, args.output.resolve())
+        build(args.environment, args.output.resolve(),
+              args.sdk_build_dir.resolve() if args.sdk_build_dir else None)
+    except (OSError, ValueError) as error:
+        raise SystemExit(f'ESP-DL build failed: {error}') from None
     except subprocess.CalledProcessError as error:
-        raise SystemExit(f'Prototype build failed: {Path(error.cmd[0]).name} exited {error.returncode}') from None
+        raise SystemExit(f'ESP-DL build failed: {Path(error.cmd[0]).name} exited {error.returncode}') from None
