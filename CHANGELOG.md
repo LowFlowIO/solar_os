@@ -2,6 +2,20 @@
 
 ## 4.x
 
+- **4.16.16** — 2026-10-16 — Added resumable external DOOM and
+  Macintosh Plus apps for ESP32-S3 devices with PSRAM. DOOM supports
+  DOOM/DOOM II IWADs, keyboard controls, sound effects, display fitting,
+  and monochrome conversion; game data is supplied separately.
+  Macintosh Plus provides 4 MiB guest RAM, keyboard-controlled mouse,
+  one SCSI hard disk or raw floppy image, and persistent PRAM. A Plus v3
+  ROM adapts the guest screen to the selected display; ROMs and disks
+  are supplied separately.
+  Fixed foreground video startup on smaller displays, including DOOM by 
+  fitting source frames before validating output dimensions.
+  Rotated TFT frames now use managed PSRAM, fixing presentation failures
+  when the SDK heap cannot supply rotation buffers.
+  Standalone ESP-DL library builds now prepare their own ESP32-S3 SDK
+  without requiring an existing firmware build.
 - **4.16.15** — 2026-10-14 — Added Files-style Space selection to both
   FTP and SFTP panes. Copy, move, and delete operate on marked files and
   directories; completed items are unmarked, and a failure stops the batch.
