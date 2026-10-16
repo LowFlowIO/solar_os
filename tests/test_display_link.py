@@ -9,6 +9,21 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class DisplayLinkTest(unittest.TestCase):
+    def test_spi_exchange_and_deadlines(self):
+        source = (ROOT / "src/drivers/solar_os_display_link.c").read_text()
+        with tempfile.TemporaryDirectory() as directory:
+            Path(directory, "display_link_exchange.inc").write_text(
+                production_functions(source, ("exchange",)))
+            binary = Path(directory) / "exchange-test"
+            subprocess.run([
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+                "-I" + directory,
+                str(ROOT / "tests/host/display_link_exchange_test.c"),
+                "-o", str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_solaros_upload_and_conversion(self):
         library = ROOT / "protocol/display_link"
         source = (ROOT / "src/drivers/solar_os_display_link.c").read_text()

@@ -89,13 +89,9 @@ static int exchange(void *ctx, const uint8_t tx[256], uint8_t rx[256],
   time = now_us(NULL);
   if (time >= deadline)
     return -1;
-  uint64_t remaining = deadline - time;
-  if (remaining > UINT32_MAX)
-    remaining = UINT32_MAX;
-  TickType_t ticks = pdMS_TO_TICKS((uint32_t)(remaining / 1000));
-  if (!ticks)
-    return -1;
-  if (spi_device_acquire_bus(d->spi, ticks) != ESP_OK)
+  /* ESP-IDF only accepts portMAX_DELAY for bus acquisition. Recheck the
+   * protocol deadline after obtaining the bus, before asserting CS. */
+  if (spi_device_acquire_bus(d->spi, portMAX_DELAY) != ESP_OK)
     return -1;
   if (now_us(NULL) >= deadline) {
     spi_device_release_bus(d->spi);

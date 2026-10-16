@@ -1892,7 +1892,7 @@ static void setterm_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  setterm --display <target> [orientation|font|textsize|palette|statusbar] [value]");
     solar_os_shell_io_writeln(term, "  setterm orientation [0|90|180|270]");
     solar_os_shell_io_writeln(term, "  setterm font [mono|compact]");
-    solar_os_shell_io_writeln(term, "  setterm textsize [10|12|14|16|18|20]");
+    solar_os_shell_io_writeln(term, "  setterm textsize [8|10|12|14|16|18|20]");
     solar_os_shell_io_writeln(term, "  setterm palette [normal|inverted]");
     solar_os_shell_io_writeln(term, "  setterm foreground [#RRGGBB]");
     solar_os_shell_io_writeln(term, "  setterm background [#RRGGBB]");
@@ -2172,15 +2172,15 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv)
         }
         if (argc != 3) {
             solar_os_shell_diag_unexpected(term, "setterm textsize", argv[3],
-                                           "setterm textsize [10|12|14|16|18|20]");
+                                           "setterm textsize [8|10|12|14|16|18|20]");
             return;
         }
 
         solar_os_terminal_text_size_t text_size;
         if (!solar_os_terminal_parse_text_size(argv[2], &text_size)) {
             solar_os_shell_diag_invalid(term, "setterm textsize", "size", argv[2],
-                                        "10, 12, 14, 16, 18, or 20",
-                                        "setterm textsize [10|12|14|16|18|20]", false);
+                                        "8, 10, 12, 14, 16, 18, or 20",
+                                        "setterm textsize [8|10|12|14|16|18|20]", false);
             return;
         }
 
