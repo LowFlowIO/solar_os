@@ -76,6 +76,34 @@ class ForegroundPresenterTest(unittest.TestCase):
             ], check=True)
             subprocess.run([str(binary)], check=True)
 
+    def test_presenter_fits_sources_larger_than_the_display(self):
+        source = (ROOT / "src/services/solar_os_frame_presenter.c").read_text()
+        state = re.search(r"struct solar_os_frame_presenter \{.*?\n\};",
+                          source, re.S).group()
+        bayer = re.search(r"static const uint8_t bayer4\[4\]\[4\] = \{.*?\};",
+                          source, re.S).group()
+        functions = production_functions(source, (
+            "frame_minimum_stride", "frame_palette_valid", "frame_palette_index",
+            "rgb565_luma", "frame_convert_to_mono", "frame_prepare_mono_palette",
+            "frame_present", "frame_choose_output", "frame_prepare_mono_output",
+            "solar_os_frame_presenter_init", "solar_os_frame_presenter_resume",
+            "solar_os_frame_presenter_deinit"))
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "frame_fitting.inc").write_text(
+                state + "\n" + bayer + "\n" + functions)
+            binary = Path(tmp, "fitting")
+            subprocess.run([
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
+                "-I", tmp, "-I", str(ROOT / "tests/host"),
+                "-I", str(ROOT / "src"),
+                "-I", str(ROOT / "src/services"),
+                "-I", str(ROOT / "components/u8g2/src/clib"),
+                str(ROOT / "tests/host/frame_presenter_fitting_test.c"),
+                "-o", str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_foreground_abi_headers_compile_in_c_and_cpp(self):
         code = ('#include <stddef.h>\n#include "solar_os_native_app_abi.h"\n'
                 '#define PREFIX_END (offsetof(solar_os_native_foreground_api_v1_t, set_exit_code) '

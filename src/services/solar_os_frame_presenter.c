@@ -363,8 +363,8 @@ esp_err_t solar_os_frame_presenter_init(
         config->width == 0U || config->height == 0U ||
         config->stride < frame_minimum_stride(config->format, config->width) ||
         !frame_palette_valid(config) ||
-        (uint32_t)config->width > solar_os_gfx_width(config->gfx) ||
-        (uint32_t)config->height > solar_os_gfx_height(config->gfx)) {
+        solar_os_gfx_width(config->gfx) == 0U ||
+        solar_os_gfx_height(config->gfx) == 0U) {
         return ESP_ERR_INVALID_ARG;
     }
 
@@ -398,8 +398,10 @@ esp_err_t solar_os_frame_presenter_init(
         config->preferred_fps : presenter->target.preferred_stream_fps;
     if (presenter->present_fps == 0U) presenter->present_fps = 25U;
     if (presenter->present_fps > 30U) presenter->present_fps = 30U;
+    /* Fit the source before checking whether its output fits the display. */
     frame_choose_output(presenter);
-    if (presenter->output_width > solar_os_gfx_width(config->gfx) ||
+    if (presenter->output_width == 0U || presenter->output_height == 0U ||
+        presenter->output_width > solar_os_gfx_width(config->gfx) ||
         presenter->output_height > solar_os_gfx_height(config->gfx)) {
         solar_os_memory_free(presenter);
         return ESP_ERR_NOT_SUPPORTED;
@@ -448,7 +450,8 @@ esp_err_t solar_os_frame_presenter_resume(
         return ESP_OK;
     }
     frame_choose_output(presenter);
-    if (presenter->output_width > solar_os_gfx_width(presenter->config.gfx) ||
+    if (presenter->output_width == 0U || presenter->output_height == 0U ||
+        presenter->output_width > solar_os_gfx_width(presenter->config.gfx) ||
         presenter->output_height > solar_os_gfx_height(presenter->config.gfx)) {
         return ESP_ERR_NOT_SUPPORTED;
     }
