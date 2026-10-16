@@ -160,6 +160,7 @@ locking is unavailable; do not run concurrent builds from the same checkout.
 
 - [Stream, control, parameter, and OSC binding model](doc/binding-model.md)
 - [Service concurrency contract](doc/service-concurrency.md)
+- [SPI Display Link library](protocol/display_link/README.md)
 - [Memory and task-admission policy](doc/memory-policy.md)
 - [OTA release schema](doc/solar_os_ota_schema.md)
 - [Manual generation and signed refresh](doc/manual-system.md)

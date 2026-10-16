@@ -852,6 +852,75 @@ hint = "0x3c|0x3d"
 required = true
 allowed = [0x3c, 0x3d]
 
+[drivers.spi-display]
+summary = "Negotiated SDLP SPI display"
+package = "expansion_spi_display"
+targets = ["esp32", "esp32s3"]
+capabilities = ["gfx", "expansion_spi", "expansion_gpio"]
+default_name = "display0"
+
+[[drivers.spi-display.bindings]]
+key = "spi"
+kind = "spi_bus"
+hint = "bus"
+required = true
+
+[[drivers.spi-display.bindings]]
+key = "cs"
+kind = "spi_cs"
+hint = "gpio"
+required = true
+
+[[drivers.spi-display.bindings]]
+key = "ready"
+kind = "gpio"
+hint = "gpio"
+required = false
+role = "ready"
+
+[[drivers.spi-display.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+required = false
+role = "reset"
+
+[[drivers.spi-display.bindings]]
+key = "clock"
+kind = "parameter"
+hint = "khz"
+required = false
+role = "clock"
+min = 100
+max = 40000
+
+[[drivers.spi-display.bindings]]
+key = "reset-ms"
+kind = "parameter"
+hint = "ms"
+required = false
+role = "reset-ms"
+min = 1
+max = 1000
+
+[[drivers.spi-display.bindings]]
+key = "boot-ms"
+kind = "parameter"
+hint = "ms"
+required = false
+role = "boot-ms"
+min = 100
+max = 60000
+
+[[drivers.spi-display.bindings]]
+key = "reset-active"
+kind = "parameter"
+hint = "0|1"
+required = false
+role = "reset-active"
+min = 0
+max = 1
+
 [drivers.pcd8544]
 summary = "84x48 SPI LCD"
 package = "expansion_pcd8544"

@@ -512,6 +512,11 @@ label = "PCD8544 display"
 category = "Expansion hardware"
 members = ["expansion_pcd8544"]
 
+[groups.spi_display]
+label = "SPI Display Link"
+category = "Expansion hardware"
+members = ["expansion_spi_display"]
+
 [groups.ssd1683]
 label = "SSD1683 e-paper display"
 category = "Expansion hardware"
@@ -1582,6 +1587,20 @@ sources = [
 ]
 requires = ["esp_driver_gpio", "esp_driver_spi", "u8g2"]
 capabilities = ["expansion_gpio"]
+
+[packages.expansion_spi_display]
+label = "expansion.spi-display"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_spi_display_expansion_driver"]
+depends = ["service_spi", "service_expansion"]
+sources = [
+  "../protocol/display_link/src/sdlp.c",
+  "drivers/solar_os_display_link.c",
+  "services/solar_os_spi_display.c",
+  "services/solar_os_spi_display_driver.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
+capabilities = ["gfx", "expansion_spi", "expansion_gpio"]
 
 [packages.driver_epd_pixel_budget]
 label = "driver.epd_pixel_budget"

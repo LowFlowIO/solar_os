@@ -263,6 +263,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `rfm95` | HopeRF RFM95W multimode radio | `spi=<bus> cs=<pin>`; optional `irq=<pin> reset=<pin>` | Registers an FSK/GFSK/MSK/GMSK/OOK/LoRa target for the `radio` command. |
 | `sx1262` | Semtech SX1262 packet radio | `spi=<bus> cs=<pin> busy=<pin>`; optional `reset=<pin> irq=<pin>` | Registers a LoRa/(G)FSK packet-radio target for the `radio` command. |
 | `pcd8544` | 84x48 SPI LCD | `spi=<bus> cs=<pin> dc=<pin> reset=<pin>` | Registers an auxiliary display target. |
+| `spi-display` | SDLP v1 SPI display endpoint | `spi=<bus> cs=<pin> [ready=<pin>] [reset=<pin>]` | Discovers geometry and negotiates a wire pixel format. |
 | `ssd1683` | SSD1683 monochrome e-paper | `spi=<bus> cs=<pin> dc=<pin> reset=<pin> busy=<pin>`; optional `power=<pin> clock=<khz> rotation=<0..3> panel=<0..4> startup-pulse=<0|1>` | Registers an auxiliary target, or Elecrow's fixed `display0`, with auto, fast, and full refresh modes. Panel 0 auto-detects the 4.2-inch Elecrow revision; 1 is legacy Elecrow, 2 is green-sticker Elecrow, 3 is Waveshare V2, and 4 is Elecrow's 792x272 dual-controller panel. Panels 2, 3, and 4 also accept pulse mode and its runtime tuning controls. `startup-pulse=1` selects pulse at attach when supported; the default is native auto. |
 | `uc8279` | UC8279 800x480 monochrome e-paper | `spi=<bus> cs=<pin> dc=<pin> reset=<pin> busy=<pin> panel=<1..2>`; optional `power=<pin> clock=<khz> rotation=<0..3>` | Panel 1 selects X4 Pro glass and sets its PLL; panel 2 selects X4 Classic glass and preserves the panel's programmed PLL. Both address 600 gates with the visible rows at gates 120..599 and require programmed OTP/MTP waveforms. Active-low BUSY, automatic full cleanup every 20 changed frames, and selectable partial/full refresh. Controller and panel selection are explicit; UC8279 X3 792x528 and other variants require separate profiles. |
 | `x4pro` | Xteink X4 Pro primary display and frontlight | `spi=<bus> cs=<pin> dc=<pin> reset=<pin> busy=<pin> latch=<pin> cool=<pin> warm=<pin>` | Identifies SSD1677, UC8179, or UC8279 once and caches the controller ID in SolarOS NVS. Native 800x480 landscape, 10 MHz SPI, and 25 kHz dual PWM with a fixed 50/50 mix controlled by `setterm brightness`. The primary attachment holds the shared peripheral latch on. |
@@ -538,6 +539,35 @@ the analog supply, digital supply, reference components, and input network from
 the manufacturer reference design; follow the breakout's own supply markings
 when using a module. Common modules expose separate `+5V` analog and `3.3V`
 digital supply pins; both rails must be powered.
+
+### SPI Display Link
+
+`spi-display` requires the `spi_display` firmware group, a graphics-capable
+runtime, and expansion SPI/GPIO resources. The SPI bus must include MISO and
+support transfers of at least 256 bytes. The supplied device name becomes the
+display target name. A maximum of two SDLP endpoints can be attached.
+
+| Binding | Requirement | Meaning |
+| --- | --- | --- |
+| `spi=<bus>` | Required | Named host SPI bus |
+| `cs=<pin>` | Required | Allowed native GPIO chip select, active low |
+| `ready=<pin>` | Optional | Active-high peripheral transport-ready input |
+| `reset=<pin>` | Optional | Peripheral-controller reset output |
+| `clock=<kHz>` | Optional | Host clock ceiling, 100..40000; default 10000 |
+| `reset-ms=<ms>` | Optional | Reset assertion time, 1..1000; default 10 |
+| `boot-ms=<ms>` | Optional | Discovery deadline, 100..60000; default 5000 |
+| `reset-active=0|1` | Optional | Asserted reset level; default 0 |
+
+READY and RESET may be wired independently. A READY binding requires the
+peripheral's READY capability. Without it, the host polls with the advertised
+minimum CS-high interval. Optional reset supports recovery without depending
+on a working SPI response. Keep the shared SPI bus available while the
+peripheral boots or refreshes.
+
+Wire formats are MONO1, GRAY2, GRAY4, GRAY8, and RGB565 with the high byte first.
+Each endpoint advertises the subset it accepts and its preferred format.
+The native resolution stays fixed for an attachment. A bridge that continuously
+scans a raw LCD maintains that scanout independently of host image uploads.
 
 ## Wiring Examples
 
