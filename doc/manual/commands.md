@@ -305,7 +305,7 @@ job for periodic polling.
 | `setterm` | `setterm` | Open the terminal settings TUI from the display shell. |
 | `setterm` | `setterm --display <target> [orientation\|font\|textsize\|palette\|statusbar] [value]` | Show or change the volatile terminal profile of a named display target. |
 | `setterm` | `setterm orientation [0\|90\|180\|270]` | Show or set primary-display orientation. |
-| `setterm` | `setterm font [mono\|compact]`; `setterm textsize [10\|12\|14\|16\|18\|20]` | Show or set the terminal font and text size. |
+| `setterm` | `setterm font [mono\|compact]`; `setterm textsize [8\|10\|12\|14\|16\|18\|20]` | Show or set the terminal font and text size. |
 | `setterm` | `setterm palette [normal\|inverted]` | Show or set the logical terminal and shared-graphics palette. |
 | `setterm` | `setterm foreground [#RRGGBB]`; `setterm background [#RRGGBB]` | Show or set the persistent RGB terminal theme colors. |
 | `setterm` | `setterm statusbar [show\|hide]` | Show or hide the graphical shell status bar. |
@@ -533,7 +533,7 @@ setterm
 setterm --display <target> [orientation|font|textsize|palette|statusbar] [value]
 setterm orientation [0|90|180|270]
 setterm font [mono|compact]
-setterm textsize [10|12|14|16|18|20]
+setterm textsize [8|10|12|14|16|18|20]
 setterm palette [normal|inverted]
 setterm foreground [#RRGGBB]
 setterm background [#RRGGBB]
@@ -613,6 +613,15 @@ profile. For example:
 setterm --display oled0 statusbar hide
 setterm --display oled0 textsize 10
 setterm --display oled0 palette inverted
+```
+
+Text size `8` selects a fixed bitmap face with 6×8 pixel cells for both font
+families. It uses the same upright glyphs for regular, bold, and italic text.
+On a 240×64 display, hiding the status bar gives 38 columns and eight rows:
+
+```text
+setterm --display lcd1 textsize 8
+setterm --display lcd1 statusbar hide
 ```
 
 `foreground` and `background` select the persistent RGB theme colors for the

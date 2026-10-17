@@ -2,6 +2,15 @@
 
 ## 4.x
 
+- **4.16.17** — 2026-10-17 — Added generic SPI display attachment through
+  Display Link Protocol (DLP), with discovered dimensions and pixel formats,
+  optional READY and RESET lines, changed-region uploads, and optional RLE
+  compression. The portable protocol also supports ordered byte streams.
+  Added a 6×8 bitmap terminal font for small displays.
+  Recorder, Player, WebRadio, VPlay, and Invaders now adapt to small display
+  targets, including 128×64 and 240×64. Sketch reports insufficient resolution
+  and returns to the shell on displays smaller than 200×200.
+  Added a German Epson HX-20 keyboard profile.
 - **4.16.16** — 2026-10-16 — Added resumable external DOOM and
   Macintosh Plus apps for ESP32-S3 devices with PSRAM. DOOM supports
   DOOM/DOOM II IWADs, keyboard controls, sound effects, display fitting,

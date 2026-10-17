@@ -101,6 +101,7 @@ playground = true
 rfm69 = true
 rfm95 = true
 pcd8544 = true
+spi_display = true
 ssd1683 = true
 uc8179 = true
 uc8279 = true
