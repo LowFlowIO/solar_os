@@ -9261,11 +9261,14 @@ static void session_create_display_app(solar_os_context_t *ctx,
 
     char busy_owner[SOLAR_OS_APP_OWNER_MAX];
     uint8_t session_id = 0;
-    const esp_err_t err =
-        solar_os_sessions_create_display_app(app->app,
+    char launch_cwd[SOLAR_OS_APP_ARG_LEN];
+    esp_err_t err = solar_os_shell_resolve_path(ctx, NULL, launch_cwd, sizeof(launch_cwd));
+    if (err == ESP_OK) err =
+        solar_os_sessions_create_display_app_at(app->app,
                                              target.name,
                                              app_argc,
                                              launch_argv,
+                                             launch_cwd,
                                              &session_id,
                                              busy_owner,
                                              sizeof(busy_owner));

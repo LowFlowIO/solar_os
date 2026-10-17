@@ -113,6 +113,7 @@ typedef struct {
     solar_os_session_operation_type_t type;
     const solar_os_app_t *app;
     const char *target_name;
+    const char *cwd;
     int argc;
     char **argv;
     uint8_t close_session_id;
@@ -143,6 +144,7 @@ static esp_err_t session_create_display_app_internal(
     const char *target_name,
     int argc,
     char **argv,
+    const char *cwd,
     uint8_t *session_id,
     char *busy_owner,
     size_t busy_owner_len);
@@ -3076,6 +3078,7 @@ static void session_process_operation_requests(void)
                                                     request->target_name,
                                                     request->argc,
                                                     request->argv,
+                                                    request->cwd,
                                                     &request->session_id,
                                                     request->busy_owner,
                                                     sizeof(request->busy_owner));
@@ -3470,6 +3473,7 @@ static esp_err_t session_create_display_app_internal(
     const char *target_name,
     int argc,
     char **argv,
+    const char *cwd,
     uint8_t *session_id,
     char *busy_owner,
     size_t busy_owner_len)
@@ -3519,6 +3523,9 @@ static esp_err_t session_create_display_app_internal(
     if (args_err != ESP_OK) {
         return args_err;
     }
+    if (strlcpy(session_state.ctx->launch_cwd, cwd ? cwd : "",
+                sizeof(session_state.ctx->launch_cwd)) >= sizeof(session_state.ctx->launch_cwd))
+        return ESP_ERR_INVALID_SIZE;
 
     char previous_focus[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
     const bool had_input_focus =
@@ -3582,12 +3589,21 @@ esp_err_t solar_os_sessions_create_display_app(const solar_os_app_t *app,
                                                char *busy_owner,
                                                size_t busy_owner_len)
 {
+    return solar_os_sessions_create_display_app_at(app, target_name, argc, argv,
+        NULL, session_id, busy_owner, busy_owner_len);
+}
+
+esp_err_t solar_os_sessions_create_display_app_at(const solar_os_app_t *app,
+    const char *target_name, int argc, char **argv, const char *cwd,
+    uint8_t *session_id, char *busy_owner, size_t busy_owner_len)
+{
     if (solar_os_shutdown_requested()) return ESP_ERR_INVALID_STATE;
     if (xTaskGetCurrentTaskHandle() == session_scheduler_task) {
         return session_create_display_app_internal(app,
                                                    target_name,
                                                    argc,
                                                    argv,
+                                                   cwd,
                                                    session_id,
                                                    busy_owner,
                                                    busy_owner_len);
@@ -3605,6 +3621,7 @@ esp_err_t solar_os_sessions_create_display_app(const solar_os_app_t *app,
         .type = SOLAR_OS_SESSION_OPERATION_CREATE_DISPLAY_APP,
         .app = app,
         .target_name = target_name,
+        .cwd = cwd,
         .argc = argc,
         .argv = argv,
         .complete = xSemaphoreCreateBinary(),
