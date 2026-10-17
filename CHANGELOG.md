@@ -2,6 +2,24 @@
 
 ## 4.x
 
+- **4.16.18** — 2026-10-17 — Added a resumable external Amiga 500 app for
+  ESP32-S3 devices with PSRAM, with 1 MiB guest RAM, keyboard, mouse and touch
+  input, joystick emulation, audio, and one read-only ADF floppy drive.
+  Kickstart 1.3 ROM and disk images are supplied separately. The guest screen
+  fits the display, and function keys select keyboard, mouse, or joystick mode.
+  Amiga audio preserves pitch as emulation speed changes, with adaptive
+  buffering and more regular video updates under load.
+  Reduced native service-call overhead and accelerated indexed-color conversion
+  for monochrome displays. Added optional frame-buffer exchange and cooperative
+  CPU checkpoints for foreground modules, reducing frame copies and unnecessary
+  sleeps in Amiga, Macintosh Plus, DOOM, Tiny386, and accelerated Apple II use.
+  Foreground modules gain mouse and touch events and read-only calendar access;
+  video restores the latest frame after session switching. Amiga ROM and disk
+  paths support relative names and tab completion.
+  Added the compact `classic` firmware profile as the default for classic ESP32
+  targets, retaining Python, Playground, writing, media, communications, and
+  board controls, including the ODROID-GO ADC D-pad.
+  Fixed incremental linker generation after memory-layout configuration changes.
 - **4.16.17** — 2026-10-17 — Added generic SPI display attachment through
   Display Link Protocol (DLP), with discovered dimensions and pixel formats,
   optional READY and RESET lines, changed-region uploads, and optional RLE
