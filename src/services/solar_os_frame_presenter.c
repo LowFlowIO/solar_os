@@ -103,9 +103,66 @@ static uint8_t rgb565_luma(uint16_t color)
     return (uint8_t)((red * 77U + green * 150U + blue * 29U) >> 8U);
 }
 
+static bool frame_convert_indexed_to_mono(solar_os_frame_presenter_t *presenter)
+{
+    const unsigned width = presenter->output_width, height = presenter->output_height;
+    const solar_os_display_format_t format = presenter->config.format;
+    if (!width || !height ||
+        (format != SOLAR_OS_DISPLAY_FORMAT_INDEX8 && format != SOLAR_OS_DISPLAY_FORMAT_INDEX2))
+        return false;
+
+    // One 4x4 ordered-dither pattern per palette entry, in internal stack
+    // memory. Pack output bytes locally instead of repeatedly updating PSRAM
+    // bits. Quotient/remainder steps bound scaling to one carry per pixel,
+    // including reductions by more than one source pixel at a time.
+    uint16_t patterns[256];
+    const unsigned colors = format == SOLAR_OS_DISPLAY_FORMAT_INDEX2 ? 4U : 256U;
+    for (unsigned color = 0; color < colors; ++color) {
+        unsigned darkness = 255U - presenter->mono_luma[color], pattern = 0;
+        for (unsigned y = 0; y < 4; ++y)
+            for (unsigned x = 0; x < 4; ++x)
+                if (bayer4[y][x] * 16U < darkness) pattern |= 1U << (y * 4 + x);
+        patterns[color] = pattern;
+    }
+    const size_t source_stride = presenter->config.stride, output_stride = presenter->output_stride;
+    const uint8_t *source = presenter->presenting;
+    uint8_t *output = presenter->mono;
+    const unsigned x_step = presenter->config.width / width, x_fraction = presenter->config.width % width;
+    const unsigned y_step = presenter->config.height / height, y_fraction = presenter->config.height % height;
+    unsigned source_y = 0, y_accumulator = 0;
+    for (unsigned y = 0; y < height; ++y) {
+        const uint8_t *row = source + source_y * source_stride;
+        uint8_t *out = output + y * output_stride;
+        const unsigned phase = (y & 3U) * 4U;
+        unsigned source_x = 0, x_accumulator = 0;
+        for (unsigned x = 0; x < width; x += 8) {
+            unsigned count = width - x < 8 ? width - x : 8, bits = 0;
+            if (format == SOLAR_OS_DISPLAY_FORMAT_INDEX8) {
+                for (unsigned k = 0; k < count; ++k) {
+                    bits |= ((patterns[row[source_x]] >> (phase + (k & 3U))) & 1U) << k;
+                    source_x += x_step; x_accumulator += x_fraction;
+                    if (x_accumulator >= width) { x_accumulator -= width; ++source_x; }
+                }
+            } else {
+                for (unsigned k = 0; k < count; ++k) {
+                    unsigned index = (row[source_x >> 2U] >> ((source_x & 3U) * 2U)) & 3U;
+                    bits |= ((patterns[index] >> (phase + (k & 3U))) & 1U) << k;
+                    source_x += x_step; x_accumulator += x_fraction;
+                    if (x_accumulator >= width) { x_accumulator -= width; ++source_x; }
+                }
+            }
+            out[x >> 3U] = bits;
+        }
+        source_y += y_step; y_accumulator += y_fraction;
+        if (y_accumulator >= height) { y_accumulator -= height; ++source_y; }
+    }
+    return true;
+}
+
 static void frame_convert_to_mono(solar_os_frame_presenter_t *presenter)
 {
     memset(presenter->mono, 0, presenter->mono_size);
+    if (frame_convert_indexed_to_mono(presenter)) return;
     uint16_t source_y = 0U;
     uint32_t y_accumulator = 0U;
     for (uint16_t y = 0; y < presenter->output_height; y++) {

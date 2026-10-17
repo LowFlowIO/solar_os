@@ -45,37 +45,27 @@ typedef struct native_run_scope {
     solar_os_native_run_options_t options;
 } native_run_scope_t;
 
-static native_run_scope_t *native_run_scopes;
-static portMUX_TYPE native_run_scope_lock = portMUX_INITIALIZER_UNLOCKED;
+/* ESP-IDF gives every FreeRTOS task its own compiler TLS area. Keep the
+ * execution-scope stack there so service calls need no cross-core lock or
+ * task-list traversal. This does not consume a FreeRTOS TLS pointer slot. */
+static _Thread_local native_run_scope_t *native_run_scope_top;
 
 static native_run_scope_t *native_run_scope_current(void)
 {
-    const TaskHandle_t task = xTaskGetCurrentTaskHandle();
-    native_run_scope_t *found = NULL;
-    portENTER_CRITICAL(&native_run_scope_lock);
-    for (native_run_scope_t *scope = native_run_scopes; scope; scope = scope->next) {
-        if (scope->task == task) { found = scope; break; }
-    }
-    portEXIT_CRITICAL(&native_run_scope_lock);
-    /* Only this task can remove its own stack-owned execution scope. */
-    return found;
+    return native_run_scope_top;
 }
 
 static void native_run_scope_add(native_run_scope_t *scope)
 {
-    portENTER_CRITICAL(&native_run_scope_lock);
-    scope->next = native_run_scopes;
-    native_run_scopes = scope;
-    portEXIT_CRITICAL(&native_run_scope_lock);
+    scope->next = native_run_scope_top;
+    native_run_scope_top = scope;
 }
 
 static void native_run_scope_remove(native_run_scope_t *scope)
 {
-    portENTER_CRITICAL(&native_run_scope_lock);
-    native_run_scope_t **link = &native_run_scopes;
+    native_run_scope_t **link = &native_run_scope_top;
     while (*link && *link != scope) link = &(*link)->next;
     if (*link) *link = scope->next;
-    portEXIT_CRITICAL(&native_run_scope_lock);
 }
 
 void *solar_os_native_run_service_user(void)
