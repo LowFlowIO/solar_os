@@ -2,11 +2,25 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import re
 from test_foreground_presenter import production_functions
 
 ROOT = Path(__file__).resolve().parents[1]
 
 class NativeForegroundTest(unittest.TestCase):
+    def test_cooperative_checkpoints_preserve_timed_waits(self):
+        source = (ROOT / "src/services/solar_os_native_foreground.c").read_text()
+        interval = re.search(r"^#define FOREGROUND_COOPERATE_INTERVAL_US .*", source, re.M).group()
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "foreground_cooperate.inc").write_text(interval + '\n' +
+                production_functions(source, ("foreground_sleep_ms", "foreground_cooperate")))
+            binary = Path(tmp, "cooperate")
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-I", tmp, "-I", str(ROOT / "include"),
+                            str(ROOT / "tests/host/native_foreground_cooperate_test.c"),
+                            "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_isolated_session_lifecycle(self):
         source = (ROOT / "src/services/solar_os_native_foreground.c").read_text()
         names = ("foreground_current", "foreground_context_state", "foreground_caller",

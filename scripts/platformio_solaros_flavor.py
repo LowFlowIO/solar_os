@@ -81,6 +81,10 @@ def _remove_path(path: Path) -> None:
 
 
 build_dir = Path(env.subst("$BUILD_DIR"))
+# PlatformIO preprocesses memory.ld.in in two stages without tracking its
+# sdkconfig.h include. Memory-layout changes must invalidate both stages.
+env.Depends("$BUILD_DIR/esp-idf/esp_system/ld/memory.ld.in", "$BUILD_DIR/config/sdkconfig.h")
+env.Depends("$BUILD_DIR/memory.ld", "$BUILD_DIR/config/sdkconfig.h")
 flavor = _selected_flavor()
 flavor_name_override = os.environ.get("SOLAR_OS_FLAVOR_NAME_OVERRIDE", "")
 module_repository_url = os.environ.get("SOLAR_OS_MODULE_REPOSITORY_URL", "")

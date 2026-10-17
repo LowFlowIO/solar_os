@@ -14,13 +14,17 @@ python3 tests/hil/foreground_benchmark.py --host DEVICE_ADDRESS \
 Requires the ESP32-S3 PlatformIO compiler, Telnet, SD storage and native
 foreground support. It builds a finite probe, temporarily installs `fgbench`,
 uses display0 through normal session switching, and restores the FTP listener.
-The probe measures empty input and stop checks, an arithmetic workload, and
-frame submission with and without silent audio output. No guest assets are
+The probe measures empty input and stop checks, small-loop arithmetic, a larger
+instruction working set with indirect calls, dependent PSRAM reads at three
+working-set sizes, and frame submission by copying
+or exchanging buffers, with and without silent audio
+output. Frame generation is outside the submission work timer. No guest assets are
 needed. An existing `fgbench.elf` is never overwritten.
 
 Timing rows contain a name, operation count, accumulated work microseconds and
 wall microseconds. `presented` rows contain the displayed frame count, presenter
-microseconds and replaced frame count; the last `kernel` value is its checksum.
+microseconds and replaced frame count; the last `kernel`, `dispatch`, and `ram*`
+values are checksums.
 Work measurements include preemption and are not exclusive CPU time. Compare
 the same probe, power profile and display settings across firmware builds.
 

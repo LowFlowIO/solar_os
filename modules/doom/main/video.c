@@ -22,6 +22,7 @@ static uint16_t palette[256];
 static uint8_t color_map[256];
 static uint8_t *frame;
 static bool video_ready;
+static bool exchanged_frames;
 static uint64_t last_yield;
 
 static void post(int key, bool down)
@@ -86,11 +87,11 @@ void solar_os_doom_poll(void)
         solar_os_doom_reset_keys();
         solar_os_doom_sound_resume();
         if (video_ready) {
-            if (frame) solar_os_doom_app->present(frame, SCREENWIDTH * SCREENHEIGHT);
+            if (frame && !exchanged_frames) solar_os_doom_app->present(frame, SCREENWIDTH * SCREENHEIGHT);
         }
     }
     uint64_t now = solar_os_doom_app->time_us();
-    if (now - last_yield >= 5000) { solar_os_doom_app->sleep_ms(1); last_yield = now; }
+    if (now - last_yield >= 5000) { solar_os_native_foreground_cooperate(solar_os_doom_app); last_yield = now; }
 }
 void I_StartTic(void)
 {
@@ -134,10 +135,16 @@ void I_SetPalette(int number)
             unsigned b = ((i & 3) * 255 / 3) >> 3;
             palette[i] = (r << 11) | (g << 5) | b;
         }
-        frame = malloc(SCREENWIDTH * SCREENHEIGHT);
-        if (!frame) I_Error("doom: no memory for frame\n");
-        memset(frame, 0, SCREENWIDTH * SCREENHEIGHT);
         open_video();
+        exchanged_frames = solar_os_native_foreground_has_exchange(solar_os_doom_app);
+        if (exchanged_frames) {
+            size_t bytes;
+            if (solar_os_doom_app->video_acquire(&frame, &bytes) || bytes != SCREENWIDTH * SCREENHEIGHT)
+                I_Error("doom: no memory for frame\n");
+        } else {
+            frame = malloc(SCREENWIDTH * SCREENHEIGHT);
+            if (!frame) I_Error("doom: no memory for frame\n");
+        }
     }
 }
 void I_SetRes(void)
@@ -160,6 +167,7 @@ void I_FinishUpdate(void)
 {
     solar_os_doom_poll();
     for (unsigned i = 0; i < SCREENWIDTH * SCREENHEIGHT; i++) frame[i] = color_map[screens[0].data[i]];
-    if (solar_os_doom_app->present(frame, SCREENWIDTH * SCREENHEIGHT))
+    if (exchanged_frames ? solar_os_doom_app->video_exchange(&frame) :
+        solar_os_doom_app->present(frame, SCREENWIDTH * SCREENHEIGHT))
         I_Error("doom: frame submission failed\n");
 }

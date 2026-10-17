@@ -214,7 +214,7 @@ static const solar_os_native_foreground_api_v1_t app = {.abi_version = 1,
 static const void *get_service(const char *name, uint32_t abi, uint32_t size) {
     assert(abi == 1);
     if (!strcmp(name, "foreground")) {
-        assert(size == sizeof(app));
+        assert(size == offsetof(solar_os_native_foreground_api_v1_t, video_stats) + sizeof(app.video_stats));
         return &app;
     }
     assert(!strcmp(name, "memory") && size == sizeof(memory));

@@ -118,6 +118,21 @@ instead of assuming a board's resolution. Request a service table large enough
 to include this method. Fixed-resolution emulators can still submit their own
 frame size and use the presenter's aspect-preserving fit.
 
+`present` copies a submitted frame. For rendering into host-owned buffers, check
+for `video_acquire` and `video_exchange`. Acquire once after opening video, fill
+the returned buffer, then exchange it to queue the frame without a pixel copy.
+Exchange returns the next writable buffer, whose previous contents are
+unspecified. Each submitted buffer remains readable until the next exchange;
+do not write to it. Never free these buffers or mix this path with `present`.
+The writing buffer survives suspension, and the host restores the latest frame
+on resume. All host-owned buffers are released when the worker exits.
+
+Use `cooperate` at regular CPU-work checkpoints. The host coalesces these
+requests while allowing periodic idle-task work. Use `sleep_ms` for timed waits,
+and continue polling stop and suspend requests. The
+`solar_os_native_foreground_cooperate` helper falls back to a short sleep on
+hosts without this method.
+
 The appended `disk_open`, `disk_read`, `disk_write`, `disk_sync`, and
 `disk_close` methods provide exclusive access to fixed-size raw disk images.
 Request a table through `disk_close` before using them. `disk_open` returns an

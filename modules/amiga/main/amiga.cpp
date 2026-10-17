@@ -19,6 +19,7 @@ static const solar_os_native_memory_api_v1_t *memory;
 static void *allocations[16];
 static unsigned allocation_count;
 static uint8_t *pixels, *frame;
+static bool exchanged_frames;
 static bool paused, mouse_mode, held[7], audio, snapshot_requested;
 static bool keyboard_mode;
 static uint16_t fit_x[1024], fit_width, fit_height, fit_source_width, fit_source_height;
@@ -29,11 +30,19 @@ static char snapshot_path[256];
 static int16_t *ring;
 static std::atomic<uint32_t> ring_read, ring_write, audio_dropped, audio_underruns;
 static uint32_t audio_fraction, audio_step;
+static int32_t audio_level, audio_rate_integral;
+static uint64_t audio_observed_frames;
+static uint32_t audio_first_write;
+static constexpr unsigned max_audio_hop = 1536;
+static int16_t audio_overlap[max_audio_hop * 2], audio_grain[max_audio_hop * 2];
+static unsigned audio_hop, audio_grain_offset, audio_grain_size;
+static uint32_t audio_source;
+static bool audio_overlap_valid;
 static int audio_last_left, audio_last_right;
 static unsigned audio_fade, audio_start_fade;
 static bool audio_ready;
 static uint32_t display_frames, display_replaced;
-static constexpr unsigned ring_size = 4096;
+static constexpr unsigned ring_size = 32768;
 static uint16_t width, height;
 static uint64_t guest_clock_us;
 static uint64_t started_at, measured_cpu, measured_video, measured_chips, measured_audio;
@@ -119,42 +128,122 @@ extern "C" void solar_os_amiga_audio_sample(int16_t left, int16_t right)
     ring[i] = left; ring[i + 1] = right;
     ring_write.store(write + 1, std::memory_order_release);
 }
+static uint32_t audio_overlap_difference(uint32_t start, uint32_t limit)
+{
+    uint32_t error = 0;
+    unsigned stride = audio_hop / 32;
+    if (!stride) stride = 1;
+    for (unsigned i = 0; i < audio_hop; i += stride) {
+        unsigned source = ((start + i) & (ring_size - 1)) * 2;
+        error += abs((int)audio_overlap[i * 2] - ring[source]);
+        error += abs((int)audio_overlap[i * 2 + 1] - ring[source + 1]);
+        if (error > limit) break;
+    }
+    return error;
+}
+static bool prepare_audio_grain(uint32_t &read, uint32_t write)
+{
+    unsigned search = audio_hop * 3 / 4, available = write - read;
+    unsigned center = audio_source - read;
+    unsigned first = center > search ? center - search : 0;
+    if (available < audio_hop * 2 || first > available - audio_hop * 2) return false;
+    unsigned last = center + search;
+    if (last > available - audio_hop * 2) last = available - audio_hop * 2;
+    unsigned best = center < last ? center : last;
+    if (audio_overlap_valid) {
+        uint32_t difference = audio_overlap_difference(read + best, UINT32_MAX);
+        unsigned coarse = audio_hop / 64;
+        if (!coarse) coarse = 1;
+        if (difference) {
+            for (unsigned candidate = first; candidate <= last; candidate += coarse) {
+                uint32_t score = audio_overlap_difference(read + candidate, difference);
+                if (score < difference) { best = candidate; difference = score; }
+                if (!difference) break;
+            }
+            unsigned low = best > coarse ? best - coarse : 0, high = best + coarse;
+            if (low < first) low = first;
+            if (high > last) high = last;
+            for (unsigned candidate = low; candidate <= high; ++candidate) {
+                uint32_t score = audio_overlap_difference(read + candidate, difference);
+                if (score < difference) { best = candidate; difference = score; }
+            }
+        }
+    }
+    for (unsigned i = 0; i < audio_hop; ++i) {
+        unsigned source = ((read + best + i) & (ring_size - 1)) * 2;
+        unsigned tail = ((read + best + i + audio_hop) & (ring_size - 1)) * 2;
+        for (unsigned channel = 0; channel < 2; ++channel) {
+            int value = ring[source + channel];
+            if (audio_overlap_valid)
+                value = audio_overlap[i * 2 + channel] +
+                    (value - audio_overlap[i * 2 + channel]) * (int)(i + 1) / (int)audio_hop;
+            audio_grain[i * 2 + channel] = value;
+            audio_overlap[i * 2 + channel] = ring[tail + channel];
+        }
+    }
+    audio_overlap_valid = true;
+    audio_grain_offset = 0; audio_grain_size = audio_hop;
+    // Move through guest time independently of the waveform's sample pitch.
+    audio_fraction += audio_step * audio_hop;
+    audio_source += audio_fraction >> 16;
+    audio_fraction &= 65535;
+    unsigned behind = audio_source - read;
+    if (behind > search) read += behind - search;
+    return true;
+}
 static void render_audio(int16_t *out, size_t frames, uint32_t rate, void *)
 {
-    (void)rate;
     // This is a single-producer/single-consumer queue. Only its published
     // indices cross tasks; the emulator never waits on the audio callback.
     uint32_t read = ring_read.load(std::memory_order_relaxed);
     uint32_t write = ring_write.load(std::memory_order_acquire);
-    constexpr unsigned target = 1536;
+    unsigned target = rate * 128U / 1000U;
+    if (target < 1536) target = 1536;
+    // Exclude initial silence from clock estimation. After a stall, reuse
+    // the learned clock rather than treating the gap as slower playback.
+    if (!audio_ready && write - read < 2) audio_observed_frames = 0;
+    if (!audio_observed_frames) audio_first_write = write;
     if (!audio_ready && write - read >= target) {
-        audio_ready = true; audio_fraction = 0; audio_step = 65536;
+        audio_ready = true; audio_fraction = 0;
+        uint64_t estimate = 65536;
+        if (audio_rate_integral) estimate = audio_rate_integral / 64;
+        else if (audio_observed_frames)
+            estimate = ((uint64_t)(write - audio_first_write) << 16) / audio_observed_frames;
+        audio_step = estimate < 4096 ? 4096 : estimate > 131072 ? 131072 : estimate;
+        audio_rate_integral = audio_step * 64;
+        audio_level = target * 256;
+        audio_hop = rate * 16U / 1000U;
+        if (audio_hop < 128) audio_hop = 128;
+        if (audio_hop > max_audio_hop) audio_hop = max_audio_hop;
+        audio_source = read; audio_overlap_valid = false;
+        audio_grain_offset = audio_grain_size = 0;
         audio_start_fade = 32;
     }
     if (audio_ready) {
-        // A slower guest produces fewer samples per host second. Follow that
-        // rate smoothly instead of cutting each fragment off with silence.
-        int desired = (write - read) * 65536U / target;
+        // Average away the guest's scanline/frame bursts. A slow clock servo
+        // corrects long-term drift without turning queue jitter into pitch
+        // modulation. The integral is Q16 samples/frame with six guard bits.
+        audio_level += ((int32_t)(write - read) * 256 - audio_level) / 16;
+        int error = (audio_level - (int)target * 256) / 256;
+        audio_rate_integral += error;
+        if (audio_rate_integral < 4096 * 64) audio_rate_integral = 4096 * 64;
+        if (audio_rate_integral > 131072 * 64) audio_rate_integral = 131072 * 64;
+        int desired = audio_rate_integral / 64 + error * 8;
         if (desired < 4096) desired = 4096;
         if (desired > 131072) desired = 131072;
-        audio_step += (desired - (int)audio_step) / 4;
+        audio_step = desired;
     }
     for (size_t i = 0; i < frames; ++i) {
         int16_t l = 0, r = 0;
-        if (audio_ready && write - read < 2) {
+        if (audio_ready && audio_grain_offset == audio_grain_size && !prepare_audio_grain(read, write)) {
             audio_ready = false; audio_fade = 32;
+            audio_observed_frames = 0; audio_first_write = write;
             audio_underruns.store(audio_underruns.load(std::memory_order_relaxed) + 1, std::memory_order_relaxed);
         }
         if (audio_ready) {
-            unsigned a = (read & (ring_size - 1)) * 2, b = ((read + 1) & (ring_size - 1)) * 2;
-            unsigned fraction = audio_fraction >> 8;
-            l = ring[a] + ((int)ring[b] - ring[a]) * (int)fraction / 256;
-            r = ring[a + 1] + ((int)ring[b + 1] - ring[a + 1]) * (int)fraction / 256;
-            audio_fraction += audio_step;
-            unsigned advance = audio_fraction >> 16;
-            audio_fraction &= 65535;
-            if (advance >= write - read) advance = write - read - 1;
-            read += advance;
+            l = audio_grain[audio_grain_offset * 2];
+            r = audio_grain[audio_grain_offset * 2 + 1];
+            ++audio_grain_offset;
             if (audio_start_fade) {
                 l = (int)l * (32 - audio_start_fade) / 32;
                 r = (int)r * (32 - audio_start_fade) / 32;
@@ -169,6 +258,7 @@ static void render_audio(int16_t *out, size_t frames, uint32_t rate, void *)
         out[2 * i] = l; out[2 * i + 1] = r;
     }
     ring_read.store(read, std::memory_order_release);
+    audio_observed_frames += frames;
 }
 static void reset_audio_queue(void)
 {
@@ -176,6 +266,10 @@ static void reset_audio_queue(void)
     audio_dropped = audio_underruns = 0;
     audio_ready = false; audio_fraction = audio_fade = audio_start_fade = 0;
     audio_last_left = audio_last_right = 0; audio_step = 65536;
+    audio_level = audio_rate_integral = 0;
+    audio_observed_frames = 0; audio_first_write = 0;
+    audio_grain_offset = audio_grain_size = audio_hop = 0;
+    audio_source = 0; audio_overlap_valid = false;
 }
 static void open_audio(void)
 {
@@ -468,10 +562,14 @@ static const char *run(int argc, char **argv)
     chip_ram = (uint8_t *)solar_os_amiga_alloc(CHIP_SIZE);
     slow_ram = (uint8_t *)solar_os_amiga_alloc(SLOW_SIZE);
     kick_rom = (uint8_t *)solar_os_amiga_alloc(ROM_SIZE);
-    pixels = (uint8_t *)solar_os_amiga_alloc(width * height);
-    frame = (uint8_t *)solar_os_amiga_alloc(width * height);
+    exchanged_frames = solar_os_native_foreground_has_exchange(app);
+    if (!exchanged_frames) {
+        pixels = (uint8_t *)solar_os_amiga_alloc(width * height);
+        frame = (uint8_t *)solar_os_amiga_alloc(width * height);
+    }
     ring = (int16_t *)solar_os_amiga_alloc(ring_size * 2 * sizeof(int16_t));
-    if (!chip_ram || !slow_ram || !kick_rom || !pixels || !frame) return "amiga: not enough PSRAM";
+    if (!chip_ram || !slow_ram || !kick_rom || (!exchanged_frames && (!pixels || !frame)))
+        return "amiga: not enough PSRAM";
     if (diagnostic) diagnostic_rom();
     else if (!read_media(rom_path, kick_rom, ROM_SIZE) || !valid_rom())
         return "amiga: need a raw 256 KiB Kickstart 1.3 ROM with valid checksum and reset entry";
@@ -482,8 +580,10 @@ static const char *run(int argc, char **argv)
         if (!adf || !read_media(disk_path, adf, 901120)) return "amiga: need a raw 901120-byte ADF image";
         drive_mount_ready();
     }
-    memset(pixels, 0, (size_t)width * height);
-    memset(frame, 0, (size_t)width * height);
+    if (!exchanged_frames) {
+        memset(pixels, 0, (size_t)width * height);
+        memset(frame, 0, (size_t)width * height);
+    }
     solar_os_amiga_cpu_prepare();
     video_prepare();
     mem_reset(); cia_reset(); custom_reset(); paula_reset(); reset_input();
@@ -496,6 +596,14 @@ static const char *run(int argc, char **argv)
         palette[i] = (r << 11) | (g << 5) | b;
     }
     if (app->video_open_ex(width, height, palette, 25, 0)) return "amiga: foreground video unavailable";
+    if (exchanged_frames) {
+        size_t bytes;
+        if (app->video_acquire(&pixels, &bytes) || bytes != (size_t)width * height)
+            return "amiga: foreground frame allocation failed";
+        memset(pixels, 0, bytes);
+        frame = pixels;
+        if (app->video_exchange(&pixels)) return "amiga: initial display submission failed";
+    }
     if (app->enable_suspend()) return "amiga: foreground switching unavailable";
     open_audio();
     report(diagnostic ? "amiga: diagnostic 68000 guest running" : "amiga: A500 running; F6 keyboard; F7 mouse; F8 joystick; F2 snapshot; Ctrl+] exit");
@@ -514,7 +622,8 @@ static const char *run(int argc, char **argv)
             if (app->stop_requested()) break;
             reset_input(); if (!paused) open_audio();
             deadline = app->time_us();
-            if (app->present(frame, width * height)) return "amiga: resume presentation failed";
+            if (!exchanged_frames && app->present(frame, width * height))
+                return "amiga: resume presentation failed";
         }
         for (unsigned i = 0; i < 64; ++i) {
             solar_os_native_foreground_key_v1_t key; bool available = false;
@@ -572,8 +681,13 @@ static const char *run(int argc, char **argv)
                 guest_clock_us += 20000;
                 line = 0; cia_tod_vsync(); intreq_set(5);
                 if (denise_draw && canvas_started) {
-                    uint8_t *previous = frame; frame = pixels; pixels = previous;
-                    if (app->present(frame, width * height)) return "amiga: display submission failed";
+                    if (exchanged_frames) {
+                        frame = pixels;
+                        if (app->video_exchange(&pixels)) return "amiga: display submission failed";
+                    } else {
+                        uint8_t *previous = frame; frame = pixels; pixels = previous;
+                        if (app->present(frame, width * height)) return "amiga: display submission failed";
+                    }
                 }
                 uint64_t now = app->time_us();
                 video_budget.end(now - frame_started, denise_draw);
@@ -585,7 +699,7 @@ static const char *run(int argc, char **argv)
                 break;
             }
         } while (app->time_us() < batch_end && !app->stop_requested() && !app->suspend_requested());
-        app->sleep_ms(1);
+        solar_os_native_foreground_cooperate(app);
     }
     return nullptr;
 }

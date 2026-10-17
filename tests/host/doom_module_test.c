@@ -66,6 +66,17 @@ static int video_open(uint16_t width, uint16_t height, const uint16_t *palette, 
 }
 static int present(const uint8_t *pixels, size_t size)
 { assert(pixels && size == 320 * 240); frames++; return 0; }
+static uint8_t host_frames[2][320 * 240];
+static unsigned host_writing;
+static int acquire_frame(uint8_t **pixels, size_t *size)
+{ host_writing = 0; *pixels = host_frames[0]; *size = 320 * 240; return 0; }
+static int exchange_frame(uint8_t **pixels)
+{
+    assert(*pixels == host_frames[host_writing]);
+    present(*pixels, 320 * 240);
+    *pixels = host_frames[host_writing ^= 1];
+    memset(*pixels, 0xcd, 320 * 240); return 0;
+}
 static bool stop_requested(void) { return frames >= 120 && phase == 12; }
 static bool suspend_requested(void) { return frames >= 12 && !suspends; }
 static int suspend_app(void)
@@ -136,6 +147,7 @@ int main(int argc, char **argv)
     setbuf(stdout, NULL);
     assert(argc >= 3); wad_path = argv[1];
     mode = argv[2];
+    if (!strcmp(mode, "exchange")) { app.video_acquire = acquire_frame; app.video_exchange = exchange_frame; }
     if (!strcmp(mode, "no-synth")) app.struct_size = offsetof(solar_os_native_foreground_api_v1_t, video_open_index2);
     fail_after = argc > 3 ? atoi(argv[3]) : 0;
     short_read = !strcmp(argv[2], "short");
@@ -144,12 +156,12 @@ int main(int argc, char **argv)
     printf("result=%d frames=%u suspends=%u keys=%u state=%d\n", result, frames, suspends, phase, gamestate);
     assert(!allocations);
     assert(!audio_render && !audio_probe && !mixer_locked && audio_starts == audio_closes);
-    if (!strcmp(mode, "game") || !strcmp(mode, "switch-rate") || !strcmp(mode, "audio-denied") ||
+    if (!strcmp(mode, "game") || !strcmp(mode, "exchange") || !strcmp(mode, "switch-rate") || !strcmp(mode, "audio-denied") ||
         !strcmp(mode, "synth-denied") || !strcmp(mode, "no-synth") || !strcmp(mode, "silent-samples") ||
         !strcmp(mode, "no-samples")) {
         assert(result == 0 && frames >= 120 && suspends == 1 && phase == 12);
         assert(gamestate == GS_LEVEL && solar_os_doom_epoch >= 5000000);
-        if (!strcmp(mode, "game") || !strcmp(mode, "switch-rate"))
+        if (!strcmp(mode, "game") || !strcmp(mode, "exchange") || !strcmp(mode, "switch-rate"))
             assert(audio_starts == 2 && audio_blocks > 0 && nonzero_samples > 0);
         else assert(nonzero_samples == 0);
     } else { assert(result != 0); }

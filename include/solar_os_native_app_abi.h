@@ -139,4 +139,35 @@ typedef struct {
     int (*read_pointer)(solar_os_native_foreground_pointer_v1_t *pointer, bool *available);
     /* Host local wall clock. Guest writes must never alter the host clock. */
     int (*calendar_read)(solar_os_native_foreground_calendar_v1_t *calendar);
+    /* Optional host-owned frame buffers. Acquire once after video_open, then
+     * write a complete frame and exchange to queue it without copying pixels.
+     * Exchange replaces *pixels with the next writable buffer. Previous
+     * contents of that buffer are unspecified. The submitted buffer is read-only
+     * until the next exchange, then must no longer be accessed. Never free these
+     * buffers or mix exchange with present. Buffers and the acquired writing
+     * pointer survive suspend; the host restores the last frame on resume and
+     * frees all buffers after main returns. */
+    int (*video_acquire)(uint8_t **pixels, size_t *length);
+    int (*video_exchange)(uint8_t **pixels);
+    /* CPU-work checkpoint. The host can coalesce successive requests to yield
+     * periodically; use sleep_ms for timed waits. Keep polling stop/suspend. */
+    void (*cooperate)(void);
 } solar_os_native_foreground_api_v1_t;
+
+static inline bool solar_os_native_foreground_has_exchange(
+    const solar_os_native_foreground_api_v1_t *app)
+{
+    return app && app->struct_size >=
+        offsetof(solar_os_native_foreground_api_v1_t, video_exchange) + sizeof(app->video_exchange) &&
+        app->video_acquire && app->video_exchange;
+}
+
+static inline void solar_os_native_foreground_cooperate(
+    const solar_os_native_foreground_api_v1_t *app)
+{
+    if (app->struct_size >= offsetof(solar_os_native_foreground_api_v1_t, cooperate) +
+        sizeof(app->cooperate) && app->cooperate)
+        app->cooperate();
+    else
+        app->sleep_ms(1);
+}

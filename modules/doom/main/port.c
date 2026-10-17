@@ -288,7 +288,7 @@ fixed_t I_GetTimeFrac(void) { return FRACUNIT; }
 void I_GetTime_SaveMS(void) {}
 unsigned long I_GetRandomTimeSeed(void) { return solar_os_doom_app->time_us(); }
 void I_uSleep(unsigned long usecs)
-{ solar_os_doom_poll(); solar_os_doom_app->sleep_ms(usecs / 1000 + 1); }
+{ solar_os_doom_poll(); solar_os_doom_app->sleep_ms(usecs / 1000 + (usecs % 1000 != 0)); }
 const char *I_GetVersionString(char *out, size_t size)
 { solar_os_doom_snprintf(out, size, "SolarOS PrBoom 2.5.0"); return out; }
 const char *I_SigString(char *out, size_t size, int signum) { return "DOOM error"; }

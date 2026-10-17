@@ -62,6 +62,21 @@ static int present_frame(const uint8_t *data, size_t n)
     if (frames > 8) stopping = true;
     return 0;
 }
+static uint8_t host_frames[2][480 * 320];
+static unsigned host_writing;
+static int acquire_frame(uint8_t **data, size_t *n)
+{
+    host_writing = 0; *data = host_frames[0];
+    *n = (size_t)selected_width * selected_height; return 0;
+}
+static int exchange_frame(uint8_t **data)
+{
+    assert(*data == host_frames[host_writing]);
+    if (chip_ram[0x400] || chip_ram[0x401]) present_frame(*data, (size_t)selected_width * selected_height);
+    *data = host_frames[host_writing ^= 1];
+    memset(*data, 0xcd, (size_t)selected_width * selected_height);
+    return 0;
+}
 static int read_key(solar_os_native_foreground_key_v1_t *key, bool *available)
 {
     *available = false;
@@ -182,6 +197,11 @@ int main(void)
         assert(frames >= 9 && saw_counter);
     }
     selected_width = 480; selected_height = 320;
+    foreground.video_acquire = acquire_frame; foreground.video_exchange = exchange_frame;
+    assert(execute({"amiga", "--self-test", "/snapshot"}) == 0);
+    assert(frames >= 9 && suspends == 1 && saw_counter && snapshots == 1 && opens == 2);
+    assert(saved.size() == 15 + 480 * 320 * 3);
+    foreground.video_acquire = nullptr; foreground.video_exchange = nullptr;
     for (fail_at = 1; fail_at <= 5; ++fail_at) assert(execute({"amiga", "--self-test"}) == 1);
     fail_at = 6; assert(execute({"amiga", "--self-test"}) == 0); // optional audio buffer
     fail_at = 0; synth_error = -1; assert(execute({"amiga", "--self-test"}) == 0); synth_error = 0;
@@ -260,12 +280,21 @@ int main(void)
     custom_write(0x080, 0); custom_write(0x082, 0x1000); custom_write(0x096, 0x8380);
     vpos = 44; copper_vblank(); copper_run_line(); assert(custom_get(0x180) == 0xf);
     chip_ram[0x2000] = 0x80;
+    custom_write(0x092, 0x38); custom_write(0x094, 0xd0);
     custom_write(0x182, 0x0f0); custom_write(0x08e, 0x2c81); custom_write(0x090, 0xf4c1);
     custom_write(0x100, 0x1200); custom_write(0x0e0, 0); custom_write(0x0e2, 0x2000);
     denise_line_cb = render_line; denise_render_line();
     assert(pixels[27] == 0x1c && pixels[28] == 0x1c && pixels[29] == 3);
     custom_write(0x100, 0x9200); custom_write(0x0e2, 0x2000);
+    custom_write(0x092, 0x3c); custom_write(0x094, 0xd4);
     vpos = 45; denise_render_line(); assert(pixels[2 * width + 27] == 0x1c && pixels[2 * width + 28] == 3);
+    // Hires DMA completes an eight-clock fetch block, even when DDFSTOP
+    // lands halfway through it. Workbench uses 3c..d0 for an 80-byte row.
+    custom_write(0x094, 0xd0); custom_write(0x0e2, 0x2000);
+    denise_render_line(); assert(bpl_pt[0] == 0x2050);
+    denise_draw = false; custom_write(0x0e2, 0x2000);
+    denise_render_line(); assert(bpl_pt[0] == 0x2050);
+    denise_draw = true; custom_write(0x094, 0xd4);
     // Skipping output still performs the same bitplane DMA/modulo update.
     denise_draw = false; custom_write(0x0e2, 0x2000); vpos = 44;
     denise_render_line(); assert(bpl_pt[0] == 0x2050);
@@ -283,6 +312,50 @@ int main(void)
     custom_write(0x182, 0xf00); cached_line(); assert(callbacks == 3);
     video_cache_invalidate(); cached_line(); assert(callbacks == 4);
     video_release(); denise_line_cb = render_line;
+    // Kefrens' opening text uses a 68-byte hires fetch, placed 48 pixels
+    // into the standard raster. A fixed 80-byte stride scrambles its rows.
+    std::vector<uint16_t> raster;
+    static std::vector<uint16_t> *captured;
+    captured = &raster;
+    denise_line_cb = [](int, const uint16_t *row, int count) { captured->assign(row, row + count); };
+    memset(chip_ram + 0x2000, 0, 256);
+    chip_ram[0x2000] = 0x80; chip_ram[0x2044] = 0x40;
+    custom_write(0x180, 0); custom_write(0x182, 0xfff);
+    custom_write(0x08e, 0x7c71); custom_write(0x090, 0xbcd1);
+    custom_write(0x092, 0x48); custom_write(0x094, 0xc8);
+    custom_write(0x0e2, 0x2000);
+    vpos = 124; denise_render_line();
+    assert(bpl_pt[0] == 0x2044 && raster.size() == 640);
+    assert(raster[47] == 0 && raster[48] == 0xfff && raster[49] == 0);
+    vpos = 125; denise_render_line();
+    assert(bpl_pt[0] == 0x2088 && raster[48] == 0 && raster[49] == 0xfff);
+    assert(raster[592] == 0 && raster[639] == 0);
+    // Geometry changes invalidate the row cache even with identical bytes.
+    video_prepare(); vpos = 124;
+    custom_write(0x0e2, 0x2000); denise_render_line();
+    custom_write(0x092, 0x4c); custom_write(0x094, 0xcc);
+    custom_write(0x0e2, 0x2000); denise_render_line();
+    assert(raster[48] == 0 && raster[64] == 0xfff);
+    custom_write(0x08e, 0x7ca9);
+    custom_write(0x0e2, 0x2000); denise_render_line();
+    assert(raster[64] == 0); // Horizontal display window clips the bitplane.
+    video_release();
+    // Skipped frames use the same fetch length and signed modulo.
+    denise_draw = false; custom_write(0x108, 0xfffe);
+    custom_write(0x0e2, 0x2000); denise_render_line();
+    assert(bpl_pt[0] == 0x2042);
+    // Maximum OCS DMA width and chip-RAM wrap stay within row storage.
+    denise_draw = true; custom_write(0x108, 0);
+    custom_write(0x092, 0x18); custom_write(0x094, 0xd8);
+    custom_write(0x0e0, 7); custom_write(0x0e2, 0xfff0);
+    denise_render_line(); assert(bpl_pt[0] == 0x80052);
+    custom_write(0x100, 0x1200); custom_write(0x0e0, 0); custom_write(0x0e2, 0x2000);
+    denise_render_line(); assert(bpl_pt[0] == 0x2032);
+    custom_write(0x092, 0xd0); custom_write(0x094, 0x38);
+    custom_write(0x108, 8); custom_write(0x0e2, 0x2000);
+    denise_render_line(); assert(bpl_pt[0] == 0x2000);
+    denise_draw = false; denise_render_line(); assert(bpl_pt[0] == 0x2000);
+    denise_draw = true; denise_line_cb = render_line;
     // A late wait at line 255 must cross the vertical counter wrap before
     // testing the next wait. PAL screen data below row 255 must survive.
     put16(chip_ram + 0x1000, 0xffdf); put16(chip_ram + 0x1002, 0xfffe);
@@ -463,9 +536,9 @@ int main(void)
     // A steady tone must remain continuous when the guest runs at 50, 40,
     // 25, or 20 fps, with bursty frame production and 16 ms host callbacks.
     // Filling missing fragments with zeros creates long gaps in these cases.
-    for (unsigned frame_ms : {20, 25, 40, 50}) {
+    for (unsigned frame_ms : {20, 22, 25, 40, 50}) {
         reset_audio_queue(); unsigned source = 0, zero_run = 0, longest_gap = 0, crossings = 0, count = 0;
-        int previous = 0, largest_jump = 0; double energy = 0;
+        int previous = 0, largest_jump = 0; double energy = 0, last_crossing = -1;
         int16_t samples[512];
         for (unsigned ms = 0; ms < 4000; ++ms) {
             if (!(ms % frame_ms)) for (unsigned n = 0; n < 320; ++n) {
@@ -480,17 +553,78 @@ int main(void)
                 zero_run = v ? 0 : zero_run + 1;
                 if (zero_run > longest_gap) longest_gap = zero_run;
                 if (count && abs(v - previous) > largest_jump) largest_jump = abs(v - previous);
-                if (previous <= 0 && v > 0) ++crossings;
+                if (previous <= 0 && v > 0) {
+                    ++crossings;
+                    // Measure individual output periods, not just average
+                    // frequency: a tape-like pitch wobble can average out.
+                    double position = (double)count - 1 + (double)-previous / (v - previous);
+                    if (ms >= 2000 && last_crossing >= 0) {
+                        double hz = 16000 / (position - last_crossing);
+                        double expected = 440.0;
+                        assert(hz > expected * .98 && hz < expected * 1.02);
+                    }
+                    if (ms >= 2000) last_crossing = position;
+                }
                 previous = v; energy += (double)v * v; ++count;
             }
         }
         double frequency = (double)crossings * 16000 / count;
-        double expected = 440.0 * 20 / frame_ms;
+        double expected = 440.0;
         assert(frequency > expected * .96 && frequency < expected * 1.04);
         assert(std::sqrt(energy / count) > 7500 && std::sqrt(energy / count) < 9000);
         assert(longest_gap < 8 && largest_jump < 4000);
         assert(!audio_dropped && !audio_underruns);
     }
+    // A producer stall must rebuffer without learning the silent gap as a
+    // slower clock, which otherwise causes prolonged detuning and overflow.
+    reset_audio_queue();
+    unsigned source = 0, output_count = 0;
+    double last_crossing = -1;
+    int previous = 0;
+    for (unsigned ms = 0; ms < 8000; ++ms) {
+        if ((ms < 3000 || ms >= 3300) && !(ms % 22))
+            for (unsigned n = 0; n < 320; ++n) {
+                int16_t v = 12000 * std::sin(source++ * 6.283185307179586 * 440 / 16000);
+                solar_os_amiga_audio_sample(v, -v);
+            }
+        if (ms % 16) continue;
+        int16_t samples[512]; render_audio(samples, 256, 16000, nullptr);
+        if (ms < 5000) continue;
+        for (unsigned n = 0; n < 256; ++n) {
+            int v = samples[n * 2];
+            if (output_count && previous <= 0 && v > 0) {
+                double position = (double)output_count - 1 + (double)-previous / (v - previous);
+                if (last_crossing >= 0) {
+                    double hz = 16000 / (position - last_crossing);
+                    assert(hz > 440 * .98 && hz < 440 * 1.02);
+                }
+                last_crossing = position;
+            }
+            previous = v; ++output_count;
+        }
+    }
+    assert(audio_ready && audio_underruns == 1 && !audio_dropped);
+    // Stretch musical time, not note pitch: at half guest speed, a change
+    // after one guest second must reach the output after two host seconds.
+    reset_audio_queue(); source = output_count = 0;
+    unsigned late_crossings = 0; previous = 0;
+    for (unsigned ms = 0; ms < 6000; ++ms) {
+        if (!(ms % 40)) for (unsigned n = 0; n < 320; ++n) {
+            unsigned hz = source < 16000 ? 440 : 660;
+            int16_t v = 12000 * std::sin(source++ * 6.283185307179586 * hz / 16000);
+            solar_os_amiga_audio_sample(v, -v);
+        }
+        if (ms % 16) continue;
+        int16_t samples[512]; render_audio(samples, 256, 16000, nullptr);
+        if (ms < 4000) continue;
+        for (unsigned n = 0; n < 256; ++n) {
+            int v = samples[n * 2];
+            if (output_count && previous <= 0 && v > 0) ++late_crossings;
+            previous = v; ++output_count;
+        }
+    }
+    double late_hz = (double)late_crossings * 16000 / output_count;
+    assert(late_hz > 650 && late_hz < 670 && !audio_dropped && !audio_underruns);
     audio = false; release(ring); release(pixels); release(chip_ram);
     ring = nullptr; pixels = chip_ram = nullptr; assert(live.empty());
     puts("AMIGA_MODULE_OK: CPU, chipset, media validation, input, audio, suspend/resume and cleanup");

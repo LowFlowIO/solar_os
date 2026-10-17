@@ -94,6 +94,21 @@ static int present(const uint8_t *p, size_t n)
     }
     return 0;
 }
+static uint8_t host_frames[2][480 * 320];
+static unsigned host_writing;
+static int acquire_frame(uint8_t **p, size_t *n)
+{
+    host_writing = 0; *p = host_frames[0];
+    *n = (size_t)selected_width * selected_height; return 0;
+}
+static int exchange_frame(uint8_t **p)
+{
+    assert(*p == host_frames[host_writing]);
+    present(*p, (size_t)selected_width * selected_height);
+    *p = host_frames[host_writing ^= 1];
+    memset(*p, 0xcd, (size_t)selected_width * selected_height);
+    return 0;
+}
 static int read_key(solar_os_native_foreground_key_v1_t *key, bool *available)
 {
     (void)key; *available = false; return 0;
@@ -148,7 +163,7 @@ static int disk_close(uint32_t handle)
     assert(handle == 1 && disk); fclose(disk); disk = NULL; disk_closes++; return 0;
 }
 static int report(const char *p, size_t n) { fwrite(p, 1, n, stdout); putchar('\n'); return 0; }
-static const solar_os_native_foreground_api_v1_t app = {
+static solar_os_native_foreground_api_v1_t app = {
     .abi_version = 1, .struct_size = sizeof(app),
     .time_us = now, .sleep_ms = sleep_ms, .stop_requested = stop,
     .suspend_requested = suspend_requested, .suspend = suspend_guest,
@@ -163,7 +178,7 @@ static const solar_os_native_memory_api_v1_t memory = { .abi_version = 1,
 static const void *get_service(const char *s, uint32_t abi, uint32_t size)
 {
     assert(abi == 1);
-    if (!strcmp(s, "foreground")) { assert(size <= sizeof(app)); return &app; }
+    if (!strcmp(s, "foreground")) { assert(size <= app.struct_size); return &app; }
     if (!strcmp(s, "memory")) { assert(size <= sizeof(memory)); return &memory; }
     return NULL;
 }
@@ -329,12 +344,14 @@ int main(int argc, char **argv)
     storage_and_bus_tests();
     render_tests();
     char *args[] = { "mac", "--self-test", NULL };
+    app.struct_size = offsetof(solar_os_native_foreground_api_v1_t, read_pointer);
     reset(); diagnostic = true;
     assert(!solar_os_mac_main(2, args) && !exit_code);
     assert(!allocations && frames >= 2 && frames < stop_after && suspends == 1 && resumes == 1 && saw_guest_counter);
     unsigned white = 0, black = 0;
     for (unsigned i = 0; i < 480 * 320; ++i) { white += !last_frame[i]; black += last_frame[i] == 1; }
     assert(white > 60000 && black > 60000);
+    app.struct_size = sizeof(app);
     for (unsigned fail = 1; fail <= 3; ++fail) {
         reset(); fail_allocation = fail;
         assert(solar_os_mac_main(2, args) == 1 && exit_code == 1 && !allocations);
@@ -343,6 +360,14 @@ int main(int argc, char **argv)
     assert(solar_os_mac_main(2, args) == 1 && !allocations);
     reset(); char *bad[] = { "mac", "/nonexistent/mac.rom" };
     assert(solar_os_mac_main(2, bad) == 1 && !allocations);
+    reset(); diagnostic = true;
+    app.video_acquire = acquire_frame; app.video_exchange = exchange_frame;
+    assert(!solar_os_mac_main(2, args) && !exit_code && !allocations);
+    assert(frames >= 2 && suspends == 1 && resumes == 1 && saw_guest_counter);
+    white = black = 0;
+    for (unsigned i = 0; i < 480 * 320; ++i) { white += !last_frame[i]; black += last_frame[i] == 1; }
+    assert(white > 60000 && black > 60000);
+    app.video_acquire = NULL; app.video_exchange = NULL;
     if (argc == 3 || argc == 5) {
         if (argc == 5) { selected_width = atoi(argv[3]); selected_height = atoi(argv[4]); }
         stop_after = 1200; reset(); diagnostic = false; rom_file = argv[1]; disk_file = argv[2];

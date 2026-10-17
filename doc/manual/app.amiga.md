@@ -66,6 +66,7 @@ Switch sessions to suspend and resume emulation; close the session to stop it.
 
 The app supports standard AmigaDOS floppy images. Disk swapping, hard disks,
 networking, HAM, dual playfield, interlace, AGA and overscan are not supported.
+Programs that require precise Copper timing may display incorrectly.
 
 `amiga --self-test` checks the emulator without ROM or disk files.
 See [Native foreground apps](native-app.md) for module installation and sessions.

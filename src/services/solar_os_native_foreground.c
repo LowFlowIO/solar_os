@@ -33,6 +33,7 @@
 
 #define FOREGROUND_FILE_MAX (4U * 1024U * 1024U)
 #define FOREGROUND_STOP_WAIT_US (5000000ULL)
+#define FOREGROUND_COOPERATE_INTERVAL_US (50000ULL)
 
 typedef struct foreground_slot foreground_slot_t;
 
@@ -47,6 +48,7 @@ typedef struct {
     atomic_bool done, input_reset, stop_requested, redraw_requested;
     atomic_bool resumable, suspend_requested, suspended;
     uint64_t stop_deadline_us;
+    uint64_t last_cooperate_us;
     bool worker_started;
     solar_os_frame_presenter_t *presenter;
     uint16_t palette[256];
@@ -137,7 +139,16 @@ static void foreground_sleep_ms(uint32_t ms)
     if (foreground_caller()) {
         if (ms > 1000U) ms = 1000U;
         vTaskDelay(pdMS_TO_TICKS(ms) ? pdMS_TO_TICKS(ms) : 1U);
+        foreground_current()->last_cooperate_us = foreground_time_us();
     }
+}
+
+static void foreground_cooperate(void)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller()) return;
+    if (foreground_time_us() - state->last_cooperate_us >= FOREGROUND_COOPERATE_INTERVAL_US)
+        foreground_sleep_ms(1);
 }
 
 static void foreground_restart(void) { if (foreground_caller()) esp_restart(); }
@@ -442,6 +453,20 @@ static int foreground_present(const uint8_t *pixels, size_t length)
         SOLAR_OS_NATIVE_OK : SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
 }
 
+static int foreground_video_acquire(uint8_t **pixels, size_t *length)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller() || !state->presenter) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    return foreground_result(solar_os_frame_presenter_acquire(state->presenter, pixels, length));
+}
+
+static int foreground_video_exchange(uint8_t **pixels)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller() || !state->presenter) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    return foreground_result(solar_os_frame_presenter_exchange(state->presenter, pixels));
+}
+
 static int foreground_read_key(solar_os_native_foreground_key_v1_t *key, bool *available)
 {
     foreground_state_t *state = foreground_current();
@@ -671,6 +696,8 @@ static const solar_os_native_foreground_api_v1_t foreground_api = {
     .disk_write = foreground_disk_write, .disk_sync = foreground_disk_sync,
     .disk_close = foreground_disk_close,
     .read_pointer = foreground_read_pointer, .calendar_read = foreground_calendar_read,
+    .video_acquire = foreground_video_acquire, .video_exchange = foreground_video_exchange,
+    .cooperate = foreground_cooperate,
 };
 
 

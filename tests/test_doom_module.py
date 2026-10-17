@@ -87,6 +87,8 @@ class DoomModuleTest(unittest.TestCase):
         _, count, directory = struct.unpack_from("<4sII", data)
         has_effects = any(data[directory+i*16+8:directory+i*16+10] == b"DS" for i in range(count))
         self.run_module(path, "game" if has_effects else "no-samples")
+        if has_effects:
+            self.run_module(path, "exchange")
         entries = []
         for i in range(count):
             entry = data[directory + i * 16:directory + (i + 1) * 16]

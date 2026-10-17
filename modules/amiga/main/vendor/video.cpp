@@ -1,11 +1,5 @@
-/* Copper + Denise (perimetro Fase 0) -> dump PPM dell'ultimo frame.
- * Semplificazioni dichiarate (da rimuovere in fasi successive):
- *   - Copper eseguito con granularita di linea (WAIT valutato solo in verticale;
- *     la posizione orizzontale del WAIT è ignorata)
- *   - Fetch bitplane standard lores 320px (DDFSTRT/STOP non interpretati:
- *     assunta finestra standard 0x38/0xD0 come quella del KS)
- *   - Niente sprite, niente HAM, niente dual playfield, niente hires
- * Sufficiente e corretto per la schermata insert-disk del KS 1.3.
+/* OCS scanline renderer. Copper waits are evaluated vertically; horizontal
+ * Copper timing, HAM, dual playfield and interlace are not modeled.
  */
 #include "a500.h"
 #include <string.h>
@@ -36,8 +30,9 @@ bool denise_draw = true;
 struct cached_row {
     bool valid;
     uint16_t kind, mode, scroll, bg, planes, bytes;
+    int16_t fetch_left, window_left, window_right;
     uint16_t palette[64], sprites[48];
-    uint8_t data[6][80];
+    uint8_t data[6][100];
 };
 static cached_row *row_cache;
 void video_cache_invalidate(void)
@@ -301,8 +296,9 @@ static void sprite_overlay(uint16_t *row, int lores_narrow)
 }
 
 static bool row_changed(unsigned kind, unsigned mode, unsigned scroll,
-    unsigned bg, unsigned planes, unsigned bytes, const uint8_t data[6][80],
-    const uint16_t *palette, unsigned colors, bool sprites)
+    unsigned bg, unsigned planes, unsigned bytes, const uint8_t data[6][100],
+    const uint16_t *palette, unsigned colors, bool sprites,
+    int fetch_left = 0, int window_left = 0, int window_right = 0)
 {
     if (!row_cache) return true;
     cached_row *cache = &row_cache[vpos];
@@ -316,6 +312,8 @@ static bool row_changed(unsigned kind, unsigned mode, unsigned scroll,
     }
     bool same = cache->valid && cache->kind == kind && cache->mode == mode &&
         cache->scroll == scroll && cache->bg == bg && cache->planes == planes && cache->bytes == bytes &&
+        cache->fetch_left == fetch_left && cache->window_left == window_left &&
+        cache->window_right == window_right &&
         !memcmp(cache->sprites, sprite_values, sizeof(sprite_values)) &&
         (!colors || !memcmp(cache->palette, palette, colors * sizeof(*palette)));
     if (same) for (unsigned p = 0; p < planes; ++p)
@@ -323,12 +321,26 @@ static bool row_changed(unsigned kind, unsigned mode, unsigned scroll,
     if (same) return false;
     cache->valid = true; cache->kind = kind; cache->mode = mode; cache->scroll = scroll;
     cache->bg = bg; cache->planes = planes; cache->bytes = bytes;
+    cache->fetch_left = fetch_left; cache->window_left = window_left; cache->window_right = window_right;
     memcpy(cache->sprites, sprite_values, sizeof(sprite_values));
     if (colors) memcpy(cache->palette, palette, colors * sizeof(*palette));
     for (unsigned p = 0; p < planes; ++p) memcpy(cache->data[p], data[p], bytes);
     return true;
 }
 
+static unsigned bitplane_fetch_bytes(bool hires)
+{
+    unsigned mask = hires ? 0xfc : 0xf8;
+    unsigned start = custom_get(0x092) & mask, stop = custom_get(0x094) & mask;
+    if (start < 0x18) start = 0x18;
+    if (stop > 0xd8) stop = 0xd8;
+    if (start > stop) return 0;
+    // DMA finishes whole eight-clock blocks: two words per plane in hires,
+    // one in lores. A stop halfway through a hires block still fetches both.
+    unsigned words = ((stop - start + 7) / 8 + 1) * (hires ? 2 : 1);
+    if (hires && stop == 0xd8) --words;
+    return words * 2;
+}
 
 void denise_render_line(void)
 {
@@ -345,9 +357,10 @@ void denise_render_line(void)
             int planes = (con >> 12) & 7;
             bool hires = con & 0x8000;
             if (hires && planes > 4) planes = 4;
-            if (vpos >= start && vpos < stop && planes <= 6)
+            unsigned bytes = bitplane_fetch_bytes(hires);
+            if (vpos >= start && vpos < stop && planes <= 6 && bytes)
                 for (int p = 0; p < planes; ++p)
-                    bpl_pt[p] = (bpl_pt[p] & 0x7ffff) + (hires ? 80 : 40) +
+                    bpl_pt[p] = (bpl_pt[p] & 0x7ffff) + bytes +
                         (uint32_t)(int16_t)custom_get((p & 1) ? 0x10a : 0x108);
         }
         return;
@@ -392,10 +405,17 @@ void denise_render_line(void)
     if (hires && nplanes > 4) nplanes = 4;    /* hires: max 4 bitplane */
     if (nplanes > 6) { BG_FLUSH(); return; }
 
-    int bytes_per_row = hires ? 80 : 40;      /* word DMA per riga di bitplane */
+    int bytes_per_row = bitplane_fetch_bytes(hires);
+    if (!bytes_per_row) { BG_FLUSH(); return; }
     int pixels        = hires ? 640 : 320;
+    int scale = hires ? 2 : 1;
+    int fetch_start = custom_get(0x092) & (hires ? 0xfc : 0xf8);
+    if (fetch_start < 0x18) fetch_start = 0x18;
+    int fetch_left = (fetch_start * 2 + (hires ? 9 : 17) - 0x81) * scale;
+    int window_left = ((diwstrt & 0xff) - 0x81) * scale;
+    int window_right = ((diwstop & 0xff) + 256 - 0x81) * scale;
 
-    uint8_t line[6][80];
+    uint8_t line[6][100];
     for (int p = 0; p < nplanes; p++) {
         uint32_t pt = bpl_pt[p] & 0x7FFFF;
         /* lettura a BLOCCO invece che byte-per-byte: la PSRAM e' molto piu'
@@ -424,13 +444,14 @@ void denise_render_line(void)
     uint16_t bplcon1 = custom_get(0x102);
     int scroll_pf1 = bplcon1 & 0x0F;
     int scroll_pf2 = (bplcon1 >> 4) & 0x0F;
-    if (!row_changed(2, hires, bplcon1, bg, nplanes, bytes_per_row, line, pal, ncol, true)) return;
+    if (!row_changed(2, hires, bplcon1, bg, nplanes, bytes_per_row, line, pal, ncol, true,
+        fetch_left, window_left, window_right)) return;
 
 #if defined(SOLAR_OS_AMIGA)
-    /* Emit native guest pixels: 320 in lores, 640 in hires. The SolarOS
-       viewport centers or crops them without doubling or decimation. */
+    /* Emit 320 lores or 640 hires pixels in the fixed PAL viewport. */
     int outpx = hires ? 640 : 320;
-    if (!bplcon1) {
+    if (!bplcon1 && fetch_left == 0 && window_left <= 0 && window_right >= outpx &&
+        bytes_per_row >= outpx / 8) {
         // Expand four bits into byte lanes, combining four pixels per word.
         // This avoids a plane loop and variable bit extraction per pixel.
         static const uint32_t spread[16] = {
@@ -439,7 +460,7 @@ void denise_render_line(void)
             0x01000000,0x01000001,0x01000100,0x01000101,
             0x01010000,0x01010001,0x01010100,0x01010101,
         };
-        for (int b = 0; b < bytes_per_row; ++b) {
+        for (int b = 0; b < outpx / 8; ++b) {
             uint32_t high = 0, low = 0;
             for (int p = 0; p < nplanes; ++p) {
                 unsigned value = line[p][b];
@@ -451,11 +472,12 @@ void denise_render_line(void)
             }
         }
     } else for (int x = 0; x < outpx; x++) {
+        if (x < window_left || x >= window_right) { row[x] = bg; continue; }
         int idx = 0;
         for (int p = 0; p < nplanes; p++) {
             int sc = (p & 1) ? scroll_pf2 : scroll_pf1;
-            int sx = x - sc;
-            if (sx < 0) continue;
+            int sx = x - fetch_left - sc * scale;
+            if (sx < 0 || sx >= bytes_per_row * 8) continue;
             idx |= ((line[p][sx >> 3] >> (7 - (sx & 7))) & 1) << p;
         }
 #ifdef SOLAR_OS_AMIGA

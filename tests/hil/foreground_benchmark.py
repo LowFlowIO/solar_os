@@ -90,6 +90,17 @@ def main():
             out = command('cat /sdcard/.fgbench-result.txt')
             match = re.search(r'FGBENCH1\s*\n.*?\bEND\b', out, re.S)
             if match:
+                rows = {parts[0]: [int(value) for value in parts[1:]]
+                        for line in match[0].splitlines()
+                        if len(parts := line.split()) == 4 and parts[0] != 'presented'}
+                assert rows['kernel'][0] == 500000 and rows['kernel'][2] == 1797929924
+                assert rows['dispatch'][0] == 50000 and rows['dispatch'][2] == 1903286409
+                for name, checksum in (('ram8k', 1898964316), ('ram32k', 2978946024), ('ram128k', 1653526954)):
+                    assert rows[name][0] == 50000 and rows[name][2] == checksum, (name, rows[name])
+                for name in ('burst', 'paced', 'audio', 'exchange_burst', 'exchange_paced', 'exchange_audio'):
+                    if name in rows:
+                        assert rows[name][0] == 60, (name, rows[name])
+                assert 'burst' in rows and 'paced' in rows
                 args.output.write_text(match[0] + '\n')
                 break
         else:
