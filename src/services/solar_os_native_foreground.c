@@ -33,6 +33,7 @@
 
 #define FOREGROUND_FILE_MAX (4U * 1024U * 1024U)
 #define FOREGROUND_STOP_WAIT_US (5000000ULL)
+#define FOREGROUND_COOPERATE_INTERVAL_US (50000ULL)
 
 typedef struct foreground_slot foreground_slot_t;
 
@@ -42,9 +43,12 @@ typedef struct {
     solar_os_gfx_t *gfx;
     bool keyboard_captured;
     QueueHandle_t keys;
+    QueueHandle_t pointers;
+    atomic_bool pointer_reset;
     atomic_bool done, input_reset, stop_requested, redraw_requested;
     atomic_bool resumable, suspend_requested, suspended;
     uint64_t stop_deadline_us;
+    uint64_t last_cooperate_us;
     bool worker_started;
     solar_os_frame_presenter_t *presenter;
     uint16_t palette[256];
@@ -135,7 +139,16 @@ static void foreground_sleep_ms(uint32_t ms)
     if (foreground_caller()) {
         if (ms > 1000U) ms = 1000U;
         vTaskDelay(pdMS_TO_TICKS(ms) ? pdMS_TO_TICKS(ms) : 1U);
+        foreground_current()->last_cooperate_us = foreground_time_us();
     }
+}
+
+static void foreground_cooperate(void)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller()) return;
+    if (foreground_time_us() - state->last_cooperate_us >= FOREGROUND_COOPERATE_INTERVAL_US)
+        foreground_sleep_ms(1);
 }
 
 static void foreground_restart(void) { if (foreground_caller()) esp_restart(); }
@@ -283,6 +296,51 @@ static int foreground_rtc_read(uint8_t registers[5])
     return SOLAR_OS_NATIVE_OK;
 }
 
+static int foreground_calendar_read(solar_os_native_foreground_calendar_v1_t *calendar)
+{
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!calendar) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    time_t now = time(NULL);
+    struct tm local;
+    if (now <= 0 || !localtime_r(&now, &local)) return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    *calendar = (solar_os_native_foreground_calendar_v1_t){
+        .year = local.tm_year + 1900, .month = local.tm_mon + 1,
+        .day = local.tm_mday, .weekday = local.tm_wday,
+        .hour = local.tm_hour, .minute = local.tm_min, .second = local.tm_sec,
+    };
+    return SOLAR_OS_NATIVE_OK;
+}
+
+static int foreground_read_pointer(solar_os_native_foreground_pointer_v1_t *pointer, bool *available)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller()) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    if (!pointer || !available) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    *available = false;
+    if (!state->pointers) return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    if (atomic_exchange(&state->pointer_reset, false)) {
+        memset(pointer, 0, sizeof(*pointer));
+        pointer->reset = true;
+        *available = true;
+    } else *available = xQueueReceive(state->pointers, pointer, 0) == pdTRUE;
+    return SOLAR_OS_NATIVE_OK;
+}
+
+static void foreground_queue_pointer(foreground_state_t *state, const solar_os_input_pointer_event_t *event)
+{
+    if (!state->pointers || atomic_load(&state->done) ||
+        atomic_load(&state->suspend_requested)) return;
+    solar_os_native_foreground_pointer_v1_t pointer = {
+        .x = event->x, .y = event->y, .delta_x = event->delta_x, .delta_y = event->delta_y,
+        .source = event->source, .pointer_id = event->pointer_id, .buttons = event->buttons,
+        .mode = (uint8_t)event->mode, .action = (uint8_t)event->action,
+    };
+    if (xQueueSend(state->pointers, &pointer, 0) != pdTRUE) {
+        xQueueReset(state->pointers);
+        atomic_store(&state->pointer_reset, true);
+    }
+}
+
 static uint8_t foreground_buttons_source(void)
 {
     if (!foreground_caller()) return 0U;
@@ -393,6 +451,20 @@ static int foreground_present(const uint8_t *pixels, size_t length)
     if (!pixels || length != state->frame_size) return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
     return solar_os_frame_presenter_submit(state->presenter, pixels, length) ?
         SOLAR_OS_NATIVE_OK : SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+}
+
+static int foreground_video_acquire(uint8_t **pixels, size_t *length)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller() || !state->presenter) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    return foreground_result(solar_os_frame_presenter_acquire(state->presenter, pixels, length));
+}
+
+static int foreground_video_exchange(uint8_t **pixels)
+{
+    foreground_state_t *state = foreground_current();
+    if (!foreground_caller() || !state->presenter) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+    return foreground_result(solar_os_frame_presenter_exchange(state->presenter, pixels));
 }
 
 static int foreground_read_key(solar_os_native_foreground_key_v1_t *key, bool *available)
@@ -623,6 +695,9 @@ static const solar_os_native_foreground_api_v1_t foreground_api = {
     .disk_open = foreground_disk_open, .disk_read = foreground_disk_read,
     .disk_write = foreground_disk_write, .disk_sync = foreground_disk_sync,
     .disk_close = foreground_disk_close,
+    .read_pointer = foreground_read_pointer, .calendar_read = foreground_calendar_read,
+    .video_acquire = foreground_video_acquire, .video_exchange = foreground_video_exchange,
+    .cooperate = foreground_cooperate,
 };
 
 
@@ -720,6 +795,7 @@ static esp_err_t foreground_start(solar_os_context_t *ctx)
     atomic_init(&state->done, true);
     atomic_init(&state->worker, NULL);
     atomic_init(&state->input_reset, false);
+    atomic_init(&state->pointer_reset, false);
     atomic_init(&state->stop_requested, false);
     atomic_init(&state->redraw_requested, false);
     atomic_init(&state->resumable,
@@ -740,7 +816,12 @@ static esp_err_t foreground_start(solar_os_context_t *ctx)
     atomic_store(&state->done, false);
     state->exit_code = 1;
     state->keys = xQueueCreate(64U, sizeof(solar_os_native_foreground_key_v1_t));
-    if (!state->keys) {
+    if (state->slot->manifest.flags & SOLAR_OS_NATIVE_APP_POINTER_EVENTS)
+        state->pointers = xQueueCreate(32U, sizeof(solar_os_native_foreground_pointer_v1_t));
+    if (!state->keys || ((state->slot->manifest.flags & SOLAR_OS_NATIVE_APP_POINTER_EVENTS) && !state->pointers)) {
+        if (state->keys) vQueueDelete(state->keys);
+        if (state->pointers) vQueueDelete(state->pointers);
+        state->keys = state->pointers = NULL;
         atomic_store(&state->done, true);
         atomic_store(&((foreground_slot_t *)state->slot)->active, false);
         return ESP_ERR_NO_MEM;
@@ -751,6 +832,8 @@ static esp_err_t foreground_start(solar_os_context_t *ctx)
         SOLAR_OS_TASK_ROLE_FOREGROUND) != pdPASS) {
         atomic_store(&state->done, true);
         vQueueDelete(state->keys); state->keys = NULL;
+        if (state->pointers) vQueueDelete(state->pointers);
+        state->pointers = NULL;
         solar_os_context_set_streaming_graphics_active(ctx, false);
         atomic_store(&((foreground_slot_t *)state->slot)->active, false);
         return ESP_ERR_NO_MEM;
@@ -787,6 +870,8 @@ static void foreground_stop(solar_os_context_t *ctx)
     solar_os_context_set_streaming_graphics_active(ctx, false);
     if (state->keys) vQueueDelete(state->keys);
     state->keys = NULL;
+    if (state->pointers) vQueueDelete(state->pointers);
+    state->pointers = NULL;
     atomic_store(&((foreground_slot_t *)state->slot)->active, false);
 }
 
@@ -809,6 +894,8 @@ static void foreground_suspend(solar_os_context_t *ctx)
     state->keyboard_captured = false;
     xQueueReset(state->keys);
     atomic_store(&state->input_reset, true);
+    if (state->pointers) xQueueReset(state->pointers);
+    atomic_store(&state->pointer_reset, true);
     solar_os_context_set_streaming_graphics_active(ctx, false);
 }
 
@@ -822,6 +909,8 @@ static void foreground_resume(solar_os_context_t *ctx)
     state->gfx = ctx->gfx;
     xQueueReset(state->keys);
     atomic_store(&state->input_reset, true);
+    if (state->pointers) xQueueReset(state->pointers);
+    atomic_store(&state->pointer_reset, true);
     solar_os_context_set_streaming_graphics_active(ctx, true);
     atomic_store(&state->suspend_requested, false);
     const uint64_t deadline = foreground_time_us() + FOREGROUND_STOP_WAIT_US;
@@ -886,6 +975,11 @@ static bool foreground_event(solar_os_context_t *ctx, const solar_os_event_t *ev
 {
     foreground_state_t *state = foreground_context_state(ctx);
     if (!state) return false;
+    if (event->type == SOLAR_OS_EVENT_POINTER) {
+        if (!state->pointers) return false;
+        foreground_queue_pointer(state, &event->data.pointer);
+        return true;
+    }
     if (event->type == SOLAR_OS_EVENT_RESUME) {
         /* An overlay can hide frames that the guest considers unchanged. */
         if (!atomic_load(&state->done)) atomic_store(&state->redraw_requested, true);
@@ -941,6 +1035,7 @@ static esp_err_t foreground_prepare_slot(const char *path,
         .name = slot->manifest.id, .summary = slot->manifest.summary,
         .app_class = (solar_os_app_class_t)manifest.app_class,
         .flags = SOLAR_OS_APP_FLAG_KEY_EVENTS |
+            ((manifest.flags & SOLAR_OS_NATIVE_APP_POINTER_EVENTS) ? SOLAR_OS_APP_FLAG_POINTER_EVENTS : 0U) |
             ((manifest.flags & SOLAR_OS_NATIVE_APP_RESUMABLE) ? SOLAR_OS_APP_FLAG_RESUMABLE : 0U),
         .start = foreground_start, .stop = foreground_stop, .suspend = foreground_suspend,
         .resume = foreground_resume, .event = foreground_event,

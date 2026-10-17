@@ -24,6 +24,7 @@ typedef int BaseType_t;
 
 static size_t display_width, display_height;
 static uint32_t display_formats;
+static bool fail_allocation;
 static solar_os_display_raster_t captured;
 
 size_t solar_os_gfx_width(const solar_os_gfx_t *gfx)
@@ -58,7 +59,7 @@ esp_err_t solar_os_gfx_present_frame(solar_os_gfx_t *gfx, const solar_os_display
 }
 
 static void *solar_os_memory_alloc(size_t size, int policy, const char *owner)
-{ (void)policy; (void)owner; assert(size); return malloc(size); }
+{ (void)policy; (void)owner; assert(size); return fail_allocation ? NULL : malloc(size); }
 static void *solar_os_memory_calloc(size_t count, size_t size, int policy, const char *owner)
 { (void)policy; (void)owner; return calloc(count, size); }
 static void *solar_os_memory_realloc(void *ptr, size_t size, int policy, const char *owner)
@@ -169,6 +170,59 @@ int main(void)
 
     config.width = 320; config.height = 240;
     assert(solar_os_frame_presenter_init(&p, &config) == ESP_OK);
+    uint8_t *writing = (void *)1;
+    size_t bytes = 1;
+    fail_allocation = true;
+    assert(solar_os_frame_presenter_acquire(p, &writing, &bytes) == ESP_ERR_NO_MEM);
+    assert(!writing && !bytes);
+    fail_allocation = false;
+    uint8_t *legacy = malloc(p->source_size);
+    memset(legacy, 42, p->source_size);
+    assert(solar_os_frame_presenter_submit(p, legacy, p->source_size));
+    legacy[0] = 9;
+    assert(p->queued[0] == 42); /* Copying API keeps caller ownership. */
+    assert(solar_os_frame_presenter_acquire(p, &writing, &bytes) == ESP_OK);
+    assert(bytes == p->source_size && writing != p->presenting && writing != p->queued);
+    assert(!solar_os_frame_presenter_submit(p, legacy, p->source_size));
+    uint8_t *duplicate = NULL;
+    size_t duplicate_size = 0;
+    assert(solar_os_frame_presenter_acquire(p, &duplicate, &duplicate_size) == ESP_ERR_INVALID_STATE);
+    assert(solar_os_frame_presenter_exchange(p, &legacy) == ESP_ERR_INVALID_STATE);
+    free(legacy);
+    const uint8_t *completed = NULL;
+    unsigned previous_value = 0;
+    for (unsigned i = 1; i <= 300; ++i) {
+        memset(writing, i, bytes);
+        if (completed) {
+            assert(completed != writing);
+            for (size_t j = 0; j < bytes; ++j) assert(completed[j] == (uint8_t)previous_value);
+        }
+        completed = writing;
+        bool replaced = p->queued_ready;
+        unsigned replacements = p->stats.replaced_frames;
+        assert(solar_os_frame_presenter_exchange(p, &writing) == ESP_OK);
+        assert(p->queued == completed && p->queued_ready);
+        assert(writing != p->queued && writing != p->presenting);
+        assert(p->stats.replaced_frames == replacements + replaced);
+        previous_value = i;
+        if (i % 3) {
+            /* Display worker consumes the queued frame between submissions. */
+            uint8_t *old = p->presenting;
+            p->presenting = p->queued; p->queued = old;
+            p->queued_ready = false; p->presenting_valid = true;
+            assert(frame_present(p) == ESP_OK);
+        }
+        if (!(i % 5)) assert(solar_os_frame_presenter_redraw(p));
+        if (!(i % 7)) {
+            solar_os_frame_presenter_suspend(p);
+            assert(solar_os_frame_presenter_exchange(p, &writing) == ESP_ERR_INVALID_STATE);
+            assert(solar_os_frame_presenter_resume(p) == ESP_OK);
+            assert(p->writing == writing);
+        }
+    }
+    p->stop_requested = true;
+    assert(solar_os_frame_presenter_exchange(p, &writing) == ESP_ERR_INVALID_STATE);
+    p->stop_requested = false;
     solar_os_frame_presenter_suspend(p);
     display_width = 168; display_height = 384;
     assert(solar_os_frame_presenter_resume(p) == ESP_OK);

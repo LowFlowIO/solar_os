@@ -11,7 +11,8 @@ agent_reference_sections = true
 
 Native foreground apps are trusted ESP32-S3 modules. They use the same sessions,
 display ownership, keyboard shortcuts and cold-state lifecycle as built-in apps.
-Emulators such as [Apple II Plus](app.apple2.md) and [Game Boy](app.gameboy.md)
+Emulators such as [Apple II Plus](app.apple2.md), [Game Boy](app.gameboy.md)
+and [amiga](app.amiga.md)
 are foreground apps. Their CPU cores and guest state belong to their modules.
 
 ## Quick reference
@@ -35,6 +36,11 @@ Run `ID [arguments]` from a display shell, or use
 also recognizes foreground metadata. The filename does not determine the
 lifecycle of an app that declares metadata. Lifecycle-1 apps remain synchronous
 commands; their code is unloaded when `main` returns.
+
+Relative media paths use the launching shell's current directory, including
+when `session create` launches an app on a display from a port shell. Apps
+that declare file extensions also receive the shell's normal file and directory
+Tab completion for their arguments.
 
 Installed foreground apps appear in app discovery. An installed foreground app
 with a built-in app's ID takes precedence while installed. Each app can own one
@@ -112,6 +118,21 @@ instead of assuming a board's resolution. Request a service table large enough
 to include this method. Fixed-resolution emulators can still submit their own
 frame size and use the presenter's aspect-preserving fit.
 
+`present` copies a submitted frame. For rendering into host-owned buffers, check
+for `video_acquire` and `video_exchange`. Acquire once after opening video, fill
+the returned buffer, then exchange it to queue the frame without a pixel copy.
+Exchange returns the next writable buffer, whose previous contents are
+unspecified. Each submitted buffer remains readable until the next exchange;
+do not write to it. Never free these buffers or mix this path with `present`.
+The writing buffer survives suspension, and the host restores the latest frame
+on resume. All host-owned buffers are released when the worker exits.
+
+Use `cooperate` at regular CPU-work checkpoints. The host coalesces these
+requests while allowing periodic idle-task work. Use `sleep_ms` for timed waits,
+and continue polling stop and suspend requests. The
+`solar_os_native_foreground_cooperate` helper falls back to a short sleep on
+hosts without this method.
+
 The appended `disk_open`, `disk_read`, `disk_write`, `disk_sync`, and
 `disk_close` methods provide exclusive access to fixed-size raw disk images.
 Request a table through `disk_close` before using them. `disk_open` returns an
@@ -119,6 +140,17 @@ opaque handle and byte size; reads and writes take byte offsets and at most
 64 KiB per call. Writes sync before returning. Claims survive suspension, and
 the host closes remaining handles before unloading the worker. Unmount a host
 FAT image before opening it as a guest disk.
+
+Apps that set `SOLAR_OS_NATIVE_APP_POINTER_EVENTS` receive display-routed
+pointer events through the appended `read_pointer` method. Absolute positions
+use the rotated host surface; relative deltas are unscaled. Buttons are a
+held-state mask (bit 0 left, bit 1 right). Each opting-in app has a bounded
+pointer queue. Queue overflow and session switches produce a reset event;
+the module must release buttons and clear position anchors on reset.
+
+The appended `calendar_read` method returns the host local calendar date and
+time. It does not provide a way to set the host clock. Request a service table
+large enough to include each method before using it.
 
 Packed INDEX2 frames use four shades of the current display theme. The appended
 synth methods accept a bounded block size and required sample rate. Callbacks

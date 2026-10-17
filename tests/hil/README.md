@@ -4,6 +4,30 @@ These tests use live hardware. Each harness describes the resources and device
 state it changes. Run with permission to use those resources. RTSP tests occupy
 the publisher/viewer and receiver slots.
 
+## Foreground runtime benchmark
+
+```sh
+python3 tests/hil/foreground_benchmark.py --host DEVICE_ADDRESS \
+  --output /tmp/foreground-timing.txt
+```
+
+Requires the ESP32-S3 PlatformIO compiler, Telnet, SD storage and native
+foreground support. It builds a finite probe, temporarily installs `fgbench`,
+uses display0 through normal session switching, and restores the FTP listener.
+The probe measures empty input and stop checks, small-loop arithmetic, a larger
+instruction working set with indirect calls, dependent PSRAM reads at three
+working-set sizes, and frame submission by copying
+or exchanging buffers, with and without silent audio
+output. Frame generation is outside the submission work timer. No guest assets are
+needed. An existing `fgbench.elf` is never overwritten.
+
+Timing rows contain a name, operation count, accumulated work microseconds and
+wall microseconds. `presented` rows contain the displayed frame count, presenter
+microseconds and replaced frame count; the last `kernel`, `dispatch`, and `ram*`
+values are checksums.
+Work measurements include preemption and are not exclusive CPU time. Compare
+the same probe, power profile and display settings across firmware builds.
+
 ## Native libraries
 
 `native_libraries.py` requires a signed maintainer catalog containing the

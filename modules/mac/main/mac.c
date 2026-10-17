@@ -122,6 +122,7 @@ void solar_os_mac_snapshot(void)
     solar_os_mac_memory->free(picture);
     solar_os_mac_report(result ? "mac: snapshot save failed" : "mac: snapshot saved beside ROM (.pbm)");
 }
+static bool exchanged_frames;
 static void run_guest(uint16_t width, uint16_t height)
 {
     uint64_t now = solar_os_mac_app->time_us(), next_frame = now, next_mouse = now;
@@ -161,11 +162,13 @@ static void run_guest(uint16_t width, uint16_t height)
         now = solar_os_mac_app->time_us();
         if (now >= next_frame) {
             if (solar_os_mac_render(pixels, width, height) &&
-                solar_os_mac_app->present(pixels, (size_t)width * height))
+                (exchanged_frames ? solar_os_mac_app->video_exchange(&pixels) :
+                 solar_os_mac_app->present(pixels, (size_t)width * height)))
                 solar_os_mac_fail("display submission failed");
             next_frame = now + 40000U;
         }
-        solar_os_mac_app->sleep_ms(1);
+        if (solar_os_mac_paused) solar_os_mac_app->sleep_ms(1);
+        else solar_os_native_foreground_cooperate(solar_os_mac_app);
     }
 }
 
@@ -174,7 +177,8 @@ int main(int argc, char **argv)
     solar_os_mac_host = solar_os_native_host_v1();
     if (!solar_os_mac_host || solar_os_mac_host->abi_version != 1U ||
         solar_os_mac_host->struct_size < sizeof(*solar_os_mac_host) || !solar_os_mac_host->get_service) return 1;
-    solar_os_mac_app = solar_os_mac_host->get_service(SOLAR_OS_NATIVE_FOREGROUND_SERVICE, 1, sizeof(*solar_os_mac_app));
+    solar_os_mac_app = solar_os_mac_host->get_service(SOLAR_OS_NATIVE_FOREGROUND_SERVICE, 1,
+        offsetof(solar_os_native_foreground_api_v1_t, disk_close) + sizeof(solar_os_mac_app->disk_close));
     solar_os_mac_memory = solar_os_mac_host->get_service(SOLAR_OS_NATIVE_MEMORY_SERVICE, 1,
         offsetof(solar_os_native_memory_api_v1_t, alloc_internal));
     if (!solar_os_mac_app || !solar_os_mac_memory) {
@@ -189,6 +193,7 @@ int main(int argc, char **argv)
     }
     solar_os_mac_failure = NULL;
     solar_os_mac_ram = solar_os_mac_rom = pixels = NULL;
+    exchanged_frames = false;
     solar_os_mac_paused = false;
     solar_os_mac_pram_dirty = false;
     pram_path[0] = 0;
@@ -223,10 +228,17 @@ int main(int argc, char **argv)
             solar_os_mac_fail("cannot claim SCSI disk image; check its size, writable storage and other mounts");
         if (solar_os_mac_floppy_open(argc == 4 ? disk_path : NULL))
             solar_os_mac_fail("floppy needs a Mac Plus v3 ROM and a writable raw 400/800 KiB image");
-        pixels = solar_os_mac_memory->alloc((size_t)width * height);
-        if (!pixels) solar_os_mac_fail("not enough PSRAM for display frame");
         uint16_t palette[256] = { [0] = 0xffff, [1] = 0x0000 };
         if (solar_os_mac_app->video_open_ex(width, height, palette, 25, 0)) solar_os_mac_fail("display setup failed");
+        exchanged_frames = solar_os_native_foreground_has_exchange(solar_os_mac_app);
+        if (exchanged_frames) {
+            size_t bytes;
+            if (solar_os_mac_app->video_acquire(&pixels, &bytes) || bytes != (size_t)width * height)
+                solar_os_mac_fail("not enough PSRAM for display frame");
+        } else {
+            pixels = solar_os_mac_memory->alloc((size_t)width * height);
+            if (!pixels) solar_os_mac_fail("not enough PSRAM for display frame");
+        }
         if (solar_os_mac_app->enable_suspend()) solar_os_mac_fail("foreground switching unavailable");
         solar_os_mac_report(diagnostic ? "mac: diagnostic 68000 guest running" : "mac: Mac Plus running; F2 snapshot; F8 mouse mode; F10 pause; Ctrl+] exit");
         run_guest(width, height);
@@ -236,7 +248,7 @@ int main(int argc, char **argv)
     if (solar_os_mac_disk_close()) { solar_os_mac_report("mac: disk close or sync failed"); result = 1; }
     if (save_pram()) { solar_os_mac_report("mac: PRAM save failed"); result = 1; }
     if (solar_os_mac_failure) { solar_os_mac_report("mac: guest stopped"); solar_os_mac_report(solar_os_mac_failure); }
-    if (pixels) solar_os_mac_memory->free(pixels);
+    if (pixels && !exchanged_frames) solar_os_mac_memory->free(pixels);
     if (solar_os_mac_ram) solar_os_mac_memory->free(solar_os_mac_ram);
     if (solar_os_mac_rom) solar_os_mac_memory->free(solar_os_mac_rom);
     pixels = solar_os_mac_ram = solar_os_mac_rom = NULL;
