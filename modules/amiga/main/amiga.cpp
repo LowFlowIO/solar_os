@@ -25,14 +25,15 @@ static bool keyboard_mode;
 static uint16_t fit_x[1024], fit_width, fit_height, fit_source_width, fit_source_height;
 static int fit_left, fit_top, fit_start;
 static bool canvas_started;
+static bool canvas_rows[1024];
 static uint64_t pulse_until[7];
 static char snapshot_path[256];
 static int16_t *ring;
 static std::atomic<uint32_t> ring_read, ring_write, audio_dropped, audio_underruns;
 static uint32_t audio_fraction, audio_step;
-static int32_t audio_level, audio_rate_integral;
+static int32_t audio_level, audio_clock;
 static uint64_t audio_observed_frames;
-static uint32_t audio_first_write;
+static uint32_t audio_first_write, audio_previous_write;
 static constexpr unsigned max_audio_hop = 1536;
 static int16_t audio_overlap[max_audio_hop * 2], audio_grain[max_audio_hop * 2];
 static unsigned audio_hop, audio_grain_offset, audio_grain_size;
@@ -47,15 +48,22 @@ static uint16_t width, height;
 static uint64_t guest_clock_us;
 static uint64_t started_at, measured_cpu, measured_video, measured_chips, measured_audio;
 static unsigned measured_frames;
+static uint32_t frame_max_us[2], frame_over_40ms[2], frame_over_80ms[2], frame_over_160ms[2];
 struct video_pacing {
     uint32_t cost[2] = {};
+    uint64_t last_draw = 0;
     unsigned interval = 2, remaining = 0;
-    bool begin(void) {
-        if (remaining) { --remaining; return false; }
+    bool begin(uint64_t now) {
+        // Keep an overloaded guest from postponing visible updates for eight
+        // slow frames. Schedule the next draw before its estimated cost would
+        // take the display gap beyond 100 ms.
+        bool due = last_draw && now - last_draw + cost[1] >= 100000;
+        if (remaining && !due) { --remaining; return false; }
         remaining = interval - 1;
         return true;
     }
-    void end(uint32_t elapsed, bool drawn) {
+    void end(uint32_t elapsed, bool drawn, uint64_t now) {
+        if (drawn) last_draw = now;
         uint32_t &average = cost[drawn];
         average = average ? (average * 3 + elapsed) / 4 : elapsed;
         if (!cost[0] || !cost[1]) return;
@@ -193,6 +201,7 @@ static bool prepare_audio_grain(uint32_t &read, uint32_t write)
 }
 static void render_audio(int16_t *out, size_t frames, uint32_t rate, void *)
 {
+    if (!frames) return;
     // This is a single-producer/single-consumer queue. Only its published
     // indices cross tasks; the emulator never waits on the audio callback.
     uint32_t read = ring_read.load(std::memory_order_relaxed);
@@ -206,11 +215,11 @@ static void render_audio(int16_t *out, size_t frames, uint32_t rate, void *)
     if (!audio_ready && write - read >= target) {
         audio_ready = true; audio_fraction = 0;
         uint64_t estimate = 65536;
-        if (audio_rate_integral) estimate = audio_rate_integral / 64;
+        if (audio_clock) estimate = audio_clock / 64;
         else if (audio_observed_frames)
             estimate = ((uint64_t)(write - audio_first_write) << 16) / audio_observed_frames;
         audio_step = estimate < 4096 ? 4096 : estimate > 131072 ? 131072 : estimate;
-        audio_rate_integral = audio_step * 64;
+        audio_clock = audio_step * 64;
         audio_level = target * 256;
         audio_hop = rate * 16U / 1000U;
         if (audio_hop < 128) audio_hop = 128;
@@ -220,15 +229,17 @@ static void render_audio(int16_t *out, size_t frames, uint32_t rate, void *)
         audio_start_fade = 32;
     }
     if (audio_ready) {
-        // Average away the guest's scanline/frame bursts. A slow clock servo
-        // corrects long-term drift without turning queue jitter into pitch
-        // modulation. The integral is Q16 samples/frame with six guard bits.
+        // Follow actual sample production when the guest workload changes.
+        // Queue level only corrects drift; relearning the clock from queue
+        // error alone is too slow and can cause repeated empty/refill cycles.
+        // The clock is Q16 source samples/output sample with six guard bits.
+        int64_t produced_clock = ((uint64_t)(write - audio_previous_write) << 22) / frames;
+        int64_t clock = audio_clock + (produced_clock - audio_clock) / 8;
+        audio_clock = clock < 4096 * 64 ? 4096 * 64 :
+            clock > 131072 * 64 ? 131072 * 64 : clock;
         audio_level += ((int32_t)(write - read) * 256 - audio_level) / 16;
         int error = (audio_level - (int)target * 256) / 256;
-        audio_rate_integral += error;
-        if (audio_rate_integral < 4096 * 64) audio_rate_integral = 4096 * 64;
-        if (audio_rate_integral > 131072 * 64) audio_rate_integral = 131072 * 64;
-        int desired = audio_rate_integral / 64 + error * 8;
+        int desired = audio_clock / 64 + error * 8;
         if (desired < 4096) desired = 4096;
         if (desired > 131072) desired = 131072;
         audio_step = desired;
@@ -259,6 +270,7 @@ static void render_audio(int16_t *out, size_t frames, uint32_t rate, void *)
     }
     ring_read.store(read, std::memory_order_release);
     audio_observed_frames += frames;
+    audio_previous_write = write;
 }
 static void reset_audio_queue(void)
 {
@@ -266,8 +278,8 @@ static void reset_audio_queue(void)
     audio_dropped = audio_underruns = 0;
     audio_ready = false; audio_fraction = audio_fade = audio_start_fade = 0;
     audio_last_left = audio_last_right = 0; audio_step = 65536;
-    audio_level = audio_rate_integral = 0;
-    audio_observed_frames = 0; audio_first_write = 0;
+    audio_level = audio_clock = 0;
+    audio_observed_frames = 0; audio_first_write = audio_previous_write = 0;
     audio_grain_offset = audio_grain_size = audio_hop = 0;
     audio_source = 0; audio_overlap_valid = false;
 }
@@ -302,8 +314,21 @@ static void fit_geometry(int count)
 static void begin_canvas(void)
 {
     if (canvas_started) return;
-    memcpy(pixels, frame, (size_t)width * height);
+    memset(canvas_rows, 0, height * sizeof(canvas_rows[0]));
     canvas_started = true;
+}
+static void finish_canvas(void)
+{
+    // Host writing buffers have unspecified contents. Preserve only rows
+    // the chipset cache skipped; rows just rendered need no frame copy.
+    for (unsigned y = 0; y < height; ++y) {
+        uint8_t *out = pixels + (size_t)y * width;
+        if (!canvas_rows[y]) memcpy(out, frame + (size_t)y * width, width);
+        else {
+            memset(out, 0, fit_left);
+            memset(out + fit_left + fit_width, 0, width - fit_left - fit_width);
+        }
+    }
 }
 static void render_line(int line, const uint16_t *row, int count)
 {
@@ -316,7 +341,10 @@ static void render_line(int line, const uint16_t *row, int count)
     begin_canvas();
     uint8_t *out = pixels + (size_t)(first + fit_top) * width + fit_left;
     for (unsigned x = 0; x < fit_width; ++x) out[x] = color_index(row[fit_x[x]]);
-    for (int y = first + 1; y < last; ++y) memcpy(out + (size_t)(y - first) * width, out, fit_width);
+    for (int y = first; y < last; ++y) {
+        canvas_rows[y + fit_top] = true;
+        if (y != first) memcpy(out + (size_t)(y - first) * width, out, fit_width);
+    }
 }
 static void put16(uint8_t *p, uint16_t value) { p[0] = value >> 8; p[1] = value; }
 static void put32(uint8_t *p, uint32_t value) { put16(p, value >> 16); put16(p + 2, value); }
@@ -426,7 +454,7 @@ static void snapshot(void)
     if (!snapshot_path[0]) return;
     // Capture timing and queue state before snapshot allocation/storage can
     // stall the producer. The snapshot itself is outside normal playback.
-    uint8_t perf[64] = {'A','M','G','P'};
+    uint8_t perf[96] = {'A','M','G','P'};
     put32(perf + 4, cur_frame); put64(perf + 8, app->time_us() - started_at);
     put32(perf + 16, measured_frames);
     put32(perf + 20, audio_dropped.load(std::memory_order_relaxed));
@@ -434,6 +462,12 @@ static void snapshot(void)
     put64(perf + 40, measured_chips); put64(perf + 48, measured_audio);
     put32(perf + 56, audio_underruns.load(std::memory_order_relaxed));
     put32(perf + 60, ring_write.load(std::memory_order_acquire) - ring_read.load(std::memory_order_acquire));
+    for (unsigned i = 0; i < 2; ++i) {
+        put32(perf + 64 + i * 4, frame_max_us[i]);
+        put32(perf + 72 + i * 4, frame_over_40ms[i]);
+        put32(perf + 80 + i * 4, frame_over_80ms[i]);
+        put32(perf + 88 + i * 4, frame_over_160ms[i]);
+    }
     char header[32] = "P6\n", *end = header + 3;
     auto decimal = [](char *out, unsigned value) {
         char digits[5]; unsigned n = 0;
@@ -655,7 +689,7 @@ static const char *run(int argc, char **argv)
                 frame_started = app->time_us();
                 ++cur_frame; input_frame_tick(); copper_vblank(); sprite_vblank();
                 if (!(cur_frame % 17)) ++measured_frames;
-                denise_draw = video_budget.begin();
+                denise_draw = video_budget.begin(frame_started);
                 if (denise_draw) {
                     canvas_started = false;
                 }
@@ -681,6 +715,7 @@ static const char *run(int argc, char **argv)
                 guest_clock_us += 20000;
                 line = 0; cia_tod_vsync(); intreq_set(5);
                 if (denise_draw && canvas_started) {
+                    finish_canvas();
                     if (exchanged_frames) {
                         frame = pixels;
                         if (app->video_exchange(&pixels)) return "amiga: display submission failed";
@@ -690,7 +725,12 @@ static const char *run(int argc, char **argv)
                     }
                 }
                 uint64_t now = app->time_us();
-                video_budget.end(now - frame_started, denise_draw);
+                uint32_t elapsed = now - frame_started;
+                if (elapsed > frame_max_us[denise_draw]) frame_max_us[denise_draw] = elapsed;
+                if (elapsed > 40000) ++frame_over_40ms[denise_draw];
+                if (elapsed > 80000) ++frame_over_80ms[denise_draw];
+                if (elapsed > 160000) ++frame_over_160ms[denise_draw];
+                video_budget.end(elapsed, denise_draw, now);
                 deadline += 20000;
                 if (deadline > now) app->sleep_ms((deadline - now) / 1000);
                 // Let a skipped frame recover time spent rendering the last
@@ -716,6 +756,10 @@ extern "C" int main(int argc, char **argv)
     display_frames = display_replaced = 0;
     guest_clock_us = 0;
     measured_cpu = measured_video = measured_chips = measured_audio = 0; measured_frames = 0;
+    memset(frame_max_us, 0, sizeof(frame_max_us));
+    memset(frame_over_40ms, 0, sizeof(frame_over_40ms));
+    memset(frame_over_80ms, 0, sizeof(frame_over_80ms));
+    memset(frame_over_160ms, 0, sizeof(frame_over_160ms));
     chip_ram = slow_ram = kick_rom = pixels = frame = nullptr; ring = nullptr;
     audio = paused = snapshot_requested = false; mouse_mode = false; keyboard_mode = true;
     fit_source_width = 0; canvas_started = false;

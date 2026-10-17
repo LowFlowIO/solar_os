@@ -108,7 +108,7 @@ static int read_file(const char *p, uint32_t off, void *out, size_t n, size_t *a
 }
 static int replace(const char *p, const void *data, size_t n)
 {
-    if (n == 64) { assert(!memcmp(data, "AMGP", 4)); return 0; }
+    if (n == 96) { assert(!memcmp(data, "AMGP", 4)); return 0; }
     if (n == 32) { assert(!memcmp(data, "AMGA", 4)); return 0; }
     assert(!strcmp(p, "/snapshot") || !strcmp(p, "/rom.ppm"));
     saved.assign((const uint8_t *)data, (const uint8_t *)data + n); ++snapshots; ++writes; return 0;
@@ -164,17 +164,31 @@ int main(void)
     // when CPU emulation alone is too expensive. Light workloads recover.
     video_pacing pacing;
     for (unsigned i = 0; i < 100; ++i) {
-        bool draw = pacing.begin(); pacing.end(draw ? 50000 : 10000, draw);
+        bool draw = pacing.begin(0); pacing.end(draw ? 50000 : 10000, draw, 0);
     }
     assert(pacing.interval == 4);
     for (unsigned i = 0; i < 100; ++i) {
-        bool draw = pacing.begin(); pacing.end(draw ? 50000 : 25000, draw);
+        bool draw = pacing.begin(0); pacing.end(draw ? 50000 : 25000, draw, 0);
     }
     assert(pacing.interval == 8);
     for (unsigned i = 0; i < 200; ++i) {
-        bool draw = pacing.begin(); pacing.end(draw ? 6000 : 5000, draw);
+        bool draw = pacing.begin(0); pacing.end(draw ? 6000 : 5000, draw, 0);
     }
     assert(pacing.interval == 2);
+    // When emulation itself exceeds the frame budget, skip rendering while
+    // keeping visible updates within 100 ms, rather than eight slow frames.
+    video_pacing overloaded;
+    uint64_t wall = 1, last_draw = 0;
+    for (unsigned i = 0; i < 200; ++i) {
+        bool draw = overloaded.begin(wall);
+        uint32_t elapsed = draw ? 50000 : 25000;
+        wall += elapsed;
+        overloaded.end(elapsed, draw, wall);
+        if (draw) {
+            if (last_draw) assert(wall - last_draw <= 100000);
+            last_draw = wall;
+        }
+    }
     foreground.abi_version = 1; foreground.struct_size = sizeof(foreground);
     foreground.time_us = now; foreground.sleep_ms = sleep_for; foreground.present = present_frame;
     foreground.read_key = read_key; foreground.file_size = size_file; foreground.read_file = read_file;
@@ -272,6 +286,23 @@ int main(void)
     assert(pixels[160 * width + 27] == 0xe0 && fit_start == 44 && fit_source_height == 256);
     render_line(43, row, 640); render_line(300, row, 640);
     assert(!pixels[0] && !pixels[319 * width + 479]);
+    // Recycled host buffers may contain arbitrary pixels. A partial redraw
+    // must retain untouched rows and clear margins without copying over the
+    // newly drawn rows, including vertical scaling that duplicates a row.
+    {
+        std::vector<uint8_t> previous_image(width * height, 0);
+        for (unsigned y = 0; y < height; ++y)
+            memset(previous_image.data() + y * width + fit_left, 0x55, fit_width);
+        frame = previous_image.data();
+        memset(pixels, 0xcd, width * height); canvas_started = false;
+        render_line(172, row, 640); finish_canvas();
+        for (unsigned y = 0; y < height; ++y) for (unsigned x = 0; x < width; ++x) {
+            uint8_t expected = x >= (unsigned)fit_left && x < fit_left + fit_width ?
+                (y == 160 || y == 161 ? 0xe0 : 0x55) : 0;
+            assert(pixels[y * width + x] == expected);
+        }
+        frame = nullptr;
+    }
     // Exercise the actual Copper and bitplane renderer, then a bounded MFM read
     // from an original synthetic ADF, including the highest valid track.
     memset(chip_ram, 0, CHIP_SIZE); custom_reset();
@@ -355,7 +386,51 @@ int main(void)
     custom_write(0x108, 8); custom_write(0x0e2, 0x2000);
     denise_render_line(); assert(bpl_pt[0] == 0x2000);
     denise_draw = false; denise_render_line(); assert(bpl_pt[0] == 0x2000);
-    denise_draw = true; denise_line_cb = render_line;
+    denise_draw = true;
+    // Compare byte-expanded shifted rows against individual planar pixels,
+    // including both scroll fields, clipping, EHB, and partial fetch windows.
+    for (bool hires : {false, true}) for (unsigned planes = 1; planes <= (hires ? 4U : 6U); ++planes) {
+        custom_write(0x100, (hires ? 0x8000 : 0) | (planes << 12) | 0x200);
+        custom_write(0x096, 0x20); // Keep sprites out of the planar comparison.
+        uint16_t colors[32];
+        for (unsigned c = 0; c < 32; ++c) {
+            colors[c] = (c * 199 + 47) & 0xfff;
+            custom_write(0x180 + 2 * c, colors[c]);
+        }
+        for (unsigned p = 0; p < planes; ++p)
+            for (unsigned b = 0; b < 100; ++b)
+                chip_ram[0x10000 + p * 0x1000 + b] = (b * 73 + p * 117 + (b >> 1)) & 255;
+        for (auto fetch : {std::pair<unsigned,unsigned>{0x18,0xd8}, {0x30,0xd0},
+                           {0x38,0xd0}, {0x3c,0xd0}, {0x48,0xc8}})
+            for (unsigned scroll : {0U, 1U, 7U, 15U}) for (bool clipped : {false, true}) {
+                custom_write(0x08e, clipped ? 0x2c91 : 0x2c81);
+                custom_write(0x090, clipped ? 0x2ca1 : 0x2cc1);
+                custom_write(0x092, fetch.first); custom_write(0x094, fetch.second);
+                custom_write(0x102, scroll | ((15 - scroll) << 4));
+                custom_write(0x108, 0); custom_write(0x10a, 0);
+                for (unsigned p = 0; p < planes; ++p) {
+                    custom_write(0x0e0 + 4 * p, 1);
+                    custom_write(0x0e2 + 4 * p, p * 0x1000);
+                }
+                vpos = 100; denise_render_line();
+                unsigned fetched = bpl_pt[0] - 0x10000;
+                int scale = hires ? 2 : 1, count = hires ? 640 : 320;
+                int fetch_left = ((fetch.first & (hires ? 0xfc : 0xf8)) * 2 + (hires ? 9 : 17) - 0x81) * scale;
+                assert(raster.size() == (unsigned)count);
+                for (int x = 0; x < count; ++x) {
+                    unsigned index = 0;
+                    for (unsigned p = 0; p < planes; ++p) {
+                        int sx = x - fetch_left - (int)((p & 1) ? 15 - scroll : scroll) * scale;
+                        if (sx >= 0 && sx < (int)fetched * 8)
+                            index |= ((chip_ram[0x10000 + p * 0x1000 + sx / 8] >> (7 - sx % 8)) & 1) << p;
+                    }
+                    uint16_t expected = index < 32 ? colors[index] : (colors[index & 31] & 0xeee) >> 1;
+                    if (clipped && (x < 16 * scale || x >= 288 * scale)) expected = colors[0];
+                    assert(raster[x] == expected);
+                }
+            }
+    }
+    denise_line_cb = render_line;
     // A late wait at line 255 must cross the vertical counter wrap before
     // testing the next wait. PAL screen data below row 255 must survive.
     put16(chip_ram + 0x1000, 0xffdf); put16(chip_ram + 0x1002, 0xfffe);
@@ -575,6 +650,38 @@ int main(void)
         assert(longest_gap < 8 && largest_jump < 4000);
         assert(!audio_dropped && !audio_underruns);
     }
+    // Scene changes vary the guest speed. Follow production quickly enough
+    // to avoid repeated empty/refill cycles while preserving the note pitch.
+    {
+        reset_audio_queue();
+        unsigned source = 0, next_frame = 0, zero_run = 0, longest_gap = 0;
+        unsigned count = 0, crossings = 0;
+        int previous = 0, largest_jump = 0;
+        for (unsigned ms = 0; ms < 60000; ++ms) {
+            unsigned frame_ms = ms % 12000 < 4000 ? 20 : ms % 12000 < 8000 ? 50 : 22;
+            if (ms >= next_frame) {
+                next_frame = ms + frame_ms;
+                for (unsigned n = 0; n < 320; ++n) {
+                    int16_t v = 12000 * std::sin(source++ * 6.283185307179586 * 440 / 16000);
+                    solar_os_amiga_audio_sample(v, -v);
+                }
+            }
+            if (ms % 16) continue;
+            int16_t samples[512]; render_audio(samples, 256, 16000, nullptr);
+            if (ms < 1000) continue;
+            for (unsigned n = 0; n < 256; ++n) {
+                int v = samples[n * 2]; assert(abs(v + samples[n * 2 + 1]) <= 1);
+                zero_run = v ? 0 : zero_run + 1;
+                if (zero_run > longest_gap) longest_gap = zero_run;
+                if (count && abs(v - previous) > largest_jump) largest_jump = abs(v - previous);
+                if (count && previous <= 0 && v > 0) ++crossings;
+                previous = v; ++count;
+            }
+        }
+        double hz = (double)crossings * 16000 / count;
+        assert(hz > 430 && hz < 450 && longest_gap < 8 && largest_jump < 4000);
+        assert(!audio_dropped && !audio_underruns);
+    }
     // A producer stall must rebuffer without learning the silent gap as a
     // slower clock, which otherwise causes prolonged detuning and overflow.
     reset_audio_queue();
@@ -582,7 +689,7 @@ int main(void)
     double last_crossing = -1;
     int previous = 0;
     for (unsigned ms = 0; ms < 8000; ++ms) {
-        if ((ms < 3000 || ms >= 3300) && !(ms % 22))
+        if ((ms < 3000 || ms >= 4000) && !(ms % 22))
             for (unsigned n = 0; n < 320; ++n) {
                 int16_t v = 12000 * std::sin(source++ * 6.283185307179586 * 440 / 16000);
                 solar_os_amiga_audio_sample(v, -v);

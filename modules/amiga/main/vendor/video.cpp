@@ -450,16 +450,16 @@ void denise_render_line(void)
 #if defined(SOLAR_OS_AMIGA)
     /* Emit 320 lores or 640 hires pixels in the fixed PAL viewport. */
     int outpx = hires ? 640 : 320;
+    static const uint32_t spread[16] = {
+        0x00000000,0x00000001,0x00000100,0x00000101,
+        0x00010000,0x00010001,0x00010100,0x00010101,
+        0x01000000,0x01000001,0x01000100,0x01000101,
+        0x01010000,0x01010001,0x01010100,0x01010101,
+    };
     if (!bplcon1 && fetch_left == 0 && window_left <= 0 && window_right >= outpx &&
         bytes_per_row >= outpx / 8) {
         // Expand four bits into byte lanes, combining four pixels per word.
         // This avoids a plane loop and variable bit extraction per pixel.
-        static const uint32_t spread[16] = {
-            0x00000000,0x00000001,0x00000100,0x00000101,
-            0x00010000,0x00010001,0x00010100,0x00010101,
-            0x01000000,0x01000001,0x01000100,0x01000101,
-            0x01010000,0x01010001,0x01010100,0x01010101,
-        };
         for (int b = 0; b < outpx / 8; ++b) {
             uint32_t high = 0, low = 0;
             for (int p = 0; p < nplanes; ++p) {
@@ -471,19 +471,32 @@ void denise_render_line(void)
                 row[b * 8 + bit + 4] = pal[(low >> (24 - bit * 8)) & 63];
             }
         }
-    } else for (int x = 0; x < outpx; x++) {
-        if (x < window_left || x >= window_right) { row[x] = bg; continue; }
-        int idx = 0;
-        for (int p = 0; p < nplanes; p++) {
-            int sc = (p & 1) ? scroll_pf2 : scroll_pf1;
-            int sx = x - fetch_left - sc * scale;
-            if (sx < 0 || sx >= bytes_per_row * 8) continue;
-            idx |= ((line[p][sx >> 3] >> (7 - (sx & 7))) & 1) << p;
+    } else {
+        // Align each plane once, then combine eight pixels per iteration.
+        // Nonstandard fetch windows and fine scrolling need the same byte
+        // expansion as a full row, rather than a plane loop for every pixel.
+        int byte_offset[6], shift[6];
+        for (int p = 0; p < nplanes; ++p) {
+            int origin = -fetch_left - ((p & 1) ? scroll_pf2 : scroll_pf1) * scale;
+            byte_offset[p] = origin >= 0 ? origin / 8 : (origin - 7) / 8;
+            shift[p] = 8 - (origin - byte_offset[p] * 8);
         }
-#ifdef SOLAR_OS_AMIGA
-        if ((uint8_t)idx > color_diag_max_idx) color_diag_max_idx = (uint8_t)idx;
-#endif
-        row[x] = pal[idx & 63];
+        for (int b = 0; b < outpx / 8; ++b) {
+            uint32_t high = 0, low = 0;
+            for (int p = 0; p < nplanes; ++p) {
+                int source = b + byte_offset[p];
+                unsigned pair = source >= 0 && source < bytes_per_row ? line[p][source] << 8 : 0;
+                if (source + 1 >= 0 && source + 1 < bytes_per_row) pair |= line[p][source + 1];
+                unsigned value = (pair >> shift[p]) & 255;
+                high |= spread[value >> 4] << p; low |= spread[value & 15] << p;
+            }
+            for (int bit = 0; bit < 4; ++bit) {
+                row[b * 8 + bit] = pal[(high >> (24 - bit * 8)) & 63];
+                row[b * 8 + bit + 4] = pal[(low >> (24 - bit * 8)) & 63];
+            }
+        }
+        for (int x = 0; x < outpx && x < window_left; ++x) row[x] = bg;
+        for (int x = window_right > 0 ? window_right : 0; x < outpx; ++x) row[x] = bg;
     }
     sprite_overlay(row, !hires);              /* sprite sopra il playfield */
     if (denise_line_cb) denise_line_cb(vpos, row, outpx);
