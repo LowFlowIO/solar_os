@@ -129,24 +129,33 @@ are installed as [external foreground apps](native-app.md) through the module
 catalog and require native-module support in the firmware. They do not add
 firmware flavor groups.
 
-SolarOS provides two firmware profiles. `full` is the standard profile with
-the broad application and hardware-service selection. `writerdeck` is the
-compact profile for smaller application partitions, including e-paper boards
-with 8 MiB flash and classic-ESP32 boards with 4 MiB flash.
+SolarOS provides three firmware profiles. `full` is the standard profile with
+the broad application and hardware-service selection. `classic` uses the compact
+Writerdeck feature selection with ADC D-pad support for ODROID-GO. It is the
+default for all classic ESP32 targets, including boards with 4 MiB flash.
+`writerdeck` is the compact profile used by e-paper boards with smaller
+application partitions.
+
+`classic` retains Python, Playground, writing, media, communications, and the
+selected board's required hardware drivers. Lua, built-in games, video playback,
+and image-processing pipelines are omitted. ODROID-GO retains its buttons and
+ADC D-pad; VGA32 retains its default PS/2 keyboard attachment.
 
 `writerdeck` includes Python, Playground, editing, Files, Reader, Writer, Notes,
-View, audio playback, RTSP, Web, Agent, WireGuard, messaging, and file transfer.
+View, audio playback, recording, speech synthesis, Web, Agent, WireGuard,
+messaging, and file transfer.
 Its transfer tools include FTP/FTPD, SSH, SCP, SFTP, SFTP Sync, and Curl.
 PCM5102/I2S and PWM audio remain available for runtime expansion outputs.
 Broad expansion-driver collections, external radio stacks, Lua, built-in
-games, and speech synthesis are omitted. Board and target requirements still
-prune unsupported features from either profile.
+games, and RTSP are omitted. Board and target requirements still
+prune unsupported features from every profile.
 
-On ESP32-S3 boards with PSRAM, both profiles include `pkg` for installing
+On ESP32-S3 boards with PSRAM, all profiles include `pkg` for installing
 native modules. Native-module installation is unavailable on classic ESP32;
-Python and Playground remain available on its PSRAM boards. Both profiles use
-the downloadable `espdl` library for inference. Custom profiles can select
-`inference_backend` to include the ESP-DL engine in firmware.
+Python and Playground remain available on its PSRAM boards. On supported
+targets, all profiles use the downloadable `espdl` library for inference.
+Custom profiles can select `inference_backend` to include the ESP-DL engine
+in firmware.
 
 Network ownership is intentionally split. `network.base`, `service.osc`, `job.osc`, `network.wireguard`, `network.mqtt`,
 `network.ssh`, `network.mail`, `messaging.gateway`, `network.http-client`, and

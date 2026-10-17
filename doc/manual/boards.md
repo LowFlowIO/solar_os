@@ -517,6 +517,7 @@ defaults are not appropriate for the target:
 ```ini
 [env:odroid_go]
 board = odroid_esp32
+custom_solaros_default_flavor = classic
 board_build.cmake_extra_args = -DSOLAR_OS_BOARD=odroid_go -DSDKCONFIG_DEFAULTS=sdkconfig.defaults.odroid_go
 ```
 
@@ -583,7 +584,7 @@ centered 320x200 safe-area mode. Select it when building; the main and virtual
 display dimensions both change to 320x200:
 
 ```sh
-SOLAR_OS_FLAVOR=writerdeck SOLAR_OS_CVBS_MODE=320x200 \
+SOLAR_OS_FLAVOR=classic SOLAR_OS_CVBS_MODE=320x200 \
   pio run -e freenove_esp32_wrover_v3
 ```
 
@@ -591,13 +592,13 @@ Omit `SOLAR_OS_CVBS_MODE` (or set it to `384x288`) to build the default full
 PAL mode. Composite scanout requires the ESP32's full 240 MHz clock, so SolarOS
 clamps all power profiles to that board-specific CPU floor on this target.
 
-Use `os_builder` with the compact `writerdeck` profile to make a specialized
+Use `os_builder` with the `classic` profile to make a specialized
 Synth image. Add the required group, remove unrelated groups until the measured
 image fits, then build and flash from the same TUI:
 
 ```sh
 python3 scripts/os_builder.py \
-  --input flavors/writerdeck.toml \
+  --input flavors/classic.toml \
   --board freenove_esp32_wrover_v3 \
   --layout single
 ```
@@ -676,20 +677,20 @@ Updating a high-resolution frame can therefore produce a brief tear while the
 new image is copied. Changing `SOLAR_OS_VGA_MODE` causes PlatformIO to
 reconfigure CMake automatically.
 
-The board has 4 MB flash, so its PlatformIO environment defaults to the focused
-`writerdeck` profile instead of `full`:
+The board has 4 MB flash, and its PlatformIO environment defaults to the
+`classic` profile:
 
 ```sh
 pio run -e ttgo_vga32_v14
 ```
 
-To create a specialized build, start from `writerdeck`
+To create a specialized build, start from `classic`
 in `os_builder`, adjust the granular groups, and build against this board's
 single-image limit:
 
 ```sh
 python3 scripts/os_builder.py \
-  --input flavors/writerdeck.toml \
+  --input flavors/classic.toml \
   --board ttgo_vga32_v14 \
   --layout single
 ```
@@ -720,6 +721,10 @@ The built-in `odroid_go` target covers the classic ESP32 Hardkernel ODROID-GO.
 It uses an ESP32-WROVER module with 4 MiB PSRAM, the ILI9341 display driver,
 SDSPI storage on the VSPI bus, battery ADC, ESP32 DAC speaker output, digital
 buttons, ADC D-pad input, status LED, PWM display brightness, Wi-Fi, and BLE.
+
+All classic ESP32 targets default to the compact `classic` flavor, including
+Python, Playground, buttons, and ADC D-pad support on ODROID-GO.
+See [Packages and flavors](packages.md).
 
 The board does not have CDC, a board-defined I2C bus, RTC, onboard temperature/humidity sensors, or
 audio input enabled. It boots into the display shell, and `uart0` on GPIO1/GPIO3

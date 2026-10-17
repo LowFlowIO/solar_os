@@ -40,7 +40,7 @@ class FlavorPackagesTest(unittest.TestCase):
             generate_flavor_config.public_flavor_name("full", "beta flavor")
 
     def test_games_are_only_in_full(self):
-        built_in_flavors = ("full", "writerdeck")
+        built_in_flavors = ("full", "classic", "writerdeck")
         for flavor in built_in_flavors:
             _, _, groups, packages = self.resolve(flavor)
             expected = flavor == "full"
@@ -48,6 +48,22 @@ class FlavorPackagesTest(unittest.TestCase):
                              flavor)
             self.assertNotIn("gameboy", groups, flavor)
             self.assertNotIn("app_gameboy", packages, flavor)
+
+    def test_classic_uses_compact_baseline_with_dpad_support(self):
+        _, _, compact_groups, compact_packages = self.resolve("writerdeck")
+        name, _, groups, packages = self.resolve("classic")
+        self.assertEqual(name, "classic")
+        self.assertEqual({key for key in compact_groups if compact_groups[key] != groups[key]},
+                         {"adc_dpad"})
+        self.assertEqual({key for key in compact_packages if compact_packages[key] != packages[key]},
+                         {"service_adc_dpad"})
+        self.assertTrue(packages["service_adc_dpad"])
+        self.assertFalse(packages["app_lua"])
+        self.assertTrue(packages["app_python"])
+        self.assertTrue(packages["app_playground"])
+        requires = generate_flavor_config.collect_requires(self.catalog, groups, packages)
+        self.assertNotIn("lua", requires)
+        self.assertIn("micropython_embed", requires)
 
     def test_servo_is_optional_and_native_backend_requires_pwm_gpio(self):
         _, _, core_groups, core_packages = self.resolve("writerdeck")
@@ -812,7 +828,9 @@ class FlavorPackagesTest(unittest.TestCase):
             "image_viewer",
             "python",
             "playground",
-            "rtsp",
+            "speech",
+            "player",
+            "recorder",
             "audio_pwm",
             "pcm5102",
             "web_browser",
@@ -830,9 +848,9 @@ class FlavorPackagesTest(unittest.TestCase):
             "sheet",
         ):
             self.assertTrue(groups[group], group)
-        self.assertFalse(groups["speech"])
-        self.assertFalse(packages["service_speech"])
-        self.assertFalse(packages["job_speechd"])
+        self.assertFalse(groups["rtsp"])
+        self.assertFalse(packages["app_rtsp"])
+        self.assertFalse(packages["job_rtspd"])
         for package in (
             "app_edit",
             "app_less",
@@ -850,8 +868,10 @@ class FlavorPackagesTest(unittest.TestCase):
             "app_playground",
             "app_aplay",
             "app_view",
-            "app_rtsp",
-            "job_rtspd",
+            "app_player",
+            "app_recorder",
+            "service_speech",
+            "job_speechd",
             "expansion_audio_pwm",
             "expansion_pcm5102",
             "job_bridge",
@@ -873,7 +893,6 @@ class FlavorPackagesTest(unittest.TestCase):
         self.assertTrue(packages["job_controls"])
         for group in (
             "device_flasher",
-            "player",
             "logic_analyzer",
             "sump",
             "mqtt",
@@ -900,7 +919,6 @@ class FlavorPackagesTest(unittest.TestCase):
             "job_meshcore",
             "job_meshcore_ble",
             "app_lua",
-            "app_player",
             "app_logic",
         ):
             self.assertFalse(packages[package], package)
@@ -1087,10 +1105,15 @@ class FlavorPackagesTest(unittest.TestCase):
         from solaros_board_manifest import load_board_manifest, load_driver_catalog, required_packages
         manifest_dir = REPOSITORY / "boards/manifests"
         drivers = load_driver_catalog(REPOSITORY / "boards/expansion_drivers.toml")
-        _, _, groups, packages = self.resolve("writerdeck")
-        for board_id in ("elecrow_crowpanel_esp32_s3_5_79_epaper",
-                         "freenove_esp32_wrover_v3", "ttgo_vga32_v14"):
-            with self.subTest(board=board_id):
+        cases = [("writerdeck", board) for board in
+                 ("elecrow_crowpanel_esp32_s3_5_79_epaper",
+                  "freenove_esp32_wrover_v3", "ttgo_vga32_v14")]
+        cases += [("classic", board) for board in
+                  ("odroid_go", "esp32_devkitc_v4_wrover",
+                   "freenove_esp32_wrover_v3", "ttgo_vga32_v14")]
+        for flavor, board_id in cases:
+            with self.subTest(flavor=flavor, board=board_id):
+                _, _, groups, packages = self.resolve(flavor)
                 board = tomllib.loads((REPOSITORY / "boards/manifests" /
                                        f"{board_id}.toml").read_text())
                 selected = generate_flavor_config.enable_required_packages(
@@ -1107,15 +1130,29 @@ class FlavorPackagesTest(unittest.TestCase):
                 if board_id == "ttgo_vga32_v14":
                     self.assertTrue(selected["expansion_ps2_keyboard"])
                     self.assertTrue(selected["service_ps2"])
+                if board_id == "odroid_go":
+                    for package in ("service_buttons", "service_adc_dpad",
+                                    "driver_display_ili9341", "driver_audio_esp32_dac",
+                                    "expansion_sdspi"):
+                        self.assertTrue(selected[package], package)
 
-    def test_only_two_public_profiles_and_compact_board_defaults(self):
+    def test_public_profiles_and_board_defaults(self):
         self.assertEqual({path.stem for path in (REPOSITORY / "flavors").glob("*.toml")},
-                         {"full", "writerdeck"})
+                         {"full", "classic", "writerdeck"})
         import configparser
         config = configparser.ConfigParser()
         config.read(REPOSITORY / "platformio.ini")
-        for board in ("esp32_devkitc_v4_wrover", "freenove_esp32_wrover_v3",
-                      "ttgo_vga32_v14", "elecrow_crowpanel_esp32_s3_5_79_epaper",
+        classic_boards = {
+            path.stem for path in (REPOSITORY / "boards/manifests").glob("*.toml")
+            if tomllib.loads(path.read_text()).get("target", {}).get("mcu") == "esp32"
+        }
+        self.assertEqual(classic_boards, {"odroid_go", "esp32_devkitc_v4_wrover",
+                                         "freenove_esp32_wrover_v3", "ttgo_vga32_v14"})
+        for board in classic_boards:
+            with self.subTest(board=board):
+                self.assertEqual(config[f"env:{board}"]["custom_solaros_default_flavor"],
+                                 "classic")
+        for board in ("elecrow_crowpanel_esp32_s3_5_79_epaper",
                       "elecrow_crowpanel_esp32_s3_4_2_epaper"):
             self.assertEqual(config[f"env:{board}"]["custom_solaros_default_flavor"], "writerdeck")
 
