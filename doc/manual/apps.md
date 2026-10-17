@@ -243,6 +243,12 @@ Recorder selects its graphical interface on a graphical shell and its text
 interface on a port shell. `--tui` forces the text interface even when the
 launching shell has graphics.
 
+On displays narrower than 240 pixels or shorter than 180 pixels, the graphical
+media controls use an 8-pixel bitmap font and smaller transport buttons.
+Short displays show volume as a percentage beside the filename instead of a
+volume bar. Lists scroll to keep the selected entry visible, and edit dialogs
+fit the display. When the cassette cannot fit, the visualizer uses a scope.
+
 `Tab` switches between Record and Setup. The Record view uses the shared
 cassette widget by default; `V` cycles through Cassette, Oscilloscope, and
 Spectrum. `R` starts recording, Space pauses or resumes, `S` stops and
@@ -332,7 +338,8 @@ player [--tui] [file.wav|file.mp3]
 
 Player selects its graphical interface on a graphical shell and its text
 interface on a port shell. `--tui` forces the text interface even when the
-launching shell has graphics.
+launching shell has graphics. The graphical controls and lists
+adapt to small displays, including 240×64 and 128×64 targets.
 
 On a graphical session, `Tab` switches between Play and Playlist. The Play tab
 uses the space above the shared bottom controls for a cassette visualizer by
@@ -581,7 +588,8 @@ Controls:
 ## webradio
 
 Stream a direct MP3 URL through the default registered audio output. On a
-graphical display shell, WebRadio opens a two-tab media-player GUI. On UART,
+graphical display shell, WebRadio opens a two-tab media-player GUI. The GUI uses compact controls, scrolling channels and fitted edit dialogs on
+small display targets. On UART,
 USB CDC, Telnet, SSH, and other text shells, it opens a station-list TUI.
 
 The catalog is stored as `.solar/webradio/catalog.bin` on the current storage
@@ -1100,7 +1108,9 @@ Controls:
 
 ## invaders
 
-Graphical arcade shooter.
+Graphical arcade shooter. The playfield scales to the active display;
+ship movement, shields and collision detection use the same game coordinates.
+Small displays use bitmap text for the score and lives.
 
 Usage:
 
@@ -1709,6 +1719,10 @@ The bottom controls show playback status and elapsed time above the volume bar;
 full screen hides the controls and time. The middle Stop/Play icon indicates
 pause while paused.
 
+The viewport and controls adapt to small targets, including 240×64 displays.
+Full screen uses the entire display for video. The minimum target size is
+84×48 pixels.
+
 Usage:
 
 ```text
@@ -1763,6 +1777,9 @@ Usage:
 sketch
 sketch file.png
 ```
+
+Sketch requires at least 200×200 pixels. On smaller targets it reports that
+the display resolution is too low and returns to the shell.
 
 Sketch is intentionally not gated on a pointer hardware capability. If no ready
 absolute or relative pointer is registered when the app starts, a popup explains
