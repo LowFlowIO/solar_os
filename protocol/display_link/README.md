@@ -1,10 +1,19 @@
-# SPI Display Link library
+# Display Link Protocol library
 
-Portable C11 implementation of SPI Display Link Protocol (SDLP v1).
-It includes explicit byte serialization, CRC, descriptors, a host client, and
-a peripheral state machine with request replay and asynchronous presentation.
-It has no SDK, RTOS, allocation, framebuffer, or GPIO dependency. The MIT
-license permits use in other embedded projects.
+Display Link Protocol (DLP) connects a host framebuffer to a peripheral that
+owns a physical display. Dimensions, pixel formats, presentation limits and
+optional features are discovered. The protocol is independent of the MCU,
+panel bus, operating system and transport API.
+
+The portable C11 library includes serialization, CRC32, host/device state
+machines, request replay, asynchronous presentation, byte-stream framing,
+changed-region planning and bounded byte RLE. It has no allocation, SDK,
+RTOS, framebuffer or GPIO dependency. It is MIT licensed.
+
+Include `dlp.h` for the `dlp_*` API and `DLP_*` constants. Existing `sdlp.h`
+names remain source compatible, and the implementation stays in `src/sdlp.c`.
+Recompile consumers when updating the library: caller-owned structures have
+grown. The original SDLP v1 SPI wire format is retained.
 
 ## Build and test
 
@@ -15,64 +24,169 @@ ctest --test-dir /tmp/display-link-build --output-on-failure
 python3 -m unittest discover -s tests -p test_display_link.py
 ```
 
-The Python runner adds AddressSanitizer and UBSan. A normal library consumer
-compiles `src/sdlp.c` and adds `include/` to its include path, or uses the CMake
-`display_link` target. Both roles are in the same source; unused functions can
-be removed by the toolchain's function-section garbage collection.
+The Python runner adds AddressSanitizer and UBSan. Consumers compile
+`src/sdlp.c` and add `include/`, or use the CMake `display_link` target.
 
-## Host adapter
+## Transports
 
-Fill `sdlp_transport_t` with a monotonic microsecond clock, a delay callback,
-and a bounded 256-byte full-duplex SPI exchange. The exchange callback owns CS,
-configured minimum CS-high spacing, optional READY, and shared-bus locking.
-It must respect the absolute deadline and return with CS inactive and the bus
-released. Host APIs return a wire result or a negative local error.
+Commands have the same semantics over either transport profile:
 
-Initialize `sdlp_host_t`, discover before an absolute boot deadline, then call
-`sdlp_host_configure()` with a fresh nonzero session ID, an accepted format, and
-the host's clock ceiling. Discovery uses bootstrap timing. The selected clock
-and gap apply after successful configuration.
+- **Ordered byte stream:** UART, USB CDC, TCP or another ordered read/write
+  stream. Compact `DLP1` packets carry only the header, used payload and CRC.
+  Requests receive direct responses. Packet boundaries need not match reads
+  or writes. Use stop-and-wait command sequencing.
+- **SPI:** mode 1, fixed 256-byte full-duplex `SDLP` cells. Responses appear in
+  later transactions; the host polls with IDLE cells. CS, clock, minimum
+  spacing, optional READY/RESET and bus arbitration belong to the adapter.
+  Byte streams can also carry these fixed cells for legacy compatibility.
 
-Use BEGIN_FRAME, BEGIN_RECT, and sequential writes of at most 208 bytes.
-Writes can cross pixel and row boundaries. PRESENT starts presentation;
-`sdlp_host_wait_frame()` waits for the corresponding completion or failure.
-`sdlp_host_command()` also exposes abort, status, and optional controls.
+A stream-only descriptor may set `max_clock_hz=0`. SPI discovery rejects
+such endpoints. Baud rate, socket addresses, USB configuration and connection
+establishment are outside DLP.
 
-The client retries identical request bytes within a bounded command deadline.
-After a transport timeout the outcome is unknown, and the client invalidates
-its configured state. Rediscover and create a new session before sending a
-complete replacement image. A pending presentation may temporarily reject
-configuration with BUSY; each new configuration attempt needs a fresh ID.
-The client is synchronous and is not thread-safe: its owner serializes calls.
+### Byte-stream host
+
+Supply `dlp_stream_io_t` with a monotonic microsecond clock, delay callback,
+and nonblocking `read`/`write` callbacks. Return the number of bytes transferred,
+zero for temporary backpressure, or a negative number for an I/O error.
+Initialize `dlp_stream_host_t`, obtain `dlp_stream_transport()`, and pass that
+to `dlp_host_init()`. The adapter handles partial I/O, CRC checks, response
+matching, deadlines and exact retries. Its default retry interval is 250 ms;
+set `retry_us` to suit the link. Set `legacy=true` for a fixed-cell peer.
+The C adapter does not automatically negotiate legacy framing.
+
+A custom adapter can implement `dlp_transport_t.request()` directly. It takes
+and returns canonical 256-byte library cells; the adapter owns their framing
+on the actual link. Supply either `request` or `exchange`.
+
+### SPI host
+
+Supply `dlp_transport_t.exchange()` with a bounded full-duplex exchange.
+It owns CS, minimum CS-high spacing, optional READY, and shared-bus locking.
+Respect the absolute deadline and return with CS inactive and the bus released.
+
+## Host lifecycle and retained images
+
+Discover before an absolute boot deadline, configure a fresh nonzero session
+ID and accepted format, then call `dlp_host_extensions()`. An older peer's
+UNSUPPORTED reply disables extensions without failing configuration.
+
+`dlp_host_upload_frame()` accepts a packed native-format image and optional,
+distinct, equally sized retained storage plus a validity flag. Set validity
+false initially and after every reconfiguration. Without a valid cache it
+uploads a full replacement. Otherwise it compares eight-row bands and sends
+tight byte-aligned changed rectangles, splitting them at `max_rect_bytes`.
+If the estimated raw packet count is no better, it sends a full image.
+This planner bounds memory and command overhead; it does not promise a
+minimum-size encoding.
+
+`PRESERVE_CONTENT` is required for partial updates. New `RLE` support lets
+`dlp_host_write_some()` choose compressed or raw packets. Raw writes carry up
+to 208 bytes; RLE packets expand to at most 1,024 bytes. Each packet is
+independent. Incompressible input stays raw.
+
+The retained cache is committed only after PRESENT completes. Errors invalidate
+it. An unchanged image is skipped only after GET_SYNC confirms that this
+session's retained content is still valid. If another source replaced it,
+RESET/power loss invalidated it, or a partial BEGIN_FRAME is rejected, the host
+sends a full replacement. Multi-source peripherals must mark affected sessions'
+`need_full=true` whenever their retained content ceases to be valid.
+
+Lower-level APIs expose BEGIN_FRAME, BEGIN_RECT, raw/sequential writes,
+PRESENT, abort, status and optional controls. Writes may cross rows. Retry
+identical request bytes and sequence numbers only; accepted requests are
+replayed without applying their effects again. BUSY requires a new command
+sequence for a new attempt.
+
+Host APIs return a wire result or a negative local error. After a transport
+timeout, the outcome is unknown and the configured state is invalidated.
+Rediscover, configure a new session and repaint fully. A pending presentation
+may temporarily reject configuration with BUSY. Calls are synchronous and
+must be serialized by the owner.
 
 ## Peripheral adapter
 
-Initialize `sdlp_device_t` with an immutable descriptor, nonzero boot ID that
-changes after protocol state loss, and `sdlp_backend_t` callbacks. State and
-replay storage are caller-owned. The backend owns its display representation.
+Initialize `dlp_device_t` with an immutable descriptor, a nonzero boot ID that
+changes after protocol state loss, and backend callbacks. The backend owns
+its display representation. State, replay and the 1,024-byte decode scratch
+buffer are caller-owned; the library does not allocate memory.
 
-Arm TX with `sdlp_device_idle()`. Receive one complete cell per CS assertion;
-after CS rises, pass only a correctly sized, non-timed-out cell to
-`sdlp_device_receive()`. When it returns true, queue the returned response for
-a later transfer. When false, keep the previous TX cell. The state machine
-checks CRC, padding, command bounds, session/boot identity, and replay before
-passing accepted bytes to the backend. The adapter rejects short/overlong
-hardware transactions before calling it.
+For streams, zero-initialize a `dlp_stream_t` parser and feed arbitrary input
+bytes through `dlp_stream_feed()`. On a
+complete packet, pass the canonical cell to `dlp_device_receive()` and frame
+the response using `dlp_stream_encode()` with the incoming packet's compact
+flag. Drain any buffered packet with `dlp_stream_next()` before waiting for
+more input. Keep replies queued across partial output writes. The adapter
+owns an idle-packet timeout: discard an incomplete parser buffer after a
+suitable idle interval so truncated headers cannot strand short requests.
+CRC/length checks otherwise scan past corrupt traffic to recover framing.
 
-Call `sdlp_device_tick()` regularly even without host traffic. `present()` must
-start bounded asynchronous work; `poll_present()` returns BUSY until it has
-finished. Other callbacks must finish soon enough for the transport's stated
-rearm interval. A platform with slow callbacks needs independent transport
-servicing and serialized state-machine work. The library itself does not
-create workers or interrupts and is not reentrant.
+For SPI, arm TX with `dlp_device_idle()`. After CS rises, pass only a complete,
+correctly sized cell to `dlp_device_receive()`. Queue a returned response for a
+later transfer. A false return means retain the previous TX cell.
 
-Backend callbacks return SDLP wire results. BAD_ARGUMENT, BAD_STATE, BUSY,
-UNSUPPORTED, and NO_MEMORY must leave the requested operation unapplied.
-IO_ERROR or TIMEOUT may indicate partial downstream effects and require a new
-configuration/full repaint. Never return OK for work that was dropped.
+Call `dlp_device_tick()` regularly without host traffic. `present()` starts
+bounded asynchronous work; `poll_present()` returns BUSY until completion.
+Other callbacks finish within `command_ms` and the adapter's rearm interval.
+The library creates no workers/interrupts and is not reentrant.
 
-## Reference peripheral
+Backend callbacks return DLP wire results. BAD_ARGUMENT, BAD_STATE, BUSY,
+UNSUPPORTED and NO_MEMORY leave the operation unapplied. IO_ERROR or TIMEOUT
+may indicate partial effects and require reconfiguration/full repaint.
+RLE length, rectangle bounds and row-padding bits are checked before any
+backend write. Never return OK for dropped work.
 
-The sibling `pico_display_link` repository vendors these files for independent
-builds. Its `scripts/sync_protocol.py` explicitly updates that copy. Run its
-native protocol/framebuffer tests and target builds after synchronization.
+## Wire profiles and extensions
+
+All integers are little endian except RGB565 pixel bytes. Both profiles use
+this 32-byte header:
+
+| Offset | Bytes | Field |
+|---:|---:|---|
+| 0 | 4 | `DLP1` compact stream or `SDLP` fixed cell |
+| 4 | 1 | Version 1 |
+| 5 | 1 | Reserved zero |
+| 6 | 1 | Kind: IDLE=0, REQUEST=1, RESPONSE=2 |
+| 7 | 1 | Opcode |
+| 8 | 4 | Session |
+| 12 | 4 | Sequence |
+| 16 | 2 | Result (zero in requests) |
+| 18 | 2 | Payload length, 0..220 |
+| 20 | 8 | Boot identity |
+| 28 | 4 | Reserved zero |
+
+Compact packets append the used payload then CRC32 of header+payload: total
+`36 + payload_length` bytes, at most 256. Fixed cells zero-pad the payload to
+220 bytes and append CRC32 at offset 252. CRC uses reflected polynomial
+`0xedb88320`, initial/final inversion (the usual CRC32).
+
+New optional commands use normal configured session/sequence/replay rules:
+
+| Opcode | Request | Successful response |
+|---|---|---|
+| GET_EXTENSIONS `0x04` | Empty | u32 feature bits: RLE=32, SYNC=64 |
+| GET_SYNC `0x05` | Empty; requires SYNC | u32 `need_full`, zero or one |
+| RECT_RLE `0x15` | frame u32, rectangle u32, **decoded** offset u32, decoded length u16, RLE bytes | Empty |
+
+GET_INFO keeps its original capability bits (0..4) so old clients continue to
+accept descriptors. New hosts query extensions after CONFIGURE. Unknown
+commands return UNSUPPORTED; new data encodings are used only when advertised.
+
+RLE is a sequence of byte tokens. A tag 0..127 copies the following `tag+1`
+literal bytes. A tag 128..255 repeats the following byte `(tag & 127)+3` times
+(3..130). Tokens must consume the packet exactly and expand to exactly the
+advertised decoded length (1..1,024), within the open rectangle. Offsets and
+row-padding checks apply to decoded bytes. No dictionary or state survives
+between packets.
+
+MONO1/GRAY2/GRAY4 pack low bits first with zero unused row bits; MONO1 black
+is one, grayscale white is maximal. GRAY8 has one byte per pixel; RGB565 is
+big endian. Rectangle rows are padded independently, using their own width.
+
+## Reference peripheral and host integration
+
+The sibling `pico_display_link` repository vendors this library; its explicit
+`scripts/sync_protocol.py` refreshes the copy. Its Python `DisplayLink` client
+uses the same stream framing, delta and RLE rules. The SolarOS `spi-display`
+driver uses the SPI profile. A SolarOS byte-stream display driver is separate
+future integration work; the portable stream adapter is available now.

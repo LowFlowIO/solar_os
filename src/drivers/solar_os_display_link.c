@@ -21,7 +21,9 @@ struct solar_os_display_link {
   char bus[16];
   spi_device_handle_t spi;
   SemaphoreHandle_t mutex;
-  uint8_t *mono, *row;
+  uint8_t *mono, *row, *wire, *retained;
+  size_t wire_size;
+  bool retained_valid;
   uint16_t *pixels;
   uint32_t spi_hz, frame_id;
   uint64_t last_cs_us;
@@ -112,6 +114,7 @@ static int exchange(void *ctx, const uint8_t tx[256], uint8_t rx[256],
   return err == ESP_OK && cs_err == ESP_OK ? 0 : -1;
 }
 static esp_err_t connect_endpoint(solar_os_display_link_t *d, bool reset) {
+  d->retained_valid = false;
   d->ready_enabled = false;
   if (reset && d->config.reset >= 0) {
     gpio_set_level(d->config.reset, d->config.reset_active_high ? 1 : 0);
@@ -139,9 +142,34 @@ static esp_err_t connect_endpoint(solar_os_display_link_t *d, bool reset) {
     session = esp_random();
   } while (!session || session == d->host.session);
   r = sdlp_host_configure(&d->host, session, format, d->config.clock_hz);
+  if (!r) r = sdlp_host_extensions(&d->host);
   if (!r)
     d->ready_enabled = d->config.ready >= 0;
   return result(r);
+}
+static void pack_row(solar_os_display_link_t *d, uint16_t y) {
+  const unsigned format = d->host.format;
+  uint16_t w = d->host.info.width;
+  memset(d->row, 0, sdlp_row_bytes(w, format));
+  for (uint16_t x = 0; x < w; x++) {
+    uint16_t c = d->pixels[(size_t)y * w + x];
+    if (format == SDLP_RGB565_BE) {
+      d->row[2 * x] = (uint8_t)(c >> 8);
+      d->row[2 * x + 1] = (uint8_t)c;
+      continue;
+    }
+    unsigned red = (c >> 11) * 255 / 31, green = ((c >> 5) & 63) * 255 / 63,
+             blue = (c & 31) * 255 / 31;
+    unsigned gray = (red * 77 + green * 150 + blue * 29 + 128) >> 8;
+    if (format == SDLP_GRAY8) d->row[x] = (uint8_t)gray;
+    else if (format == SDLP_MONO1)
+      d->row[x / 8] |= (uint8_t)((gray < 128 ? 1 : 0) << (x % 8));
+    else {
+      unsigned bits = format == SDLP_GRAY2 ? 2 : 4, max = (1u << bits) - 1;
+      d->row[x * bits / 8] |=
+          (uint8_t)(((gray * max + 127) / 255) << ((x * bits) % 8));
+    }
+  }
 }
 static esp_err_t upload(solar_os_display_link_t *d) {
   if (!d->host.configured) {
@@ -157,10 +185,27 @@ static esp_err_t upload(solar_os_display_link_t *d) {
     return ESP_ERR_INVALID_STATE;
   }
   uint32_t frame = ++d->frame_id;
-  int r = sdlp_host_begin_frame(&d->host, frame, true);
   const unsigned format = d->host.format;
   uint16_t w = d->host.info.width, h = d->host.info.height;
   uint32_t row_bytes = sdlp_row_bytes(w, format);
+  if (d->wire && d->wire_size >= (size_t)row_bytes * h) {
+    for (uint16_t y = 0; y < h; y++) {
+      pack_row(d, y);
+      memcpy(d->wire + (size_t)y * row_bytes, d->row, row_bytes);
+      if ((uint32_t)w * h > 65536 && (y & 31) == 31) vTaskDelay(1);
+    }
+    int r = sdlp_host_upload_frame(&d->host, frame, d->wire,
+                                    (size_t)row_bytes * h, d->retained,
+                                    &d->retained_valid);
+    if (r) {
+      d->retained_valid = false;
+      d->host.configured = false;
+      ESP_LOGE(TAG, "presentation failed: DLP %d", r);
+    }
+    return result(r);
+  }
+  d->retained_valid = false;
+  int r = sdlp_host_begin_frame(&d->host, frame, true);
   uint32_t rows_per_rect = d->host.info.max_rect_bytes / row_bytes;
   if (rows_per_rect > h)
     rows_per_rect = h;
@@ -181,27 +226,7 @@ static esp_err_t upload(solar_os_display_link_t *d) {
       if (r)
         break;
     }
-    memset(d->row, 0, row_bytes);
-    for (uint16_t x = 0; x < w; x++) {
-      uint16_t c = d->pixels[(size_t)y * w + x];
-      if (format == SDLP_RGB565_BE) {
-        d->row[2 * x] = (uint8_t)(c >> 8);
-        d->row[2 * x + 1] = (uint8_t)c;
-        continue;
-      }
-      unsigned red = (c >> 11) * 255 / 31, green = ((c >> 5) & 63) * 255 / 63,
-               blue = (c & 31) * 255 / 31;
-      unsigned gray = (red * 77 + green * 150 + blue * 29 + 128) >> 8;
-      if (format == SDLP_GRAY8)
-        d->row[x] = (uint8_t)gray;
-      else if (format == SDLP_MONO1)
-        d->row[x / 8] |= (uint8_t)((gray < 128 ? 1 : 0) << (x % 8));
-      else {
-        unsigned bits = format == SDLP_GRAY2 ? 2 : 4, max = (1u << bits) - 1;
-        d->row[x * bits / 8] |=
-            (uint8_t)(((gray * max + 127) / 255) << ((x * bits) % 8));
-      }
-    }
+    pack_row(d, y);
     for (uint32_t pos = 0; !r && pos < row_bytes;) {
       size_t n = row_bytes - pos;
       if (n > sizeof(chunk) - used)
@@ -219,7 +244,7 @@ static esp_err_t upload(solar_os_display_link_t *d) {
       r = sdlp_host_write(&d->host, frame, rectangle, offset, chunk, used);
       used = 0;
     }
-    if ((y & 7) == 0)
+    if ((uint32_t)w * h > 65536 && (y & 31) == 31)
       vTaskDelay(1);
   }
   if (!r)
@@ -333,6 +358,19 @@ esp_err_t solar_os_display_link_create(const solar_os_display_link_config_t *c,
                                     "display.link.rgb");
   d->row = solar_os_memory_alloc(
       (size_t)w * 2, SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "display.link.row");
+  /* Delta caches are optional and bounded. Large displays or memory pressure
+   * retain the streaming full-frame path rather than failing attachment. */
+  d->wire_size = (size_t)sdlp_row_bytes(w, d->host.format) * h;
+  if (d->wire_size <= 256u * 1024u) {
+    d->wire = solar_os_memory_alloc(d->wire_size, SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
+                                     "display.link.wire");
+    d->retained = solar_os_memory_alloc(d->wire_size, SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
+                                         "display.link.retained");
+    if (!d->wire || !d->retained) {
+      solar_os_memory_free(d->wire); solar_os_memory_free(d->retained);
+      d->wire = d->retained = NULL;
+    }
+  }
   if (!d->mono || !d->pixels || !d->row) {
     e = ESP_ERR_NO_MEM;
     goto fail;
@@ -370,6 +408,8 @@ void solar_os_display_link_destroy(solar_os_display_link_t *d) {
   solar_os_memory_free(d->mono);
   solar_os_memory_free(d->pixels);
   solar_os_memory_free(d->row);
+  solar_os_memory_free(d->wire);
+  solar_os_memory_free(d->retained);
   solar_os_memory_free(d);
 }
 u8g2_t *solar_os_display_link_u8g2(solar_os_display_link_t *d) {

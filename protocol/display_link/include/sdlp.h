@@ -10,6 +10,7 @@ extern "C" {
 #define SDLP_CELL_SIZE 256u
 #define SDLP_PAYLOAD_SIZE 220u
 #define SDLP_DATA_SIZE 208u
+#define SDLP_RLE_MAX_DECODED 1024u
 #define SDLP_FORMAT_BIT(n) (UINT32_C(1) << (n))
 #define SDLP_FORMATS UINT32_C(31)
 enum { SDLP_IDLE, SDLP_REQUEST, SDLP_RESPONSE };
@@ -31,11 +32,14 @@ enum {
   SDLP_GET_INFO = 1,
   SDLP_CONFIGURE = 2,
   SDLP_GET_STATUS = 3,
+  SDLP_GET_EXTENSIONS = 4,
+  SDLP_GET_SYNC = 5,
   SDLP_BEGIN_FRAME = 0x10,
   SDLP_BEGIN_RECT,
   SDLP_RECT_DATA,
   SDLP_PRESENT,
   SDLP_ABORT_FRAME,
+  SDLP_RECT_RLE,
   SDLP_SET_BRIGHTNESS = 0x20,
   SDLP_SET_POWER
 };
@@ -44,7 +48,9 @@ enum {
   SDLP_STAGED_FRAME = 2,
   SDLP_BRIGHTNESS = 4,
   SDLP_POWER_SAVE = 8,
-  SDLP_READY = 16
+  SDLP_READY = 16,
+  SDLP_RLE = 32,
+  SDLP_SYNC = 64
 };
 enum {
   SDLP_STATE_IDLE,
@@ -87,6 +93,32 @@ bool sdlp_info_decode(sdlp_info_t *info, const uint8_t *data, size_t size);
 bool sdlp_status_decode(sdlp_status_t *status, const uint8_t *data,
                         size_t size);
 uint32_t sdlp_row_bytes(uint16_t width, unsigned format);
+/* Byte RLE: literal tag 0..127 copies tag+1 bytes; repeat tag 128..255
+ * repeats the following byte (tag&127)+3 times. No cross-packet dictionary. */
+size_t sdlp_rle_encode(uint8_t *out, size_t capacity, const uint8_t *data,
+                       size_t size, size_t *consumed);
+bool sdlp_rle_decode(uint8_t *out, size_t expected, const uint8_t *data,
+                      size_t size);
+typedef struct { uint16_t x, y, width, height; } sdlp_rect_t;
+typedef struct {
+  const uint8_t *before, *after;
+  uint32_t stride;
+  uint16_t width, height, next_y;
+  unsigned bits;
+} sdlp_delta_t;
+bool sdlp_delta_init(sdlp_delta_t *, const uint8_t *before,
+                      const uint8_t *after, uint16_t width, uint16_t height,
+                      unsigned format);
+bool sdlp_delta_next(sdlp_delta_t *, sdlp_rect_t *);
+
+/* Ordered byte-stream framing, independent of UART/USB/TCP APIs. Compact
+ * DLP1 packets omit padding; the parser also accepts legacy SDLP cells. */
+typedef struct { uint8_t bytes[SDLP_CELL_SIZE]; size_t used; } sdlp_stream_t;
+size_t sdlp_stream_encode(uint8_t out[SDLP_CELL_SIZE],
+                           const uint8_t cell[SDLP_CELL_SIZE], bool compact);
+bool sdlp_stream_next(sdlp_stream_t *, uint8_t cell[SDLP_CELL_SIZE], bool *compact);
+bool sdlp_stream_feed(sdlp_stream_t *, uint8_t byte,
+                       uint8_t cell[SDLP_CELL_SIZE], bool *compact);
 
 /* Callbacks run in the caller's context. Return wire results. present starts
  * asynchronously; poll_present returns BUSY until completed, OK or an error.
@@ -117,6 +149,7 @@ typedef struct {
   bool need_full, have_rect;
   sdlp_status_t status;
   sdlp_replay_t replay, auxiliary;
+  uint8_t decoded[SDLP_RLE_MAX_DECODED];
 } sdlp_device_t;
 bool sdlp_device_init(sdlp_device_t *, const sdlp_info_t *, uint64_t boot,
                       const sdlp_backend_t *);
@@ -135,6 +168,11 @@ typedef struct {
   int (*exchange)(void *, const uint8_t tx[SDLP_CELL_SIZE],
                   uint8_t rx[SDLP_CELL_SIZE], uint32_t hz, uint32_t gap_us,
                   uint64_t deadline_us);
+  /* Alternative for an ordered stream: send one request and receive its
+   * response directly. No SPI IDLE polling. Retry identical bytes internally
+   * within the deadline; release adapter resources before returning. */
+  int (*request)(void *, const uint8_t tx[SDLP_CELL_SIZE],
+                 uint8_t rx[SDLP_CELL_SIZE], uint64_t deadline_us);
 } sdlp_transport_t;
 typedef struct {
   sdlp_transport_t transport;
@@ -149,6 +187,8 @@ void sdlp_host_init(sdlp_host_t *, const sdlp_transport_t *);
 int sdlp_host_discover(sdlp_host_t *, uint64_t deadline_us);
 int sdlp_host_configure(sdlp_host_t *, uint32_t session, unsigned format,
                         uint32_t max_clock_hz);
+/* Optional extension negotiation after configure; old peers safely fall back. */
+int sdlp_host_extensions(sdlp_host_t *);
 /* deadline zero uses the descriptor command bound plus polling allowance. */
 int sdlp_host_command(sdlp_host_t *, unsigned opcode, const void *payload,
                       size_t length, sdlp_cell_t *response,
@@ -160,6 +200,31 @@ int sdlp_host_write(sdlp_host_t *, uint32_t frame, uint32_t rect,
                     uint32_t offset, const uint8_t *data, size_t size);
 int sdlp_host_present(sdlp_host_t *, uint32_t frame);
 int sdlp_host_wait_frame(sdlp_host_t *, uint32_t frame, uint64_t deadline_us);
+int sdlp_host_write_some(sdlp_host_t *, uint32_t frame, uint32_t rect,
+                          uint32_t offset, const uint8_t *, size_t,
+                          size_t *consumed);
+/* Packed native wire image. Caller owns optional equally sized retained
+ * image and validity flag; invalidate it after every reconfiguration. The
+ * cache is committed only after presentation completes. Unchanged images
+ * are skipped only after the peer confirms its retained-content validity. */
+int sdlp_host_upload_frame(sdlp_host_t *, uint32_t frame, const uint8_t *image,
+                            size_t size, uint8_t *retained, bool *valid);
+typedef struct {
+  void *ctx;
+  uint64_t (*now_us)(void *);
+  void (*sleep_us)(void *, uint32_t);
+  /* Nonblocking: positive byte count, zero for not ready, negative on error. */
+  int (*read)(void *, uint8_t *, size_t);
+  int (*write)(void *, const uint8_t *, size_t);
+} sdlp_stream_io_t;
+typedef struct {
+  sdlp_stream_io_t io;
+  sdlp_stream_t parser;
+  uint32_t retry_us;
+  bool legacy;
+} sdlp_stream_host_t;
+bool sdlp_stream_host_init(sdlp_stream_host_t *, const sdlp_stream_io_t *);
+sdlp_transport_t sdlp_stream_transport(sdlp_stream_host_t *);
 #ifdef __cplusplus
 }
 #endif

@@ -398,9 +398,9 @@ Composite PAL uses I2S0 and GPIO25. VGA32 uses I2S1 plus its six RGB and two
 sync GPIOs; see the expansion reference for its full binding list. A fixed
 board-default `display0` cannot be detached.
 
-## SPI Display Link
+## Display Link Protocol over SPI
 
-`spi-display` attaches an SDLP v1 peripheral under the supplied display name.
+`spi-display` attaches a Display Link Protocol (DLP) peripheral under the supplied display name.
 The peripheral owns its physical panel. SolarOS reads its native dimensions
 and accepted pixel formats, selects a transfer format, and registers a display
 target for text, graphics, and foreground applications. A receive-capable SPI
@@ -422,12 +422,18 @@ discovered rather than supplied as bindings.
 
 The host accepts dimensions up to 2040 pixels per axis and 1,048,576 total
 pixels, subject to available memory. It keeps a monochrome text buffer, an
-RGB565 composition buffer, and one conversion row. Presentation uses full
-replacement images split into bounded rectangles. Color and indexed graphics
-are converted to the negotiated format. Changing geometry requires detaching
+RGB565 composition buffer, and one conversion row. When memory permits, two
+additional native-format buffers (each at most 256 KiB) track changes. The
+driver uploads changed rectangles, uses optional byte RLE when useful, and
+checks retained state before skipping an unchanged frame. It sends a full
+replacement after content loss or when partial updates cost more. Larger
+images and cache allocation failures use bounded full-frame uploads. Color
+and indexed graphics are converted to the negotiated format. Changing geometry requires detaching
 and recreating the target after releasing display claims.
 
-SDLP uses SPI mode 1 and 256-byte full-duplex cells. Its negotiated format
+The DLP SPI profile retains SDLP v1 mode 1 and 256-byte full-duplex cells.
+The portable protocol also supports ordered byte streams; this driver uses
+SPI. Its negotiated format
 describes wire pixels; it does not require any particular MCU or panel bus.
 See the [driver reference](expansion.reference.md#spi-display-link) for bindings.
 
@@ -440,7 +446,7 @@ lcd0 or oled0 exists; inspect devices() or use a name explicitly supplied by
 the user. Foreground scripts consume attached pointer, axis, and gesture sources through
 solaros.input.
 
-`spi-display` attaches an SDLP v1 endpoint using `spi` and `cs`, with independent
+`spi-display` attaches a DLP endpoint using `spi` and `cs`, with independent
 optional `ready` and `reset` GPIOs. Native dimensions and wire formats are
 discovered during attachment. Optional `clock` is a ceiling in kHz;
 `reset-ms`, `boot-ms`, and `reset-active` configure reset and discovery.

@@ -29,7 +29,7 @@ class DisplayLinkTest(unittest.TestCase):
         source = (ROOT / "src/drivers/solar_os_display_link.c").read_text()
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "display_link_upload.inc").write_text(production_functions(
-                source, ("upload", "raster_valid", "color", "native_to_logical")))
+                source, ("pack_row", "upload", "raster_valid", "color", "native_to_logical")))
             binary = Path(directory) / "upload-test"
             subprocess.run([
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
@@ -41,7 +41,13 @@ class DisplayLinkTest(unittest.TestCase):
             ], check=True)
             subprocess.run([str(binary)], check=True)
 
+    def test_bandwidth_and_streams(self):
+        self.run_protocol_test("dlp_bandwidth_test.c")
+
     def test_portable_protocol(self):
+        self.run_protocol_test("sdlp_test.c")
+
+    def run_protocol_test(self, name):
         library = ROOT / "protocol/display_link"
         with tempfile.TemporaryDirectory() as directory:
             binary = Path(directory) / "sdlp-test"
@@ -49,7 +55,7 @@ class DisplayLinkTest(unittest.TestCase):
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
                 "-fsanitize=address,undefined", "-fno-omit-frame-pointer",
                 "-I" + str(library / "include"), str(library / "src/sdlp.c"),
-                str(library / "tests/sdlp_test.c"), "-o", str(binary),
+                str(library / "tests" / name), "-o", str(binary),
             ], check=True)
             subprocess.run([str(binary)], check=True)
 

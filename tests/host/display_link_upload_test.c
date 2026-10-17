@@ -17,14 +17,18 @@ typedef struct {
     int reset;
   } config;
   uint16_t *pixels;
-  uint8_t *row;
+  uint8_t *row, *wire, *retained;
+  size_t wire_size;
+  bool retained_valid;
   uint32_t frame_id;
 } solar_os_display_link_t;
 typedef struct {
   sdlp_device_t device;
   uint8_t queued[256], *image;
   uint64_t now;
-  uint32_t row_bytes, base, rectangles, writes;
+  uint32_t row_bytes, rectangles, writes, exchanges;
+  uint16_t x, y, width;
+  bool cached;
 } fixture_t;
 static fixture_t fixture;
 static uint64_t now_us(void *ctx) {
@@ -48,25 +52,35 @@ static int configure(void *ctx, unsigned f) {
   return 0;
 }
 static int begin_frame(void *ctx, uint32_t frame, bool full) {
-  (void)ctx;
+  fixture_t *f = ctx;
   (void)frame;
-  assert(full);
+  assert(full || f->cached);
   return 0;
 }
 static int begin_rect(void *ctx, uint16_t x, uint16_t y, uint16_t w,
                       uint16_t h) {
   fixture_t *f = ctx;
   (void)h;
-  assert(x == 0 && w == f->device.info.width);
-  f->base = y * f->row_bytes;
+  assert(f->cached || (x == 0 && w == f->device.info.width));
+  f->x = x; f->y = y; f->width = w;
   f->rectangles++;
   return 0;
 }
 static int write_data(void *ctx, uint32_t offset, const uint8_t *p, size_t n) {
   fixture_t *f = ctx;
-  assert(n <= 208);
-  assert(f->base + offset + n <= f->row_bytes * f->device.info.height);
-  memcpy(f->image + f->base + offset, p, n);
+  assert(n <= (f->cached ? SDLP_RLE_MAX_DECODED : 208));
+  static const unsigned bpp[] = {1, 2, 4, 8, 16};
+  unsigned bits = bpp[f->device.format];
+  uint32_t row = sdlp_row_bytes(f->width, f->device.format);
+  for (size_t k = 0; k < n; k++) {
+    uint32_t pos = offset + (uint32_t)k, col = pos % row;
+    for (unsigned bit = 0; bit < 8 && col * 8 + bit < f->width * bits; bit++) {
+      uint32_t target = f->x * bits + col * 8 + bit;
+      uint8_t *out = f->image + (f->y + pos / row) * f->row_bytes + target / 8;
+      unsigned mask = 1u << (target % 8);
+      *out = (uint8_t)((*out & ~mask) | (((p[k] >> bit) & 1u) ? mask : 0));
+    }
+  }
   f->writes++;
   return 0;
 }
@@ -78,6 +92,7 @@ static int exchange(void *ctx, const uint8_t *tx, uint8_t *rx, uint32_t hz,
                     uint32_t gap, uint64_t deadline) {
   fixture_t *f = ctx;
   (void)deadline;
+  f->exchanges++;
   f->now += gap + UINT64_C(2048000000) / hz;
   memcpy(rx, f->queued, 256);
   (void)sdlp_device_receive(&f->device, tx, f->queued, f->now);
@@ -85,9 +100,10 @@ static int exchange(void *ctx, const uint8_t *tx, uint8_t *rx, uint32_t hz,
 }
 #include "display_link_upload.inc"
 static void run(unsigned format, uint16_t width, uint16_t height,
-                unsigned rows) {
+                unsigned rows, bool cached) {
   fixture_t *f = &fixture;
   memset(f, 0, sizeof(*f));
+  f->cached = cached;
   f->row_bytes = sdlp_row_bytes(width, format);
   f->image = calloc(height, f->row_bytes);
   assert(f->image);
@@ -95,6 +111,7 @@ static void run(unsigned format, uint16_t width, uint16_t height,
                       .height = height,
                       .formats = SDLP_FORMAT_BIT(format),
                       .preferred_format = format,
+                      .capabilities = cached ? SDLP_PRESERVE_CONTENT | SDLP_RLE | SDLP_SYNC : 0,
                       .max_clock_hz = 1000000,
                       .min_gap_us = 5000,
                       .max_rect_bytes = f->row_bytes * rows,
@@ -116,13 +133,21 @@ static void run(unsigned format, uint16_t width, uint16_t height,
   sdlp_host_init(&d.host, &t);
   assert(!sdlp_host_discover(&d.host, 5000000));
   assert(!sdlp_host_configure(&d.host, 123, format, 1000000));
+  assert(!sdlp_host_extensions(&d.host));
+  if (cached) {
+    d.wire_size = f->row_bytes * height;
+    d.wire = malloc(d.wire_size); d.retained = malloc(d.wire_size);
+    assert(d.wire && d.retained);
+  }
   d.pixels = malloc((size_t)width * height * 2);
   d.row = malloc(width * 2);
   assert(d.pixels && d.row);
   for (unsigned y = 0; y < height; y++)
     for (unsigned x = 0; x < width; x++)
       d.pixels[y * width + x] = (x + y) % 2 ? 0xffff : 0;
+  unsigned before = f->exchanges;
   assert(!upload(&d));
+  unsigned full_cells = f->exchanges - before;
   assert(f->device.status.completed_frame == 1);
   for (unsigned y = 0; y < height; y++)
     for (unsigned x = 0; x < width; x++) {
@@ -143,18 +168,43 @@ static void run(unsigned format, uint16_t width, uint16_t height,
       }
     }
   assert(f->rectangles == (height + rows - 1) / rows);
+  if (cached) {
+    assert(d.retained_valid && !memcmp(d.wire, f->image, d.wire_size));
+    unsigned writes = f->writes;
+    before = f->exchanges;
+    assert(!upload(&d));
+    unsigned unchanged_cells = f->exchanges - before;
+    assert(f->writes == writes && f->device.status.completed_frame == 1);
+    d.pixels[width * 10 + 17] ^= 0xffff;
+    before = f->exchanges;
+    assert(!upload(&d));
+    unsigned delta_cells = f->exchanges - before;
+    assert(f->device.status.completed_frame == 3);
+    assert(d.retained_valid && !memcmp(d.wire, f->image, d.wire_size));
+    assert(f->writes - writes < writes);
+    if (width == 240 && height == 64)
+      printf("M100 SPI native exchange cells: compressed full %u, one-pixel %u, unchanged %u\n",
+             full_cells, delta_cells, unchanged_cells);
+    f->device.need_full = true;
+    memset(f->image, 0, d.wire_size);
+    assert(!upload(&d));
+    assert(!memcmp(d.wire, f->image, d.wire_size));
+  }
   if (width == 640 && height == 200)
     assert(f->writes == 77);
+  free(d.wire); free(d.retained);
   free(d.pixels);
   free(d.row);
   free(f->image);
 }
 int main(void) {
   for (unsigned f = 0; f < 5; f++) {
-    run(f, 13, 3, 1);
-    run(f, 13, 3, 2);
+    run(f, 13, 3, 1, false);
+    run(f, 13, 3, 2, false);
+    run(f, 241, 19, 7, true);
   }
-  run(SDLP_MONO1, 640, 200, 200);
+  run(SDLP_MONO1, 640, 200, 200, false);
+  run(SDLP_MONO1, 240, 64, 64, true);
   uint8_t mono[] = {0x15}, rgb[] = {0xf8, 0, 0, 0x1f};
   assert(
       raster_valid(mono, 1, 5, 1, 1, SOLAR_OS_DISPLAY_FORMAT_MONO1, NULL, 0));
