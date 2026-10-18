@@ -17,7 +17,14 @@ static const char * const setterm_commands[] = {
 #endif
     "repeat", "timezone", "startup", "otaurl", "ota",
 };
-static const char * const stream_commands[] = {"list", "status"};
+static const char * const stream_commands[] = {"list", "status",
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+    "ble",
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+    "tcp",
+#endif
+};
 static const char * const log_commands[] = {"status", "show", "follow", "clear", "level", "sink"};
 static const char * const port_commands[] = {"list", "status"};
 static const char * const xfer_commands[] = {"protocols", "send", "recv"};
@@ -73,6 +80,12 @@ static const char * const sshkey_commands[] = {"status", "gen", "pub", "rm"};
 #endif
 #include "solar_os_storage.h"
 #include "solar_os_stream.h"
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+#include "solar_os_ble_stream.h"
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+#include "solar_os_tcp_stream.h"
+#endif
 #include "solar_os_task.h"
 #include "solar_os_keys.h"
 #include "solar_os_terminal.h"
@@ -2748,6 +2761,11 @@ static void stream_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "usage:");
     solar_os_shell_io_writeln(term, "  stream list");
     solar_os_shell_io_writeln(term, "  stream status <id>");
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+    solar_os_shell_io_writeln(term, "  stream ble listen <name>");
+    solar_os_shell_io_writeln(term, "  stream ble connect <name> <address> <public|random|rpa_public|rpa_random>");
+    solar_os_shell_io_writeln(term, "  stream ble status|remove <name>");
+#endif
 }
 
 static void stream_print_list(solar_os_shell_io_t *term)
@@ -2779,6 +2797,72 @@ static void stream_print_list(solar_os_shell_io_t *term)
 void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
+
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+    if (argc >= 2 && !strcmp(argv[1], "ble")) {
+        const char *usage = "stream ble listen <name> | connect <name> <address> <public|random|rpa_public|rpa_random> | status|remove <name>";
+        esp_err_t err = ESP_ERR_INVALID_ARG;
+        if (argc == 4 && !strcmp(argv[2], "listen")) {
+            err = solar_os_ble_stream_listen(argv[3]);
+        } else if (argc == 6 && !strcmp(argv[2], "connect")) {
+            uint8_t address[6];
+            uint8_t type;
+            bool valid_type = solar_os_ble_keyboard_parse_addr_type(argv[5], &type);
+            if (!valid_type && !strcmp(argv[5], "public-id")) { type = 2; valid_type = true; }
+            if (!valid_type && !strcmp(argv[5], "random-id")) { type = 3; valid_type = true; }
+            if (valid_type && solar_os_ble_parse_address(argv[4], strlen(argv[4]), address))
+                err = solar_os_ble_stream_connect(argv[3], address, type);
+        } else if (argc == 4 && !strcmp(argv[2], "remove")) {
+            err = solar_os_ble_stream_remove(argv[3]);
+        } else if (argc == 4 && !strcmp(argv[2], "status")) {
+            solar_os_ble_stream_info_t info;
+            err = solar_os_ble_stream_status(argv[3], &info);
+            if (!err) solar_os_shell_io_printf(term,
+                "BLE stream %s: %s, %s, PSM 0x0080, MTU RX/TX %u/%u, queued RX/TX %u/%u, interval %u us\n",
+                argv[3], info.listening ? "listener" : "central",
+                !info.claimed ? "idle" : info.failed ? "disconnected" : info.connected ? "connected" : "waiting",
+                (unsigned)info.rx_mtu, (unsigned)info.tx_mtu,
+                (unsigned)info.rx_pending, (unsigned)info.tx_pending,
+                (unsigned)info.connection_interval_us);
+        }
+        if (err) solar_os_shell_diag_esp(term, "stream ble", err, usage,
+            "Release the stream before removal; a listener shares the BLE peripheral lease");
+        else if (strcmp(argv[2], "status")) solar_os_shell_io_printf(term,
+            "BLE stream %s %s%s\n", argv[3], !strcmp(argv[2], "remove") ? "removed" : "configured",
+            !strcmp(argv[2], "remove") ? "" : " (connects/advertises when claimed)");
+        return;
+    }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+    if (argc >= 2 && !strcmp(argv[1], "tcp")) {
+        const char *usage = "stream tcp listen <name> <port> | stream tcp connect <name> <host> <port> | stream tcp remove <name>";
+        esp_err_t err = ESP_ERR_INVALID_ARG;
+        if (argc == 5 && !strcmp(argv[2], "listen")) {
+            char *end;
+            errno = 0;
+            unsigned long port = strtoul(argv[4], &end, 10);
+            if (!errno && end != argv[4] && !*end && port && port <= UINT16_MAX)
+                err = solar_os_tcp_stream_listen(argv[3], (uint16_t)port);
+            if (err == ESP_OK)
+                solar_os_shell_io_printf(term, "TCP stream %s listening on port %lu\n", argv[3], port);
+        } else if (argc == 6 && !strcmp(argv[2], "connect")) {
+            char *end;
+            errno = 0;
+            unsigned long port = strtoul(argv[5], &end, 10);
+            if (!errno && end != argv[5] && !*end && port && port <= UINT16_MAX)
+                err = solar_os_tcp_stream_connect(argv[3], argv[4], (uint16_t)port);
+            if (err == ESP_OK) solar_os_shell_io_printf(term,
+                "TCP stream %s configured for %s:%lu (connects when claimed)\n", argv[3], argv[4], port);
+        } else if (argc == 4 && !strcmp(argv[2], "remove")) {
+            err = solar_os_tcp_stream_remove(argv[3]);
+            if (err == ESP_OK) solar_os_shell_io_printf(term, "TCP stream %s removed\n", argv[3]);
+        }
+        if (err != ESP_OK) solar_os_shell_diag_esp(term, "stream tcp", err, usage,
+            "Release the stream owner before removing an endpoint");
+        return;
+    }
+#endif
 
     if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
         stream_print_list(term);
@@ -2846,7 +2930,15 @@ void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv)
                                    "stream",
                                    argc,
                                    argv,
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM && SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+                                   "stream list|status|tcp|ble",
+#elif SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+                                   "stream list|status|tcp",
+#elif SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+                                   "stream list|status|ble",
+#else
                                    "stream list|status",
+#endif
                                    stream_commands,
                                    sizeof(stream_commands) / sizeof(stream_commands[0]));
 }

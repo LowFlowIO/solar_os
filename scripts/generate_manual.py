@@ -97,6 +97,7 @@ DERIVED_ALIAS_OWNERS = {
     ("command.wireguard", "wireguard"): "network",
     ("app.agent", "agent"): "agent",
     ("app.contacts", "contacts"): "command.contacts",
+    ("app.dlp", "dlp"): "command.dlp",
     ("app.email", "email"): "command.email",
     ("app.files", "files"): "storage",
     ("app.flash", "flash"): "flash",

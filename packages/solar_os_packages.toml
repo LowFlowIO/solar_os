@@ -29,7 +29,7 @@ members = ["service_wifi"]
 [groups.bluetooth]
 label = "Bluetooth keyboard"
 category = "System"
-members = ["service_ble"]
+members = ["service_ble", "service_ble_stream"]
 
 [groups.sd_storage]
 label = "SD storage"
@@ -50,6 +50,11 @@ members = ["driver_camera_esp32", "job_cam_webd"]
 label = "RTSP streaming"
 category = "Networking"
 members = ["job_rtspd", "app_rtsp"]
+
+[groups.dlp]
+label = "DLP display receiver"
+category = "Hardware interfaces"
+members = ["app_dlp"]
 
 [groups.vision]
 label = "Computer vision"
@@ -307,6 +312,11 @@ label = "Telnet client and server"
 category = "Networking"
 members = ["app_telnet", "job_telnetd"]
 
+[groups.tcp_streams]
+label = "TCP byte streams"
+category = "Networking"
+members = ["service_tcp_stream"]
+
 [groups.http_server]
 label = "HTTP server"
 category = "Networking"
@@ -512,10 +522,20 @@ label = "PCD8544 display"
 category = "Expansion hardware"
 members = ["expansion_pcd8544"]
 
-[groups.spi_display]
-label = "SPI Display Link"
+[groups.dlp_client]
+label = "DLP host connections"
+category = "Media"
+members = ["service_dlp_client"]
+
+[groups.stream_dlp]
+label = "DLP stream displays"
 category = "Expansion hardware"
-members = ["expansion_spi_display"]
+members = ["expansion_stream_dlp"]
+
+[groups.spi_dlp]
+label = "SPI DLP displays"
+category = "Expansion hardware"
+members = ["expansion_spi_dlp"]
 
 [groups.ssd1683]
 label = "SSD1683 e-paper display"
@@ -1250,6 +1270,12 @@ sources = [
 requires = ["bt", "esp_hid", "nvs_flash"]
 capabilities = ["ble"]
 
+[packages.service_ble_stream]
+label = "service.ble-stream"
+depends = ["service_ble", "service_streams"]
+sources = ["services/solar_os_ble_stream.c"]
+capabilities = ["ble"]
+
 [packages.service_hid]
 # Dormant by default: TinyUSB composite HID currently costs too much internal
 # SRAM. Keep the package available for explicit future builds, but do not add it
@@ -1329,6 +1355,13 @@ sources = [
 [packages.service_streams]
 label = "service.streams"
 sources = ["services/solar_os_stream.c"]
+
+[packages.service_tcp_stream]
+label = "service.tcp-stream"
+depends = ["service_streams", "service_wifi"]
+sources = ["services/solar_os_tcp_stream.c"]
+requires = ["lwip"]
+capabilities = ["wifi"]
 
 [packages.service_resources]
 label = "service.resources"
@@ -1588,16 +1621,42 @@ sources = [
 requires = ["esp_driver_gpio", "esp_driver_spi", "u8g2"]
 capabilities = ["expansion_gpio"]
 
-[packages.expansion_spi_display]
-label = "expansion.spi-display"
+[packages.service_display_link]
+label = "service.display_link"
+sources = ["../protocol/display_link/src/sdlp.c"]
+
+[packages.service_dlp]
+label = "service.dlp"
+depends = ["service_display_link"]
+sources = ["services/solar_os_dlp_receiver.c", "services/solar_os_dlp_raster.c"]
+
+[packages.service_dlp_client]
+label = "service.dlp-client"
+depends = ["service_display_link", "service_streams"]
+sources = ["drivers/solar_os_display_link.c", "services/solar_os_dlp_stream.c"]
+requires = ["esp_timer", "u8g2"]
+
+[packages.service_dlp_display]
+label = "service.dlp-display"
+depends = ["service_dlp_client", "service_expansion"]
+sources = ["services/solar_os_dlp_display.c"]
+requires = ["u8g2"]
+
+[packages.expansion_stream_dlp]
+label = "expansion.stream-dlp"
+expansion_drivers = ["solar_os_stream_dlp_expansion_driver"]
+depends = ["service_dlp_display"]
+sources = ["services/solar_os_stream_dlp_driver.c"]
+
+[packages.expansion_spi_dlp]
+label = "expansion.spi-dlp"
 targets = ["esp32", "esp32s3"]
-expansion_drivers = ["solar_os_spi_display_expansion_driver"]
-depends = ["service_spi", "service_expansion"]
+expansion_drivers = ["solar_os_spi_dlp_expansion_driver"]
+depends = ["service_spi", "service_dlp_display"]
 sources = [
-  "../protocol/display_link/src/sdlp.c",
-  "drivers/solar_os_display_link.c",
-  "services/solar_os_spi_display.c",
-  "services/solar_os_spi_display_driver.c",
+  "drivers/solar_os_display_link_spi.c",
+  "services/solar_os_spi_dlp.c",
+  "services/solar_os_spi_dlp_driver.c",
 ]
 requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
 capabilities = ["gfx", "expansion_spi", "expansion_gpio"]
@@ -2668,6 +2727,13 @@ depends = ["service_zoo"]
 sources = ["apps/solar_os_zoo_app.c"]
 capabilities = ["psram", "wifi"]
 targets = ["esp32s3"]
+
+[packages.app_dlp]
+label = "app.dlp"
+depends = ["service_dlp", "service_streams"]
+sources = ["apps/solar_os_dlp_app.c", "shell/solar_os_shell_dlp.c"]
+requires = ["esp_timer"]
+capabilities = ["gfx"]
 
 [packages.app_clock]
 label = "app.clock"

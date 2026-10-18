@@ -7,6 +7,7 @@
 #include "esp_err.h"
 #include "solar_os_board_caps.h"
 #include "solar_os_expansion_types.h"
+#include "solar_os_stream.h"
 
 #define SOLAR_OS_EXPANSION_DRIVER_NAME_MAX 32
 #define SOLAR_OS_EXPANSION_DEVICE_NAME_MAX 20
@@ -28,7 +29,11 @@ typedef enum {
     SOLAR_OS_EXPANSION_BINDING_PS2_BUS,
     SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM,
     SOLAR_OS_EXPANSION_BINDING_PARAMETER,
+    SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM,
 } solar_os_expansion_binding_kind_t;
+
+bool solar_os_expansion_stream_binding_valid(solar_os_expansion_binding_kind_t,
+                                             const solar_os_stream_info_t *);
 
 typedef struct {
     solar_os_expansion_binding_kind_t kind;

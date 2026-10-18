@@ -45,6 +45,24 @@ class BoardManifestTest(unittest.TestCase):
                 board = load_board_manifest(path, self.manifest_dir)
                 validate_board(board, self.drivers)
 
+    def test_stream_dlp_generates_typed_stream_binding_on_headless_board(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        board.setdefault("devices", []).append({
+            "driver": "stream-dlp", "name": "remote0",
+            "bindings": {"stream": "uart0", "timeout-ms": 3000}})
+        validate_board(board, self.drivers)
+        header = generate_header(board, self.drivers)
+        self.assertIn("SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM", header)
+        self.assertIn('.target = "uart0"', header)
+        self.assertIn('"timeout-ms"', header)
+        self.assertIn("expansion_stream_dlp", required_packages(board, self.drivers))
+        for invalid in ("", 17):
+            with self.subTest(value=invalid):
+                board["devices"][-1]["bindings"]["stream"] = invalid
+                with self.assertRaises(ManifestError):
+                    validate_board(board, self.drivers)
+
     def test_ds3231_overlay_and_fixed_address(self) -> None:
         board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
         device = {"driver": "ds3231", "name": "rtc0",

@@ -237,6 +237,18 @@ static bool copy_driver(const char *name, solar_os_expansion_driver_t *driver)
     return found;
 }
 
+bool solar_os_expansion_stream_binding_valid(solar_os_expansion_binding_kind_t kind,
+                                             const solar_os_stream_info_t *info)
+{
+    if (!info) return false;
+    if (kind == SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM)
+        return info->type == SOLAR_OS_STREAM_TYPE_BYTES &&
+            info->direction == SOLAR_OS_STREAM_DIRECTION_DUPLEX &&
+            info->sharing == SOLAR_OS_STREAM_SHARING_EXCLUSIVE;
+    return kind == SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM &&
+        info->type == SOLAR_OS_STREAM_TYPE_SCALAR && info->direction != SOLAR_OS_STREAM_DIRECTION_SINK;
+}
+
 static bool binding_matches_spec(const solar_os_expansion_binding_t *binding,
                                  const solar_os_expansion_binding_spec_t *spec)
 {
@@ -276,6 +288,7 @@ static const char *binding_key(const solar_os_expansion_binding_t *binding)
         return "uart";
     case SOLAR_OS_EXPANSION_BINDING_PS2_BUS:
         return "ps2";
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM:
         return binding->role[0] != '\0' ? binding->role : "stream";
     case SOLAR_OS_EXPANSION_BINDING_PARAMETER:
@@ -496,6 +509,7 @@ static esp_err_t append_binding_claims(const solar_os_expansion_binding_t *bindi
         return ESP_OK;
     case SOLAR_OS_EXPANSION_BINDING_PS2_BUS:
         return ESP_OK;
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM:
         return ESP_OK;
     case SOLAR_OS_EXPANSION_BINDING_I2C_BUS:
@@ -567,11 +581,11 @@ static bool binding_valid(const solar_os_expansion_binding_t *binding,
         return solar_os_bus_find(binding->target,
                                  SOLAR_OS_BUS_PROTOCOL_PS2,
                                  NULL);
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM: {
         solar_os_stream_info_t info;
         return solar_os_stream_get_info(binding->target, &info) == ESP_OK &&
-            info.type == SOLAR_OS_STREAM_TYPE_SCALAR &&
-            info.direction != SOLAR_OS_STREAM_DIRECTION_SINK;
+            solar_os_expansion_stream_binding_valid(binding->kind, &info);
     }
     case SOLAR_OS_EXPANSION_BINDING_PARAMETER:
         return binding->role[0] != '\0';
@@ -1584,6 +1598,8 @@ const char *solar_os_expansion_binding_kind_name(solar_os_expansion_binding_kind
         return "uart";
     case SOLAR_OS_EXPANSION_BINDING_PS2_BUS:
         return "ps2";
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
+        return "bytes";
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM:
         return "scalar";
     case SOLAR_OS_EXPANSION_BINDING_PARAMETER:

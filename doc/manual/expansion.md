@@ -398,18 +398,70 @@ Composite PAL uses I2S0 and GPIO25. VGA32 uses I2S1 plus its six RGB and two
 sync GPIOs; see the expansion reference for its full binding list. A fixed
 board-default `display0` cannot be detached.
 
+## Display Link Protocol over streams
+
+`stream-dlp` connects a DLP peripheral through an existing exclusive duplex
+byte stream. It registers the supplied name as a display target for text,
+graphics, and foreground applications. The `stream_dlp` firmware group is
+included in the `full` flavor, including boards without a built-in display.
+The stream owns transport setup; the driver owns DLP discovery, format
+selection, uploads, presentation completion, and recovery.
+
+```text
+stream tcp connect pico0 192.0.2.10 7777
+expansion attach stream-dlp lcd1 stream=pico0
+display test lcd1
+expansion detach lcd1
+stream tcp remove pico0
+```
+
+Replace the address with a reachable DLP endpoint. For UART, create a UART
+port with the required pins and fixed baud first, then select its byte-stream
+ID. For example, on approved free pins and an unused controller:
+
+```text
+expansion bus create uart dlp-uart port=uart1 tx=<host-tx-gpio> rx=<host-rx-gpio> baud=921600
+expansion attach stream-dlp lcd1 stream=dlp-uart
+```
+
+Cross host TX to peripheral RX and host RX to peripheral TX, with common
+ground. Radio-backed streams follow the same contract. There is no baud
+negotiation or UART READY signal. Optional hardware reset is separate from
+the stream driver.
+
+`stream=` completes compatible registered streams. Attachment claims the
+stream exclusively; it remains claimed until detach. Stop applications and
+release display claims before detaching. Detach frees the local DLP image,
+conversion and protocol buffers and releases the stream claim. The stream
+itself remains registered; a Link stream's RX/TX queues are released by
+`link stream remove <port>`.
+
+`timeout-ms=100..60000` sets discovery
+and the minimum command timeout, default 5000 ms. Peripheral presentation
+limits may require longer waits. Discovery retries transient stream failures
+within its connection deadline. A failed presentation returns an error; the
+next presentation reopens the stream, discovers a fresh protocol session,
+and uploads a full frame. Dimensions and supported formats must remain fixed
+for the attachment; detach and attach again after changing the peripheral.
+
+Both DLP drivers use the same host core, including negotiated window uploads,
+compression, retained-state checks, and changed-region uploads. Private
+[Python](python.gfx.md#direct-dlp-connections) and
+[Lua](lua.gfx.md#direct-dlp-connections) connections use that core without
+registering a named display.
+
 ## Display Link Protocol over SPI
 
-`spi-display` attaches a Display Link Protocol (DLP) peripheral under the supplied display name.
+`spi-dlp` attaches a Display Link Protocol (DLP) peripheral under the supplied display name.
 The peripheral owns its physical panel. SolarOS reads its native dimensions
 and accepted pixel formats, selects a transfer format, and registers a display
 target for text, graphics, and foreground applications. A receive-capable SPI
-bus with MISO is required. The `spi_display` firmware group supplies the driver
+bus with MISO is required. The `spi_dlp` firmware group supplies the driver
 and is selected by the `full` flavor on compatible boards.
 
 ```text
-expansion attach spi-display lcd1 spi=<bus> cs=<allowed-cs-gpio>
-expansion attach spi-display lcd1 spi=<bus> cs=<allowed-cs-gpio> ready=<allowed-input-gpio> reset=<allowed-output-gpio>
+expansion attach spi-dlp lcd1 spi=<bus> cs=<allowed-cs-gpio>
+expansion attach spi-dlp lcd1 spi=<bus> cs=<allowed-cs-gpio> ready=<allowed-input-gpio> reset=<allowed-output-gpio>
 ```
 
 READY and RESET are independently optional. Without READY, transfers use
@@ -446,7 +498,16 @@ lcd0 or oled0 exists; inspect devices() or use a name explicitly supplied by
 the user. Foreground scripts consume attached pointer, axis, and gesture sources through
 solaros.input.
 
-`spi-display` attaches a DLP endpoint using `spi` and `cs`, with independent
+`spi-dlp` attaches a DLP endpoint using `spi` and `cs`, with independent
 optional `ready` and `reset` GPIOs. Native dimensions and wire formats are
 discovered during attachment. Optional `clock` is a ceiling in kHz;
 `reset-ms`, `boot-ms`, and `reset-active` configure reset and discovery.
+
+`stream-dlp` attaches a DLP endpoint through `stream=<existing-exclusive-duplex-byte-stream>`.
+Optional `timeout-ms=100..60000` defaults to 5000. Configure UART, TCP, BLE, or radio
+through its stream provider first; there is no baud negotiation. Attachment
+claims the stream until detach; release display claims before detaching.
+`stream tcp connect <name> <host> <port>` creates an outbound TCP stream.
+`stream ble connect <name> <address> <address-type>` creates an outbound native
+CoC stream. A `stream ble listen <name>` endpoint can also host a DLP client;
+BLE central/peripheral roles are independent of DLP direction.

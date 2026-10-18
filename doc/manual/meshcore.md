@@ -206,10 +206,13 @@ station and bridge the UART port:
 job start bridge uart0 mser0
 ```
 
-The stream is a slow, stop-and-wait serial link, not an IP or Telnet tunnel.
-It carries up to 82 data bytes per MeshCore packet, uses 2048-byte transmit and
-receive queues, retries after 12 to 16 seconds, and treats a peer as absent
-after 180 seconds. Interactive command shells are practical; full-screen TUIs,
+The stream provides ordered serial delivery with up to two frames in flight and
+receiver credits. It carries up to 78 data bytes per MeshCore packet and uses
+2048-byte transmit and receive queues. Acknowledgements piggyback on replies;
+standalone ACKs become due after 250 milliseconds, or earlier after two new
+frames. Retries take 12 to 16 seconds, and a peer is
+treated as absent after 180 seconds. Both endpoints must support Link stream
+protocol v3. Interactive command shells are practical; full-screen TUIs,
 bulk transfers, and chatty terminal negotiation are poor fits. Use the `dumb`
 terminal mode where possible.
 

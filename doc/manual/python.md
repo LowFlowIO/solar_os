@@ -45,7 +45,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Apps, jobs, and identity](python.system.md) | `solaros.identity`, `solaros.jobs`, `solaros.sessions`, `solaros.apps` |
 | [Contacts and messages](python.messaging.md) | `solaros.contacts`, `solaros.messages` |
 | [Text user interfaces](python.tui.md) | `solaros.tui` |
-| [Graphics and raster images](python.gfx.md) | `solaros.gfx`, `solaros.image` |
+| [Graphics, raster images, and DLP connections](python.gfx.md) | `solaros.gfx`, `solaros.image`, `solaros.dlp` |
 | [Camera, streams, and RTSP](python.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
 | [Computer vision](vision.md) | `solaros.vision` |
 | [Model inference](inference.md) | `solaros.inference` |

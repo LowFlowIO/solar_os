@@ -24,7 +24,7 @@ typedef struct {
     uint32_t spi_hz;
     uint64_t last_cs_us;
     bool ready_enabled;
-} solar_os_display_link_t;
+} spi_transport_t;
 
 static uint64_t clock_us, acquire_delay;
 static unsigned acquisitions, releases, transfers, selections;
@@ -76,7 +76,7 @@ static esp_err_t spi_device_polling_transmit(spi_device_handle_t spi,
 #include "display_link_exchange.inc"
 
 int main(void) {
-    solar_os_display_link_t d = {.config = {.cs = 12, .ready = -1},
+    spi_transport_t d = {.config = {.cs = 12, .ready = -1},
                                  .bus = "spi0"};
     uint8_t tx[256] = {0x53, 0x44, 0x4c, 0x50}, rx[256] = {0};
     clock_us = 1000;

@@ -33,6 +33,7 @@ BINDING_KINDS = {
     "uart_port",
     "ps2_bus",
     "scalar_stream",
+    "byte_stream",
     "parameter",
 }
 PIN_BINDING_KINDS = {"gpio", "adc", "pwm", "spi_cs"}
@@ -42,6 +43,7 @@ TARGET_BINDING_KINDS = {
     "uart_port",
     "ps2_bus",
     "scalar_stream",
+    "byte_stream",
 }
 KEYED_LISTS = {
     ("buses",): "name",
@@ -154,7 +156,7 @@ def load_driver_catalog(path: Path) -> dict[str, DriverDef]:
             if minimum is not None and maximum is not None and minimum > maximum:
                 raise ManifestError(f"{binding_path} has an inverted value range")
             default_role = key if kind in {
-                "gpio", "gpio_line", "adc", "pwm", "parameter", "scalar_stream"
+                "gpio", "gpio_line", "adc", "pwm", "parameter", "scalar_stream", "byte_stream"
             } else ""
             bindings.append(DriverBinding(
                 key=key,

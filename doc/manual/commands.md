@@ -258,6 +258,7 @@ job for periodic polling.
 | `identity` | `identity hostname <name>` | Save the device hostname in NVS; reboot to update Wi-Fi. |
 | `engine` | `engine [status|reset]` | Print or reset generic engine utilization counters for CPU/SIMD-style backends and vector bulk operations. |
 | `display` | `display [list]`; `display layouts`; `display test <target>`; `display mode <target> [mode]` | List targets and layouts, draw a test pattern, or change driver-specific display settings. |
+| `dlp` | `dlp serve <display> stream=<byte-stream>`; `dlp status`; `dlp stop <display>` | Receive DLP images on a named display through an exclusive duplex byte stream. See [DLP](apps.md#dlp). |
 | `display` | `display join <name> --horizontal\|--vertical <target> <target> [target ...]`; `display unjoin <name>` | Join two to four physical targets into one logical display, or remove the join. |
 | `display` | `display split <target> --horizontal\|--vertical <first> <second>`; `display unsplit <target>` | Split one physical target into two equal logical viewports, or remove the split. |
 | `input` | `input [status|keyboard|touch|mouse|joystick|dpad|buttons|gesture]` | List all input sources or filter them by semantic class. |
@@ -792,6 +793,13 @@ unzip -l /books/archive.zip
 | --- | --- | --- |
 | `stream` | `stream` or `stream list` | List dynamic typed stream endpoints. |
 | `stream` | `stream status <id>` | Show type, direction, provider, format, owner, and counters for one stream. |
+| `stream` | `stream tcp listen <name> <port>` | Register an exclusive duplex byte stream backed by a raw TCP listener. Requires TCP byte-stream support. |
+| `stream` | `stream tcp connect <name> <host> <port>` | Register an exclusive duplex byte stream for an outbound TCP connection. |
+| `stream` | `stream tcp remove <name>` | Remove an unclaimed TCP listener or outbound stream. |
+| `stream` | `stream ble listen <name>` | Register an exclusive duplex BLE L2CAP CoC stream. Advertises when claimed. Requires BLE byte-stream support. |
+| `stream` | `stream ble connect <name> <address> <public\|random\|rpa_public\|rpa_random>` | Register an outbound CoC stream. Connects when claimed. Use the address and type reported by `ble scan`. |
+| `stream` | `stream ble status <name>` | Show connection state, negotiated SDU sizes, queued bytes, and connection interval. |
+| `stream` | `stream ble remove <name>` | Remove an unclaimed BLE stream. |
 | `model` | `model backend`; `model list`; `model info <handle>` | Check engine availability and inspect resident models, interfaces, memory, mode, and references. |
 | `model` | `model load <file.espdl> [timeout_ms]`; `model bundle <bundle.json> [timeout_ms]` | Load a resident raw model or a checked model bundle from storage. |
 | `model` | `model mode <handle> <single\|auto\|dual>` | Select execution mode without reloading the model. |
@@ -823,6 +831,85 @@ unzip -l /books/archive.zip
 | `xfer` | `xfer recv <port> <file> --raw [--append\|--replace] [--idle-ms ms]` | Receive raw bytes until the idle timeout and append or replace the destination. |
 | `xfer` | `xfer send <port> <file> --zmodem` | Send a file with ZMODEM. |
 | `xfer` | `xfer recv <port> <file> --zmodem [--append\|--replace]` | Receive a file with ZMODEM and append or replace the destination. |
+
+TCP byte streams:
+
+```text
+stream tcp listen tcp0 7777
+stream status tcp0
+stream tcp remove tcp0
+```
+
+The optional TCP byte-stream package is included in the full flavor. It supports
+up to four IPv4 TCP endpoints. Listeners bind to all network interfaces;
+`stream tcp connect <name> <host> <port>` configures an outbound endpoint.
+Hostnames resolve when the endpoint is registered; recreate it to resolve again.
+The outbound socket connects lazily when a consumer first performs I/O. Each exposes one
+exclusive duplex byte stream and port, without Telnet negotiation or newline
+translation. TCP connections are unencrypted and unauthenticated; use a trusted
+network. Endpoints are runtime settings and are not saved across reboot.
+
+Start the stream consumer before connecting the client. I/O is nonblocking;
+partial writes and backpressure are preserved. A disconnected peer causes an
+I/O error for the current owner. Release and reopen the stream before attaching
+a new peer; a new connection never continues the old owner's protocol session.
+
+### BLE byte streams
+
+The `service.ble-stream` package provides native BLE L2CAP Connection-Oriented
+Channels (CoC). Up to four runtime endpoint configurations share at most two
+active channels, subject to the host's connection budget. The OS reserves a
+connection for its BLE keyboard. Configuration does not connect or advertise;
+claiming the stream starts the connection, and releasing it closes the owned
+BLE session and frees its data buffers. Endpoints remain until removed or
+rebooted.
+
+```text
+stream ble listen ble0
+dlp serve display0 stream=ble0
+stream ble status ble0
+```
+
+On another device, run `ble scan`, then configure the discovered address and
+type (`public`, `random`, `rpa_public`, or `rpa_random`):
+
+```text
+stream ble connect ble0 aa:bb:cc:dd:ee:ff public
+expansion attach stream-dlp remote stream=ble0
+```
+
+The listener advertises `SolarOS <stream-name>` using the shared generic BLE
+peripheral lease. Only one listener can be claimed at a time; it cannot run
+alongside another generic GATT server or the HID peripheral role. The keyboard
+input client can remain connected. Central/peripheral roles do not determine
+which device sends data or serves a display.
+
+Streams carry exact bytes in both directions, with no line conversion or Link
+framing. Reads and writes are nonblocking after connection setup; a full transmit
+queue returns a partial write. A paused reader withholds channel credits instead
+of dropping data. The receiver and transmitter each have a bounded 4096-byte
+queue per channel. CoC SDU boundaries are hidden from consumers.
+Output queued before a peer connects stays with the current claim, allowing a
+listening shell to send its initial banner when the central arrives. The receive MTU
+fits one CoC PDU, so short SDUs cannot leave outstanding credits
+without a receive buffer. `stream ble status` shows negotiated sizes and queues.
+
+A disconnect fails the current claim. Release and reopen to create a fresh
+connection; bytes from separate connections are never joined. DLP serving and
+the `stream-dlp` driver handle this through their existing reconnect paths.
+Open may wait for GAP/GATT connection setup. A central checks the SolarOS stream
+service and version descriptor before opening PSM `0x0080`. This is native CoC,
+not the GATT UART profile used by BLE serial applications. Streams currently
+accept open connections and do not impose pairing, bonding, or peer authorization.
+
+After releasing the consumer:
+
+```text
+stream ble remove ble0
+```
+Closing the stream closes its peer; the endpoint remains registered until
+removed. An outbound endpoint attempts a new connection when reopened and used. Remove refuses a stream that is still claimed. Connected peers request
+low-latency Wi-Fi and release that request when the connection closes.
 
 DAQ usage:
 

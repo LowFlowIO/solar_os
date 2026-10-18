@@ -49,6 +49,12 @@ class FlavorPackagesTest(unittest.TestCase):
             self.assertNotIn("gameboy", groups, flavor)
             self.assertNotIn("app_gameboy", packages, flavor)
 
+    def test_tcp_byte_streams_are_optional_and_enabled_in_full(self):
+        for flavor in ("full", "classic", "writerdeck"):
+            _, _, groups, packages = self.resolve(flavor)
+            self.assertEqual(groups["tcp_streams"], flavor == "full")
+            self.assertEqual(packages["service_tcp_stream"], flavor == "full")
+
     def test_classic_uses_compact_baseline_with_dpad_support(self):
         _, _, compact_groups, compact_packages = self.resolve("writerdeck")
         name, _, groups, packages = self.resolve("classic")

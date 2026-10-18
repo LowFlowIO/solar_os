@@ -1394,6 +1394,15 @@ static void dispatch_input_key(const solar_os_input_key_event_t *event)
         (event->modifiers & SOLAR_OS_INPUT_MOD_ALT) != 0U;
     const bool ctrl_active =
         (event->modifiers & SOLAR_OS_INPUT_MOD_CTRL) != 0U;
+    if (event->key == SOLAR_OS_KEY_APP_EXIT &&
+        event->action == SOLAR_OS_INPUT_KEY_PRESS) {
+        /* Ctrl+Alt+Delete can arrive after Alt opened a persistent switcher.
+         * Release that display overlay before the app hands back to its shell,
+         * even while the keyboard still reports the shortcut modifiers held. */
+        session_switch_alt_held = false;
+        session_switch_nav_held = 0U;
+        close_session_overlay();
+    }
     const bool navigation_left =
         event->key == SOLAR_OS_KEY_LEFT ||
         event->key == SOLAR_OS_KEY_CTRL_LEFT;
@@ -1421,7 +1430,7 @@ static void dispatch_input_key(const solar_os_input_key_event_t *event)
 
     if (!session_switch_alt_held &&
         event->action == SOLAR_OS_INPUT_KEY_PRESS && event->key == 0U &&
-        (event->modifiers & SOLAR_OS_INPUT_MOD_LEFT_ALT) != 0U) {
+        (event->modifiers & SOLAR_OS_INPUT_MOD_LEFT_ALT) != 0U && !ctrl_active) {
         session_switch_alt_held = true;
         solar_os_sessions_show_input_focus_overlay();
         if (input_focus_accepts_key_events()) {

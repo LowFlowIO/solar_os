@@ -241,7 +241,9 @@ static void radio_link_task(void *arg)
         if (radio_link.status.chat_enabled) {
             solar_os_link_messaging_process(now_ms);
         }
-        solar_os_link_stream_process(radio_link.status.link, now_ms);
+        /* This half-duplex worker listens only after its TX queue drains.
+         * Keep a receive turn between frames, including at long LoRa airtimes. */
+        solar_os_link_stream_process_with_window(radio_link.status.link, now_ms, 1U);
 
         solar_os_link_frame_t frame;
         esp_err_t ret = solar_os_link_take_tx(radio_link.status.link, &frame, 0);

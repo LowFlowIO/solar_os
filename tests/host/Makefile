@@ -14,7 +14,7 @@ KEYMAP_INPUTS := $(wildcard $(ROOT)/keymaps/profiles/*.json) $(ROOT)/scripts/gen
 
 .PHONY: all test clean
 
-TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test
+TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test ble_coc_test
 TARGETS += input_action_match_test gesture_completion_test
 TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
 TARGETS += frontlight_pwm_test epd_xteink_identify_test x4pro_expansion_test
@@ -387,10 +387,11 @@ ble_multi_peer_test: ble_multi_peer_test.c ble_test_support.c $(ROOT)/src/servic
 	$(CC) $(CFLAGS) -D_POSIX_C_SOURCE=200809L -pthread -include compat.h -Ible_stubs -I. -I$(ROOT)/src/services \
 		ble_multi_peer_test.c ble_test_support.c -o $@
 
-ble_nimble_test ble_hid_test ble_server_test: %: %.c nimble_test_support.c ble_test_support.c \
+ble_nimble_test ble_hid_test ble_server_test ble_coc_test: %: %.c nimble_test_support.c ble_test_support.c \
 		$(ROOT)/src/services/solar_os_ble_nimble.c $(ROOT)/src/services/solar_os_ble_hid.c \
 		$(ROOT)/src/services/solar_os_ble_hid_report_map.c \
 		$(ROOT)/src/services/solar_os_ble_nimble_server.inc $(ROOT)/src/services/solar_os_ble_hid_hosts.inc \
+		$(ROOT)/src/services/solar_os_ble_nimble_coc.inc \
 		$(ROOT)/src/services/solar_os_ble_hid_name.inc \
 		$(wildcard $(ROOT)/src/services/solar_os_ble*.h) \
 		$(wildcard ble_stubs/freertos/*.h) \
@@ -1032,6 +1033,7 @@ test: $(TARGETS)
 	./ble_service_test
 	./ble_multi_peer_test
 	./ble_nimble_test
+	./ble_coc_test
 	./ble_hid_test
 	./ble_lua_bindings_test
 	./writer_buffer_test

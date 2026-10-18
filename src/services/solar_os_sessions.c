@@ -1701,18 +1701,18 @@ static bool close_session(solar_os_session_entry_t *session, bool preserve_conte
     }
 
     if (was_foreground) {
-        if (preserve_caller_context) {
-            session_context_restore(&previous);
-            return true;
-        }
+        /* Closing from an auxiliary console still has to resume the display's
+         * parent. Preserve the caller's context only after restoring that session. */
+        bool resumed = true;
         if (return_session != NULL) {
-            return switch_to_session_or_shell(return_session);
+            resumed = switch_to_session_or_shell(return_session);
+        } else if (session_state.shell_terminal != NULL) {
+            resumed = switch_to_session(ensure_shell_session(), false);
+        } else {
+            session_restore_base_context();
         }
-        if (session_state.shell_terminal != NULL) {
-            return switch_to_session(ensure_shell_session(), false);
-        }
-        session_restore_base_context();
-        return true;
+        if (preserve_caller_context) session_context_restore(&previous);
+        return resumed;
     }
     if (preserve_caller_context) {
         session_context_restore(&previous);

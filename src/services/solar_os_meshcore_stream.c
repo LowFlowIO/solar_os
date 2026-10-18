@@ -256,6 +256,7 @@ esp_err_t solar_os_meshcore_stream_create(
 
     const solar_os_link_stream_config_t config = {
         .port_label = "MeshCore virtual serial",
+        .window_frames = 2U,
         .acknowledgement_delay_ms = MESHCORE_STREAM_ACK_DELAY_MS,
         .retry_ms = MESHCORE_STREAM_RETRY_MS,
         .retry_jitter_ms = MESHCORE_STREAM_RETRY_JITTER_MS,

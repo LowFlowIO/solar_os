@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DisplayLinkTest(unittest.TestCase):
     def test_spi_exchange_and_deadlines(self):
-        source = (ROOT / "src/drivers/solar_os_display_link.c").read_text()
+        source = (ROOT / "src/drivers/solar_os_display_link_spi.c").read_text()
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "display_link_exchange.inc").write_text(
                 production_functions(source, ("exchange",)))
@@ -46,6 +46,9 @@ class DisplayLinkTest(unittest.TestCase):
 
     def test_portable_protocol(self):
         self.run_protocol_test("sdlp_test.c")
+
+    def test_windowed_protocol(self):
+        self.run_protocol_test("dlp_window_test.c")
 
     def run_protocol_test(self, name):
         library = ROOT / "protocol/display_link"

@@ -570,8 +570,10 @@ esp_err_t solar_os_frame_presenter_resume(
             presenter->config.clear_background_on_resume;
         xSemaphoreGive(presenter->mutex);
     }
+    const uint32_t stack_bytes = presenter->target.presentation_stack_bytes > FRAME_PRESENTER_STACK ?
+        presenter->target.presentation_stack_bytes : FRAME_PRESENTER_STACK;
     const BaseType_t created = solar_os_task_create_pinned_internal(
-        frame_presenter_worker, "frame_present", FRAME_PRESENTER_STACK,
+        frame_presenter_worker, "frame_present", stack_bytes,
         presenter, FRAME_PRESENTER_PRIORITY, &presenter->task,
         tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_FOREGROUND);
     if (created != pdPASS) {

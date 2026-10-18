@@ -29,6 +29,136 @@ in shell scrollback; app screens are discarded. Errors return to the shell
 with a diagnostic. Run `status` to check the most recent app exit code: 0 means
 success. See [Sessions](sessions.apps.md) for switching and display focus.
 
+## dlp
+
+Use a named SolarOS display as a Display Link Protocol receiver. The `dlp`
+package requires graphics support. One receiver may run at a time.
+
+```text
+dlp serve display0 stream=cdc0
+dlp status
+dlp stop display0
+```
+
+Run these commands from the local display shell or a separate port/network
+shell. The selected stream must provide exclusive, ordered, duplex bytes.
+Release any shell, log, or bridge owner on that stream first; DLP needs both
+directions for commands and replies. DLP does not configure baud rates,
+establish network connections, or add a BLE/radio transport.
+
+The receiver runs as a foreground session on the named display, suspending its
+previous session. It advertises the current display orientation and MONO1
+pixels (black=1, least-significant pixel first). Targets with direct RGB565
+presentation also advertise RGB565 with big-endian pixel bytes. The host must
+use an advertised format. Updates are staged; the display changes on PRESENT.
+Changed rectangles and RLE are supported. A new connection/session must send a
+full image before partial updates.
+The receiver also supports negotiated upload windows of up to 16 packets.
+Uploads receive cumulative progress acknowledgements, and the final reply
+waits for presentation completion. Lost or corrupt packets are retransmitted
+within the bounded window; retries do not repeat accepted writes or PRESENT.
+
+MONO1 uses direct presentation where supported. Displays with an INDEX2 raster
+backend use batched MONO1 conversion and send changed regions,
+without rebuilding a graphics canvas. This path needs an extra two-bit-per-pixel
+conversion buffer (38,400 bytes at 480×320). Initial frames and resume redraws
+repaint the full display. Other targets use the regular graphics canvas.
+
+The normal app-exit key, Escape, or `dlp stop <display>` closes the receiver, releases
+the stream, and restores the previous session. Suspension pauses protocol
+processing; resuming redraws the last completed image. Provider disconnects and
+I/O errors leave the app waiting for a new connection, retaining the last
+completed image. The receiver retries opening an unavailable stream. Each
+reopened transport starts a fresh protocol session and requires a full image.
+Serial links with no disconnect indication remain listening until stopped.
+
+The desktop test sender requires Python, pyserial, and Pillow:
+
+```sh
+python3 -m pip install pyserial Pillow
+python3 scripts/dlp_image.py --port /dev/ttyACM0 image.png
+python3 scripts/dlp_image.py --port /dev/ttyACM0 --demo --frames 20 --stats
+python3 scripts/dlp_image.py --port /dev/ttyACM0 --demo --fps 30 --frames 100 --stats
+python3 scripts/dlp_image.py --port /dev/ttyACM0 --demo --frames 6 --reconnect-every 2
+```
+
+Start the receiver before running the sender. The script discovers geometry,
+fits images on a white background, and sends MONO1 frames. `--legacy-cells`
+tests fixed-cell framing; compact DLP framing is the default. This is an image
+test tool; desktop virtual-monitor integration belongs to a host project.
+Windowed uploads are negotiated by default, with automatic fallback for older
+receivers. `--no-window` forces the original stop-and-wait behavior for comparison;
+it is independent of `--legacy-cells`. After display suspension invalidates
+retained content, the sender starts a new session and repaints fully.
+
+For Wi-Fi, create a raw TCP stream from a separate device console:
+
+```text
+stream tcp listen tcp0 7777
+dlp serve display0 stream=tcp0
+```
+
+Then run the desktop sender, replacing the example address with the device IP:
+
+```sh
+python3 scripts/dlp_image.py --tcp 192.0.2.10:7777 --demo --fps 30 --frames 100 --stats
+```
+
+TCP needs Pillow but does not need pyserial. Use the raw TCP listener, rather
+than a Telnet shell port. Closing the TCP sender leaves DLP waiting on the same
+listener. Connect a new sender without running `dlp serve` again. To remove the endpoint,
+stop DLP first if it is running, then run `stream tcp remove tcp0`.
+
+For a BLE connection between two SolarOS devices, configure a CoC listener on
+the receiving device and start DLP:
+
+```text
+stream ble listen ble0
+dlp serve display0 stream=ble0
+```
+
+On the sending device, use `ble scan` to find the advertised `SolarOS ble0`
+peripheral. Copy its address and address type into the connect command:
+
+```text
+stream ble connect ble0 aa:bb:cc:dd:ee:ff public
+expansion attach stream-dlp remote stream=ble0
+display test remote
+```
+
+The central/peripheral roles belong to the BLE connection; either side can
+serve a display or send frames. Release the consumer to close the connection.
+DLP serving waits for a new connection after a disconnect. An attached
+`stream-dlp` display reconnects on a subsequent presentation attempt. To remove
+an endpoint, stop DLP or detach the display, then `stream ble remove ble0`.
+See [BLE stream commands](commands.md#ble-byte-streams).
+
+`--stats` prints actual completion rate, byte counts, and host wall times per
+input frame: `prep` generates/loads and converts the image; `upload` plans and
+sends the update, including intermediate window checkpoints; `present_wait`
+runs from PRESENT through the completion reply. With windows it also includes
+sending the final buffered upload batch. `total` includes preparation and any
+requested reconnect, and excludes
+the intentional frame-rate sleep. The final summary counts presented frames
+and unchanged images separately; unchanged images do not increase completed
+FPS. The default rate limit is 2 FPS; `--fps 30` sets a 30 FPS ceiling and
+includes image preparation in that budget.
+
+Run `dlp status` from a separate shell for receiver-side last/average/maximum
+timings in microseconds. `render` measures MONO1 canvas preparation or changed-area
+detection and batched INDEX2 conversion; `display`
+measures the display-service call, including driver conversion, rotation,
+tile checks and I/O. Unconverted direct rasters have zero separate `render`
+time. All driver work is included under `display`. `total` is their sum.
+These measurements exclude wire upload, startup and resume/overlay redraws;
+they measure service completion, not panel scanout. Completion rate averages
+the intervals between the first and last DLP frame, including host pacing.
+The statistics remain available after stopping, until the next receiver start.
+Host `present_wait` includes stream transfer, round trips, scheduling and
+legacy status polling,
+so it is not a device-only or SPI-only measurement. Diagnostics never enter
+the DLP byte stream.
+
 ## rtsp
 
 Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.

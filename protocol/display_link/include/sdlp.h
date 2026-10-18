@@ -11,9 +11,11 @@ extern "C" {
 #define SDLP_PAYLOAD_SIZE 220u
 #define SDLP_DATA_SIZE 208u
 #define SDLP_RLE_MAX_DECODED 1024u
+#define SDLP_MAX_WINDOW 16u
+#define SDLP_WINDOW_VERSION 2u
 #define SDLP_FORMAT_BIT(n) (UINT32_C(1) << (n))
 #define SDLP_FORMATS UINT32_C(31)
-enum { SDLP_IDLE, SDLP_REQUEST, SDLP_RESPONSE };
+enum { SDLP_IDLE, SDLP_REQUEST, SDLP_RESPONSE, SDLP_PUSH };
 enum { SDLP_MONO1, SDLP_GRAY2, SDLP_GRAY4, SDLP_GRAY8, SDLP_RGB565_BE };
 enum {
   SDLP_OK,
@@ -34,6 +36,8 @@ enum {
   SDLP_GET_STATUS = 3,
   SDLP_GET_EXTENSIONS = 4,
   SDLP_GET_SYNC = 5,
+  SDLP_NEGOTIATE_WINDOW = 6,
+  SDLP_WINDOW_SYNC = 7,
   SDLP_BEGIN_FRAME = 0x10,
   SDLP_BEGIN_RECT,
   SDLP_RECT_DATA,
@@ -139,6 +143,15 @@ typedef struct {
   bool valid;
   uint8_t request[SDLP_CELL_SIZE], response[SDLP_CELL_SIZE];
 } sdlp_replay_t;
+/* Optional, caller-owned bounded state. No reorder queue or allocation. */
+typedef struct {
+  uint16_t maximum, size;
+  uint32_t applied, grant, failed;
+  uint16_t error;
+  bool active, waiting, ready;
+  struct { uint32_t sequence, crc; } seen[SDLP_MAX_WINDOW];
+  sdlp_replay_t pending;
+} sdlp_device_window_t;
 typedef struct {
   sdlp_info_t info;
   sdlp_backend_t backend;
@@ -149,20 +162,28 @@ typedef struct {
   bool need_full, have_rect;
   sdlp_status_t status;
   sdlp_replay_t replay, auxiliary;
+  sdlp_device_window_t *window;
   uint8_t decoded[SDLP_RLE_MAX_DECODED];
 } sdlp_device_t;
 bool sdlp_device_init(sdlp_device_t *, const sdlp_info_t *, uint64_t boot,
                       const sdlp_backend_t *);
-/* false means malformed or IDLE: retain currently queued TX. */
+/* false means no immediate reply (including PUSH/deferred SYNC): retain TX. */
 bool sdlp_device_receive(sdlp_device_t *, const uint8_t request[SDLP_CELL_SIZE],
                          uint8_t response[SDLP_CELL_SIZE], uint64_t now_us);
 void sdlp_device_idle(const sdlp_device_t *, uint8_t out[SDLP_CELL_SIZE]);
 void sdlp_device_tick(sdlp_device_t *, uint64_t now_us);
+bool sdlp_device_enable_window(sdlp_device_t *, sdlp_device_window_t *, unsigned maximum);
+/* Drain a deferred WINDOW_SYNC reply after ticking; serialize with receive. */
+bool sdlp_device_take_reply(sdlp_device_t *, uint8_t out[SDLP_CELL_SIZE]);
 
 typedef struct {
   void *ctx;
   uint64_t (*now_us)(void *);
   void (*sleep_us)(void *, uint32_t);
+  /* Local adapter policy, never encoded on the wire. A slow reliable stream
+   * can require more time than the peripheral's processing bound alone. */
+  uint32_t minimum_timeout_ms;
+  bool (*cancelled)(void *);
   /* Respect gap and absolute deadline; optional READY is adapter-owned.
    * Release the shared bus after every exchange. Nonzero means I/O failure. */
   int (*exchange)(void *, const uint8_t tx[SDLP_CELL_SIZE],
@@ -173,7 +194,15 @@ typedef struct {
    * within the deadline; release adapter resources before returning. */
   int (*request)(void *, const uint8_t tx[SDLP_CELL_SIZE],
                  uint8_t rx[SDLP_CELL_SIZE], uint64_t deadline_us);
+  /* Window upload without waiting for a reply. SPI can use exchange instead. */
+  int (*push)(void *, const uint8_t tx[SDLP_CELL_SIZE], uint64_t deadline_us);
 } sdlp_transport_t;
+typedef struct {
+  uint8_t packets[SDLP_MAX_WINDOW][SDLP_CELL_SIZE];
+  uint32_t sent, acknowledged, grant, completed;
+  uint16_t size, count;
+  bool active, collecting;
+} sdlp_host_window_t;
 typedef struct {
   sdlp_transport_t transport;
   sdlp_info_t info;
@@ -182,6 +211,7 @@ typedef struct {
   uint32_t command_limit_ms;
   unsigned format;
   bool configured;
+  sdlp_host_window_t *window;
 } sdlp_host_t;
 void sdlp_host_init(sdlp_host_t *, const sdlp_transport_t *);
 int sdlp_host_discover(sdlp_host_t *, uint64_t deadline_us);
@@ -189,6 +219,9 @@ int sdlp_host_configure(sdlp_host_t *, uint32_t session, unsigned format,
                         uint32_t max_clock_hz);
 /* Optional extension negotiation after configure; old peers safely fall back. */
 int sdlp_host_extensions(sdlp_host_t *);
+/* Attach storage and negotiate. UNSUPPORTED falls back to legacy (OK, inactive).
+ * High-level upload_frame uses the window; manual commands stay synchronous. */
+int sdlp_host_negotiate_window(sdlp_host_t *, sdlp_host_window_t *, unsigned requested);
 /* deadline zero uses the descriptor command bound plus polling allowance. */
 int sdlp_host_command(sdlp_host_t *, unsigned opcode, const void *payload,
                       size_t length, sdlp_cell_t *response,

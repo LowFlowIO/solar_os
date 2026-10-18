@@ -200,6 +200,7 @@ typedef enum {
     SHELL_COMPLETION_SOURCE_BUSES,
     SHELL_COMPLETION_SOURCE_SPI_CS,
     SHELL_COMPLETION_SOURCE_STREAMS,
+    SHELL_COMPLETION_SOURCE_DLP_STREAMS,
     SHELL_COMPLETION_SOURCE_SCHEDULE_ENTRIES,
     SHELL_COMPLETION_SOURCE_CONTROLS,
     SHELL_COMPLETION_SOURCE_PARAMETERS,
@@ -550,6 +551,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"engine", "show engine utilization", solar_os_shell_cmd_engine},
 #endif
     {"display", "list display targets", solar_os_shell_cmd_display},
+#if SOLAR_OS_PACKAGE_APP_DLP
+    {"dlp", "serve a display over a byte stream", solar_os_shell_cmd_dlp},
+#endif
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"echo", "print text", cmd_echo},
     {"wait", "pause the calling shell", cmd_wait},
@@ -1601,8 +1605,22 @@ static const char * const ota_subcommands[] = {
 };
 
 static const char * const ota_boot_values[] = {"0", "1"};
-static const char * const stream_subcommands[] = {"list", "status"};
+static const char * const stream_subcommands[] = {"list", "status",
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+    "ble",
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+    "tcp",
+#endif
+};
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+static const char * const stream_tcp_subcommands[] = {"listen", "connect", "remove"};
+#endif
 static const char * const daq_subcommands[] = {"help", "status", "streams", "start", "stop"};
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+static const char * const stream_ble_subcommands[] = {"listen", "connect", "status", "remove"};
+static const char * const stream_ble_address_types[] = {"public", "random", "rpa_public", "rpa_random"};
+#endif
 static const char * const daq_options[] = {
     "--rate",
     "--rate-ms",
@@ -1896,6 +1914,13 @@ static const char * const path_setterm_repeat[] = {"setterm", "repeat"};
 static const char * const path_setterm_timezone[] = {"setterm", "timezone"};
 static const char * const path_setterm_startup[] = {"setterm", "startup"};
 static const char * const path_display[] = {"display"};
+#if SOLAR_OS_PACKAGE_APP_DLP
+static const char * const dlp_subcommands[] = {"serve", "status", "stop"};
+static const char * const path_dlp[] = {"dlp"};
+static const char * const path_dlp_serve[] = {"dlp", "serve"};
+static const char * const path_dlp_stop[] = {"dlp", "stop"};
+static const char * const path_dlp_stream[] = {"dlp", "serve", SHELL_COMPLETION_ANY};
+#endif
 static const char * const path_display_test[] = {"display", "test"};
 static const char * const path_display_mode[] = {"display", "mode"};
 static const char * const path_display_mode_target[] = {"display", "mode", SHELL_COMPLETION_ANY};
@@ -2263,6 +2288,16 @@ static const char * const path_session_send[] = {"session", "send"};
 static const char * const path_session_focus[] = {"session", "focus"};
 static const char * const path_stream[] = {"stream"};
 static const char * const path_stream_status[] = {"stream", "status"};
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+static const char * const path_stream_ble[] = {"stream", "ble"};
+static const char * const path_stream_ble_status[] = {"stream", "ble", "status"};
+static const char * const path_stream_ble_remove[] = {"stream", "ble", "remove"};
+static const char * const path_stream_ble_type[] = {"stream", "ble", "connect", SHELL_COMPLETION_ANY, SHELL_COMPLETION_ANY};
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+static const char * const path_stream_tcp[] = {"stream", "tcp"};
+static const char * const path_stream_tcp_remove[] = {"stream", "tcp", "remove"};
+#endif
 static const char * const path_daq[] = {"daq"};
 static const char * const path_daq_start[] = {"daq", "start"};
 static const char * const path_daq_start_stream[] = {"daq", "start", SHELL_COMPLETION_ANY};
@@ -3216,6 +3251,16 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_setterm_timezone, setterm_timezone_values),
     SHELL_COMPLETION_STATIC(path_setterm_startup, setterm_startup_values),
     SHELL_COMPLETION_STATIC(path_display, display_subcommands),
+#if SOLAR_OS_PACKAGE_APP_DLP
+    SHELL_COMPLETION_STATIC(path_dlp, dlp_subcommands),
+    SHELL_COMPLETION_DISPLAY_TARGETS(path_dlp_serve),
+    SHELL_COMPLETION_DISPLAY_TARGETS(path_dlp_stop),
+    {
+        .path = path_dlp_stream,
+        .path_count = SHELL_ARRAY_COUNT(path_dlp_stream),
+        .source = SHELL_COMPLETION_SOURCE_DLP_STREAMS,
+    },
+#endif
     SHELL_COMPLETION_STATIC(path_input, input_subcommands),
     SHELL_COMPLETION_INPUT_SOURCES(path_input_test, false),
 #if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
@@ -3404,6 +3449,16 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_DISPLAY_TARGETS(path_session_focus),
     SHELL_COMPLETION_STATIC(path_stream, stream_subcommands),
     SHELL_COMPLETION_STREAMS(path_stream_status),
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+    SHELL_COMPLETION_STATIC(path_stream_ble, stream_ble_subcommands),
+    SHELL_COMPLETION_STREAMS(path_stream_ble_status),
+    SHELL_COMPLETION_STREAMS(path_stream_ble_remove),
+    SHELL_COMPLETION_STATIC(path_stream_ble_type, stream_ble_address_types),
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+    SHELL_COMPLETION_STATIC(path_stream_tcp, stream_tcp_subcommands),
+    SHELL_COMPLETION_STREAMS(path_stream_tcp_remove),
+#endif
     SHELL_COMPLETION_STATIC(path_daq, daq_subcommands),
     SHELL_COMPLETION_STREAMS(path_daq_start),
     SHELL_COMPLETION_PATH(path_daq_start, false),
@@ -7075,6 +7130,26 @@ static void shell_completion_emit_streams(shell_completion_match_t *state, bool 
     }
 }
 
+#if SOLAR_OS_PACKAGE_APP_DLP
+static void shell_completion_emit_dlp_streams(shell_completion_match_t *state)
+{
+    if (state->prefix == NULL || !starts_with(state->prefix, "stream=")) {
+        shell_completion_emit(state, "stream=");
+        return;
+    }
+    const size_t count = solar_os_stream_count();
+    for (size_t i = 0; i < count; i++) {
+        solar_os_stream_info_t info;
+        if (!solar_os_stream_get(i, &info) || info.type != SOLAR_OS_STREAM_TYPE_BYTES ||
+            info.direction != SOLAR_OS_STREAM_DIRECTION_DUPLEX ||
+            info.sharing != SOLAR_OS_STREAM_SHARING_EXCLUSIVE) continue;
+        char candidate[sizeof("stream=") + SOLAR_OS_STREAM_ID_MAX];
+        snprintf(candidate, sizeof(candidate), "stream=%s", info.id);
+        shell_completion_emit(state, candidate);
+    }
+}
+#endif
+
 static void shell_completion_emit_expansion_drivers(
     shell_completion_match_t *state)
 {
@@ -8023,12 +8098,12 @@ static void shell_completion_emit_expansion_spec(
             }
         }
         break;
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM:
         for (size_t i = 0; i < solar_os_stream_count(); i++) {
             solar_os_stream_info_t info;
             if (solar_os_stream_get(i, &info) &&
-                info.type == SOLAR_OS_STREAM_TYPE_SCALAR &&
-                info.direction != SOLAR_OS_STREAM_DIRECTION_SINK) {
+                solar_os_expansion_stream_binding_valid(spec->kind, &info)) {
                 snprintf(candidate, sizeof(candidate), "%s=%s", spec->key, info.id);
                 shell_completion_emit(state, candidate);
             }
@@ -8443,6 +8518,11 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
             shell_completion_emit_streams(
                 state,
                 (rule->flags & SHELL_COMPLETION_FLAG_SCALAR_STREAMS) != 0U);
+            break;
+        case SHELL_COMPLETION_SOURCE_DLP_STREAMS:
+#if SOLAR_OS_PACKAGE_APP_DLP
+            shell_completion_emit_dlp_streams(state);
+#endif
             break;
         case SHELL_COMPLETION_SOURCE_SCHEDULE_ENTRIES:
             shell_completion_emit_schedule_entries(state);

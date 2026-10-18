@@ -2,6 +2,23 @@
 
 ## 4.x
 
+- **4.16.19** — 2026-10-18 — Serve named displays with `dlp` over USB/UART,
+  TCP/Wi-Fi, BLE, or compatible radio byte streams. Attach remote displays with
+  `stream-dlp`, or open private DLP connections from Python and Lua without
+  registering a display. SPI attachment is now named `spi-dlp`.
+  Windowed uploads, compact framing, and compressed changed-region updates
+  improve transfer throughput. Display serving uses performance mode and
+  reports presentation timings; receivers wait for reconnect and restore the
+  shell on exit. Detaching releases display buffers and the stream claim.
+  Added raw TCP and native BLE L2CAP CoC byte streams, with shell commands,
+  completion, and Python/Lua BLE endpoint configuration. BLE streams coexist
+  with the input keyboard and currently accept unpaired connections.
+  Link stream protocol v3 adds windowed transfers and receiver credits for
+  sustained traffic with backpressure and prompt interactive writes. MeshCore
+  uses a smaller window with radio-specific timings. Both stream endpoints
+  must be updated; Chat and outer Link packet framing are unchanged.
+  Port shells remain responsive on idle or disconnected streams. Added a
+  navigation guide covering shared controls and board-specific keys.
 - **4.16.18** — 2026-10-17 — Added a resumable external Amiga 500 app for
   ESP32-S3 devices with PSRAM, with 1 MiB guest RAM, keyboard, mouse and touch
   input, joystick emulation, audio, and one read-only ADF floppy drive.
