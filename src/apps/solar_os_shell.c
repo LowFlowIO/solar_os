@@ -550,6 +550,9 @@ static const shell_command_t shell_builtin_commands[] = {
     {"engine", "show engine utilization", solar_os_shell_cmd_engine},
 #endif
     {"display", "list display targets", solar_os_shell_cmd_display},
+#if SOLAR_OS_PACKAGE_APP_DLP
+    {"dlp", "serve a display over a byte stream", solar_os_shell_cmd_dlp},
+#endif
     {"clear", "clear the screen", solar_os_shell_cmd_clear},
     {"echo", "print text", cmd_echo},
     {"wait", "pause the calling shell", cmd_wait},
@@ -1896,6 +1899,14 @@ static const char * const path_setterm_repeat[] = {"setterm", "repeat"};
 static const char * const path_setterm_timezone[] = {"setterm", "timezone"};
 static const char * const path_setterm_startup[] = {"setterm", "startup"};
 static const char * const path_display[] = {"display"};
+#if SOLAR_OS_PACKAGE_APP_DLP
+static const char * const dlp_subcommands[] = {"serve", "status", "stop"};
+static const char * const dlp_stream_option[] = {"stream="};
+static const char * const path_dlp[] = {"dlp"};
+static const char * const path_dlp_serve[] = {"dlp", "serve"};
+static const char * const path_dlp_stop[] = {"dlp", "stop"};
+static const char * const path_dlp_stream[] = {"dlp", "serve", SHELL_COMPLETION_ANY};
+#endif
 static const char * const path_display_test[] = {"display", "test"};
 static const char * const path_display_mode[] = {"display", "mode"};
 static const char * const path_display_mode_target[] = {"display", "mode", SHELL_COMPLETION_ANY};
@@ -3216,6 +3227,12 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_setterm_timezone, setterm_timezone_values),
     SHELL_COMPLETION_STATIC(path_setterm_startup, setterm_startup_values),
     SHELL_COMPLETION_STATIC(path_display, display_subcommands),
+#if SOLAR_OS_PACKAGE_APP_DLP
+    SHELL_COMPLETION_STATIC(path_dlp, dlp_subcommands),
+    SHELL_COMPLETION_DISPLAY_TARGETS(path_dlp_serve),
+    SHELL_COMPLETION_DISPLAY_TARGETS(path_dlp_stop),
+    SHELL_COMPLETION_STATIC(path_dlp_stream, dlp_stream_option),
+#endif
     SHELL_COMPLETION_STATIC(path_input, input_subcommands),
     SHELL_COMPLETION_INPUT_SOURCES(path_input_test, false),
 #if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP

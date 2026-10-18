@@ -68,6 +68,9 @@
 #if SOLAR_OS_PACKAGE_APP_CLOCK
 #include "solar_os_clock.h"
 #endif
+#if SOLAR_OS_PACKAGE_APP_DLP
+#include "solar_os_dlp_app.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_SYNTH
 #include "solar_os_synth_app.h"
 #endif
@@ -165,6 +168,9 @@
      .min_argc = app_min, .max_argc = app_max}
 
 static const solar_os_app_registry_entry_t registered_apps[] = {
+#if SOLAR_OS_PACKAGE_APP_DLP
+    APP_ENTRY("dlp", "DLP display receiver", &solar_os_dlp_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "dlp stream=<byte-stream>", 2, 2),
+#endif
 #if SOLAR_OS_PACKAGE_APP_APLAY
     APP_ENTRY("aplay", "play WAV/MP3 audio", &solar_os_aplay_app, SOLAR_OS_APP_CAP_TEXT | SOLAR_OS_APP_CAP_DISPLAY | SOLAR_OS_APP_CAP_PORT, "aplay [-v volume] <file.wav|file.mp3>", 2, 4),
 #endif

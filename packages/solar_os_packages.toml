@@ -51,6 +51,11 @@ label = "RTSP streaming"
 category = "Networking"
 members = ["job_rtspd", "app_rtsp"]
 
+[groups.dlp]
+label = "DLP display receiver"
+category = "Hardware interfaces"
+members = ["app_dlp"]
+
 [groups.vision]
 label = "Computer vision"
 category = "Media"
@@ -1588,13 +1593,21 @@ sources = [
 requires = ["esp_driver_gpio", "esp_driver_spi", "u8g2"]
 capabilities = ["expansion_gpio"]
 
+[packages.service_display_link]
+label = "service.display_link"
+sources = ["../protocol/display_link/src/sdlp.c"]
+
+[packages.service_dlp]
+label = "service.dlp"
+depends = ["service_display_link"]
+sources = ["services/solar_os_dlp_receiver.c"]
+
 [packages.expansion_spi_display]
 label = "expansion.spi-display"
 targets = ["esp32", "esp32s3"]
 expansion_drivers = ["solar_os_spi_display_expansion_driver"]
-depends = ["service_spi", "service_expansion"]
+depends = ["service_spi", "service_expansion", "service_display_link"]
 sources = [
-  "../protocol/display_link/src/sdlp.c",
   "drivers/solar_os_display_link.c",
   "services/solar_os_spi_display.c",
   "services/solar_os_spi_display_driver.c",
@@ -2668,6 +2681,13 @@ depends = ["service_zoo"]
 sources = ["apps/solar_os_zoo_app.c"]
 capabilities = ["psram", "wifi"]
 targets = ["esp32s3"]
+
+[packages.app_dlp]
+label = "app.dlp"
+depends = ["service_dlp", "service_streams"]
+sources = ["apps/solar_os_dlp_app.c", "shell/solar_os_shell_dlp.c"]
+requires = ["esp_timer"]
+capabilities = ["gfx"]
 
 [packages.app_clock]
 label = "app.clock"

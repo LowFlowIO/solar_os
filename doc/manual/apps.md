@@ -29,6 +29,51 @@ in shell scrollback; app screens are discarded. Errors return to the shell
 with a diagnostic. Run `status` to check the most recent app exit code: 0 means
 success. See [Sessions](sessions.apps.md) for switching and display focus.
 
+## dlp
+
+Use a named SolarOS display as a Display Link Protocol receiver. The `dlp`
+package requires graphics support. One receiver may run at a time.
+
+```text
+dlp serve display0 stream=cdc0
+dlp status
+dlp stop display0
+```
+
+Run these commands from the local display shell or a separate port/network
+shell. The selected stream must provide exclusive, ordered, duplex bytes.
+Release any shell, log, or bridge owner on that stream first; DLP needs both
+directions for commands and replies. DLP does not configure baud rates,
+establish network connections, or add a BLE/radio transport.
+
+The receiver runs as a foreground session on the named display, suspending its
+previous session. It advertises the current display orientation and MONO1
+pixels (black=1, least-significant pixel first). Targets with direct RGB565
+presentation also advertise RGB565 with big-endian pixel bytes. The host must
+use an advertised format. Updates are staged; the display changes on PRESENT.
+Changed rectangles and RLE are supported. A new connection/session must send a
+full image before partial updates.
+
+The normal app-exit key or `dlp stop <display>` closes the receiver, releases
+the stream, and restores the previous session. Suspension pauses protocol
+processing; resuming redraws the last completed image. I/O errors close the
+receiver. Serial links with no disconnect indication remain listening until
+stopped; closing the desktop sender alone does not close the display session.
+
+The desktop test sender requires Python, pyserial, and Pillow:
+
+```sh
+python3 -m pip install pyserial Pillow
+python3 scripts/dlp_image.py --port /dev/ttyACM0 image.png
+python3 scripts/dlp_image.py --port /dev/ttyACM0 --demo --frames 20 --stats
+python3 scripts/dlp_image.py --port /dev/ttyACM0 --demo --frames 6 --reconnect-every 2
+```
+
+Start the receiver before running the sender. The script discovers geometry,
+fits images on a white background, and sends MONO1 frames. `--legacy-cells`
+tests fixed-cell framing; compact DLP framing is the default. This is an image
+test tool; desktop virtual-monitor integration belongs to a host project.
+
 ## rtsp
 
 Play a trusted-LAN RTSP stream using UDP RTP/JPEG video and RTP/L16 audio.

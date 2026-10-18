@@ -258,6 +258,7 @@ job for periodic polling.
 | `identity` | `identity hostname <name>` | Save the device hostname in NVS; reboot to update Wi-Fi. |
 | `engine` | `engine [status|reset]` | Print or reset generic engine utilization counters for CPU/SIMD-style backends and vector bulk operations. |
 | `display` | `display [list]`; `display layouts`; `display test <target>`; `display mode <target> [mode]` | List targets and layouts, draw a test pattern, or change driver-specific display settings. |
+| `dlp` | `dlp serve <display> stream=<byte-stream>`; `dlp status`; `dlp stop <display>` | Receive DLP images on a named display through an exclusive duplex byte stream. See [DLP](apps.md#dlp). |
 | `display` | `display join <name> --horizontal\|--vertical <target> <target> [target ...]`; `display unjoin <name>` | Join two to four physical targets into one logical display, or remove the join. |
 | `display` | `display split <target> --horizontal\|--vertical <first> <second>`; `display unsplit <target>` | Split one physical target into two equal logical viewports, or remove the split. |
 | `input` | `input [status|keyboard|touch|mouse|joystick|dpad|buttons|gesture]` | List all input sources or filter them by semantic class. |

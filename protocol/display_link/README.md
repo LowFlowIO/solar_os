@@ -190,3 +190,7 @@ The sibling `pico_display_link` repository vendors this library; its explicit
 uses the same stream framing, delta and RLE rules. The SolarOS `spi-display`
 driver uses the SPI profile. A SolarOS byte-stream display driver is separate
 future integration work; the portable stream adapter is available now.
+
+SolarOS can also act as the display peripheral: `dlp serve <display>
+stream=<byte-stream>` runs a receiver on a named display. The
+`scripts/dlp_image.py` desktop script sends test images to that receiver.
