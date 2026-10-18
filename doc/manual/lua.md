@@ -49,7 +49,7 @@ Open a topic below, or use its ID with `man` on the device, for example
 | [Apps, jobs, and identity](lua.system.md) | `solaros.identity`, `solaros.jobs`, `solaros.sessions`, `solaros.apps` |
 | [Contacts and messages](lua.messaging.md) | `solaros.contacts`, `solaros.messages` |
 | [Text user interfaces](lua.tui.md) | `solaros.tui` |
-| [Graphics and raster images](lua.gfx.md) | `solaros.gfx`, `solaros.image` |
+| [Graphics, raster images, and DLP connections](lua.gfx.md) | `solaros.gfx`, `solaros.image`, `solaros.dlp` |
 | [Camera, streams, and RTSP](lua.media.md) | `solaros.streams`, `solaros.camera`, `solaros.rtsp` |
 | [Computer vision](vision.md) | `solaros.vision` |
 | [Model inference](inference.md) | `solaros.inference` |

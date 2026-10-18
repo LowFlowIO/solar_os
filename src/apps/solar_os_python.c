@@ -40,6 +40,8 @@
 #include "solar_os_contacts.h"
 #endif
 #include "solar_os_memory.h"
+#include "solar_os_display_link.h"
+#include "solar_os_tcp_stream.h"
 #include "solar_os_script_media.h"
 #if SOLAR_OS_PACKAGE_SERVICE_CAMERA
 #include "solar_os_camera.h"
@@ -332,6 +334,10 @@ typedef struct {
 #if SOLAR_OS_PACKAGE_SERVICE_MIDI
     solar_os_midi_subscription_t midi_subscription;
     bool midi_subscribed;
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_DLP_CLIENT
+    solar_os_display_link_t *dlp_links[4];
+    uint32_t dlp_generation[4];
 #endif
 } python_cold_state_t;
 
@@ -5224,6 +5230,7 @@ MP_DEFINE_CONST_FUN_OBJ_0(solaros_expansion_devices_obj, solaros_expansion_devic
 static bool python_expansion_key_known(const char *key)
 {
     static const char *const keys[] = {
+        "stream", "timeout-ms", "ready", "clock", "reset-ms", "boot-ms", "reset-active",
         "spi", "cs", "ce", "i2c", "addr", "alt_addr", "uart", "ps2", "gpio", "irq", "reset",
         "rst", "data", "bck", "din", "rck", "mclk", "ws", "dout", "dc",
         "busy", "adc", "pwm", "backlight", "a", "b",
@@ -5289,6 +5296,9 @@ static mp_obj_t solaros_expansion_attach(mp_obj_t driver_obj,
     const mp_obj_t i2c_obj = python_get_dict_obj(config_obj, "i2c", false);
     const mp_obj_t uart_obj = python_get_dict_obj(config_obj, "uart", false);
     const mp_obj_t ps2_obj = python_get_dict_obj(config_obj, "ps2", false);
+    const mp_obj_t stream_obj = python_get_dict_obj(config_obj, "stream", false);
+    if (stream_obj != MP_OBJ_NULL) python_expansion_add_binding(bindings, &binding_count,
+        SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM, "stream", mp_obj_str_get_str(stream_obj), -1, -1);
     const mp_obj_t x_obj = python_get_dict_obj(config_obj, "x", false);
     const mp_obj_t y_obj = python_get_dict_obj(config_obj, "y", false);
     const char *spi = spi_obj != MP_OBJ_NULL ? mp_obj_str_get_str(spi_obj) : NULL;
@@ -5438,6 +5448,7 @@ static mp_obj_t solaros_expansion_attach(mp_obj_t driver_obj,
     } pin_bindings[] = {
         {"gpio", "gpio", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"irq", "irq", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"ready", "ready", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"reset", "reset", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"rst", "reset", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"data", "data", SOLAR_OS_EXPANSION_BINDING_GPIO},
@@ -5486,7 +5497,7 @@ static mp_obj_t solaros_expansion_attach(mp_obj_t driver_obj,
                                      -1);
     }
     static const char *const parameter_bindings[] = {
-        "min", "center", "max", "deadzone",
+        "min", "center", "max", "deadzone", "timeout-ms", "clock", "reset-ms", "boot-ms", "reset-active",
     };
     for (size_t i = 0;
          i < sizeof(parameter_bindings) / sizeof(parameter_bindings[0]);
@@ -8884,6 +8895,7 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_gfx_text_obj, 3, 3, solaros_gfx_text
 #include "solar_os_python_imlib.inc"
 #include "solar_os_python_inference.inc"
 #include "solar_os_python_pipeline.inc"
+#include "solar_os_python_dlp.inc"
 
 static void python_module_store(mp_obj_t module, const char *name, mp_obj_t value)
 {
@@ -9226,6 +9238,7 @@ esp_err_t solar_os_python_run(const solar_os_script_run_request_t *request,
 #endif
     python_inference_destroy();
     python_media_destroy();
+    python_dlp_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     python_http_stream_destroy();
     python_http_session_destroy();
@@ -9447,6 +9460,7 @@ static void python_task(void *arg)
 #endif
         python_inference_destroy();
         python_media_destroy();
+        python_dlp_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
         python_http_stream_destroy();
         python_http_session_destroy();
@@ -9966,6 +9980,7 @@ static void python_stop(solar_os_context_t *ctx)
 #endif
     python_inference_destroy();
     python_media_destroy();
+    python_dlp_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     python_http_stream_destroy();
     python_http_session_destroy();

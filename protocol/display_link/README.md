@@ -215,9 +215,11 @@ big endian. Rectangle rows are padded independently, using their own width.
 
 The sibling `pico_display_link` repository vendors this library; its explicit
 `scripts/sync_protocol.py` refreshes the copy. Its Python `DisplayLink` client
-uses the same stream framing, delta and RLE rules. The SolarOS `spi-display`
-driver uses the SPI profile. A SolarOS byte-stream display driver is separate
-future integration work; the portable stream adapter is available now.
+uses the same stream framing, delta and RLE rules. SolarOS's `spi-dlp` and
+`stream-dlp` drivers share a host core for discovery, uploads and presentation.
+`stream-dlp` claims an existing exclusive duplex byte stream; its provider owns
+UART, TCP or radio setup. Private Python/Lua `solaros.dlp.connect` objects use
+the same core without registering a named display.
 
 SolarOS can also act as the display peripheral: `dlp serve <display>
 stream=<byte-stream>` runs a receiver on a named display. The

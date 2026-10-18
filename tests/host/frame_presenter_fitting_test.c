@@ -24,6 +24,7 @@ typedef int BaseType_t;
 
 static size_t display_width, display_height;
 static uint32_t display_formats;
+static uint16_t display_stack_bytes;
 static bool fail_allocation;
 static solar_os_display_raster_t captured;
 
@@ -38,6 +39,7 @@ bool solar_os_display_find_target(const char *name, solar_os_display_target_t *t
     assert(!strcmp(name, "display0"));
     *target = (solar_os_display_target_t){
         .frame_formats = display_formats, .preferred_stream_fps = 25,
+        .presentation_stack_bytes = display_stack_bytes,
     };
     return true;
 }
@@ -75,8 +77,10 @@ static void frame_presenter_worker(void *arg) { (void)arg; assert(false); }
 static int solar_os_task_create_pinned_internal(void (*worker)(void *), const char *name,
     unsigned stack, void *arg, unsigned priority, TaskHandle_t *task, int core, int role)
 {
-    (void)name; (void)stack; (void)priority; (void)core; (void)role;
+    (void)name; (void)priority; (void)core; (void)role;
     assert(worker == frame_presenter_worker && arg);
+    assert(stack == (display_stack_bytes > FRAME_PRESENTER_STACK ?
+        display_stack_bytes : FRAME_PRESENTER_STACK));
     *task = arg;
     return pdPASS;
 }
@@ -141,6 +145,11 @@ int main(void)
     display_width = 320; display_height = 240;
     check_fit(640, 480, 320, 240, false, SOLAR_OS_FRAME_FIT_HEIGHT); /* Direct raster */
     check_fit(320, 240, 320, 240, false, SOLAR_OS_FRAME_FIT_DEFAULT);
+    display_stack_bytes = 8192; /* DLP needs deeper protocol and socket calls. */
+    check_fit(320, 240, 320, 240, false, SOLAR_OS_FRAME_FIT_DEFAULT);
+    display_stack_bytes = 1024; /* A target cannot reduce the worker's default. */
+    check_fit(320, 240, 320, 240, false, SOLAR_OS_FRAME_FIT_DEFAULT);
+    display_stack_bytes = 0;
     display_width = 400; display_height = 300;
     check_fit(320, 240, 400, 300, true, SOLAR_OS_FRAME_FIT_HEIGHT); /* SolarTerm */
 

@@ -14,8 +14,8 @@ typedef int esp_err_t;
 typedef struct {
   sdlp_host_t host;
   struct {
-    int reset;
-  } config;
+    bool reset_available;
+  } io;
   uint16_t *pixels;
   uint8_t *row, *wire, *retained;
   size_t wire_size;
@@ -129,7 +129,7 @@ static void run(unsigned format, uint16_t width, uint16_t height,
   sdlp_device_idle(&f->device, f->queued);
   sdlp_transport_t t = {
       .ctx = f, .exchange = exchange, .now_us = now_us, .sleep_us = sleep_us};
-  solar_os_display_link_t d = {.config = {.reset = -1}};
+  solar_os_display_link_t d = {0};
   sdlp_host_init(&d.host, &t);
   assert(!sdlp_host_discover(&d.host, 5000000));
   assert(!sdlp_host_configure(&d.host, 123, format, 1000000));

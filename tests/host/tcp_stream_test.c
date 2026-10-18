@@ -46,6 +46,57 @@ static int connect_to(uint16_t port)
     return fd;
 }
 
+static void outbound(void)
+{
+    int listener = socket(AF_INET, SOCK_STREAM, 0);
+    assert(listener >= 0);
+    struct sockaddr_in address = {.sin_family = AF_INET, .sin_addr.s_addr = htonl(INADDR_LOOPBACK)};
+    assert(!bind(listener, (struct sockaddr *)&address, sizeof(address)) && !listen(listener, 2));
+    socklen_t size = sizeof(address);
+    assert(!getsockname(listener, (struct sockaddr *)&address, &size));
+    uint16_t port = ntohs(address.sin_port);
+    assert(solar_os_tcp_stream_connect("out", "localhost", 0) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_tcp_stream_connect("out", "localhost", port) == ESP_OK);
+    assert(solar_os_tcp_stream_connect("out", "localhost", port) == ESP_ERR_INVALID_STATE);
+    solar_os_stream_open_options_t options = {.direction = SOLAR_OS_STREAM_DIRECTION_DUPLEX};
+    solar_os_stream_handle_t handle = SOLAR_OS_STREAM_HANDLE_INIT;
+    const uint8_t bytes[] = {0, 255, '\r', '\n', 27, 42};
+    uint8_t data[sizeof(bytes)];
+    size_t n = 0;
+    for (unsigned cycle = 0; cycle < 2; cycle++) {
+        assert(solar_os_stream_open_ex("out", "test", &options, &handle) == ESP_OK);
+        assert(solar_os_tcp_stream_remove("out") == ESP_ERR_INVALID_STATE);
+        for (unsigned attempt = 0; attempt < 10000 && !n; attempt++)
+            assert(solar_os_stream_write(&handle, bytes, sizeof(bytes), 0, &n) == ESP_OK);
+        assert(n == sizeof(bytes));
+        int peer = accept(listener, NULL, NULL);
+        assert(peer >= 0 && recv(peer, data, sizeof(data), MSG_WAITALL) == sizeof(data));
+        assert(!memcmp(data, bytes, sizeof(data)));
+        assert(send(peer, bytes, sizeof(bytes), 0) == sizeof(bytes));
+        n = 0;
+        for (unsigned attempt = 0; attempt < 10000 && !n; attempt++) {
+            esp_err_t error = solar_os_stream_read(&handle, data, sizeof(data), 0, &n);
+            assert(error == ESP_OK || error == ESP_ERR_TIMEOUT);
+        }
+        assert(n == sizeof(bytes) && !memcmp(data, bytes, sizeof(data)));
+        close(peer);
+        assert(solar_os_stream_read(&handle, data, sizeof(data), 0, &n) == ESP_FAIL);
+        assert(solar_os_stream_write(&handle, bytes, sizeof(bytes), 0, &n) == ESP_FAIL);
+        assert(solar_os_stream_close_ex(&handle) == ESP_OK);
+        n = 0;
+    }
+    assert(solar_os_tcp_stream_remove("out") == ESP_OK && leases == releases);
+    close(listener);
+    assert(solar_os_tcp_stream_connect("refused", "127.0.0.1", port) == ESP_OK);
+    assert(solar_os_stream_open_ex("refused", "test", &options, &handle) == ESP_OK);
+    esp_err_t error = ESP_OK;
+    for (unsigned attempt = 0; attempt < 10000 && error != ESP_FAIL; attempt++)
+        error = solar_os_stream_read(&handle, data, sizeof(data), 0, &n);
+    assert(error == ESP_FAIL && !n);
+    assert(solar_os_stream_close_ex(&handle) == ESP_OK);
+    assert(solar_os_tcp_stream_remove("refused") == ESP_OK && leases == releases);
+}
+
 int main(void)
 {
     uint16_t port = unused_port();
@@ -119,6 +170,7 @@ int main(void)
         char name[8]; snprintf(name, sizeof(name), "tcp%u", i);
         assert(solar_os_tcp_stream_remove(name) == ESP_OK);
     }
-    puts("Raw TCP binary bytes, ownership, backpressure, EOF, fresh sessions, lease and cleanup PASS");
+    outbound();
+    puts("Raw TCP listener/client, binary bytes, ownership, backpressure, EOF, reconnect, refusal and lease cleanup PASS");
     return 0;
 }

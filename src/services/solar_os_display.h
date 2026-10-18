@@ -50,6 +50,9 @@ typedef struct {
     uint32_t surface_formats;
     uint32_t frame_formats;
     uint16_t preferred_stream_fps;
+    /* Minimum caller task stack for synchronous presentation, bytes; 0 uses
+     * the presenter's default. Protocol-backed targets may nest substantial I/O. */
+    uint16_t presentation_stack_bytes;
     uint32_t max_stream_pixels_per_second;
     u8g2_t *u8g2;
     const u8g2_cb_t *base_rotation;

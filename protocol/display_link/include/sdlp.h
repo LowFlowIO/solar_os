@@ -180,6 +180,10 @@ typedef struct {
   void *ctx;
   uint64_t (*now_us)(void *);
   void (*sleep_us)(void *, uint32_t);
+  /* Local adapter policy, never encoded on the wire. A slow reliable stream
+   * can require more time than the peripheral's processing bound alone. */
+  uint32_t minimum_timeout_ms;
+  bool (*cancelled)(void *);
   /* Respect gap and absolute deadline; optional READY is adapter-owned.
    * Release the shared bus after every exchange. Nonzero means I/O failure. */
   int (*exchange)(void *, const uint8_t tx[SDLP_CELL_SIZE],

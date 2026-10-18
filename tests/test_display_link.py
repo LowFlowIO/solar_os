@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 class DisplayLinkTest(unittest.TestCase):
     def test_spi_exchange_and_deadlines(self):
-        source = (ROOT / "src/drivers/solar_os_display_link.c").read_text()
+        source = (ROOT / "src/drivers/solar_os_display_link_spi.c").read_text()
         with tempfile.TemporaryDirectory() as directory:
             Path(directory, "display_link_exchange.inc").write_text(
                 production_functions(source, ("exchange",)))

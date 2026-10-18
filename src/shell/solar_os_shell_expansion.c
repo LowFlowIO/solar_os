@@ -483,6 +483,7 @@ static const char *expansion_driver_bus_type(const solar_os_expansion_driver_t *
             return "UART";
         case SOLAR_OS_EXPANSION_BINDING_PS2_BUS:
             return "PS/2";
+        case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
         case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM:
             return "STREAM";
         default:
@@ -601,6 +602,7 @@ static void expansion_print_binding(solar_os_shell_io_t *term, const solar_os_ex
                                  solar_os_expansion_binding_kind_name(binding->kind),
                                  binding->target);
         break;
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM:
         solar_os_shell_io_printf(term,
                                  " %s=%s",
@@ -1164,6 +1166,7 @@ static const char *expansion_spec_binding_role(
     case SOLAR_OS_EXPANSION_BINDING_ADC:
     case SOLAR_OS_EXPANSION_BINDING_PWM:
     case SOLAR_OS_EXPANSION_BINDING_SPI_CS:
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_PARAMETER:
         return spec->key;
@@ -1249,11 +1252,11 @@ static bool expansion_parse_driver_binding_token(
                           value,
                           -1,
                           -1);
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM: {
         solar_os_stream_info_t stream;
         return solar_os_stream_get_info(value, &stream) == ESP_OK &&
-            stream.type == SOLAR_OS_STREAM_TYPE_SCALAR &&
-            stream.direction != SOLAR_OS_STREAM_DIRECTION_SINK &&
+            solar_os_expansion_stream_binding_valid(spec->kind, &stream) &&
             binding_store(bindings,
                           binding_count,
                           spec->kind,

@@ -1,4 +1,4 @@
-#include "solar_os_spi_display.h"
+#include "solar_os_spi_dlp.h"
 static const solar_os_expansion_binding_spec_t bindings[] = {
     {.key = "spi",
      .value_hint = "bus",
@@ -45,15 +45,15 @@ static const solar_os_expansion_binding_spec_t bindings[] = {
      .min_value = 0,
      .max_value = 1},
 };
-const solar_os_expansion_driver_t solar_os_spi_display_expansion_driver = {
-    .name = "spi-display",
+const solar_os_expansion_driver_t solar_os_spi_dlp_expansion_driver = {
+    .name = "spi-dlp",
     .category = SOLAR_OS_EXPANSION_CATEGORY_DISPLAY,
-    .summary = "Negotiated SDLP SPI display",
+    .summary = "DLP display over SPI",
     .required_capabilities = SOLAR_OS_BOARD_CAP_GFX |
                              SOLAR_OS_BOARD_CAP_EXPANSION_SPI |
                              SOLAR_OS_BOARD_CAP_EXPANSION_GPIO,
     .binding_specs = bindings,
     .binding_spec_count = sizeof(bindings) / sizeof(bindings[0]),
-    .attach = solar_os_spi_display_attach,
-    .detach = solar_os_spi_display_detach,
+    .attach = solar_os_spi_dlp_attach,
+    .detach = solar_os_spi_dlp_detach,
 };

@@ -29,6 +29,8 @@
 #include "solar_os_contacts.h"
 #endif
 #include "solar_os_memory.h"
+#include "solar_os_display_link.h"
+#include "solar_os_tcp_stream.h"
 #include "solar_os_script_media.h"
 #if SOLAR_OS_PACKAGE_SERVICE_CAMERA
 #include "solar_os_camera.h"
@@ -320,6 +322,10 @@ typedef struct {
 #if SOLAR_OS_PACKAGE_SERVICE_MIDI
     solar_os_midi_subscription_t midi_subscription;
     bool midi_subscribed;
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_DLP_CLIENT
+    solar_os_display_link_t *dlp_links[4];
+    uint32_t dlp_generation[4];
 #endif
 } solua_cold_state_t;
 
@@ -4861,6 +4867,7 @@ static int solua_expansion_devices(lua_State *L)
 static bool solua_expansion_key_known(const char *key)
 {
     static const char *const keys[] = {
+        "stream", "timeout-ms", "ready", "clock", "reset-ms", "boot-ms", "reset-active",
         "spi", "cs", "ce", "i2c", "addr", "alt_addr", "uart", "ps2", "gpio", "irq", "reset",
         "rst", "data", "bck", "din", "rck", "mclk", "ws", "dout", "dc",
         "busy", "adc", "pwm", "backlight", "a", "b",
@@ -4950,6 +4957,9 @@ static int solua_expansion_attach(lua_State *L)
     const char *i2c = solua_table_optional_string(L, 3, "i2c");
     const char *uart = solua_table_optional_string(L, 3, "uart");
     const char *ps2 = solua_table_optional_string(L, 3, "ps2");
+    const char *stream = solua_table_optional_string(L, 3, "stream");
+    if (stream != NULL) solua_expansion_add_binding(L, bindings, &binding_count,
+        SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM, "stream", stream, -1, -1);
     const char *x = solua_table_optional_string(L, 3, "x");
     const char *y = solua_table_optional_string(L, 3, "y");
     int value = 0;
@@ -5098,6 +5108,7 @@ static int solua_expansion_attach(lua_State *L)
     } pin_bindings[] = {
         {"gpio", "gpio", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"irq", "irq", SOLAR_OS_EXPANSION_BINDING_GPIO},
+        {"ready", "ready", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"reset", "reset", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"rst", "reset", SOLAR_OS_EXPANSION_BINDING_GPIO},
         {"data", "data", SOLAR_OS_EXPANSION_BINDING_GPIO},
@@ -5148,7 +5159,7 @@ static int solua_expansion_attach(lua_State *L)
                                     -1);
     }
     static const char *const parameter_bindings[] = {
-        "min", "center", "max", "deadzone",
+        "min", "center", "max", "deadzone", "timeout-ms", "clock", "reset-ms", "boot-ms", "reset-active",
     };
     for (size_t i = 0;
          i < sizeof(parameter_bindings) / sizeof(parameter_bindings[0]);
@@ -7952,6 +7963,7 @@ static int solua_gfx_text(lua_State *L)
 #include "solar_os_lua_imlib.inc"
 #include "solar_os_lua_inference.inc"
 #include "solar_os_lua_pipeline.inc"
+#include "solar_os_lua_dlp.inc"
 
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 static void solua_push_contact(lua_State *L,
@@ -8562,6 +8574,7 @@ esp_err_t solar_os_lua_run(const solar_os_script_run_request_t *request,
 #endif
     solua_inference_destroy();
     solua_media_destroy();
+    solua_dlp_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     solua_http_stream_destroy();
     solua_http_session_destroy();
@@ -8674,6 +8687,7 @@ done:
 #endif
         solua_inference_destroy();
         solua_media_destroy();
+        solua_dlp_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
         solua_http_stream_destroy();
         solua_http_session_destroy();
@@ -9027,6 +9041,7 @@ static void solua_stop(solar_os_context_t *ctx)
 #endif
     solua_inference_destroy();
     solua_media_destroy();
+    solua_dlp_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     solua_http_stream_destroy();
     solua_http_session_destroy();

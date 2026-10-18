@@ -2789,7 +2789,7 @@ void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv)
 
 #if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
     if (argc >= 2 && !strcmp(argv[1], "tcp")) {
-        const char *usage = "stream tcp listen <name> <port> | stream tcp remove <name>";
+        const char *usage = "stream tcp listen <name> <port> | stream tcp connect <name> <host> <port> | stream tcp remove <name>";
         esp_err_t err = ESP_ERR_INVALID_ARG;
         if (argc == 5 && !strcmp(argv[2], "listen")) {
             char *end;
@@ -2799,12 +2799,20 @@ void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv)
                 err = solar_os_tcp_stream_listen(argv[3], (uint16_t)port);
             if (err == ESP_OK)
                 solar_os_shell_io_printf(term, "TCP stream %s listening on port %lu\n", argv[3], port);
+        } else if (argc == 6 && !strcmp(argv[2], "connect")) {
+            char *end;
+            errno = 0;
+            unsigned long port = strtoul(argv[5], &end, 10);
+            if (!errno && end != argv[5] && !*end && port && port <= UINT16_MAX)
+                err = solar_os_tcp_stream_connect(argv[3], argv[4], (uint16_t)port);
+            if (err == ESP_OK) solar_os_shell_io_printf(term,
+                "TCP stream %s configured for %s:%lu (connects when claimed)\n", argv[3], argv[4], port);
         } else if (argc == 4 && !strcmp(argv[2], "remove")) {
             err = solar_os_tcp_stream_remove(argv[3]);
             if (err == ESP_OK) solar_os_shell_io_printf(term, "TCP stream %s removed\n", argv[3]);
         }
         if (err != ESP_OK) solar_os_shell_diag_esp(term, "stream tcp", err, usage,
-            "Release the stream owner before removing a listener");
+            "Release the stream owner before removing an endpoint");
         return;
     }
 #endif

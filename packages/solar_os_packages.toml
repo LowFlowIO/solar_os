@@ -522,10 +522,20 @@ label = "PCD8544 display"
 category = "Expansion hardware"
 members = ["expansion_pcd8544"]
 
-[groups.spi_display]
-label = "SPI Display Link"
+[groups.dlp_client]
+label = "DLP host connections"
+category = "Media"
+members = ["service_dlp_client"]
+
+[groups.stream_dlp]
+label = "DLP stream displays"
 category = "Expansion hardware"
-members = ["expansion_spi_display"]
+members = ["expansion_stream_dlp"]
+
+[groups.spi_dlp]
+label = "SPI DLP displays"
+category = "Expansion hardware"
+members = ["expansion_spi_dlp"]
 
 [groups.ssd1683]
 label = "SSD1683 e-paper display"
@@ -1614,15 +1624,33 @@ label = "service.dlp"
 depends = ["service_display_link"]
 sources = ["services/solar_os_dlp_receiver.c", "services/solar_os_dlp_raster.c"]
 
-[packages.expansion_spi_display]
-label = "expansion.spi-display"
+[packages.service_dlp_client]
+label = "service.dlp-client"
+depends = ["service_display_link", "service_streams"]
+sources = ["drivers/solar_os_display_link.c", "services/solar_os_dlp_stream.c"]
+requires = ["esp_timer", "u8g2"]
+
+[packages.service_dlp_display]
+label = "service.dlp-display"
+depends = ["service_dlp_client", "service_expansion"]
+sources = ["services/solar_os_dlp_display.c"]
+requires = ["u8g2"]
+
+[packages.expansion_stream_dlp]
+label = "expansion.stream-dlp"
+expansion_drivers = ["solar_os_stream_dlp_expansion_driver"]
+depends = ["service_dlp_display"]
+sources = ["services/solar_os_stream_dlp_driver.c"]
+
+[packages.expansion_spi_dlp]
+label = "expansion.spi-dlp"
 targets = ["esp32", "esp32s3"]
-expansion_drivers = ["solar_os_spi_display_expansion_driver"]
-depends = ["service_spi", "service_expansion", "service_display_link"]
+expansion_drivers = ["solar_os_spi_dlp_expansion_driver"]
+depends = ["service_spi", "service_dlp_display"]
 sources = [
-  "drivers/solar_os_display_link.c",
-  "services/solar_os_spi_display.c",
-  "services/solar_os_spi_display_driver.c",
+  "drivers/solar_os_display_link_spi.c",
+  "services/solar_os_spi_dlp.c",
+  "services/solar_os_spi_dlp_driver.c",
 ]
 requires = ["esp_driver_gpio", "esp_driver_spi", "esp_timer", "u8g2"]
 capabilities = ["gfx", "expansion_spi", "expansion_gpio"]

@@ -236,3 +236,17 @@ end)
 solaros.rtsp.close(receiver)
 if not ok then error(err) end
 ```
+
+
+## TCP byte streams
+
+With TCP byte-stream support, `solaros.streams.tcp.listen(name, port)` creates
+a raw listener, `connect(name, host, port)` configures an outbound endpoint,
+and `remove(name)` removes an unclaimed endpoint. These create registered
+exclusive duplex byte streams; pass their names to `solaros.dlp.connect` or
+the `stream-dlp` expansion driver. Up to four endpoints share the TCP registry.
+The socket connects on first I/O and closes when its consumer releases the
+stream. Hostnames resolve at registration. These endpoints persist until
+removed or rebooted, including after the creating script exits.
+See [stream commands](commands.md#streams-logs-ports-and-transfers) and
+[direct DLP connections](lua.gfx.md#direct-dlp-connections).

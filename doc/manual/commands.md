@@ -794,7 +794,8 @@ unzip -l /books/archive.zip
 | `stream` | `stream` or `stream list` | List dynamic typed stream endpoints. |
 | `stream` | `stream status <id>` | Show type, direction, provider, format, owner, and counters for one stream. |
 | `stream` | `stream tcp listen <name> <port>` | Register an exclusive duplex byte stream backed by a raw TCP listener. Requires TCP byte-stream support. |
-| `stream` | `stream tcp remove <name>` | Remove an unclaimed TCP stream and close its listener. |
+| `stream` | `stream tcp connect <name> <host> <port>` | Register an exclusive duplex byte stream for an outbound TCP connection. |
+| `stream` | `stream tcp remove <name>` | Remove an unclaimed TCP listener or outbound stream. |
 | `model` | `model backend`; `model list`; `model info <handle>` | Check engine availability and inspect resident models, interfaces, memory, mode, and references. |
 | `model` | `model load <file.espdl> [timeout_ms]`; `model bundle <bundle.json> [timeout_ms]` | Load a resident raw model or a checked model bundle from storage. |
 | `model` | `model mode <handle> <single\|auto\|dual>` | Select execution mode without reloading the model. |
@@ -836,17 +837,20 @@ stream tcp remove tcp0
 ```
 
 The optional TCP byte-stream package is included in the full flavor. It supports
-up to four IPv4 listeners, bound to all network interfaces. Each exposes one
+up to four IPv4 TCP endpoints. Listeners bind to all network interfaces;
+`stream tcp connect <name> <host> <port>` configures an outbound endpoint.
+Hostnames resolve when the endpoint is registered; recreate it to resolve again.
+The outbound socket connects lazily when a consumer first performs I/O. Each exposes one
 exclusive duplex byte stream and port, without Telnet negotiation or newline
 translation. TCP connections are unencrypted and unauthenticated; use a trusted
-network. Listeners are runtime settings and are not saved across reboot.
+network. Endpoints are runtime settings and are not saved across reboot.
 
 Start the stream consumer before connecting the client. I/O is nonblocking;
 partial writes and backpressure are preserved. A disconnected peer causes an
 I/O error for the current owner. Release and reopen the stream before attaching
 a new peer; a new connection never continues the old owner's protocol session.
-Closing the stream closes its peer, while the listener remains registered until
-removed. Remove refuses a stream that is still claimed. Connected peers request
+Closing the stream closes its peer; the endpoint remains registered until
+removed. An outbound endpoint attempts a new connection when reopened and used. Remove refuses a stream that is still claimed. Connected peers request
 low-latency Wi-Fi and release that request when the connection closes.
 
 DAQ usage:

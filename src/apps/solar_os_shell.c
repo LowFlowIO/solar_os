@@ -1611,7 +1611,7 @@ static const char * const stream_subcommands[] = {"list", "status",
 #endif
 };
 #if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
-static const char * const stream_tcp_subcommands[] = {"listen", "remove"};
+static const char * const stream_tcp_subcommands[] = {"listen", "connect", "remove"};
 #endif
 static const char * const daq_subcommands[] = {"help", "status", "streams", "start", "stop"};
 static const char * const daq_options[] = {
@@ -8079,12 +8079,12 @@ static void shell_completion_emit_expansion_spec(
             }
         }
         break;
+    case SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM:
     case SOLAR_OS_EXPANSION_BINDING_SCALAR_STREAM:
         for (size_t i = 0; i < solar_os_stream_count(); i++) {
             solar_os_stream_info_t info;
             if (solar_os_stream_get(i, &info) &&
-                info.type == SOLAR_OS_STREAM_TYPE_SCALAR &&
-                info.direction != SOLAR_OS_STREAM_DIRECTION_SINK) {
+                solar_os_expansion_stream_binding_valid(spec->kind, &info)) {
                 snprintf(candidate, sizeof(candidate), "%s=%s", spec->key, info.id);
                 shell_completion_emit(state, candidate);
             }

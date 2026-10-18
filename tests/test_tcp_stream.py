@@ -15,6 +15,7 @@ class TcpStreamTest(unittest.TestCase):
                 "lwip/sockets.h": "#include <sys/socket.h>\n",
                 "lwip/inet.h": "#include <arpa/inet.h>\n",
                 "lwip/tcp.h": "#include <netinet/tcp.h>\n",
+                "lwip/netdb.h": "#include <netdb.h>\n",
                 "esp_netif.h": "typedef struct esp_netif esp_netif_t;\n",
                 "freertos/semphr.h": """#pragma once
 #include <pthread.h>

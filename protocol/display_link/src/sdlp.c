@@ -643,6 +643,9 @@ int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
     ms = h->info.present_ms;
   if (!ms || ms > h->command_limit_ms)
     ms = h->command_limit_ms;
+  if (h->transport.minimum_timeout_ms > ms)
+    ms = h->transport.minimum_timeout_ms < h->command_limit_ms ?
+        h->transport.minimum_timeout_ms : h->command_limit_ms;
   uint64_t own = now + (uint64_t)ms * 1000 + 100000;
   if (!h->transport.request)
     own += 2 * (UINT64_C(2048000000) / h->clock_hz + h->gap_us);
@@ -650,6 +653,10 @@ int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
     deadline = own;
   for (unsigned count = 0; h->transport.now_us(h->transport.ctx) < deadline;
        count++) {
+    if (h->transport.cancelled && h->transport.cancelled(h->transport.ctx)) {
+      h->configured = false;
+      return SDLP_LINK_ERROR;
+    }
     const uint8_t *tx = (count % 4 == 0) ? request : idle;
     int exchanged = h->transport.request ?
         h->transport.request(h->transport.ctx, request, rx, deadline) :
@@ -687,6 +694,8 @@ int sdlp_host_discover(sdlp_host_t *h, uint64_t deadline) {
   sdlp_cell_t a;
   int r;
   do {
+    if (h->transport.cancelled && h->transport.cancelled(h->transport.ctx))
+      return SDLP_LINK_ERROR;
     r = sdlp_host_command(h, SDLP_GET_INFO, NULL, 0, &a, deadline);
     if (!r) {
       sdlp_info_t info;
