@@ -358,8 +358,11 @@ link stream remove vser0
 
 Stopping and restarting `radio-link` or `espnow-link` with the same Link name
 leaves the virtual port registered. Buffered users see a disconnected stream
-until the transport returns; the stream epochs then resynchronize without
-reusing stale bytes.
+until the transport returns. A temporary transport stop preserves the open
+endpoints' session and sequence state, so unacknowledged bytes can be retried.
+If either endpoint closes and reopens, the peers establish fresh session state
+before resuming ordered delivery. Reconnection uses the existing v2 frames and
+does not require both devices to be updated together.
 
 ## Quick reference
 

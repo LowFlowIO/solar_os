@@ -431,7 +431,12 @@ the stream driver.
 
 `stream=` completes compatible registered streams. Attachment claims the
 stream exclusively; it remains claimed until detach. Stop applications and
-release display claims before detaching. `timeout-ms=100..60000` sets discovery
+release display claims before detaching. Detach frees the local DLP image,
+conversion and protocol buffers and releases the stream claim. The stream
+itself remains registered; a Link stream's RX/TX queues are released by
+`link stream remove <port>`.
+
+`timeout-ms=100..60000` sets discovery
 and the minimum command timeout, default 5000 ms. Peripheral presentation
 limits may require longer waits. Discovery retries transient stream failures
 within its connection deadline. A failed presentation returns an error; the

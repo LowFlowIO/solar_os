@@ -50,11 +50,15 @@ typedef struct {
     QueueHandle_t rx_queue;
     QueueHandle_t tx_queue;
     bool port_open;
+    bool transport_stopped;
     uint32_t local_session;
+    bool local_session_confirmed;
     uint32_t remote_session;
     bool had_remote_session;
     uint32_t remote_last_seen_ms;
     uint32_t next_open_ms;
+    uint32_t last_open_ms;
+    bool open_sent;
     uint16_t next_tx_sequence;
     uint16_t expected_rx_sequence;
     bool received_any;
@@ -196,6 +200,8 @@ static void stream_reset_queues_locked(link_stream_t *stream)
 static void stream_reset_local_locked(link_stream_t *stream, bool preserve_outstanding)
 {
     stream->local_session = stream_new_session();
+    stream->local_session_confirmed = false;
+    stream->open_sent = false;
     stream->next_tx_sequence = 1U;
     if (!preserve_outstanding) {
         memset(stream->tx_window, 0, sizeof(stream->tx_window));
@@ -209,12 +215,11 @@ static void stream_reset_local_locked(link_stream_t *stream, bool preserve_outst
         slot->ever_sent = false;
         slot->last_send_ms = 0U;
     }
-    stream->next_open_ms = 0U;
 }
 
 static bool stream_connected_locked(const link_stream_t *stream, uint32_t now_ms)
 {
-    return stream->port_open && stream->remote_session != 0U &&
+    return stream->port_open && !stream->transport_stopped && stream->remote_session != 0U &&
            (uint32_t)(now_ms - stream->remote_last_seen_ms) <=
                stream->config.peer_timeout_ms;
 }
@@ -255,6 +260,7 @@ static esp_err_t stream_port_open(void *user)
     }
     stream_reset_queues_locked(stream);
     stream->port_open = true;
+    stream->transport_stopped = false;
     stream->remote_session = 0U;
     stream->had_remote_session = false;
     stream->remote_last_seen_ms = 0U;
@@ -701,6 +707,9 @@ static void stream_apply_acknowledgement_locked(
            0,
            acknowledged * sizeof(stream->tx_window[0]));
     stream->tx_window_count = remaining;
+    /* Only a matching data acknowledgement proves the peer has adopted this
+     * transmit epoch. OPEN alone can be an old periodic announcement. */
+    stream->local_session_confirmed = true;
     stream->counters.bytes_sent += acknowledged_bytes;
     stream->counters.acknowledgements_received++;
 }
@@ -788,15 +797,31 @@ esp_err_t solar_os_link_stream_ingest(const char *link,
             stream->acknowledgement_pending = false;
             stream->acknowledgement_due_ms = 0U;
             xQueueReset(stream->rx_queue);
-            if (previous_session != 0U || stream->had_remote_session) {
+            /* Reset an established transmit direction once. Until it is
+             * confirmed, a new peer epoch may be the response to our reset;
+             * rotating again would make both ends reset each other forever.
+             * This also converges with peers using the older v2 behavior. */
+            if (stream->local_session_confirmed) {
                 stream_reset_local_locked(stream, true);
+            } else {
+                stream->open_sent = false;
+                for (size_t i = 0; i < stream->tx_window_count; i++) {
+                    stream->tx_window[i].sent = false;
+                }
             }
             if (stream->had_remote_session) {
                 stream->counters.reconnects++;
             } else {
-                stream->next_open_ms = 0U;
+                stream->open_sent = false;
             }
             stream->had_remote_session = true;
+        }
+        /* Reply to a peer that lost our OPEN (or restarted its transport),
+         * even if its transmit epoch stayed the same. Rate limiting prevents
+         * two established peers from endlessly echoing each other's OPEN. */
+        if (!stream->open_sent ||
+            (uint32_t)(now_ms - stream->last_open_ms) >= stream->config.retry_ms) {
+            stream->open_sent = false;
         }
     } else if (session != stream->remote_session) {
         stream->counters.dropped++;
@@ -856,7 +881,7 @@ esp_err_t solar_os_link_stream_ingest(const char *link,
         stream->acknowledgement_pending = false;
         stream->acknowledgement_due_ms = 0U;
         xQueueReset(stream->rx_queue);
-        stream->next_open_ms = 0U;
+        stream->open_sent = false;
         break;
     default:
         error = ESP_ERR_INVALID_ARG;
@@ -875,7 +900,7 @@ static void stream_prepare_action_locked(link_stream_t *stream,
             stream->config.peer_timeout_ms) {
         stream->remote_session = 0U;
         stream->remote_last_seen_ms = 0U;
-        stream->next_open_ms = 0U;
+        stream->open_sent = false;
         stream->acknowledgement_pending = false;
         stream->acknowledgement_due_ms = 0U;
         stream->counters.last_error = ESP_ERR_TIMEOUT;
@@ -899,7 +924,7 @@ static void stream_prepare_action_locked(link_stream_t *stream,
         action->valid = false;
         return;
     }
-    if ((int32_t)(now_ms - stream->next_open_ms) >= 0) {
+    if (!stream->open_sent || (int32_t)(now_ms - stream->next_open_ms) >= 0) {
         action->opcode = LINK_STREAM_OPCODE_OPEN;
         action->session = stream->local_session;
         return;
@@ -993,6 +1018,7 @@ void solar_os_link_stream_process(const char *link, uint32_t now_ms)
     xSemaphoreTake(stream_mutex, portMAX_DELAY);
     for (size_t i = 0; i < SOLAR_OS_LINK_STREAM_MAX; i++) {
         if (streams[i].active && strcmp(streams[i].link, link) == 0) {
+            streams[i].transport_stopped = false;
             stream_prepare_action_locked(&streams[i], now_ms, &action);
             if (action.valid) {
                 break;
@@ -1007,7 +1033,11 @@ void solar_os_link_stream_process(const char *link, uint32_t now_ms)
     const esp_err_t error = stream_send_action(&action);
     xSemaphoreTake(stream_mutex, portMAX_DELAY);
     const int index = stream_find_port_locked(action.port);
-    if (index >= 0 && streams[index].generation == action.generation) {
+    /* A port may close/reopen, or adopt a new epoch, while the transport send
+     * runs outside the mutex. Its old completion must not mark the new OPEN
+     * or resequenced data as already sent. */
+    if (index >= 0 && streams[index].generation == action.generation &&
+        streams[index].local_session == action.session) {
         link_stream_t *stream = &streams[index];
         stream->counters.last_error = error;
         if (error == ESP_OK) {
@@ -1026,6 +1056,8 @@ void solar_os_link_stream_process(const char *link, uint32_t now_ms)
                 stream->close_pending = false;
                 break;
             case LINK_STREAM_OPCODE_OPEN:
+                stream->last_open_ms = now_ms;
+                stream->open_sent = true;
                 stream->next_open_ms = now_ms +
                     (stream_connected_locked(stream, now_ms)
                          ? stream->config.open_interval_ms
@@ -1066,9 +1098,11 @@ void solar_os_link_stream_transport_stopped(const char *link)
         if (!stream->active || strcmp(stream->link, link) != 0) {
             continue;
         }
-        stream->remote_session = 0U;
-        stream->remote_last_seen_ms = 0U;
-        stream->next_open_ms = 0U;
+        /* The byte-stream endpoints did not close. Preserve their epochs and
+         * receive sequence through a temporary radio outage; forgetting only
+         * the receive side would reject the peer's next data sequence. */
+        stream->transport_stopped = true;
+        stream->open_sent = false;
         for (size_t j = 0; j < stream->tx_window_count; j++) {
             stream->tx_window[j].sent = false;
             stream->tx_window[j].last_send_ms = 0U;

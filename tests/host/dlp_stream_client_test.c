@@ -23,6 +23,8 @@ static bool fail_write, cancel, legacy_only;
 static uint64_t cancel_at;
 static bool fail_cache;
 static unsigned transient_reads, transient_writes;
+static bool graphics;
+static const char *fail_graphics_tag;
 uint32_t esp_random(void) { return 1000 + opens; }
 int64_t esp_timer_get_time(void) { return clock_us; }
 uint64_t solar_os_time_uptime_ms(void) { return clock_us / 1000; }
@@ -34,7 +36,8 @@ size_t strlcpy(char *dst, const char *src, size_t size) {
 }
 void *solar_os_memory_alloc(size_t size, solar_os_memory_class_t cls, const char *tag) {
     (void)cls;
-    assert(strcmp(tag, "display.link.mono") && strcmp(tag, "display.link.rgb"));
+    assert(graphics || (strcmp(tag, "display.link.mono") && strcmp(tag, "display.link.rgb")));
+    if (fail_graphics_tag && !strcmp(tag, fail_graphics_tag)) return NULL;
     if (fail_cache && (!strcmp(tag, "display.link.wire") || !strcmp(tag, "display.link.retained")))
         return NULL;
     void *p = malloc(size); if (p) allocations++; return p;
@@ -164,6 +167,23 @@ int main(void) {
     assert(solar_os_display_link_present(link, shown, sizeof(shown)) != ESP_OK);
     solar_os_display_link_destroy(link);
     assert(!allocations && opens == closes);
+    cancel = false;
+    graphics = true;
+    for (unsigned mode = 0; mode < 3; mode++) {
+        assert(solar_os_display_link_open_stream("test0", "graphics", &options, &link) == ESP_OK);
+        unsigned base = allocations;
+        fail_graphics_tag = mode == 1 ? "display.link.mono" : mode == 2 ? "display.link.rgb" : NULL;
+        if (fail_graphics_tag) {
+            assert(!solar_os_display_link_u8g2(link));
+            assert(allocations == base && !link->mono && !link->pixels);
+            fail_graphics_tag = NULL;
+        }
+        assert(solar_os_display_link_u8g2(link));
+        assert(allocations == base + 2);
+        assert(solar_os_display_link_u8g2(link) && allocations == base + 2);
+        solar_os_display_link_destroy(link);
+        assert(!allocations && opens == closes);
+    }
     assert(solar_os_port_unregister("test0") == ESP_OK);
-    puts("DLP stream host: compact/legacy, fragmented I/O, delta, cache pressure, reconnect, cancellation and ownership PASS");
+    puts("DLP stream host: compact/legacy, fragmented I/O, delta, cache pressure, reconnect, cancellation, graphics allocation failure and cleanup PASS");
 }

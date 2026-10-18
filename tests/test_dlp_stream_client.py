@@ -15,12 +15,17 @@ class DlpStreamClientTest(unittest.TestCase):
         core = state + "\n" + production_functions(source, (
             "result", "now_us", "connect_endpoint", "solar_os_display_link_open_transport",
             "solar_os_display_link_destroy", "solar_os_display_link_info",
-            "solar_os_display_link_format", "solar_os_display_link_present"))
+            "solar_os_display_link_format", "solar_os_display_link_present",
+            "ensure_graphics", "solar_os_display_link_u8g2"))
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             (path / "u8g2.h").write_text("#pragma once\n"
                 "typedef struct { int unused; } u8g2_t;\n"
-                "typedef struct { int unused; } u8x8_display_info_t;\n")
+                "typedef struct { unsigned tile_width, tile_height, pixel_width, pixel_height; } u8x8_display_info_t;\n"
+                "#define u8g2_SetupDisplay(...) ((void)0)\n"
+                "#define u8g2_SetupBuffer(...) ((void)0)\n"
+                "#define u8g2_InitDisplay(...) ((void)0)\n"
+                "#define u8g2_ClearBuffer(...) ((void)0)\n")
             (path / "freertos").mkdir()
             (path / "freertos/semphr.h").write_text("#pragma once\n#include <stdlib.h>\n"
                 "#define portMAX_DELAY 0xffffffffU\n"
