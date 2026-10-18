@@ -70,14 +70,18 @@ def main():
         print(text + "\n" + output, flush=True)
         return output
 
-    def wait_stopped():
+    def wait_status(expected):
         deadline = time.monotonic() + 5
         while time.monotonic() < deadline:
             status = command("dlp status")
-            if "DLP: stopped" in status:
+            if f"DLP: {expected}" in status:
                 return status
             time.sleep(.05)
-        raise AssertionError("TCP EOF did not stop DLP")
+        raise AssertionError(f"DLP did not become {expected}")
+
+    def assert_display_shell():
+        sessions = command("session list")
+        assert re.search(r"shell\s+active\s+display0", sessions), sessions
 
     try:
         assert "DLP: stopped" in command("dlp status"), "receiver already running"
@@ -87,6 +91,7 @@ def main():
         for compact in (True, False):
             assert "DLP session" in command(f"dlp serve display0 stream={args.stream}")
             running = True
+            assert "DLP: waiting" in command("dlp status")
             assert "app-dlp" in command("port list")
             assert "removed" not in command(f"stream tcp remove {args.stream}")
             with TcpStream((args.host, args.port)) as stream:
@@ -123,9 +128,42 @@ def main():
                     link.send_frame(first)
                 count = 6 if color else 4
                 assert f"frames={count}" in command("dlp status")
-            status = wait_stopped()
-            running = False
+                old_boot = link.boot
+            status = wait_status("waiting")
             assert f"Presentation timing: n={count}" in status
+            assert "app-dlp" in command("port list")
+            # Reconnect without starting another app. A new peer gets a fresh
+            # boot/session, and an interrupted upload must not be presented.
+            with TcpStream((args.host, args.port)) as stream:
+                link = DisplayLink(stream, compact=compact)
+                if args.no_window:
+                    link.requested_window = 0
+                width, height = link.connect()
+                assert link.boot != old_boot
+                link.send_frame(first)
+                count += 1
+                if compact:
+                    command("session focus display0")
+                    # Leave a persistent Alt switcher over DLP before exit.
+                    # Virtual taps preserve modifiers until the next event.
+                    command("input emit ALT+TAB")
+                    assert "suspended" in command("dlp status")
+                    command("input emit ALT+TAB")
+                    assert "serving" in command("dlp status")
+                    command("input emit CTRL+ALT+APP_EXIT")
+                    wait_status("stopped")  # normal exit with a live provider
+                else:
+                    link.command(0x10, struct.pack("<II", 2, 1))
+                    link.command(0x11, struct.pack("<IIHHHH", 2, 1, 0, 0, width, height))
+                    link.command(0x12, struct.pack("<III", 2, 1, 0) + b"\xff")
+            if not compact:
+                status = wait_status("waiting")
+                assert f"frames={count}" in status
+                command("session focus display0")
+                command("input emit ESC")
+                wait_status("stopped")  # exit while awaiting another provider
+            running = False
+            assert_display_shell()
             assert "app-dlp" not in command("port list")
         assert "DLP session" in command(f"dlp serve display0 stream={args.stream}")
         running = True
@@ -144,11 +182,14 @@ def main():
         assert result.returncode == 0, result.stderr
         assert "presented=100 unchanged=0" in result.stderr, result.stderr
         print(result.stderr.splitlines()[-1], flush=True)
-        assert "Presentation timing: n=100" in wait_stopped()
+        assert "Presentation timing: n=100" in wait_status("waiting")
+        command("dlp stop display0")
+        wait_status("stopped")
         running = False
+        assert_display_shell()
         command("session list")
         command("log show")
-        print("DLP Wi-Fi TCP: compact/fixed, delta, resume, RGB, EOF, restart and 100 frames PASS", flush=True)
+        print("DLP Wi-Fi TCP: compact/fixed, delta, resume, RGB, reconnect, interrupted upload, focused exit, remote stop and 100 frames PASS", flush=True)
     finally:
         try:
             if running:

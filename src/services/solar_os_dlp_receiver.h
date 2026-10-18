@@ -34,6 +34,9 @@ typedef struct {
 bool solar_os_dlp_receiver_init(solar_os_dlp_receiver_t *receiver,
     const dlp_info_t *info, uint64_t boot, uint8_t *storage, size_t capacity,
     const solar_os_dlp_receiver_io_t *io);
+/* Fence a disconnected transport with a fresh boot ID. Discard partial work and
+ * replies while retaining the last completed image and cumulative statistics. */
+void solar_os_dlp_receiver_reset(solar_os_dlp_receiver_t *receiver, uint64_t boot);
 /* Bounded protocol work; preserves unread input and partially written replies.
  * Returns a DLP result. Presentation runs here, outside command callbacks. */
 int solar_os_dlp_receiver_pump(solar_os_dlp_receiver_t *receiver, uint64_t now_us);

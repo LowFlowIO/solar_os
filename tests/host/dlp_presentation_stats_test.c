@@ -27,6 +27,8 @@ typedef struct {
     fake_gfx_t *gfx;
     bool suspended, direct_mono, direct_index2, raster_valid;
     uint8_t *indexed;
+    unsigned presented_format;
+    size_t presented_size;
     solar_os_dlp_receiver_t receiver;
     solar_os_dlp_presentation_stats_t presentation;
 } dlp_app_state_t;
@@ -71,12 +73,14 @@ int main(void)
     uint8_t image[256] = {0};
     assert(present_image(&app, DLP_MONO1, image, 16, 16, 8) == DLP_OK);
     assert(app.presentation.frames == 1);
+    assert(app.presented_format == DLP_MONO1 && app.presented_size == 16);
     assert(app.presentation.render_last_us == 210);
     assert(app.presentation.display_last_us == 300);
     assert(app.presentation.total_last_us == 510);
     assert(app.presentation.first_completed_us == 610);
     assert(present_image(&app, DLP_RGB565_BE, image, 256, 16, 8) == DLP_OK);
     assert(app.presentation.frames == 2);
+    assert(app.presented_format == DLP_RGB565_BE && app.presented_size == 256);
     assert(app.presentation.render_last_us == 0);
     assert(app.presentation.display_last_us == 70);
     assert(app.presentation.render_max_us == 210 && app.presentation.display_max_us == 300);
@@ -93,6 +97,7 @@ int main(void)
     gfx.error = -1;
     assert(present_image(&app, DLP_RGB565_BE, image, 256, 16, 8) == DLP_IO_ERROR);
     assert(app.presentation.frames == 2 && app.presentation.total_us == 580);
+    assert(app.presented_format == DLP_RGB565_BE && app.presented_size == 256);
     assert(present_image(&app, DLP_MONO1, image, 16, 15, 8) == DLP_IO_ERROR);
     gfx.error = 0;
     gfx.width = 13;

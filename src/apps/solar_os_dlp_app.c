@@ -9,6 +9,7 @@
 #include "solar_os_dlp_receiver.h"
 #include "solar_os_dlp_raster.h"
 #include "solar_os_gfx.h"
+#include "solar_os_keys.h"
 #include "solar_os_memory.h"
 
 typedef struct {
@@ -20,6 +21,9 @@ typedef struct {
     char display[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
     char stream_name[SOLAR_OS_STREAM_ID_MAX];
     bool direct_mono, direct_index2, raster_valid, suspended;
+    int64_t retry_at_us;
+    unsigned presented_format;
+    size_t presented_size;
     solar_os_dlp_presentation_stats_t presentation;
 } dlp_app_state_t;
 
@@ -41,6 +45,7 @@ void solar_os_dlp_app_get_status(solar_os_dlp_app_status_t *status)
 static void publish_status(bool running)
 {
     solar_os_dlp_app_status_t status = {.running = running, .suspended = state.suspended,
+        .waiting = !state.receiver.device.session,
         .received_bytes = state.receiver.received_bytes, .sent_bytes = state.receiver.sent_bytes,
         .presented_frames = state.receiver.presented_frames, .presentation = state.presentation};
     strlcpy(status.display, state.display, sizeof(status.display));
@@ -141,6 +146,8 @@ static int present_image(void *user, unsigned format, const uint8_t *data,
     uint32_t render_us = 0, display_us = 0;
     int result = draw_image(s, format, data, size, width, height, &render_us, &display_us);
     if (result != DLP_OK) return result;
+    s->presented_format = format;
+    s->presented_size = size;
     solar_os_dlp_presentation_stats_t *stats = &s->presentation;
     stats->render_last_us = render_us;
     stats->display_last_us = display_us;
@@ -165,6 +172,31 @@ static void cleanup(void)
     state.storage = NULL;
     state.indexed = NULL;
     publish_status(false);
+}
+
+static void draw_waiting(solar_os_context_t *ctx)
+{
+    solar_os_context_set_graphics_active(ctx, true);
+    solar_os_gfx_clear(state.gfx, SOLAR_OS_GFX_COLOR_WHITE);
+    solar_os_gfx_set_color(state.gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    solar_os_gfx_text(state.gfx, 8, 20, "DLP: waiting for host");
+    solar_os_gfx_present(state.gfx);
+    if (state.direct_mono || state.direct_index2)
+        solar_os_context_set_streaming_graphics_active(ctx, true);
+}
+
+static void reopen_stream(int64_t now_us)
+{
+    /* A new transport must never inherit buffered packets, replies or a DLP
+     * session from the old peer. Close before reopening through the stream API. */
+    if (solar_os_stream_handle_valid(&state.stream) &&
+        solar_os_stream_close_ex(&state.stream) != ESP_OK) {
+        state.retry_at_us = now_us + 250000;
+        return;
+    }
+    solar_os_stream_open_options_t options = {.direction = SOLAR_OS_STREAM_DIRECTION_DUPLEX};
+    esp_err_t err = solar_os_stream_open_ex(state.stream_name, "app-dlp", &options, &state.stream);
+    state.retry_at_us = err == ESP_OK ? 0 : now_us + 250000;
 }
 
 static esp_err_t start(solar_os_context_t *ctx)
@@ -213,13 +245,7 @@ static esp_err_t start(solar_os_context_t *ctx)
     uint64_t boot = ((uint64_t)esp_random() << 32) | esp_random();
     if (!solar_os_dlp_receiver_init(&state.receiver, &info, boot ? boot : 1,
         state.storage, capacity, &io)) return ESP_FAIL;
-    solar_os_context_set_graphics_active(ctx, true);
-    solar_os_gfx_clear(state.gfx, SOLAR_OS_GFX_COLOR_WHITE);
-    solar_os_gfx_set_color(state.gfx, SOLAR_OS_GFX_COLOR_BLACK);
-    solar_os_gfx_text(state.gfx, 8, 20, "DLP: waiting for host");
-    solar_os_gfx_present(state.gfx);
-    if (state.direct_mono || state.direct_index2)
-        solar_os_context_set_streaming_graphics_active(ctx, true);
+    draw_waiting(ctx);
     publish_status(true);
     return ESP_OK;
 }
@@ -243,22 +269,34 @@ static void resume(solar_os_context_t *ctx)
     state.suspended = false;
     if (state.direct_mono || state.direct_index2)
         solar_os_context_set_streaming_graphics_active(ctx, true);
-    if (state.receiver.valid) {
+    if (state.presented_size) {
         uint32_t render_us = 0, display_us = 0;
-        (void)draw_image(&state, state.receiver.format, state.receiver.front,
-            state.receiver.image_size, state.receiver.device.info.width, state.receiver.device.info.height,
+        (void)draw_image(&state, state.presented_format, state.receiver.front,
+            state.presented_size, state.receiver.device.info.width, state.receiver.device.info.height,
             &render_us, &display_us);
-    }
+    } else draw_waiting(ctx);
     publish_status(true);
 }
 
 static bool event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event->type == SOLAR_OS_EVENT_RESUME) { resume(ctx); return true; }
+    if (event->type == SOLAR_OS_EVENT_CHAR) {
+        uint8_t key = (uint8_t)event->data.ch;
+        if (key == SOLAR_OS_KEY_APP_EXIT || key == SOLAR_OS_KEY_ESCAPE)
+            solar_os_context_finish(ctx, 0, NULL);
+        return true;
+    }
     if (event->type != SOLAR_OS_EVENT_TICK) return false;
-    int result = solar_os_dlp_receiver_pump(&state.receiver, esp_timer_get_time());
+    int64_t now_us = esp_timer_get_time();
+    if (state.retry_at_us) {
+        if (now_us >= state.retry_at_us) reopen_stream(now_us);
+    } else if (solar_os_dlp_receiver_pump(&state.receiver, now_us) != DLP_OK) {
+        uint64_t boot = state.receiver.device.boot + 1;
+        solar_os_dlp_receiver_reset(&state.receiver, boot ? boot : 1);
+        reopen_stream(now_us);
+    }
     publish_status(true);
-    if (result != DLP_OK) solar_os_context_finish(ctx, 1, "DLP: byte stream disconnected or stalled");
     return true;
 }
 

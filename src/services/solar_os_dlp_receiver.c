@@ -105,6 +105,18 @@ bool solar_os_dlp_receiver_init(solar_os_dlp_receiver_t *r,
         dlp_device_enable_window(&r->device, &r->window, DLP_MAX_WINDOW);
 }
 
+void solar_os_dlp_receiver_reset(solar_os_dlp_receiver_t *r, uint64_t boot)
+{
+    dlp_info_t info = r->device.info;
+    dlp_backend_t backend = r->device.backend;
+    (void)dlp_device_init(&r->device, &info, boot, &backend);
+    (void)dlp_device_enable_window(&r->device, &r->window, DLP_MAX_WINDOW);
+    memset(&r->parser, 0, sizeof(r->parser));
+    r->pending = r->reply_compact = false;
+    r->rx_at = r->rx_size = r->tx_at = r->tx_size = 0;
+    r->last_rx_us = r->last_tx_us = 0;
+}
+
 int solar_os_dlp_receiver_pump(solar_os_dlp_receiver_t *r, uint64_t now_us)
 {
     dlp_device_tick(&r->device, now_us);

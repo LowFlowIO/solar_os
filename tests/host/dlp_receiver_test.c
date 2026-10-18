@@ -219,12 +219,47 @@ static void windowed(bool legacy)
     assert(f.presents == 3 && !memcmp(rgb, f.shown, sizeof(rgb)));
 }
 
+static void reconnect(bool legacy)
+{
+    fixture_t f; dlp_host_t host;
+    setup(&f, &host, legacy);
+    uint8_t image[18] = {0xa5};
+    assert(!dlp_host_upload_frame(&host, 1, image, sizeof(image), NULL, NULL));
+    assert(!dlp_host_begin_frame(&host, 2, false));
+    assert(!dlp_host_begin_rect(&host, 2, 1, 0, 0, 8, 1));
+    uint8_t black = 255;
+    assert(!dlp_host_write(&host, 2, 1, 0, &black, 1));
+    /* Lose a peer with a partial frame, truncated packet and buffered replies. */
+    f.receiver.pending = true;
+    f.receiver.parser.used = 5;
+    f.receiver.rx_at = 1; f.receiver.rx_size = 7;
+    f.receiver.tx_at = 2; f.receiver.tx_size = 9;
+    f.receiver.window.waiting = f.receiver.window.ready = true;
+    uint32_t received = f.receiver.received_bytes, sent = f.receiver.sent_bytes;
+    solar_os_dlp_receiver_reset(&f.receiver, 43);
+    assert(f.receiver.valid && !memcmp(f.receiver.front, image, sizeof(image)));
+    assert(f.receiver.presented_frames == 1 && f.receiver.received_bytes == received &&
+        f.receiver.sent_bytes == sent);
+    assert(!f.receiver.pending && !f.receiver.parser.used && !f.receiver.rx_size &&
+        !f.receiver.tx_size && !f.receiver.window.waiting && !f.receiver.window.ready);
+    assert(!f.receiver.device.session && f.receiver.device.need_full);
+    assert(dlp_host_begin_frame(&host, 2, false) != DLP_OK); /* old boot is fenced */
+    assert(!dlp_host_discover(&host, f.now + 1000000) && host.boot == 43);
+    assert(!dlp_host_configure(&host, 2, DLP_MONO1, 0));
+    assert(dlp_host_begin_frame(&host, 1, false) != DLP_OK);
+    image[0] = 0x55;
+    assert(!dlp_host_upload_frame(&host, 1, image, sizeof(image), NULL, NULL));
+    assert(f.presents == 2 && !memcmp(f.shown, image, sizeof(image)));
+}
+
 int main(void)
 {
     exercise(false);
     exercise(true);
     windowed(false);
     windowed(true);
+    reconnect(false);
+    reconnect(true);
     puts("DLP receiver: compact/fixed, partial I/O, staging, delta, RLE, replay, RGB565, recovery PASS");
     return 0;
 }

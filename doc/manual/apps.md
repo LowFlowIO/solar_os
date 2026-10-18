@@ -64,11 +64,13 @@ without rebuilding a graphics canvas. This path needs an extra two-bit-per-pixel
 conversion buffer (38,400 bytes at 480×320). Initial frames and resume redraws
 repaint the full display. Other targets use the regular graphics canvas.
 
-The normal app-exit key or `dlp stop <display>` closes the receiver, releases
+The normal app-exit key, Escape, or `dlp stop <display>` closes the receiver, releases
 the stream, and restores the previous session. Suspension pauses protocol
-processing; resuming redraws the last completed image. I/O errors close the
-receiver. Serial links with no disconnect indication remain listening until
-stopped; closing the desktop sender alone does not close the display session.
+processing; resuming redraws the last completed image. Provider disconnects and
+I/O errors leave the app waiting for a new connection, retaining the last
+completed image. The receiver retries opening an unavailable stream. Each
+reopened transport starts a fresh protocol session and requires a full image.
+Serial links with no disconnect indication remain listening until stopped.
 
 The desktop test sender requires Python, pyserial, and Pillow:
 
@@ -103,9 +105,8 @@ python3 scripts/dlp_image.py --tcp 192.0.2.10:7777 --demo --fps 30 --frames 100 
 ```
 
 TCP needs Pillow but does not need pyserial. Use the raw TCP listener, rather
-than a Telnet shell port. Closing the TCP sender closes the DLP session and
-restores the previous display session; the TCP listener remains registered.
-Run `dlp serve` again before connecting a new sender. To remove the endpoint,
+than a Telnet shell port. Closing the TCP sender leaves DLP waiting on the same
+listener. Connect a new sender without running `dlp serve` again. To remove the endpoint,
 stop DLP first if it is running, then run `stream tcp remove tcp0`.
 
 `--stats` prints actual completion rate, byte counts, and host wall times per

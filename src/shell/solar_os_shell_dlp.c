@@ -19,7 +19,7 @@ void solar_os_shell_cmd_dlp(solar_os_context_t *ctx, int argc, char **argv)
         if (!status.running) solar_os_shell_io_writeln(io, "DLP: stopped");
         else solar_os_shell_io_printf(io,
             "DLP: %s %s <- %s, frames=%" PRIu32 " RX=%" PRIu32 " TX=%" PRIu32 "\n",
-            status.suspended ? "suspended" : "serving", status.display, status.stream,
+            status.suspended ? "suspended" : status.waiting ? "waiting" : "serving", status.display, status.stream,
             status.presented_frames, status.received_bytes, status.sent_bytes);
         const solar_os_dlp_presentation_stats_t *p = &status.presentation;
         if (p->frames) {

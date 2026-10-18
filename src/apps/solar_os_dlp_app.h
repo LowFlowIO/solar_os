@@ -13,7 +13,7 @@ typedef struct {
 } solar_os_dlp_presentation_stats_t;
 
 typedef struct {
-    bool running, suspended;
+    bool running, suspended, waiting;
     char display[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
     char stream[SOLAR_OS_STREAM_ID_MAX];
     uint32_t received_bytes, sent_bytes, presented_frames;
