@@ -14,6 +14,7 @@ typedef struct {
 
 typedef struct {
     dlp_device_t device;
+    dlp_device_window_t window;
     dlp_stream_t parser;
     solar_os_dlp_receiver_io_t io;
     uint8_t *front, *back;
@@ -21,7 +22,7 @@ typedef struct {
     uint16_t x, y, width, height;
     uint32_t stride, rect_stride;
     unsigned format;
-    bool pending, valid;
+    bool pending, valid, reply_compact;
     uint8_t rx[DLP_CELL_SIZE], tx[DLP_CELL_SIZE];
     size_t rx_at, rx_size, tx_at, tx_size;
     uint64_t last_rx_us, last_tx_us;

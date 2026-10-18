@@ -101,7 +101,8 @@ bool solar_os_dlp_receiver_init(solar_os_dlp_receiver_t *r,
     dlp_backend_t backend = {.ctx = r, .configure = configure, .begin_frame = begin_frame,
         .begin_rect = begin_rect, .write = write_rect, .present = present,
         .poll_present = poll_present, .abort = abort_frame};
-    return dlp_device_init(&r->device, info, boot, &backend);
+    return dlp_device_init(&r->device, info, boot, &backend) &&
+        dlp_device_enable_window(&r->device, &r->window, DLP_MAX_WINDOW);
 }
 
 int solar_os_dlp_receiver_pump(solar_os_dlp_receiver_t *r, uint64_t now_us)
@@ -119,6 +120,12 @@ int solar_os_dlp_receiver_pump(solar_os_dlp_receiver_t *r, uint64_t now_us)
             if (r->tx_at < r->tx_size) continue;
         }
         uint8_t cell[DLP_CELL_SIZE], response[DLP_CELL_SIZE];
+        if (dlp_device_take_reply(&r->device, response)) {
+            r->tx_at = 0;
+            r->tx_size = dlp_stream_encode(r->tx, response, r->reply_compact);
+            r->last_tx_us = now_us;
+            continue;
+        }
         bool compact = false;
         bool ready = dlp_stream_next(&r->parser, cell, &compact);
         if (!ready && r->rx_at == r->rx_size) {
@@ -131,10 +138,14 @@ int solar_os_dlp_receiver_pump(solar_os_dlp_receiver_t *r, uint64_t now_us)
         }
         while (!ready && r->rx_at < r->rx_size)
             ready = dlp_stream_feed(&r->parser, r->rx[r->rx_at++], cell, &compact);
-        if (ready && dlp_device_receive(&r->device, cell, response, now_us)) {
-            r->tx_at = 0;
-            r->tx_size = dlp_stream_encode(r->tx, response, compact);
-            r->last_tx_us = now_us;
+        if (ready) {
+            if (dlp_device_receive(&r->device, cell, response, now_us)) {
+                r->tx_at = 0;
+                r->tx_size = dlp_stream_encode(r->tx, response, compact);
+                r->last_tx_us = now_us;
+            } else if (r->window.waiting &&
+                !memcmp(cell, r->window.pending.request, DLP_CELL_SIZE))
+                r->reply_compact = compact;
         }
     }
     return DLP_OK;

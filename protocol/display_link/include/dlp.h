@@ -3,6 +3,16 @@
 #define DLP_H
 /* Transport-neutral API names. Existing SDLP API names remain available. */
 #include "sdlp.h"
+#define DLP_MAX_WINDOW SDLP_MAX_WINDOW
+#define DLP_WINDOW_VERSION SDLP_WINDOW_VERSION
+#define DLP_PUSH SDLP_PUSH
+#define DLP_NEGOTIATE_WINDOW SDLP_NEGOTIATE_WINDOW
+#define DLP_WINDOW_SYNC SDLP_WINDOW_SYNC
+#define dlp_device_window_t sdlp_device_window_t
+#define dlp_device_enable_window sdlp_device_enable_window
+#define dlp_device_take_reply sdlp_device_take_reply
+#define dlp_host_window_t sdlp_host_window_t
+#define dlp_host_negotiate_window sdlp_host_negotiate_window
 #define DLP_ABORT_FRAME SDLP_ABORT_FRAME
 #define DLP_BAD_ARGUMENT SDLP_BAD_ARGUMENT
 #define DLP_BAD_SEQUENCE SDLP_BAD_SEQUENCE

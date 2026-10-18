@@ -47,6 +47,9 @@ class DisplayLinkTest(unittest.TestCase):
     def test_portable_protocol(self):
         self.run_protocol_test("sdlp_test.c")
 
+    def test_windowed_protocol(self):
+        self.run_protocol_test("dlp_window_test.c")
+
     def run_protocol_test(self, name):
         library = ROOT / "protocol/display_link"
         with tempfile.TemporaryDirectory() as directory:

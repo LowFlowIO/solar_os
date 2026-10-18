@@ -53,6 +53,10 @@ presentation also advertise RGB565 with big-endian pixel bytes. The host must
 use an advertised format. Updates are staged; the display changes on PRESENT.
 Changed rectangles and RLE are supported. A new connection/session must send a
 full image before partial updates.
+The receiver also supports negotiated upload windows of up to 16 packets.
+Uploads receive cumulative progress acknowledgements, and the final reply
+waits for presentation completion. Lost or corrupt packets are retransmitted
+within the bounded window; retries do not repeat accepted writes or PRESENT.
 
 MONO1 uses direct presentation where supported. Displays with an INDEX2 raster
 backend use batched MONO1 conversion and send changed regions,
@@ -80,6 +84,10 @@ Start the receiver before running the sender. The script discovers geometry,
 fits images on a white background, and sends MONO1 frames. `--legacy-cells`
 tests fixed-cell framing; compact DLP framing is the default. This is an image
 test tool; desktop virtual-monitor integration belongs to a host project.
+Windowed uploads are negotiated by default, with automatic fallback for older
+receivers. `--no-window` forces the original stop-and-wait behavior for comparison;
+it is independent of `--legacy-cells`. After display suspension invalidates
+retained content, the sender starts a new session and repaints fully.
 
 For Wi-Fi, create a raw TCP stream from a separate device console:
 
@@ -102,8 +110,10 @@ stop DLP first if it is running, then run `stream tcp remove tcp0`.
 
 `--stats` prints actual completion rate, byte counts, and host wall times per
 input frame: `prep` generates/loads and converts the image; `upload` plans and
-sends the update; `present_wait` runs from PRESENT through the completion-status
-reply. `total` includes preparation and any requested reconnect, and excludes
+sends the update, including intermediate window checkpoints; `present_wait`
+runs from PRESENT through the completion reply. With windows it also includes
+sending the final buffered upload batch. `total` includes preparation and any
+requested reconnect, and excludes
 the intentional frame-rate sleep. The final summary counts presented frames
 and unchanged images separately; unchanged images do not increase completed
 FPS. The default rate limit is 2 FPS; `--fps 30` sets a 30 FPS ceiling and
@@ -119,7 +129,8 @@ These measurements exclude wire upload, startup and resume/overlay redraws;
 they measure service completion, not panel scanout. Completion rate averages
 the intervals between the first and last DLP frame, including host pacing.
 The statistics remain available after stopping, until the next receiver start.
-Host `present_wait` includes USB/stream round trips, scheduling and polling,
+Host `present_wait` includes stream transfer, round trips, scheduling and
+legacy status polling,
 so it is not a device-only or SPI-only measurement. Diagnostics never enter
 the DLP byte stream.
 

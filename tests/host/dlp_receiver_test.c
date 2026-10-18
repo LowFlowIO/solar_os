@@ -8,7 +8,7 @@ typedef struct {
     uint8_t storage[2 * 13 * 9 * 2];
     uint8_t input[1024], output[1024], shown[13 * 9 * 2];
     size_t in_at, in_size, out_size, shown_size;
-    uint64_t now;
+    uint64_t now, busy_until;
     unsigned presents, writes;
     bool legacy, stall;
     int present_result;
@@ -41,6 +41,7 @@ static int present_image(void *user, unsigned format, const uint8_t *data,
 {
     fixture_t *f = user;
     assert(w == 13 && h == 9 && (format == DLP_MONO1 || format == DLP_RGB565_BE));
+    if (f->now < f->busy_until) return DLP_BUSY;
     if (f->present_result) return f->present_result;
     memcpy(f->shown, data, size); f->shown_size = size; f->presents++;
     return DLP_OK;
@@ -71,6 +72,19 @@ static int request(void *user, const uint8_t tx[256], uint8_t rx[256], uint64_t 
         }
     }
     return DLP_DEADLINE;
+}
+
+static int push(void *user, const uint8_t tx[256], uint64_t deadline)
+{
+    fixture_t *f = user;
+    assert(f->in_at == f->in_size && !f->out_size);
+    f->in_at = 0;
+    f->in_size = dlp_stream_encode(f->input, tx, !f->legacy);
+    while (f->in_at < f->in_size && f->now < deadline) {
+        f->now += 1000;
+        if (solar_os_dlp_receiver_pump(&f->receiver, f->now)) return DLP_LINK_ERROR;
+    }
+    return f->in_at == f->in_size ? DLP_OK : DLP_DEADLINE;
 }
 
 static void setup(fixture_t *f, dlp_host_t *host, bool legacy)
@@ -176,10 +190,41 @@ static void exercise(bool legacy)
     assert(solar_os_dlp_receiver_pump(&f.receiver, f.now + 5000001) == DLP_TIMEOUT);
 }
 
+static void windowed(bool legacy)
+{
+    fixture_t f; dlp_host_t host; dlp_host_window_t window;
+    setup(&f, &host, legacy);
+    host.transport.push = push;
+    assert(!dlp_host_negotiate_window(&host, &window, DLP_MAX_WINDOW));
+    uint8_t image[18] = {0}, retained[18]; bool valid = false;
+    /* The receiver must tick and send the deferred completion without another
+     * request. Both input and output are deliberately fragmented/stalled. */
+    f.out_size = 0;
+    f.busy_until = f.now + 100000;
+    assert(!dlp_host_upload_frame(&host, 1, image, sizeof(image), retained, &valid));
+    assert(valid && f.now >= f.busy_until && f.presents == 1);
+    assert(!f.receiver.window.waiting && !f.receiver.window.ready);
+    assert(!memcmp(image, f.shown, sizeof(image)));
+    f.out_size = 0;
+    image[0] = 1;
+    assert(!dlp_host_upload_frame(&host, 2, image, sizeof(image), retained, &valid));
+    assert(valid && f.presents == 2 && !memcmp(image, f.shown, sizeof(image)));
+    assert(!dlp_host_configure(&host, 2, DLP_RGB565_BE, 0));
+    assert(!dlp_host_extensions(&host));
+    assert(!dlp_host_negotiate_window(&host, &window, DLP_MAX_WINDOW));
+    f.out_size = 0;
+    uint8_t rgb[13 * 9 * 2];
+    for (unsigned k = 0; k < sizeof(rgb); k++) rgb[k] = (uint8_t)(k * 47);
+    assert(!dlp_host_upload_frame(&host, 1, rgb, sizeof(rgb), NULL, NULL));
+    assert(f.presents == 3 && !memcmp(rgb, f.shown, sizeof(rgb)));
+}
+
 int main(void)
 {
     exercise(false);
     exercise(true);
+    windowed(false);
+    windowed(true);
     puts("DLP receiver: compact/fixed, partial I/O, staging, delta, RLE, replay, RGB565, recovery PASS");
     return 0;
 }

@@ -6,7 +6,8 @@ optional features are discovered. The protocol is independent of the MCU,
 panel bus, operating system and transport API.
 
 The portable C11 library includes serialization, CRC32, host/device state
-machines, request replay, asynchronous presentation, byte-stream framing,
+machines, request replay, asynchronous presentation, negotiated upload windows,
+byte-stream framing,
 changed-region planning and bounded byte RLE. It has no allocation, SDK,
 RTOS, framebuffer or GPIO dependency. It is MIT licensed.
 
@@ -34,7 +35,8 @@ Commands have the same semantics over either transport profile:
 - **Ordered byte stream:** UART, USB CDC, TCP or another ordered read/write
   stream. Compact `DLP1` packets carry only the header, used payload and CRC.
   Requests receive direct responses. Packet boundaries need not match reads
-  or writes. Use stop-and-wait command sequencing.
+  or writes. Control requests use stop-and-wait sequencing; negotiated uploads
+  use bounded windows with cumulative progress and completion replies.
 - **SPI:** mode 1, fixed 256-byte full-duplex `SDLP` cells. Responses appear in
   later transactions; the host polls with IDLE cells. CS, clock, minimum
   spacing, optional READY/RESET and bus arbitration belong to the adapter.
@@ -58,6 +60,9 @@ The C adapter does not automatically negotiate legacy framing.
 A custom adapter can implement `dlp_transport_t.request()` directly. It takes
 and returns canonical 256-byte library cells; the adapter owns their framing
 on the actual link. Supply either `request` or `exchange`.
+For windowed uploads on a custom stream adapter, also supply `push`: it writes
+one canonical cell before the absolute deadline without waiting for a reply.
+SPI reuses `exchange` for PUSH cells.
 
 ### SPI host
 
@@ -70,6 +75,11 @@ Respect the absolute deadline and return with CS inactive and the bus released.
 Discover before an absolute boot deadline, configure a fresh nonzero session
 ID and accepted format, then call `dlp_host_extensions()`. An older peer's
 UNSUPPORTED reply disables extensions without failing configuration.
+Optionally attach caller-owned `dlp_host_window_t` storage with
+`dlp_host_negotiate_window(host, storage, requested_size)`, requesting 1..16
+packets. UNSUPPORTED returns OK with `storage.active=false` for legacy peers.
+The high-level uploader then uses the accepted window automatically; manual
+frame commands remain synchronous. Calls and control requests stay serialized.
 
 `dlp_host_upload_frame()` accepts a packed native-format image and optional,
 distinct, equally sized retained storage plus a validity flag. Set validity
@@ -89,7 +99,9 @@ The retained cache is committed only after PRESENT completes. Errors invalidate
 it. An unchanged image is skipped only after GET_SYNC confirms that this
 session's retained content is still valid. If another source replaced it,
 RESET/power loss invalidated it, or a partial BEGIN_FRAME is rejected, the host
-sends a full replacement. Multi-source peripherals must mark affected sessions'
+uses a full replacement. Windowed upload rejection requires a new session;
+the caller must reconnect and repaint rather than continue the rejected window.
+Multi-source peripherals must mark affected sessions'
 `need_full=true` whenever their retained content ceases to be valid.
 
 Lower-level APIs expose BEGIN_FRAME, BEGIN_RECT, raw/sequential writes,
@@ -130,6 +142,14 @@ bounded asynchronous work; `poll_present()` returns BUSY until completion.
 Other callbacks finish within `command_ms` and the adapter's rearm interval.
 The library creates no workers/interrupts and is not reentrant.
 
+To support windows, attach caller-owned `dlp_device_window_t` with
+`dlp_device_enable_window(device, storage, maximum_size)` before configuration.
+Tick independently of incoming traffic, then drain `dlp_device_take_reply()`
+for deferred completion replies. Preserve the pending request's stream framing
+and partial output writes. SPI adapters queue these replies for later exchanges.
+Do not overwrite an undrained reply. A receiver without attached window storage
+returns UNSUPPORTED and keeps the original behavior.
+
 Backend callbacks return DLP wire results. BAD_ARGUMENT, BAD_STATE, BUSY,
 UNSUPPORTED and NO_MEMORY leave the operation unapplied. IO_ERROR or TIMEOUT
 may indicate partial effects and require reconfiguration/full repaint.
@@ -146,7 +166,7 @@ this 32-byte header:
 | 0 | 4 | `DLP1` compact stream or `SDLP` fixed cell |
 | 4 | 1 | Version 1 |
 | 5 | 1 | Reserved zero |
-| 6 | 1 | Kind: IDLE=0, REQUEST=1, RESPONSE=2 |
+| 6 | 1 | Kind: IDLE=0, REQUEST=1, RESPONSE=2, negotiated PUSH=3 |
 | 7 | 1 | Opcode |
 | 8 | 4 | Session |
 | 12 | 4 | Sequence |
@@ -166,6 +186,8 @@ New optional commands use normal configured session/sequence/replay rules:
 |---|---|---|
 | GET_EXTENSIONS `0x04` | Empty | u32 feature bits: RLE=32, SYNC=64 |
 | GET_SYNC `0x05` | Empty; requires SYNC | u32 `need_full`, zero or one |
+| NEGOTIATE_WINDOW `0x06` | version u16=2, requested size u16=1..16 | version u16=2, accepted size u16 |
+| WINDOW_SYNC `0x07` | last sent PUSH u32, wait frame u32 (0 for progress) | 32-byte cumulative progress/completion |
 | RECT_RLE `0x15` | frame u32, rectangle u32, **decoded** offset u32, decoded length u16, RLE bytes | Empty |
 
 GET_INFO keeps its original capability bits (0..4) so old clients continue to
@@ -178,6 +200,12 @@ literal bytes. A tag 128..255 repeats the following byte `(tag & 127)+3` times
 advertised decoded length (1..1,024), within the open rectangle. Offsets and
 row-padding checks apply to decoded bytes. No dictionary or state survives
 between packets.
+
+See [the windowed profile contract](WINDOWED.md) for credits, separate PUSH
+sequences, bounded go-back-N retransmission, duplicate handling and deferred
+completion. Framing version 1 is retained; profile revision 2 is explicitly
+negotiated. Small frames need one completion round trip. Larger frames use
+intermediate progress checkpoints. Physical link and display limits still apply.
 
 MONO1/GRAY2/GRAY4 pack low bits first with zero unused row bits; MONO1 black
 is one, grayscale white is maximal. GRAY8 has one byte per pixel; RGB565 is

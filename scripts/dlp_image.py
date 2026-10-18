@@ -23,6 +23,8 @@ CELL_SIZE = 256
 OK, BUSY, BAD_SESSION, STALE_BOOT = 0, 4, 5, 6
 GET_INFO, CONFIGURE, GET_STATUS = 1, 2, 3
 GET_EXTENSIONS, GET_SYNC, RECT_RLE = 4, 5, 0x15
+NEGOTIATE_WINDOW, WINDOW_SYNC, PUSH = 6, 7, 3
+WINDOW_VERSION, MAX_WINDOW = 2, 16
 PRESERVE_CONTENT, RLE, SYNC = 1, 32, 64
 BEGIN_FRAME, BEGIN_RECT, RECT_DATA, PRESENT, ABORT_FRAME = range(0x10, 0x15)
 HEADER = struct.Struct("<4sBBBBIIHHQ4x")
@@ -84,18 +86,18 @@ class Cell:
 
 @dataclass
 class FrameStats:
-    """Host wall times; present_wait includes transport, scheduling and status polling."""
+    """Host wall times; present_wait includes final-batch transfer and completion."""
     upload_ms: float = 0.0
     present_wait_ms: float = 0.0
     total_ms: float = 0.0
     presented: bool = False
 
 
-def encode_cell(opcode, session, sequence, boot, payload=b"", compact=False):
-    if len(payload) > 220 or not 0 < sequence <= 0xffffffff:
+def encode_cell(opcode, session, sequence, boot, payload=b"", compact=False, kind=1):
+    if len(payload) > 220 or not 0 < sequence <= 0xffffffff or kind not in (1, PUSH):
         raise ValueError("Invalid SDLP request")
     packet = bytearray(CELL_SIZE)
-    HEADER.pack_into(packet, 0, b"SDLP", 1, 0, 1, opcode, session, sequence,
+    HEADER.pack_into(packet, 0, b"SDLP", 1, 0, kind, opcode, session, sequence,
                      0, len(payload), boot)
     packet[32:32 + len(payload)] = payload
     if compact:
@@ -115,11 +117,11 @@ def decode_cell(packet):
     if len(packet) != expected:
         raise ValueError("Wrong cell length")
     crc, = struct.unpack_from("<I", packet, len(packet) - 4)
-    if (magic not in (b"SDLP", b"DLP1") or version != 1 or reserved or kind > 2 or n > 220
+    if (magic not in (b"SDLP", b"DLP1") or version != 1 or reserved or kind > PUSH or n > 220
             or any(packet[28:32]) or (not compact and any(packet[32 + n:252]))
             or crc != zlib.crc32(packet[:-4]) or (kind and not seq)
             or (kind == 0 and (op or seq or result or n))
-            or (kind == 1 and result)):
+            or (kind in (1, PUSH) and result)):
         raise ValueError("Invalid SDLP cell")
     return Cell(kind, op, session, seq, result, boot, packet[32:32 + n])
 
@@ -162,7 +164,7 @@ def changed_rects(before, after, width, height):
 
 
 class DisplayLink:
-    """Stop-and-wait DLP client; port supplies ordered read/write operations.
+    """Negotiated windowed DLP client; port supplies ordered read/write operations.
 
     Prefer compact framing and fall back to fixed v1 cells on discovery.
     Serial ports, USB CDC, socket/file adapters and in-process pipes all use
@@ -181,6 +183,24 @@ class DisplayLink:
         self.tx_bytes = self.rx_bytes = 0
         self.max_rect_bytes = 0
         self.last_frame_stats = FrameStats()
+        self.requested_window = MAX_WINDOW
+        self.window_size = self.push_sent = self.push_ack = self.push_grant = 0
+        self.push_packets = []
+        self.window_failed = False
+
+    def _write_all(self, packet, deadline):
+        offset = 0
+        while offset < len(packet):
+            n = self.port.write(packet[offset:])
+            if n is None or n < 0 or n > len(packet) - offset:
+                raise OSError("Invalid display stream write result")
+            if time.monotonic() >= deadline:
+                raise TimeoutError("Display stream write stalled")
+            if not n:
+                time.sleep(0.001)
+                continue
+            offset += n
+            self.tx_bytes += n
 
     def _receive(self, deadline):
         while time.monotonic() < deadline:
@@ -211,7 +231,7 @@ class DisplayLink:
             self.buffer.extend(data)
         raise TimeoutError("Timed out waiting for a display response")
 
-    def command(self, opcode, payload=b"", attempts=3):
+    def command(self, opcode, payload=b"", attempts=3, *, prefix=b""):
         self.sequence += 1
         discovery = opcode == GET_INFO
         session = 0 if discovery else self.session
@@ -221,19 +241,14 @@ class DisplayLink:
         # duplicate writes or a second PRESENT after a lost response.
         for attempt in range(attempts):
             self.buffer.clear()  # Discard incomplete replies before exact retry.
-            deadline = time.monotonic() + self.timeout
-            offset = 0
-            while offset < len(packet):
-                n = self.port.write(packet[offset:])
-                if n is None or n < 0 or n > len(packet) - offset:
-                    raise OSError("Invalid display stream write result")
-                if time.monotonic() >= deadline:
-                    raise TimeoutError("Display stream write stalled")
-                if not n:
-                    time.sleep(0.001)
-                    continue
-                offset += n
-                self.tx_bytes += n
+            wait = self.timeout
+            if opcode == WINDOW_SYNC and struct.unpack_from("<I", payload, 4)[0]:
+                wait = self.present_timeout
+            deadline = time.monotonic() + wait
+            # Coalesce a window and its checkpoint into one stream write.
+            # Control retries repeat only the exact control packet; missing
+            # uploads are resent after a fresh cumulative progress snapshot.
+            self._write_all((prefix if attempt == 0 else b"") + packet, deadline)
             try:
                 while True:
                     answer = self._receive(deadline)
@@ -252,6 +267,9 @@ class DisplayLink:
     def connect(self):
         self.previous = None
         self.frame = 0
+        self.window_size = self.push_sent = self.push_ack = self.push_grant = 0
+        self.push_packets.clear()
+        self.window_failed = False
         original_timeout = self.timeout
         try:
             if self.compact:
@@ -296,11 +314,71 @@ class DisplayLink:
         except ProtocolError as error:
             if error.result != 1:
                 raise
+        if self.requested_window:
+            try:
+                p = self.command(NEGOTIATE_WINDOW, struct.pack(
+                    "<HH", WINDOW_VERSION, self.requested_window)).payload
+                if len(p) != 4:
+                    raise ValueError("Invalid DLP window negotiation")
+                version, size = struct.unpack("<HH", p)
+                if version != WINDOW_VERSION or not 1 <= size <= self.requested_window:
+                    raise ValueError("Invalid DLP window negotiation")
+                self.window_size = self.push_grant = size
+            except ProtocolError as error:
+                if error.result != 1:
+                    raise
         return self.width, self.height
+
+    def _flush_window(self, frame=0):
+        until = time.monotonic() + (self.present_timeout if frame else self.timeout)
+        while time.monotonic() < until:
+            # One bounded batch avoids a TCP/BLE write for every tiny operation.
+            p = self.command(WINDOW_SYNC, struct.pack("<II", self.push_sent, frame),
+                             prefix=b"".join(self.push_packets)).payload
+            if len(p) != 32:
+                raise ValueError("Invalid DLP window progress")
+            (version, size, ack, grant, failed, upload_error, frame_error,
+             completed, failed_frame, need_full) = struct.unpack("<HHIIIHHIII", p)
+            if (version != WINDOW_VERSION or size != self.window_size
+                    or not self.push_ack <= ack <= self.push_sent
+                    or grant != min(0xffffffff, ack + size) or need_full > 1
+                    or bool(failed) != bool(upload_error) or failed > self.push_sent):
+                raise ValueError("Invalid DLP window progress")
+            if upload_error:
+                raise ProtocolError(WINDOW_SYNC, upload_error)
+            if frame and (failed_frame == frame or frame_error):
+                raise RuntimeError(f"Frame {frame} failed, device error {frame_error}")
+            removed = ack - self.push_ack
+            if removed > len(self.push_packets):
+                raise ValueError("Invalid DLP window acknowledgement")
+            del self.push_packets[:removed]
+            self.push_ack, self.push_grant = ack, grant
+            if not self.push_packets:
+                if frame and (completed != frame or need_full):
+                    raise ValueError("DLP acknowledged upload without completing presentation")
+                return
+            # Retain exact packets and resend the suffix. A fresh control
+            # sequence observes new progress; exact retries replay a snapshot.
+        raise TimeoutError("DLP window made no progress before its deadline")
+
+    def _upload_command(self, opcode, payload):
+        if not self.window_size:
+            return self.command(opcode, payload)
+        if len(self.push_packets) == self.window_size:
+            self._flush_window()
+        if self.push_sent == 0xffffffff or self.push_sent >= self.push_grant:
+            raise RuntimeError("DLP upload credit exhausted; reconnect")
+        self.push_sent += 1
+        self.push_packets.append(encode_cell(opcode, self.session, self.push_sent,
+                                            self.boot, payload, self.compact, kind=PUSH))
+        if opcode == PRESENT:
+            self._flush_window(struct.unpack("<I", payload)[0])
 
     def send_frame(self, pixels, wait_timeout=10.0):
         started = time.monotonic()
         self.last_frame_stats = FrameStats()
+        if self.window_failed:
+            raise RuntimeError("DLP window failed; reconnect before sending another frame")
         stride = (self.width + 7) // 8
         if not self.width or len(pixels) != stride * self.height:
             raise ValueError("Frame size does not match the discovered geometry")
@@ -309,9 +387,21 @@ class DisplayLink:
             if any(pixels[y * stride + stride - 1] & mask for y in range(self.height)):
                 raise ValueError("Nonzero row-padding bits")
         try:
-            return self._upload_frame(pixels, stride, wait_timeout)
+            try:
+                return self._upload_frame(pixels, stride, wait_timeout)
+            except ProtocolError as error:
+                if (not self.window_size or self.previous is None
+                        or error.result not in (2, 3)):
+                    raise
+                # A suspended display can lose retained content. A rejected
+                # window is fenced: recover with a new session and full image.
+                geometry = self.width, self.height
+                if self.connect() != geometry:
+                    raise ValueError("Display geometry changed; prepare the image again")
+                return self._upload_frame(pixels, stride, wait_timeout)
         except BaseException:
             self.previous = None
+            self.window_failed = bool(self.window_size)
             raise
         finally:
             self.last_frame_stats.total_ms = (time.monotonic() - started) * 1000
@@ -350,7 +440,7 @@ class DisplayLink:
         until = time.monotonic() + wait_timeout
         while True:
             try:
-                self.command(BEGIN_FRAME, struct.pack("<II", f, int(full)))
+                self._upload_command(BEGIN_FRAME, struct.pack("<II", f, int(full)))
                 break
             except ProtocolError as error:
                 # A second writer or reset can invalidate retained content.
@@ -362,7 +452,7 @@ class DisplayLink:
                 time.sleep(0.01)
         try:
             for rect, (x, y, width, height) in enumerate(bands(rectangles), 1):
-                self.command(BEGIN_RECT, struct.pack("<IIHHHH", f, rect, x, y, width, height))
+                self._upload_command(BEGIN_RECT, struct.pack("<IIHHHH", f, rect, x, y, width, height))
                 row = (width + 7) // 8
                 data = b"".join(pixels[(y + k) * stride + x // 8:
                                        (y + k) * stride + x // 8 + row]
@@ -377,11 +467,16 @@ class DisplayLink:
                         if consumed > raw or (consumed == raw and len(encoded) + 2 < raw):
                             op, used = RECT_RLE, consumed
                             payload = struct.pack("<H", consumed) + encoded
-                    self.command(op, struct.pack("<III", f, rect, offset) + payload)
+                    self._upload_command(op, struct.pack("<III", f, rect, offset) + payload)
                     offset += used
             uploaded = time.monotonic()
             self.last_frame_stats.upload_ms = (uploaded - started) * 1000
-            self.command(PRESENT, struct.pack("<I", f))
+            self._upload_command(PRESENT, struct.pack("<I", f))
+            if self.window_size:
+                self.last_frame_stats.present_wait_ms = (time.monotonic() - uploaded) * 1000
+                self.last_frame_stats.presented = True
+                self.previous = bytes(pixels)
+                return f
             until = time.monotonic() + self.present_timeout
             while time.monotonic() < until:
                 p = self.command(GET_STATUS).payload
@@ -399,10 +494,11 @@ class DisplayLink:
                 time.sleep(0.005)
             raise TimeoutError(f"Frame {f} did not finish presenting")
         except BaseException:
-            try:
-                self.command(ABORT_FRAME, struct.pack("<I", f))
-            except (OSError, RuntimeError, TimeoutError):
-                pass
+            if not self.window_size:
+                try:
+                    self.command(ABORT_FRAME, struct.pack("<I", f))
+                except (OSError, RuntimeError, TimeoutError):
+                    pass
             raise
 
 
@@ -468,6 +564,7 @@ def main():
     transport.add_argument("--tcp", type=tcp_endpoint, metavar="HOST:PORT", help="Raw TCP stream")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--legacy-cells", action="store_true", help="Use fixed 256-byte framing")
+    parser.add_argument("--no-window", action="store_true", help="Force legacy stop-and-wait uploads")
     parser.add_argument("--stats", action="store_true",
                         help="Print preparation/upload/presentation-wait timings, bytes and completed FPS")
     parser.add_argument("--fps", type=float, default=2.0, help="Maximum frame rate (default: 2)")
@@ -501,9 +598,12 @@ def main():
         with connection as port:
             print("Connected; discovering display...", file=sys.stderr, flush=True)
             link = DisplayLink(port, compact=not args.legacy_cells)
+            if args.no_window:
+                link.requested_window = 0
             width, height = link.connect()
             print(f"DLP display: {width}x{height} MONO1, "
-                  f"{'compact' if link.compact else 'fixed cells'}", file=sys.stderr)
+                  f"{'compact' if link.compact else 'fixed cells'}, "
+                  f"{'window=' + str(link.window_size) if link.window_size else 'stop-and-wait'}", file=sys.stderr)
             if args.demo:
                 frames = demo_frames(width, height)
             elif args.raw:

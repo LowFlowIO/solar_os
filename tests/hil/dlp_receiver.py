@@ -9,6 +9,7 @@ from pathlib import Path
 import re
 import secrets
 import struct
+import subprocess
 import sys
 import time
 
@@ -48,9 +49,12 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True)
     parser.add_argument("--port", default="/dev/ttyACM0")
+    parser.add_argument("--baud", type=int, default=115200)
     parser.add_argument("--stream", default="cdc0")
     parser.add_argument("--display", default="display0")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--no-window", action="store_true")
+    parser.add_argument("--benchmark", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     console = Console(args.host)
@@ -79,9 +83,12 @@ def main():
             assert "app-dlp" in command("port list")
             duplicate = command(f"dlp serve {args.display} stream={args.stream}")
             assert "owns" in duplicate, duplicate
-            with serial.Serial(args.port, 115200, timeout=.05, write_timeout=2) as port:
+            with serial.Serial(args.port, args.baud, timeout=.05, write_timeout=2) as port:
                 link = DisplayLink(port, compact=compact)
+                if args.no_window:
+                    link.requested_window = 0
                 width, height = link.connect()
+                assert link.window_size == (0 if args.no_window else 16)
                 frames = demo_frames(width, height)
                 image = next(frames)
                 started = time.monotonic()
@@ -112,7 +119,7 @@ def main():
                 command("session close " + match[1])
             resumed = command("dlp status")
             assert "serving" in resumed and "Presentation timing: n=3" in resumed, resumed
-            with serial.Serial(args.port, 115200, timeout=.05, write_timeout=2) as port:
+            with serial.Serial(args.port, args.baud, timeout=.05, write_timeout=2) as port:
                 # Continue the same protocol session with a delta after redraw.
                 link.port = port
                 link.send_frame(next(frames))
@@ -128,6 +135,24 @@ def main():
             assert "DLP: stopped" in stopped and f"Presentation timing: n={count}" in stopped, stopped
             ports = command("port list")
             assert "app-dlp" not in ports, ports
+        if args.benchmark:
+            assert "DLP session" in command(f"dlp serve {args.display} stream={args.stream}")
+            running = True
+            console.socket.close()
+            try:
+                result = subprocess.run([sys.executable, "scripts/dlp_image.py", "--port", args.port,
+                    "--baud", str(args.baud), "--demo", "--fps", "30", "--frames", "100", "--stats"] +
+                    (["--no-window"] if args.no_window else []),
+                    capture_output=True, text=True, timeout=120)
+            finally:
+                console = Console(args.host)
+            (args.output / "sender.log").write_text(result.stdout + result.stderr)
+            assert result.returncode == 0, result.stderr
+            assert "presented=100 unchanged=0" in result.stderr, result.stderr
+            print(result.stderr.splitlines()[-1], flush=True)
+            assert "Presentation timing: n=100" in command("dlp status")
+            command(f"dlp stop {args.display}")
+            running = False
         command("session list")
         command("mem policy")
         command("log show")

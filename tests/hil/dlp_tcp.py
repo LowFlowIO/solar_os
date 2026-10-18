@@ -3,6 +3,7 @@
 import argparse
 from pathlib import Path
 import re
+import struct
 import subprocess
 import sys
 import time
@@ -14,12 +15,41 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
 from dlp_image import DisplayLink, TcpStream, demo_frames
 
 
+class DropUpload:
+    """Discard one complete PUSH; the real receiver must request the gap."""
+    def __init__(self, stream):
+        self.stream, self.buffer, self.dropped = stream, bytearray(), False
+
+    def read(self, size):
+        return self.stream.read(size)
+
+    def write(self, data):
+        self.buffer.extend(data)
+        while len(self.buffer) >= 32:
+            size = (36 + struct.unpack_from("<H", self.buffer, 18)[0]
+                    if self.buffer[:4] == b"DLP1" else 256)
+            if len(self.buffer) < size:
+                break
+            packet = bytes(self.buffer[:size])
+            del self.buffer[:size]
+            if packet[6] == 3 and struct.unpack_from("<I", packet, 12)[0] == 3 and not self.dropped:
+                self.dropped = True
+                continue
+            at, deadline = 0, time.monotonic() + 2
+            while at < len(packet):
+                at += self.stream.write(packet[at:])
+                if time.monotonic() >= deadline:
+                    raise TimeoutError("Fault-injection stream write stalled")
+        return len(data)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--host", required=True)
     parser.add_argument("--port", type=int, default=7777)
     parser.add_argument("--stream", default="dlptcp")
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--no-window", action="store_true")
     args = parser.parse_args()
     args.output.mkdir(parents=True, exist_ok=False)
     deadline = time.monotonic() + 30
@@ -60,11 +90,17 @@ def main():
             assert "app-dlp" in command("port list")
             assert "removed" not in command(f"stream tcp remove {args.stream}")
             with TcpStream((args.host, args.port)) as stream:
-                link = DisplayLink(stream, compact=compact)
+                fault_stream = DropUpload(stream) if compact and not args.no_window else None
+                link = DisplayLink(fault_stream or stream, compact=compact)
+                if args.no_window:
+                    link.requested_window = 0
                 width, height = link.connect()
+                assert link.window_size == (0 if args.no_window else 16)
                 frames = demo_frames(width, height)
                 first = next(frames)
                 link.send_frame(first)
+                if fault_stream:
+                    assert fault_stream.dropped, "PUSH loss was not injected"
                 sent = link.tx_bytes
                 link.send_frame(first)
                 assert not link.last_frame_stats.presented and link.tx_bytes - sent <= 256
@@ -99,7 +135,8 @@ def main():
         console.socket.close()
         try:
             result = subprocess.run([sys.executable, "scripts/dlp_image.py", "--tcp",
-                f"{args.host}:{args.port}", "--demo", "--fps", "30", "--frames", "100", "--stats"],
+                f"{args.host}:{args.port}", "--demo", "--fps", "30", "--frames", "100", "--stats"] +
+                (["--no-window"] if args.no_window else []),
                 capture_output=True, text=True, timeout=120)
         finally:
             console = Console(args.host)

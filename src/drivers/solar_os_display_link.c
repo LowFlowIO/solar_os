@@ -17,6 +17,7 @@ struct solar_os_display_link {
   u8g2_t u8g2;
   u8x8_display_info_t display_info;
   sdlp_host_t host;
+  sdlp_host_window_t *window;
   solar_os_display_link_config_t config;
   char bus[16];
   spi_device_handle_t spi;
@@ -143,6 +144,14 @@ static esp_err_t connect_endpoint(solar_os_display_link_t *d, bool reset) {
   } while (!session || session == d->host.session);
   r = sdlp_host_configure(&d->host, session, format, d->config.clock_hz);
   if (!r) r = sdlp_host_extensions(&d->host);
+  if (!r && d->window) {
+    r = sdlp_host_negotiate_window(&d->host, d->window, SDLP_MAX_WINDOW);
+    if (!r && !d->window->active) {
+      d->host.window = NULL;
+      solar_os_memory_free(d->window);
+      d->window = NULL;
+    }
+  }
   if (!r)
     d->ready_enabled = d->config.ready >= 0;
   return result(r);
@@ -339,6 +348,8 @@ esp_err_t solar_os_display_link_create(const solar_os_display_link_config_t *c,
   sdlp_transport_t t = {
       .ctx = d, .now_us = now_us, .sleep_us = sleep_us, .exchange = exchange};
   sdlp_host_init(&d->host, &t);
+  d->window = solar_os_memory_calloc(1, sizeof(*d->window),
+      SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "display.link.window");
   d->host.discovery_sequence = esp_random() & 0x7fffffff;
   e = connect_endpoint(d, false);
   if (e != ESP_OK && c->reset >= 0)
@@ -410,6 +421,7 @@ void solar_os_display_link_destroy(solar_os_display_link_t *d) {
   solar_os_memory_free(d->row);
   solar_os_memory_free(d->wire);
   solar_os_memory_free(d->retained);
+  solar_os_memory_free(d->window);
   solar_os_memory_free(d);
 }
 u8g2_t *solar_os_display_link_u8g2(solar_os_display_link_t *d) {

@@ -40,7 +40,7 @@ uint32_t sdlp_crc32(const void *data, size_t n) {
   return ~crc;
 }
 bool sdlp_encode(uint8_t out[256], const sdlp_cell_t *c) {
-  if (!out || !c || c->length > 220 || c->kind > SDLP_RESPONSE)
+  if (!out || !c || c->length > 220 || c->kind > SDLP_PUSH)
     return false;
   memset(out, 0, 256);
   memcpy(out, "SDLP", 4);
@@ -58,7 +58,7 @@ bool sdlp_encode(uint8_t out[256], const sdlp_cell_t *c) {
 }
 bool sdlp_decode(sdlp_cell_t *c, const uint8_t in[256]) {
   if (!c || !in || memcmp(in, "SDLP", 4) || in[4] != 1 || in[5] != 0 ||
-      in[6] > 2 || !zero(in + 28, 4) ||
+      in[6] > SDLP_PUSH || !zero(in + 28, 4) ||
       sdlp_get_u32(in + 252) != sdlp_crc32(in, 252))
     return false;
   uint16_t n = sdlp_get_u16(in + 18);
@@ -69,7 +69,7 @@ bool sdlp_decode(sdlp_cell_t *c, const uint8_t in[256]) {
     return false;
   if (in[6] != SDLP_IDLE && !sdlp_get_u32(in + 12))
     return false;
-  if (in[6] == SDLP_REQUEST && sdlp_get_u16(in + 16))
+  if ((in[6] == SDLP_REQUEST || in[6] == SDLP_PUSH) && sdlp_get_u16(in + 16))
     return false;
   memset(c, 0, sizeof(*c));
   c->kind = in[6];
@@ -200,19 +200,62 @@ static void fault(sdlp_device_t *d, int error) {
   d->status.error = (uint16_t)error;
   d->need_full = true;
 }
+bool sdlp_device_enable_window(sdlp_device_t *d, sdlp_device_window_t *w,
+                               unsigned maximum) {
+  if (!d || !w || d->session || !maximum || maximum > SDLP_MAX_WINDOW)
+    return false;
+  memset(w, 0, sizeof(*w));
+  w->maximum = (uint16_t)maximum;
+  d->window = w;
+  return true;
+}
+static void window_status(sdlp_device_t *d, sdlp_cell_t *a) {
+  sdlp_device_window_t *w = d->window;
+  w->grant = w->applied > UINT32_MAX - w->size ? UINT32_MAX : w->applied + w->size;
+  sdlp_put_u16(a->payload, SDLP_WINDOW_VERSION);
+  sdlp_put_u16(a->payload + 2, w->size);
+  sdlp_put_u32(a->payload + 4, w->applied);
+  sdlp_put_u32(a->payload + 8, w->grant);
+  sdlp_put_u32(a->payload + 12, w->failed);
+  sdlp_put_u16(a->payload + 16, w->error);
+  sdlp_put_u16(a->payload + 18, d->status.error);
+  sdlp_put_u32(a->payload + 20, d->status.completed_frame);
+  sdlp_put_u32(a->payload + 24, d->status.failed_frame);
+  sdlp_put_u32(a->payload + 28, d->need_full);
+  a->length = 32;
+}
 void sdlp_device_tick(sdlp_device_t *d, uint64_t now) {
-  if (d->status.state != SDLP_STATE_PRESENTING)
-    return;
-  int r = d->backend.poll_present(d->backend.ctx);
-  if (r == SDLP_OK) {
-    d->status.completed_frame = d->status.active_frame;
-    d->status.active_frame = 0;
-    d->status.state = SDLP_STATE_IDLE;
-    d->need_full = false;
-  } else if (r != SDLP_BUSY)
-    fault(d, r == SDLP_TIMEOUT ? SDLP_TIMEOUT : SDLP_IO_ERROR);
-  else if (now - d->present_started_us >= (uint64_t)d->info.present_ms * 1000)
-    fault(d, SDLP_TIMEOUT);
+  if (d->status.state == SDLP_STATE_PRESENTING) {
+    int r = d->backend.poll_present(d->backend.ctx);
+    if (r == SDLP_OK) {
+      d->status.completed_frame = d->status.active_frame;
+      d->status.active_frame = 0;
+      d->status.state = SDLP_STATE_IDLE;
+      d->need_full = false;
+    } else if (r != SDLP_BUSY)
+      fault(d, r == SDLP_TIMEOUT ? SDLP_TIMEOUT : SDLP_IO_ERROR);
+    else if (now - d->present_started_us >= (uint64_t)d->info.present_ms * 1000)
+      fault(d, SDLP_TIMEOUT);
+  }
+  sdlp_device_window_t *w = d->window;
+  if (w && w->waiting && d->status.state != SDLP_STATE_PRESENTING) {
+    sdlp_cell_t q, a = {0};
+    (void)sdlp_decode(&q, w->pending.request);
+    a.kind = SDLP_RESPONSE; a.opcode = q.opcode;
+    a.session = q.session; a.sequence = q.sequence; a.boot = d->boot;
+    window_status(d, &a);
+    (void)sdlp_encode(w->pending.response, &a);
+    w->pending.valid = true;
+    d->replay = w->pending;
+    w->waiting = false;
+    w->ready = true;
+  }
+}
+bool sdlp_device_take_reply(sdlp_device_t *d, uint8_t out[256]) {
+  if (!d || !out || !d->window || !d->window->ready) return false;
+  memcpy(out, d->window->pending.response, 256);
+  d->window->ready = false;
+  return true;
 }
 static bool replay(sdlp_replay_t *r, const uint8_t *in, uint8_t *out) {
   if (!r->valid || memcmp(r->request, in, 256))
@@ -220,6 +263,7 @@ static bool replay(sdlp_replay_t *r, const uint8_t *in, uint8_t *out) {
   memcpy(out, r->response, 256);
   return true;
 }
+#define WINDOW_DEFER (-100)
 static int execute(sdlp_device_t *d, const sdlp_cell_t *q, sdlp_cell_t *a,
                    uint64_t now) {
   const uint8_t *p = q->payload;
@@ -258,6 +302,11 @@ static int execute(sdlp_device_t *d, const sdlp_cell_t *q, sdlp_cell_t *a,
     uint8_t brightness = s->brightness;
     memset(s, 0, sizeof(*s));
     s->brightness = brightness;
+    if (d->window) {
+      uint16_t maximum = d->window->maximum;
+      memset(d->window, 0, sizeof(*d->window));
+      d->window->maximum = maximum;
+    }
     return SDLP_OK;
   }
   if (q->opcode == SDLP_GET_STATUS) {
@@ -276,6 +325,39 @@ static int execute(sdlp_device_t *d, const sdlp_cell_t *q, sdlp_cell_t *a,
     a->length = 4;
     return SDLP_OK;
   }
+  if (q->opcode == SDLP_NEGOTIATE_WINDOW) {
+    sdlp_device_window_t *w = d->window;
+    if (!w) return SDLP_UNSUPPORTED;
+    if (q->length != 4 || sdlp_get_u16(p) != SDLP_WINDOW_VERSION ||
+        !sdlp_get_u16(p + 2) || sdlp_get_u16(p + 2) > SDLP_MAX_WINDOW)
+      return SDLP_BAD_ARGUMENT;
+    if (w->active || s->state != SDLP_STATE_IDLE) return SDLP_BAD_STATE;
+    w->size = sdlp_get_u16(p + 2);
+    if (w->size > w->maximum) w->size = w->maximum;
+    w->grant = w->size;
+    w->active = true;
+    sdlp_put_u16(a->payload, SDLP_WINDOW_VERSION);
+    sdlp_put_u16(a->payload + 2, w->size);
+    a->length = 4;
+    return SDLP_OK;
+  }
+  if (q->opcode == SDLP_WINDOW_SYNC) {
+    sdlp_device_window_t *w = d->window;
+    if (!w || !w->active) return SDLP_UNSUPPORTED;
+    if (q->length != 8 || sdlp_get_u32(p) > w->grant ||
+        sdlp_get_u32(p) < w->applied) return SDLP_BAD_ARGUMENT;
+    uint32_t frame = sdlp_get_u32(p + 4);
+    if (!w->error && w->applied == sdlp_get_u32(p) && frame) {
+      if (frame == s->active_frame && s->state == SDLP_STATE_PRESENTING)
+        return WINDOW_DEFER;
+      if (frame != s->completed_frame && frame != s->failed_frame)
+        return SDLP_BAD_ARGUMENT;
+    }
+    window_status(d, a);
+    return SDLP_OK;
+  }
+  if (d->window && d->window->active && d->window->error)
+    return SDLP_BAD_STATE;
   if (q->opcode != SDLP_BEGIN_FRAME && q->opcode != SDLP_BEGIN_RECT &&
       q->opcode != SDLP_RECT_DATA && q->opcode != SDLP_RECT_RLE && q->opcode != SDLP_PRESENT &&
       q->opcode != SDLP_ABORT_FRAME && q->opcode != SDLP_SET_BRIGHTNESS &&
@@ -438,11 +520,43 @@ static int execute(sdlp_device_t *d, const sdlp_cell_t *q, sdlp_cell_t *a,
 bool sdlp_device_receive(sdlp_device_t *d, const uint8_t in[256],
                          uint8_t out[256], uint64_t now) {
   sdlp_cell_t q, a = {0};
-  if (!d || !in || !out || !sdlp_decode(&q, in) || q.kind != SDLP_REQUEST)
+  if (!d || !in || !out || !sdlp_decode(&q, in) ||
+      (q.kind != SDLP_REQUEST && q.kind != SDLP_PUSH))
     return false;
   sdlp_device_tick(d, now);
-  if (replay(&d->replay, in, out) || replay(&d->auxiliary, in, out))
+  sdlp_device_window_t *w = d->window;
+  if (q.kind == SDLP_PUSH) {
+    if (!w || !w->active || q.boot != d->boot || q.session != d->session || w->error)
+      return false;
+    int error = SDLP_OK;
+    uint32_t crc = sdlp_get_u32(in + 252);
+    if (q.sequence <= w->applied) {
+      unsigned slot = (q.sequence - 1) % w->size;
+      if (w->seen[slot].sequence != q.sequence || w->seen[slot].crc == crc)
+        return false;
+      error = SDLP_BAD_SEQUENCE;
+    } else if (q.sequence > w->grant) error = SDLP_BAD_SEQUENCE;
+    else if (q.sequence != w->applied + 1) return false;
+    else if (q.opcode != SDLP_BEGIN_FRAME && q.opcode != SDLP_BEGIN_RECT &&
+             q.opcode != SDLP_RECT_DATA && q.opcode != SDLP_RECT_RLE &&
+             q.opcode != SDLP_PRESENT) error = SDLP_UNSUPPORTED;
+    else error = execute(d, &q, &a, now);
+    if (error) {
+      w->failed = q.sequence; w->error = (uint16_t)error;
+      fault(d, error);
+    } else {
+      unsigned slot = (q.sequence - 1) % w->size;
+      w->seen[slot].sequence = q.sequence; w->seen[slot].crc = crc;
+      w->applied = q.sequence;
+    }
+    return false;
+  }
+  if (replay(&d->replay, in, out)) {
+    if (w && w->ready && !memcmp(w->pending.request, in, 256)) w->ready = false;
     return true;
+  }
+  if (replay(&d->auxiliary, in, out)) return true;
+  if (w && w->waiting && !memcmp(w->pending.request, in, 256)) return false;
   a.kind = SDLP_RESPONSE;
   a.opcode = q.opcode;
   a.session = q.session;
@@ -465,8 +579,19 @@ bool sdlp_device_receive(sdlp_device_t *d, const uint8_t in[256],
              q.sequence == sdlp_get_u32(d->auxiliary.request + 12)) {
     a.result = SDLP_BAD_SEQUENCE;
     cache = false;
-  } else
-    a.result = (uint16_t)execute(d, &q, &a, now);
+  } else if (w && w->waiting) {
+    a.result = SDLP_BUSY;
+    cache = false;
+  } else {
+    int r = execute(d, &q, &a, now);
+    if (r == WINDOW_DEFER) {
+      memcpy(w->pending.request, in, 256);
+      w->pending.valid = false; w->waiting = true; w->ready = false;
+      d->sequence = q.sequence;
+      return false;
+    }
+    a.result = (uint16_t)r;
+  }
   (void)sdlp_encode(out, &a);
   if (cache) {
     sdlp_replay_t *r = &d->replay;
@@ -514,6 +639,8 @@ int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
   (void)sdlp_encode(idle, &blank);
   uint64_t now = h->transport.now_us(h->transport.ctx);
   uint32_t ms = discovery ? 1000 : h->info.command_ms;
+  if (op == SDLP_WINDOW_SYNC && n == 8 && sdlp_get_u32((const uint8_t *)p + 4))
+    ms = h->info.present_ms;
   if (!ms || ms > h->command_limit_ms)
     ms = h->command_limit_ms;
   uint64_t own = now + (uint64_t)ms * 1000 + 100000;
@@ -554,6 +681,7 @@ int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
 }
 int sdlp_host_discover(sdlp_host_t *h, uint64_t deadline) {
   h->configured = false;
+  if (h->window) memset(h->window, 0, sizeof(*h->window));
   h->clock_hz = 100000;
   h->gap_us = 10000;
   sdlp_cell_t a;
@@ -584,6 +712,7 @@ int sdlp_host_configure(sdlp_host_t *h, uint32_t session, unsigned f,
   h->session = session;
   h->sequence = 0;
   h->configured = false;
+  if (h->window) memset(h->window, 0, sizeof(*h->window));
   h->clock_hz = 100000;
   h->gap_us = 10000;
   uint8_t p[4] = {0};
@@ -611,11 +740,128 @@ int sdlp_host_extensions(sdlp_host_t *h) {
   h->info.capabilities |= sdlp_get_u32(extensions.payload);
   return SDLP_OK;
 }
+int sdlp_host_negotiate_window(sdlp_host_t *h, sdlp_host_window_t *w, unsigned size) {
+  if (!h || !w || !size || size > SDLP_MAX_WINDOW ||
+      (!h->transport.push && !h->transport.exchange)) return SDLP_BAD_ARGUMENT;
+  if (!h->configured) return SDLP_BAD_SESSION;
+  if (h->window && h->window->active) return SDLP_BAD_STATE;
+  memset(w, 0, sizeof(*w));
+  h->window = w;
+  uint8_t p[4];
+  sdlp_put_u16(p, SDLP_WINDOW_VERSION); sdlp_put_u16(p + 2, (uint16_t)size);
+  sdlp_cell_t a;
+  int r = sdlp_host_command(h, SDLP_NEGOTIATE_WINDOW, p, sizeof(p), &a, 0);
+  if (r == SDLP_UNSUPPORTED) return SDLP_OK;
+  if (r) return r;
+  if (a.length != 4 || sdlp_get_u16(a.payload) != SDLP_WINDOW_VERSION ||
+      !sdlp_get_u16(a.payload + 2) || sdlp_get_u16(a.payload + 2) > size) {
+    h->configured = false;
+    return SDLP_INVALID_CELL;
+  }
+  w->size = sdlp_get_u16(a.payload + 2); w->grant = w->size; w->active = true;
+  return SDLP_OK;
+}
+static int push_packet(sdlp_host_t *h, const uint8_t packet[256], uint64_t deadline) {
+  int r;
+  if (h->transport.push) r = h->transport.push(h->transport.ctx, packet, deadline);
+  else {
+    uint8_t rx[256];
+    r = h->transport.exchange(h->transport.ctx, packet, rx, h->clock_hz, h->gap_us, deadline);
+    sdlp_cell_t a;
+    if (!r && sdlp_decode(&a, rx) && a.boot && a.boot != h->boot) {
+      h->configured = false;
+      return SDLP_STALE_BOOT;
+    }
+  }
+  if (r) h->configured = false;
+  return r ? SDLP_LINK_ERROR : SDLP_OK;
+}
+static int window_flush(sdlp_host_t *h, uint32_t frame) {
+  sdlp_host_window_t *w = h->window;
+  uint32_t ms = frame ? h->info.present_ms : h->info.command_ms;
+  if (ms > h->command_limit_ms) ms = h->command_limit_ms;
+  uint64_t deadline = h->transport.now_us(h->transport.ctx) + (uint64_t)ms * 1000 + 100000;
+  if (!h->transport.request)
+    deadline += (w->size + 2) * (UINT64_C(2048000000) / h->clock_hz + h->gap_us);
+  int r = SDLP_DEADLINE;
+  while (h->transport.now_us(h->transport.ctx) < deadline) {
+    uint8_t p[8];
+    sdlp_put_u32(p, w->sent); sdlp_put_u32(p + 4, frame);
+    sdlp_cell_t a;
+    r = sdlp_host_command(h, SDLP_WINDOW_SYNC, p, sizeof(p), &a, deadline);
+    if (r) break;
+    uint32_t ack = sdlp_get_u32(a.payload + 4), grant = sdlp_get_u32(a.payload + 8);
+    uint32_t expected = ack > UINT32_MAX - w->size ? UINT32_MAX : ack + w->size;
+    if (a.length != 32 || sdlp_get_u16(a.payload) != SDLP_WINDOW_VERSION ||
+        sdlp_get_u16(a.payload + 2) != w->size || ack < w->acknowledged ||
+        ack > w->sent || grant != expected || sdlp_get_u32(a.payload + 28) > 1 ||
+        (!!sdlp_get_u32(a.payload + 12) != !!sdlp_get_u16(a.payload + 16)) ||
+        sdlp_get_u32(a.payload + 12) > w->sent) {
+      r = SDLP_INVALID_CELL; break;
+    }
+    if (sdlp_get_u16(a.payload + 16)) {
+      r = sdlp_get_u16(a.payload + 16); break;
+    }
+    if (frame && (sdlp_get_u32(a.payload + 24) == frame || sdlp_get_u16(a.payload + 18))) {
+      r = sdlp_get_u16(a.payload + 18);
+      if (!r) r = SDLP_IO_ERROR;
+      break;
+    }
+    unsigned removed = ack - w->acknowledged;
+    if (removed > w->count) { r = SDLP_INVALID_CELL; break; }
+    w->count = (uint16_t)(w->count - removed);
+    memmove(w->packets, w->packets + removed, w->count * SDLP_CELL_SIZE);
+    w->acknowledged = ack; w->grant = grant;
+    w->completed = sdlp_get_u32(a.payload + 20);
+    if (!w->count) {
+      if (!frame || (w->completed == frame && !sdlp_get_u32(a.payload + 28)))
+        return SDLP_OK;
+      r = SDLP_INVALID_CELL; break;
+    }
+    /* Gap: resend the retained suffix with original sequence and bytes. The
+     * next control request has a fresh sequence and observes a fresh prefix. */
+    for (unsigned i = 0; i < w->count; i++) {
+      r = push_packet(h, w->packets[i], deadline);
+      if (r) break;
+    }
+    if (r) break;
+    r = SDLP_DEADLINE;
+  }
+  h->configured = false;
+  return r;
+}
+static int upload_command(sdlp_host_t *h, unsigned op, const void *p, size_t n) {
+  if (!h) return SDLP_BAD_ARGUMENT;
+  sdlp_host_window_t *w = h->window;
+  if (!w || !w->active || !w->collecting)
+    return sdlp_host_command(h, op, p, n, NULL, 0);
+  if (!h->configured) return SDLP_BAD_SESSION;
+  if (w->count == w->size) {
+    int r = window_flush(h, 0);
+    if (r) return r;
+  }
+  if (w->sent == UINT32_MAX || w->sent >= w->grant) {
+    h->configured = false;
+    return SDLP_BAD_SEQUENCE;
+  }
+  sdlp_cell_t q = {0};
+  q.kind = SDLP_PUSH; q.opcode = (uint8_t)op;
+  q.session = h->session; q.boot = h->boot; q.sequence = ++w->sent;
+  q.length = (uint16_t)n; memcpy(q.payload, p, n);
+  (void)sdlp_encode(w->packets[w->count], &q);
+  uint64_t deadline = h->transport.now_us(h->transport.ctx) +
+      (uint64_t)h->info.command_ms * 1000 + 100000;
+  if (!h->transport.request)
+    deadline += UINT64_C(2048000000) / h->clock_hz + h->gap_us;
+  int r = push_packet(h, w->packets[w->count++], deadline);
+  if (!r && op == SDLP_PRESENT) r = window_flush(h, sdlp_get_u32(p));
+  return r;
+}
 int sdlp_host_begin_frame(sdlp_host_t *h, uint32_t frame, bool full) {
   uint8_t p[8];
   sdlp_put_u32(p, frame);
   sdlp_put_u32(p + 4, full ? 1 : 0);
-  return sdlp_host_command(h, SDLP_BEGIN_FRAME, p, 8, NULL, 0);
+  return upload_command(h, SDLP_BEGIN_FRAME, p, 8);
 }
 int sdlp_host_begin_rect(sdlp_host_t *h, uint32_t frame, uint32_t rect,
                          uint16_t x, uint16_t y, uint16_t w, uint16_t height) {
@@ -626,7 +872,7 @@ int sdlp_host_begin_rect(sdlp_host_t *h, uint32_t frame, uint32_t rect,
   sdlp_put_u16(p + 10, y);
   sdlp_put_u16(p + 12, w);
   sdlp_put_u16(p + 14, height);
-  return sdlp_host_command(h, SDLP_BEGIN_RECT, p, 16, NULL, 0);
+  return upload_command(h, SDLP_BEGIN_RECT, p, 16);
 }
 int sdlp_host_write(sdlp_host_t *h, uint32_t frame, uint32_t rect,
                     uint32_t offset, const uint8_t *data, size_t size) {
@@ -637,14 +883,16 @@ int sdlp_host_write(sdlp_host_t *h, uint32_t frame, uint32_t rect,
   sdlp_put_u32(p + 4, rect);
   sdlp_put_u32(p + 8, offset);
   memcpy(p + 12, data, size);
-  return sdlp_host_command(h, SDLP_RECT_DATA, p, size + 12, NULL, 0);
+  return upload_command(h, SDLP_RECT_DATA, p, size + 12);
 }
 int sdlp_host_present(sdlp_host_t *h, uint32_t frame) {
   uint8_t p[4];
   sdlp_put_u32(p, frame);
-  return sdlp_host_command(h, SDLP_PRESENT, p, 4, NULL, 0);
+  return upload_command(h, SDLP_PRESENT, p, 4);
 }
 int sdlp_host_wait_frame(sdlp_host_t *h, uint32_t frame, uint64_t deadline) {
+  if (h->configured && h->window && h->window->active && h->window->completed == frame)
+    return SDLP_OK;
   while (h->transport.now_us(h->transport.ctx) < deadline) {
     sdlp_cell_t a;
     sdlp_status_t s;
@@ -780,7 +1028,7 @@ int sdlp_host_write_some(sdlp_host_t *h, uint32_t frame, uint32_t rect,
       sdlp_put_u32(p + 4, rect);
       sdlp_put_u32(p + 8, offset);
       sdlp_put_u16(p + 12, (uint16_t)decoded);
-      int r = sdlp_host_command(h, SDLP_RECT_RLE, p, n + 14, NULL, 0);
+      int r = upload_command(h, SDLP_RECT_RLE, p, n + 14);
       if (!r)
         *consumed = decoded;
       return r;
@@ -880,6 +1128,7 @@ int sdlp_host_upload_frame(sdlp_host_t *h, uint32_t frame, const uint8_t *image,
     } else if (cost >= rect_cost(h, &all))
       full = true;
   }
+  if (h->window && h->window->active) h->window->collecting = true;
   int r = sdlp_host_begin_frame(h, frame, full);
   if (!full && (r == SDLP_BAD_ARGUMENT || r == SDLP_BAD_STATE)) {
     full = true;
@@ -896,6 +1145,7 @@ int sdlp_host_upload_frame(sdlp_host_t *h, uint32_t frame, const uint8_t *image,
   }
   if (!r)
     r = sdlp_host_present(h, frame);
+  if (h->window) h->window->collecting = false;
   if (!r)
     r = sdlp_host_wait_frame(h, frame,
                              h->transport.now_us(h->transport.ctx) +
@@ -1018,6 +1268,19 @@ static int stream_request(void *ctx, const uint8_t tx[SDLP_CELL_SIZE],
   }
   return -1;
 }
+static int stream_push(void *ctx, const uint8_t tx[SDLP_CELL_SIZE], uint64_t deadline) {
+  sdlp_stream_host_t *s = ctx;
+  uint8_t packet[SDLP_CELL_SIZE];
+  size_t n = sdlp_stream_encode(packet, tx, !s->legacy), sent = 0;
+  if (!n) return -1;
+  while (sent < n && stream_now(s) < deadline) {
+    int written = s->io.write(s->io.ctx, packet + sent, n - sent);
+    if (written < 0 || (size_t)written > n - sent) return -1;
+    sent += (size_t)written;
+    if (!written) stream_sleep(s, 100);
+  }
+  return sent == n ? 0 : -1;
+}
 bool sdlp_stream_host_init(sdlp_stream_host_t *s, const sdlp_stream_io_t *io) {
   if (!s || !io || !io->now_us || !io->sleep_us || !io->read || !io->write)
     return false;
@@ -1030,5 +1293,5 @@ sdlp_transport_t sdlp_stream_transport(sdlp_stream_host_t *s) {
   return (sdlp_transport_t){.ctx = s,
                             .now_us = stream_now,
                             .sleep_us = stream_sleep,
-                            .request = stream_request};
+                            .request = stream_request, .push = stream_push};
 }
