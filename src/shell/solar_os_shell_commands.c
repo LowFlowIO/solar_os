@@ -17,7 +17,11 @@ static const char * const setterm_commands[] = {
 #endif
     "repeat", "timezone", "startup", "otaurl", "ota",
 };
-static const char * const stream_commands[] = {"list", "status"};
+static const char * const stream_commands[] = {"list", "status",
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+    "tcp",
+#endif
+};
 static const char * const log_commands[] = {"status", "show", "follow", "clear", "level", "sink"};
 static const char * const port_commands[] = {"list", "status"};
 static const char * const xfer_commands[] = {"protocols", "send", "recv"};
@@ -73,6 +77,9 @@ static const char * const sshkey_commands[] = {"status", "gen", "pub", "rm"};
 #endif
 #include "solar_os_storage.h"
 #include "solar_os_stream.h"
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+#include "solar_os_tcp_stream.h"
+#endif
 #include "solar_os_task.h"
 #include "solar_os_keys.h"
 #include "solar_os_terminal.h"
@@ -2780,6 +2787,28 @@ void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
 
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+    if (argc >= 2 && !strcmp(argv[1], "tcp")) {
+        const char *usage = "stream tcp listen <name> <port> | stream tcp remove <name>";
+        esp_err_t err = ESP_ERR_INVALID_ARG;
+        if (argc == 5 && !strcmp(argv[2], "listen")) {
+            char *end;
+            errno = 0;
+            unsigned long port = strtoul(argv[4], &end, 10);
+            if (!errno && end != argv[4] && !*end && port && port <= UINT16_MAX)
+                err = solar_os_tcp_stream_listen(argv[3], (uint16_t)port);
+            if (err == ESP_OK)
+                solar_os_shell_io_printf(term, "TCP stream %s listening on port %lu\n", argv[3], port);
+        } else if (argc == 4 && !strcmp(argv[2], "remove")) {
+            err = solar_os_tcp_stream_remove(argv[3]);
+            if (err == ESP_OK) solar_os_shell_io_printf(term, "TCP stream %s removed\n", argv[3]);
+        }
+        if (err != ESP_OK) solar_os_shell_diag_esp(term, "stream tcp", err, usage,
+            "Release the stream owner before removing a listener");
+        return;
+    }
+#endif
+
     if (argc == 1 || (argc == 2 && strcmp(argv[1], "list") == 0)) {
         stream_print_list(term);
         return;
@@ -2846,7 +2875,11 @@ void solar_os_shell_cmd_stream(solar_os_context_t *ctx, int argc, char **argv)
                                    "stream",
                                    argc,
                                    argv,
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+                                   "stream list|status|tcp",
+#else
                                    "stream list|status",
+#endif
                                    stream_commands,
                                    sizeof(stream_commands) / sizeof(stream_commands[0]));
 }

@@ -3,6 +3,7 @@ from contextlib import redirect_stderr
 import io
 from pathlib import Path
 import struct
+import socket
 import sys
 from types import SimpleNamespace
 import unittest
@@ -92,7 +93,7 @@ class DlpImageTest(unittest.TestCase):
         self.assertEqual(peer.last_frame_stats.present_wait_ms, 0)
         self.assertIsNone(peer.previous)
 
-    def run_cli(self, interrupt=False):
+    def run_cli(self, interrupt=False, tcp=False):
         def frames(width, height):
             clock.sleep(.005)  # Preparation must count against the frame budget.
             yield bytes(16)
@@ -109,9 +110,12 @@ class DlpImageTest(unittest.TestCase):
 
         output = io.StringIO()
         args = ["dlp_image.py", "--demo", "--fps", "30", "--stats"]
+        if tcp:
+            args += ["--tcp", "127.0.0.1:7777"]
         with patch.object(sys, "argv", args), patch.object(dlp, "DisplayLink", TimedPeer), \
+                patch.object(dlp, "TcpStream", lambda endpoint: Port()), \
                 patch.object(dlp, "demo_frames", frames), \
-                patch.dict(sys.modules, {"serial": SimpleNamespace(Serial=lambda *a, **k: Port()),
+                patch.dict(sys.modules, {"serial": None if tcp else SimpleNamespace(Serial=lambda *a, **k: Port()),
                                         "PIL": SimpleNamespace(Image=object())}), \
                 redirect_stderr(output):
             result = dlp.main()
@@ -129,6 +133,34 @@ class DlpImageTest(unittest.TestCase):
         result, output = self.run_cli(interrupt=True)
         self.assertEqual(result, 130)
         self.assertIn("Summary: inputs=2 presented=1 unchanged=1", output)
+
+    def test_tcp_cli_does_not_require_pyserial(self):
+        result, output = self.run_cli(tcp=True)
+        self.assertEqual(result, 0)
+        self.assertIn("Opening Display Link on TCP 127.0.0.1:7777", output)
+        self.assertIn("Summary: inputs=2 presented=1 unchanged=1", output)
+
+    def test_tcp_endpoint_and_binary_adapter(self):
+        for value in ("host", "host:0", ":7777", "host:65536", "host:no"):
+            with self.assertRaises(dlp.argparse.ArgumentTypeError):
+                dlp.tcp_endpoint(value)
+        with socket.socket() as listener:
+            listener.bind(("127.0.0.1", 0))
+            listener.listen(1)
+            endpoint = dlp.tcp_endpoint("127.0.0.1:" + str(listener.getsockname()[1]))
+            with dlp.TcpStream(endpoint) as stream, listener.accept()[0] as peer:
+                peer.settimeout(1)
+                payload = bytes(range(256))
+                peer.sendall(payload[:7])
+                self.assertEqual(stream.read(256), payload[:7])
+                peer.sendall(payload[7:])
+                self.assertEqual(stream.read(256), payload[7:])
+                self.assertEqual(stream.write(payload), 256)
+                self.assertEqual(peer.recv(256), payload)
+                self.assertEqual(stream.read(256), b"")  # Bounded idle read.
+                peer.shutdown(socket.SHUT_WR)
+                with self.assertRaises(OSError):
+                    stream.read(256)
 
 
 if __name__ == "__main__":

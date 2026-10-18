@@ -81,6 +81,25 @@ fits images on a white background, and sends MONO1 frames. `--legacy-cells`
 tests fixed-cell framing; compact DLP framing is the default. This is an image
 test tool; desktop virtual-monitor integration belongs to a host project.
 
+For Wi-Fi, create a raw TCP stream from a separate device console:
+
+```text
+stream tcp listen tcp0 7777
+dlp serve display0 stream=tcp0
+```
+
+Then run the desktop sender, replacing the example address with the device IP:
+
+```sh
+python3 scripts/dlp_image.py --tcp 192.0.2.10:7777 --demo --fps 30 --frames 100 --stats
+```
+
+TCP needs Pillow but does not need pyserial. Use the raw TCP listener, rather
+than a Telnet shell port. Closing the TCP sender closes the DLP session and
+restores the previous display session; the TCP listener remains registered.
+Run `dlp serve` again before connecting a new sender. To remove the endpoint,
+stop DLP first if it is running, then run `stream tcp remove tcp0`.
+
 `--stats` prints actual completion rate, byte counts, and host wall times per
 input frame: `prep` generates/loads and converts the image; `upload` plans and
 sends the update; `present_wait` runs from PRESENT through the completion-status

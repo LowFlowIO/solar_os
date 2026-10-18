@@ -312,6 +312,11 @@ label = "Telnet client and server"
 category = "Networking"
 members = ["app_telnet", "job_telnetd"]
 
+[groups.tcp_streams]
+label = "TCP byte streams"
+category = "Networking"
+members = ["service_tcp_stream"]
+
 [groups.http_server]
 label = "HTTP server"
 category = "Networking"
@@ -1334,6 +1339,13 @@ sources = [
 [packages.service_streams]
 label = "service.streams"
 sources = ["services/solar_os_stream.c"]
+
+[packages.service_tcp_stream]
+label = "service.tcp-stream"
+depends = ["service_streams", "service_wifi"]
+sources = ["services/solar_os_tcp_stream.c"]
+requires = ["lwip"]
+capabilities = ["wifi"]
 
 [packages.service_resources]
 label = "service.resources"

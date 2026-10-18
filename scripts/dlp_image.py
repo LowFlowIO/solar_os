@@ -2,7 +2,8 @@
 """Send test images to an already running SolarOS DLP display receiver.
 
 Start `dlp serve display0 stream=cdc0` from a separate device console first.
-Install pyserial and Pillow on the desktop. This sender uses MONO1 and can
+For raw TCP use --tcp HOST:PORT and a registered TCP stream on the device.
+Install Pillow, plus pyserial for serial connections. This sender uses MONO1 and can
 exercise changed rectangles, RLE, exact retries and fresh-session repaint.
 
 The client is shared in origin with pico_display_link/scripts/display_link.py.
@@ -12,6 +13,7 @@ from dataclasses import dataclass
 import itertools
 from pathlib import Path
 import secrets
+import socket
 import struct
 import sys
 import time
@@ -24,6 +26,43 @@ GET_EXTENSIONS, GET_SYNC, RECT_RLE = 4, 5, 0x15
 PRESERVE_CONTENT, RLE, SYNC = 1, 32, 64
 BEGIN_FRAME, BEGIN_RECT, RECT_DATA, PRESENT, ABORT_FRAME = range(0x10, 0x15)
 HEADER = struct.Struct("<4sBBBBIIHHQ4x")
+
+
+def tcp_endpoint(text):
+    host, separator, port = text.rpartition(":")
+    if not separator or not host or not port.isdecimal() or not 1 <= int(port) <= 65535:
+        raise argparse.ArgumentTypeError("TCP endpoint must be HOST:PORT (port 1..65535)")
+    return host, int(port)
+
+
+class TcpStream:
+    """Raw TCP adapter with bounded reads and partial-write backpressure."""
+    def __init__(self, endpoint):
+        self.socket = socket.create_connection(endpoint, timeout=2.0)
+        try:
+            self.socket.setsockopt(socket.IPPROTO_TCP, socket.TCP_NODELAY, 1)
+            self.socket.settimeout(.05)
+        except BaseException:
+            self.socket.close()
+            raise
+
+    def read(self, size):
+        try:
+            data = self.socket.recv(size)
+        except TimeoutError:
+            return b""
+        if not data:
+            raise OSError("DLP TCP peer disconnected")
+        return data
+
+    def write(self, data):
+        try:
+            return self.socket.send(data)
+        except TimeoutError:
+            return 0
+
+    def __enter__(self): return self
+    def __exit__(self, *args): self.socket.close()
 
 
 class ProtocolError(RuntimeError):
@@ -166,7 +205,7 @@ class DisplayLink:
                     continue
                 del self.buffer[:length]
                 return cell
-            waiting = getattr(self.port, "in_waiting", 0)
+            waiting = getattr(self.port, "in_waiting", CELL_SIZE)
             data = self.port.read(max(1, min(CELL_SIZE, waiting)))
             self.rx_bytes += len(data)
             self.buffer.extend(data)
@@ -424,7 +463,9 @@ def raw_frames(stream, size):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--port", default="/dev/ttyACM0")
+    transport = parser.add_mutually_exclusive_group()
+    transport.add_argument("--port", default="/dev/ttyACM0", help="Serial device")
+    transport.add_argument("--tcp", type=tcp_endpoint, metavar="HOST:PORT", help="Raw TCP stream")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--legacy-cells", action="store_true", help="Use fixed 256-byte framing")
     parser.add_argument("--stats", action="store_true",
@@ -443,7 +484,8 @@ def main():
             or (args.loop and not args.images)):
         parser.error("Choose images, --demo, or --raw; --loop requires images and --fps must be positive")
     try:
-        import serial
+        if args.tcp is None:
+            import serial
         from PIL import Image  # noqa: F401 -- fail before opening the device
     except ImportError as error:
         parser.exit(1, f"{error}. Install pyserial and Pillow first.\n")
@@ -452,9 +494,12 @@ def main():
     prepare_total = upload_total = present_wait_total = cycle_total = 0.0
     playback_started = completed_at = 0.0
     try:
-        print(f"Opening Display Link on {args.port}...", file=sys.stderr, flush=True)
-        with serial.Serial(args.port, args.baud, timeout=0.05, write_timeout=2) as port:
-            print("Connected to serial port; discovering display...", file=sys.stderr, flush=True)
+        endpoint = f"TCP {args.tcp[0]}:{args.tcp[1]}" if args.tcp else args.port
+        print(f"Opening Display Link on {endpoint}...", file=sys.stderr, flush=True)
+        connection = TcpStream(args.tcp) if args.tcp else serial.Serial(
+            args.port, args.baud, timeout=0.05, write_timeout=2)
+        with connection as port:
+            print("Connected; discovering display...", file=sys.stderr, flush=True)
             link = DisplayLink(port, compact=not args.legacy_cells)
             width, height = link.connect()
             print(f"DLP display: {width}x{height} MONO1, "

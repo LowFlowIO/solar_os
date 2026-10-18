@@ -61,6 +61,7 @@ http_client = true
 web_browser = true
 ftp = true
 telnet = true
+tcp_streams = true
 http_server = true
 display_server = true
 wireguard = true

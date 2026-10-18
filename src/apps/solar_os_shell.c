@@ -1605,7 +1605,14 @@ static const char * const ota_subcommands[] = {
 };
 
 static const char * const ota_boot_values[] = {"0", "1"};
-static const char * const stream_subcommands[] = {"list", "status"};
+static const char * const stream_subcommands[] = {"list", "status",
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+    "tcp",
+#endif
+};
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+static const char * const stream_tcp_subcommands[] = {"listen", "remove"};
+#endif
 static const char * const daq_subcommands[] = {"help", "status", "streams", "start", "stop"};
 static const char * const daq_options[] = {
     "--rate",
@@ -2274,6 +2281,10 @@ static const char * const path_session_send[] = {"session", "send"};
 static const char * const path_session_focus[] = {"session", "focus"};
 static const char * const path_stream[] = {"stream"};
 static const char * const path_stream_status[] = {"stream", "status"};
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+static const char * const path_stream_tcp[] = {"stream", "tcp"};
+static const char * const path_stream_tcp_remove[] = {"stream", "tcp", "remove"};
+#endif
 static const char * const path_daq[] = {"daq"};
 static const char * const path_daq_start[] = {"daq", "start"};
 static const char * const path_daq_start_stream[] = {"daq", "start", SHELL_COMPLETION_ANY};
@@ -3425,6 +3436,10 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_DISPLAY_TARGETS(path_session_focus),
     SHELL_COMPLETION_STATIC(path_stream, stream_subcommands),
     SHELL_COMPLETION_STREAMS(path_stream_status),
+#if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
+    SHELL_COMPLETION_STATIC(path_stream_tcp, stream_tcp_subcommands),
+    SHELL_COMPLETION_STREAMS(path_stream_tcp_remove),
+#endif
     SHELL_COMPLETION_STATIC(path_daq, daq_subcommands),
     SHELL_COMPLETION_STREAMS(path_daq_start),
     SHELL_COMPLETION_PATH(path_daq_start, false),
