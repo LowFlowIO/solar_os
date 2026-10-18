@@ -294,6 +294,9 @@ the exclusive byte-stream claim. `present` accepts exactly the packed
 `info()["frame_bytes"]` bytes and waits for completion. No display is registered.
 `solaros.streams.tcp.connect(name, host, port)` creates an outbound stream;
 `solaros.streams.tcp.remove(name)` removes it after the connection closes.
+With BLE byte-stream support, `solaros.streams.ble.connect(name, address, addr_type)`
+configures a native CoC stream; `solaros.streams.ble.remove(name)` removes it
+after use. See [BLE byte streams](python.media.md#ble-byte-streams).
 
 Python: import solaros; from solaros import gfx. gfx.begin() uses the current
 foreground display and raises RuntimeError from a port/headless shell where

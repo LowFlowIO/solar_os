@@ -13,7 +13,7 @@ typedef struct {
   dlp_stream_t parser;
   uint8_t image[SIZE], reply[256], held[256];
   size_t reply_size, reply_at, bytes;
-  uint64_t now, available, complete_at;
+  uint64_t now, available, complete_at, reply_delay, write_available;
   uint32_t row, y, x;
   unsigned presents, writes, requests, pushes, attempts, format;
   bool spi, compact, drop, duplicate, reorder, corrupt, drop_ack, reset;
@@ -70,7 +70,7 @@ static void queue(model_t *p, const uint8_t *cell, bool compact) {
   if (p->reply_size) return;
   if (p->spi) { memcpy(p->reply, cell, 256); p->reply_size = 256; }
   else p->reply_size = dlp_stream_encode(p->reply, cell, compact);
-  p->reply_at = 0; p->available = p->now + (p->spi ? 0 : 10000);
+  p->reply_at = 0; p->available = p->now + (p->spi ? 0 : p->reply_delay ? p->reply_delay : 10000);
 }
 static void tick(model_t *p) {
   dlp_device_tick(&p->d, p->now);
@@ -102,6 +102,7 @@ static void receive(model_t *p, const uint8_t *cell, bool compact) {
 }
 static int write_stream(void *ctx, const uint8_t *data, size_t n) {
   model_t *p = ctx;
+  if (p->now < p->write_available) return 0;
   if (++p->attempts % 7 == 0) return 0;
   if (n > 11) n = 11;
   p->bytes += n;
@@ -253,13 +254,28 @@ static void round_trips(void) {
         legacy, count, (unsigned long long)(m.now - start)); }
   }
 }
+static void slow_transport_budget(void) {
+  for (unsigned slow_write = 0; slow_write < 2; slow_write++) {
+    dlp_host_t h; dlp_stream_host_t stream; dlp_host_window_t w;
+    setup(&h, &stream, &w, 8, false, true, true);
+    h.transport.minimum_timeout_ms = 5000;
+    if (slow_write) m.write_available = m.now + 1500000;
+    else { m.reply_delay = 1500000; stream.retry_us = 2000000; }
+    uint8_t image[SIZE], retained[SIZE]; bool valid = false;
+    for (size_t i = 0; i < SIZE; i++) image[i] = (uint8_t)(i * 47 + i / 17);
+    uint64_t started = m.now;
+    assert(!dlp_host_upload_frame(&h, 1, image, SIZE, retained, &valid));
+    assert(valid && m.presents == 1 && !memcmp(image, m.image, SIZE));
+    assert(m.now - started >= 1500000);
+  }
+}
 int main(void) {
   for (unsigned spi = 0; spi < 2; spi++)
     for (unsigned compact = 0; compact < 2; compact++)
       for (unsigned fault = 0; fault < 7; fault++)
         exercise(16, spi != 0, compact != 0, fault);
   exercise(1, false, true, 1);
-  failures(); rules(); round_trips();
+  failures(); rules(); round_trips(); slow_transport_budget();
   puts("DLP windows: SPI/streams, backpressure, loss, corruption, duplicates, reordering, replay, completion and fencing PASS");
   return 0;
 }

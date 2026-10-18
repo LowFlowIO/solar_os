@@ -87,6 +87,23 @@ static int solua_dlp_connect(lua_State *L)
 static void solua_dlp_destroy(void) {}
 #endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+static int solua_streams_ble_connect(lua_State *L)
+{
+    size_t len;
+    const char *address = luaL_checklstring(L, 2, &len);
+    uint8_t bda[6];
+    if (!solar_os_ble_parse_address(address, len, bda)) return luaL_error(L, "expected aa:bb:cc:dd:ee:ff");
+    lua_Integer type = luaL_optinteger(L, 3, 0);
+    if (type < 0 || type > 3) return luaL_error(L, "address type must be 0..3");
+    return solua_check_esp(L, solar_os_ble_stream_connect(luaL_checkstring(L, 1), bda, type));
+}
+static int solua_streams_ble_listen(lua_State *L)
+{ return solua_check_esp(L, solar_os_ble_stream_listen(luaL_checkstring(L, 1))); }
+static int solua_streams_ble_remove(lua_State *L)
+{ return solua_check_esp(L, solar_os_ble_stream_remove(luaL_checkstring(L, 1))); }
+#endif
+
 #if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
 static int solua_streams_tcp_connect(lua_State *L)
 {

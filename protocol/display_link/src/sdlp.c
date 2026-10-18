@@ -613,6 +613,13 @@ void sdlp_host_init(sdlp_host_t *h, const sdlp_transport_t *t) {
   h->gap_us = 10000;
   h->command_limit_ms = 60000;
 }
+static uint32_t host_timeout_ms(const sdlp_host_t *h, uint32_t ms) {
+  if (!ms || ms > h->command_limit_ms) ms = h->command_limit_ms;
+  if (h->transport.minimum_timeout_ms > ms)
+    ms = h->transport.minimum_timeout_ms < h->command_limit_ms ?
+        h->transport.minimum_timeout_ms : h->command_limit_ms;
+  return ms;
+}
 int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
                       sdlp_cell_t *answer, uint64_t deadline) {
   if (!h || (!h->transport.exchange && !h->transport.request) || !h->transport.now_us ||
@@ -641,11 +648,7 @@ int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
   uint32_t ms = discovery ? 1000 : h->info.command_ms;
   if (op == SDLP_WINDOW_SYNC && n == 8 && sdlp_get_u32((const uint8_t *)p + 4))
     ms = h->info.present_ms;
-  if (!ms || ms > h->command_limit_ms)
-    ms = h->command_limit_ms;
-  if (h->transport.minimum_timeout_ms > ms)
-    ms = h->transport.minimum_timeout_ms < h->command_limit_ms ?
-        h->transport.minimum_timeout_ms : h->command_limit_ms;
+  ms = host_timeout_ms(h, ms);
   uint64_t own = now + (uint64_t)ms * 1000 + 100000;
   if (!h->transport.request)
     own += 2 * (UINT64_C(2048000000) / h->clock_hz + h->gap_us);
@@ -788,7 +791,7 @@ static int push_packet(sdlp_host_t *h, const uint8_t packet[256], uint64_t deadl
 static int window_flush(sdlp_host_t *h, uint32_t frame) {
   sdlp_host_window_t *w = h->window;
   uint32_t ms = frame ? h->info.present_ms : h->info.command_ms;
-  if (ms > h->command_limit_ms) ms = h->command_limit_ms;
+  ms = host_timeout_ms(h, ms);
   uint64_t deadline = h->transport.now_us(h->transport.ctx) + (uint64_t)ms * 1000 + 100000;
   if (!h->transport.request)
     deadline += (w->size + 2) * (UINT64_C(2048000000) / h->clock_hz + h->gap_us);
@@ -859,7 +862,7 @@ static int upload_command(sdlp_host_t *h, unsigned op, const void *p, size_t n) 
   q.length = (uint16_t)n; memcpy(q.payload, p, n);
   (void)sdlp_encode(w->packets[w->count], &q);
   uint64_t deadline = h->transport.now_us(h->transport.ctx) +
-      (uint64_t)h->info.command_ms * 1000 + 100000;
+      (uint64_t)host_timeout_ms(h, h->info.command_ms) * 1000 + 100000;
   if (!h->transport.request)
     deadline += UINT64_C(2048000000) / h->clock_hz + h->gap_us;
   int r = push_packet(h, w->packets[w->count++], deadline);

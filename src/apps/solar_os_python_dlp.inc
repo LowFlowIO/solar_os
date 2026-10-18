@@ -128,6 +128,34 @@ MP_DEFINE_CONST_FUN_OBJ_KW(solaros_dlp_connect_obj, 0, solaros_dlp_connect);
 static void python_dlp_destroy(void) {}
 #endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+static mp_obj_t solaros_streams_ble_connect(size_t n_args, const mp_obj_t *args)
+{
+    size_t len;
+    const char *address = mp_obj_str_get_data(args[1], &len);
+    uint8_t bda[6];
+    if (!solar_os_ble_parse_address(address, len, bda))
+        mp_raise_ValueError(MP_ERROR_TEXT("expected aa:bb:cc:dd:ee:ff"));
+    uint32_t type = n_args > 2 ? python_u32_from_obj(args[2]) : 0;
+    if (type > 3) mp_raise_ValueError(MP_ERROR_TEXT("address type must be 0..3"));
+    python_check_esp(solar_os_ble_stream_connect(mp_obj_str_get_str(args[0]), bda, type));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_streams_ble_connect_obj, 2, 3, solaros_streams_ble_connect);
+static mp_obj_t solaros_streams_ble_listen(mp_obj_t name)
+{
+    python_check_esp(solar_os_ble_stream_listen(mp_obj_str_get_str(name)));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_streams_ble_listen_obj, solaros_streams_ble_listen);
+static mp_obj_t solaros_streams_ble_remove(mp_obj_t name)
+{
+    python_check_esp(solar_os_ble_stream_remove(mp_obj_str_get_str(name)));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_streams_ble_remove_obj, solaros_streams_ble_remove);
+#endif
+
 #if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
 static mp_obj_t solaros_streams_tcp_connect(mp_obj_t name, mp_obj_t host, mp_obj_t port)
 {

@@ -504,7 +504,10 @@ discovered during attachment. Optional `clock` is a ceiling in kHz;
 `reset-ms`, `boot-ms`, and `reset-active` configure reset and discovery.
 
 `stream-dlp` attaches a DLP endpoint through `stream=<existing-exclusive-duplex-byte-stream>`.
-Optional `timeout-ms=100..60000` defaults to 5000. Configure UART, TCP, or radio
+Optional `timeout-ms=100..60000` defaults to 5000. Configure UART, TCP, BLE, or radio
 through its stream provider first; there is no baud negotiation. Attachment
 claims the stream until detach; release display claims before detaching.
 `stream tcp connect <name> <host> <port>` creates an outbound TCP stream.
+`stream ble connect <name> <address> <address-type>` creates an outbound native
+CoC stream. A `stream ble listen <name>` endpoint can also host a DLP client;
+BLE central/peripheral roles are independent of DLP direction.

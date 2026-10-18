@@ -117,7 +117,7 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
             DESCRIPTOR,
             re.MULTILINE,
         )
-        self.assertEqual(len(nested), 45)
+        self.assertEqual(len(nested), 48)
         self.assertTrue({("ble", "hid", name, name) for name in
                          ("hosts", "connect", "forget", "disconnect")}.issubset(set(nested)))
         for module, submodule, _public_name, native_name in nested:
@@ -218,7 +218,7 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
             + submodule_constant_count
             + subnested_count
             + hid_keycode_count * hid_keycode_include_count,
-            863,
+            866,
         )
 
     def test_tui_and_gfx_export_modified_horizontal_navigation_keys(self):

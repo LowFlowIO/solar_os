@@ -109,6 +109,30 @@ than a Telnet shell port. Closing the TCP sender leaves DLP waiting on the same
 listener. Connect a new sender without running `dlp serve` again. To remove the endpoint,
 stop DLP first if it is running, then run `stream tcp remove tcp0`.
 
+For a BLE connection between two SolarOS devices, configure a CoC listener on
+the receiving device and start DLP:
+
+```text
+stream ble listen ble0
+dlp serve display0 stream=ble0
+```
+
+On the sending device, use `ble scan` to find the advertised `SolarOS ble0`
+peripheral. Copy its address and address type into the connect command:
+
+```text
+stream ble connect ble0 aa:bb:cc:dd:ee:ff public
+expansion attach stream-dlp remote stream=ble0
+display test remote
+```
+
+The central/peripheral roles belong to the BLE connection; either side can
+serve a display or send frames. Release the consumer to close the connection.
+DLP serving waits for a new connection after a disconnect. An attached
+`stream-dlp` display reconnects on a subsequent presentation attempt. To remove
+an endpoint, stop DLP or detach the display, then `stream ble remove ble0`.
+See [BLE stream commands](commands.md#ble-byte-streams).
+
 `--stats` prints actual completion rate, byte counts, and host wall times per
 input frame: `prep` generates/loads and converts the image; `upload` plans and
 sends the update, including intermediate window checkpoints; `present_wait`

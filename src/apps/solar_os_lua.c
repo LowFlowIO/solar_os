@@ -29,8 +29,11 @@
 #include "solar_os_contacts.h"
 #endif
 #include "solar_os_memory.h"
+#if SOLAR_OS_PACKAGE_SERVICE_DLP_CLIENT
 #include "solar_os_display_link.h"
+#endif
 #include "solar_os_tcp_stream.h"
+#include "solar_os_ble_stream.h"
 #include "solar_os_script_media.h"
 #if SOLAR_OS_PACKAGE_SERVICE_CAMERA
 #include "solar_os_camera.h"

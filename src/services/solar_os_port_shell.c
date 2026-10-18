@@ -1182,6 +1182,13 @@ static void port_shell_run(port_shell_state_t *state)
         port_shell_send_tick(state, now_ms);
         port_shell_process_requests(state);
         port_shell_process_app_operations(state);
+
+        /* Stream ports may return immediately even with a read timeout, and
+         * disconnected ports can keep returning an error. Give the idle task
+         * and the console requesting our close a chance to run in either case. */
+        if (read_len == 0) {
+            vTaskDelay(1);
+        }
     }
 
     SOLAR_OS_LOGI(TAG,

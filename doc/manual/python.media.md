@@ -247,3 +247,29 @@ stream. Hostnames resolve at registration. These endpoints persist until
 removed or rebooted, including after the creating script exits.
 See [stream commands](commands.md#streams-logs-ports-and-transfers) and
 [direct DLP connections](python.gfx.md#direct-dlp-connections).
+
+## BLE byte streams
+
+With BLE byte-stream support, `solaros.streams.ble.listen(name)` registers a
+native CoC listener, `connect(name, address, addr_type=0)` configures an outbound
+stream, and `remove(name)` removes an unclaimed endpoint. The optional address
+type is positional: 0 public, 1 random, 2 public identity, 3 random identity.
+Use the address and type reported by `solaros.ble.scan()` or `ble scan`.
+
+These configurations persist after the script exits. A stream claim owns the
+BLE connection; close it in `finally` or use a DLP context manager, then remove
+the configuration if it belongs only to this script. A disconnected handle must
+be closed and reopened. The OS keyboard connection remains reserved.
+
+```python
+solaros.streams.ble.connect("ble0", "aa:bb:cc:dd:ee:ff", 0)
+try:
+    with solaros.dlp.connect("ble0", timeout_ms=8000) as display:
+        info = display.info()
+        display.present(bytes(info["frame_bytes"]))
+finally:
+    solaros.streams.ble.remove("ble0")
+```
+
+See [BLE stream commands](commands.md#ble-byte-streams) for connection roles,
+buffering, peripheral lease sharing, and security behavior.

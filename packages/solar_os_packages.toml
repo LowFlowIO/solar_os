@@ -29,7 +29,7 @@ members = ["service_wifi"]
 [groups.bluetooth]
 label = "Bluetooth keyboard"
 category = "System"
-members = ["service_ble"]
+members = ["service_ble", "service_ble_stream"]
 
 [groups.sd_storage]
 label = "SD storage"
@@ -1268,6 +1268,12 @@ sources = [
   "shell/solar_os_shell_ble_tui.c",
 ]
 requires = ["bt", "esp_hid", "nvs_flash"]
+capabilities = ["ble"]
+
+[packages.service_ble_stream]
+label = "service.ble-stream"
+depends = ["service_ble", "service_streams"]
+sources = ["services/solar_os_ble_stream.c"]
 capabilities = ["ble"]
 
 [packages.service_hid]

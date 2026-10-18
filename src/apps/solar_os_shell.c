@@ -1606,6 +1606,9 @@ static const char * const ota_subcommands[] = {
 
 static const char * const ota_boot_values[] = {"0", "1"};
 static const char * const stream_subcommands[] = {"list", "status",
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+    "ble",
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
     "tcp",
 #endif
@@ -1614,6 +1617,10 @@ static const char * const stream_subcommands[] = {"list", "status",
 static const char * const stream_tcp_subcommands[] = {"listen", "connect", "remove"};
 #endif
 static const char * const daq_subcommands[] = {"help", "status", "streams", "start", "stop"};
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+static const char * const stream_ble_subcommands[] = {"listen", "connect", "status", "remove"};
+static const char * const stream_ble_address_types[] = {"public", "random", "rpa_public", "rpa_random"};
+#endif
 static const char * const daq_options[] = {
     "--rate",
     "--rate-ms",
@@ -2281,6 +2288,12 @@ static const char * const path_session_send[] = {"session", "send"};
 static const char * const path_session_focus[] = {"session", "focus"};
 static const char * const path_stream[] = {"stream"};
 static const char * const path_stream_status[] = {"stream", "status"};
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+static const char * const path_stream_ble[] = {"stream", "ble"};
+static const char * const path_stream_ble_status[] = {"stream", "ble", "status"};
+static const char * const path_stream_ble_remove[] = {"stream", "ble", "remove"};
+static const char * const path_stream_ble_type[] = {"stream", "ble", "connect", SHELL_COMPLETION_ANY, SHELL_COMPLETION_ANY};
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
 static const char * const path_stream_tcp[] = {"stream", "tcp"};
 static const char * const path_stream_tcp_remove[] = {"stream", "tcp", "remove"};
@@ -3436,6 +3449,12 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_DISPLAY_TARGETS(path_session_focus),
     SHELL_COMPLETION_STATIC(path_stream, stream_subcommands),
     SHELL_COMPLETION_STREAMS(path_stream_status),
+#if SOLAR_OS_PACKAGE_SERVICE_BLE_STREAM
+    SHELL_COMPLETION_STATIC(path_stream_ble, stream_ble_subcommands),
+    SHELL_COMPLETION_STREAMS(path_stream_ble_status),
+    SHELL_COMPLETION_STREAMS(path_stream_ble_remove),
+    SHELL_COMPLETION_STATIC(path_stream_ble_type, stream_ble_address_types),
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_TCP_STREAM
     SHELL_COMPLETION_STATIC(path_stream_tcp, stream_tcp_subcommands),
     SHELL_COMPLETION_STREAMS(path_stream_tcp_remove),
