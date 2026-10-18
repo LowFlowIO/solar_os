@@ -1,4 +1,4 @@
-"""Exercise the production Link v2 stream over a lossy two-ended transport."""
+"""Exercise the production Link v3 stream over a lossy two-ended transport."""
 from pathlib import Path
 import subprocess
 import tempfile
@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class LinkStreamTest(unittest.TestCase):
-    def test_loss_reconnect_backpressure_and_legacy_reset(self):
+    def test_loss_reconnect_and_backpressure(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory)
             (path / "freertos").mkdir()

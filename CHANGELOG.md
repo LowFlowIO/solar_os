@@ -20,6 +20,10 @@
   targets, retaining Python, Playground, writing, media, communications, and
   board controls, including the ODROID-GO ADC D-pad.
   Fixed incremental linker generation after memory-layout configuration changes.
+  Link streams now use protocol v3 with windowed transfers and receiver credits,
+  improving sustained traffic while retaining prompt interactive writes and
+  backpressure. MeshCore uses a smaller window with radio-specific timings.
+  Both stream endpoints must be updated; Chat and Link packet framing are unchanged.
 - **4.16.17** — 2026-10-17 — Added generic SPI display attachment through
   Display Link Protocol (DLP), with discovered dimensions and pixel formats,
   optional READY and RESET lines, changed-region uploads, and optional RLE

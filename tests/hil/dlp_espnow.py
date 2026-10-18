@@ -17,6 +17,40 @@ from model_bundle_stream import Console
 
 PROBE = '''import solaros, sys
 mode = sys.argv[1]
+if mode == "terminal":
+    handle = solaros.streams.open("dlp-hil", {"direction": "duplex"})
+    try:
+        def prompt():
+            data = b""
+            start = solaros.time.uptime_ms()
+            while solaros.time.uptime_ms() - start < 20000:
+                try:
+                    data += solaros.streams.read(handle, 1024, 1000)
+                except OSError:
+                    continue
+                if data.endswith(b":/ ") and b"@" in data:
+                    return data
+            raise RuntimeError("Remote shell prompt timed out")
+        banner = prompt()
+        times = []
+        for i in range(10):
+            start = solaros.time.uptime_ms()
+            written = solaros.streams.write(handle, b"version\\r", 5000)
+            assert written == 8
+            assert b"SolarOS" in prompt()
+            times.append(solaros.time.uptime_ms() - start)
+        print("LINK_TERMINAL_RTT_MS", min(times), sum(times) / len(times), max(times))
+        start = solaros.time.uptime_ms()
+        written = solaros.streams.write(handle, b"commands\\r", 5000)
+        assert written == 9
+        reply = prompt()
+        assert len(reply) > 512
+        elapsed = solaros.time.uptime_ms() - start
+        print("LINK_TERMINAL_BURST", len(reply), "bytes", elapsed, "ms")
+        print("LINK_TERMINAL_PASS")
+    finally:
+        solaros.streams.close(handle)
+    sys.exit()
 with solaros.dlp.connect("dlp-hil", timeout_ms=5000) as link:
     info = link.info()
     assert info["format"] == solaros.dlp.MONO1
@@ -27,7 +61,25 @@ with solaros.dlp.connect("dlp-hil", timeout_ms=5000) as link:
         for x in range(4):
             patch[y * stride + x] = 255
     frames = (white, bytes(patch))
-    count = 40 if mode == "continuous" else 2
+    if mode == "benchmark":
+        black = bytes([255]) * size
+        dense = bytes([0x55, 0xaa]) * (size // 2)
+        inverse = bytes([0xaa, 0x55]) * (size // 2)
+        cases = (("solid", (white, black), 8),
+                 ("full-detail", (dense, inverse), 4),
+                 ("32x32-patch", frames, 8))
+        for name, images, samples in cases:
+            link.present(images[1])
+            start = solaros.time.uptime_ms()
+            times = []
+            for i in range(samples):
+                before = solaros.time.uptime_ms()
+                link.present(images[i % 2])
+                times.append(solaros.time.uptime_ms() - before)
+            elapsed = solaros.time.uptime_ms() - start
+            print("DLP_BENCH", name, "ms", min(times), sum(times) / samples,
+                  max(times), "fps", samples * 1000 / elapsed)
+    count = 0 if mode == "benchmark" else (40 if mode == "continuous" else 2)
     for i in range(count):
         for attempt in range(12):
             try:
@@ -50,6 +102,11 @@ def main():
     parser.add_argument('--sender', required=True)
     parser.add_argument('--receiver', required=True)
     parser.add_argument('--cycles', type=int, default=5)
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument('--benchmark-only', action='store_true',
+                      help='measure completed presentations and skip lifecycle tests')
+    mode.add_argument('--terminal-only', action='store_true',
+                      help='measure sparse commands and a command-list burst without DLP')
     parser.add_argument('--output', type=Path, required=True)
     args = parser.parse_args()
     assert 2 <= args.cycles <= 20
@@ -58,6 +115,8 @@ def main():
     transcript = []
     jobs, streams = [], []
     attached = serving = uploaded = ftp_started = False
+    terminal_session = None
+    terminal_running = False
     filename = '/dlp-espnow-hil.py'
     worker = None
     log_lock = threading.Lock()
@@ -93,6 +152,19 @@ def main():
         out = command(sender, 'python ' + filename + ' probe', 60)
         assert 'DLP_HIL_PASS 2' in out, out
         assert frames() >= before + 2, 'No two completed presentations'
+
+    def run_terminal():
+        nonlocal terminal_session, terminal_running
+        out = command(receiver, 'session create shell dlp-hil --term dumb')
+        match = re.search(r'session (\d+) created', out)
+        assert match, out
+        terminal_session = match[1]
+        terminal_running = True
+        out = command(sender, 'python ' + filename + ' terminal', 120)
+        assert 'LINK_TERMINAL_PASS' in out, out
+        terminal_running = False
+        assert 'closed session' in command(receiver, 'session close ' + terminal_session)
+        terminal_session = None
 
     def check_released(baseline):
         after = memory()
@@ -174,18 +246,33 @@ def main():
             assert peer.lower() in command(console, 'espnow peers').lower()
             assert 'registered' in command(console, 'link stream create dlp-hil dlp-hil ' + peer)
             streams.append(console)
-        assert 'DLP session' in command(receiver, 'dlp serve display0 stream=dlp-hil')
-        serving = True
+        if not args.terminal_only:
+            assert 'DLP session' in command(receiver, 'dlp serve display0 stream=dlp-hil')
+            serving = True
         assert 'job started' in command(sender, 'job start ftpd /sdcard 2121')
         ftp_started = True
         with ftplib.FTP() as ftp:
             ftp.connect(args.sender, 2121, timeout=15)
             ftp.login()
+            uploaded = True  # Also clean up a partially uploaded file.
             ftp.storbinary('STOR ' + filename, io.BytesIO(PROBE.encode()))
-        uploaded = True
         command(sender, 'job stop ftpd')
         ftp_started = False
+        if args.terminal_only:
+            run_terminal()
+            for console in (sender, receiver):
+                command(console, 'link status dlp-hil')
+                command(console, 'link stream status dlp-hil')
+            print('LINK_ESPNOW_TERMINAL_PASS', flush=True)
+            return
         run_probe()
+        before = frames()
+        out = command(sender, 'python ' + filename + ' benchmark', 180)
+        assert 'DLP_HIL_PASS 0' in out and out.count('DLP_BENCH ') == 3, out
+        assert frames() >= before + 23, 'Benchmark frames did not complete'
+        if args.benchmark_only:
+            print('DLP_ESPNOW_BENCHMARK_PASS', flush=True)
+            return
         baseline = memory()
         attached_bytes = []
         for cycle in range(args.cycles):
@@ -216,12 +303,19 @@ def main():
             restart_during_frames(which)
         # Private objects and reconnects must release their allocations too.
         check_released(baseline)
+        assert 'closed session' in command(receiver, 'dlp stop display0')
+        serving = False
+        run_terminal()
         for console in (sender, receiver):
+            command(console, 'link status dlp-hil')
             command(console, 'link stream status dlp-hil')
             command(console, 'espnow status')
             command(console, 'log show 10')
         print('DLP_ESPNOW_PASS: presentation, repeated detach, transport and provider reconnect', flush=True)
     finally:
+        if terminal_running:
+            sender.socket.sendall(b'\x03')
+            sender.read(5, True)
         if worker and worker.is_alive():
             sender.socket.sendall(b'\x03')
             worker.join(15)
@@ -233,6 +327,8 @@ def main():
             command(sender, 'expansion detach dlp-hil')
         if serving:
             command(receiver, 'dlp stop display0')
+        if terminal_session:
+            command(receiver, 'session close ' + terminal_session)
         if ftp_started:
             command(sender, 'job stop ftpd')
         for console in streams:
