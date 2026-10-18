@@ -21,6 +21,23 @@ void solar_os_shell_cmd_dlp(solar_os_context_t *ctx, int argc, char **argv)
             "DLP: %s %s <- %s, frames=%" PRIu32 " RX=%" PRIu32 " TX=%" PRIu32 "\n",
             status.suspended ? "suspended" : "serving", status.display, status.stream,
             status.presented_frames, status.received_bytes, status.sent_bytes);
+        const solar_os_dlp_presentation_stats_t *p = &status.presentation;
+        if (p->frames) {
+            solar_os_shell_io_printf(io,
+                "Presentation timing: n=%" PRIu32 " (DLP frames only; last/avg/max us)\n"
+                "  render:  %" PRIu32 "/%" PRIu64 "/%" PRIu32 "\n"
+                "  display: %" PRIu32 "/%" PRIu64 "/%" PRIu32 "\n"
+                "  total:   %" PRIu32 "/%" PRIu64 "/%" PRIu32 "\n",
+                p->frames, p->render_last_us, p->render_total_us / p->frames, p->render_max_us,
+                p->display_last_us, p->display_total_us / p->frames, p->display_max_us,
+                p->total_last_us, p->total_us / p->frames, p->total_max_us);
+            if (p->frames > 1 && p->last_completed_us > p->first_completed_us) {
+                uint64_t fps_milli = (uint64_t)(p->frames - 1) * 1000000000ULL /
+                    (p->last_completed_us - p->first_completed_us);
+                solar_os_shell_io_printf(io, "  completion rate: %" PRIu64 ".%03" PRIu64 " fps\n",
+                    fps_milli / 1000, fps_milli % 1000);
+            }
+        }
         return;
     }
     if (argc == 3 && !strcmp(argv[1], "stop")) {

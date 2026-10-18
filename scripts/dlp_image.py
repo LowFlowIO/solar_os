@@ -43,6 +43,15 @@ class Cell:
     payload: bytes
 
 
+@dataclass
+class FrameStats:
+    """Host wall times; present_wait includes transport, scheduling and status polling."""
+    upload_ms: float = 0.0
+    present_wait_ms: float = 0.0
+    total_ms: float = 0.0
+    presented: bool = False
+
+
 def encode_cell(opcode, session, sequence, boot, payload=b"", compact=False):
     if len(payload) > 220 or not 0 < sequence <= 0xffffffff:
         raise ValueError("Invalid SDLP request")
@@ -132,6 +141,7 @@ class DisplayLink:
         self.previous = None
         self.tx_bytes = self.rx_bytes = 0
         self.max_rect_bytes = 0
+        self.last_frame_stats = FrameStats()
 
     def _receive(self, deadline):
         while time.monotonic() < deadline:
@@ -250,6 +260,8 @@ class DisplayLink:
         return self.width, self.height
 
     def send_frame(self, pixels, wait_timeout=10.0):
+        started = time.monotonic()
+        self.last_frame_stats = FrameStats()
         stride = (self.width + 7) // 8
         if not self.width or len(pixels) != stride * self.height:
             raise ValueError("Frame size does not match the discovered geometry")
@@ -262,8 +274,11 @@ class DisplayLink:
         except BaseException:
             self.previous = None
             raise
+        finally:
+            self.last_frame_stats.total_ms = (time.monotonic() - started) * 1000
 
     def _upload_frame(self, pixels, stride, wait_timeout):
+        started = time.monotonic()
         whole = [(0, 0, self.width, self.height)]
         full = self.previous is None or not self.capabilities & PRESERVE_CONTENT
         rectangles = whole if full else changed_rects(
@@ -274,6 +289,7 @@ class DisplayLink:
                 if len(sync) != 4 or struct.unpack("<I", sync)[0] > 1:
                     raise ValueError("Invalid retained-content status")
                 if not struct.unpack("<I", sync)[0]:
+                    self.last_frame_stats.upload_ms = (time.monotonic() - started) * 1000
                     return self.frame
             full, rectangles = True, whole
 
@@ -324,6 +340,8 @@ class DisplayLink:
                             payload = struct.pack("<H", consumed) + encoded
                     self.command(op, struct.pack("<III", f, rect, offset) + payload)
                     offset += used
+            uploaded = time.monotonic()
+            self.last_frame_stats.upload_ms = (uploaded - started) * 1000
             self.command(PRESENT, struct.pack("<I", f))
             until = time.monotonic() + self.present_timeout
             while time.monotonic() < until:
@@ -335,6 +353,8 @@ class DisplayLink:
                 if failed == f or p[0] == 4:
                     raise RuntimeError(f"Frame {f} failed, device error {error}")
                 if completed == f:
+                    self.last_frame_stats.present_wait_ms = (time.monotonic() - uploaded) * 1000
+                    self.last_frame_stats.presented = True
                     self.previous = bytes(pixels)
                     return f
                 time.sleep(0.005)
@@ -407,7 +427,8 @@ def main():
     parser.add_argument("--port", default="/dev/ttyACM0")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--legacy-cells", action="store_true", help="Use fixed 256-byte framing")
-    parser.add_argument("--stats", action="store_true", help="Print actual transmitted/received bytes per frame")
+    parser.add_argument("--stats", action="store_true",
+                        help="Print preparation/upload/presentation-wait timings, bytes and completed FPS")
     parser.add_argument("--fps", type=float, default=2.0, help="Maximum frame rate (default: 2)")
     parser.add_argument("--frames", type=int, default=0, help="Stop after N frames; 0 means unlimited")
     parser.add_argument("--loop", action="store_true", help="Repeat input images")
@@ -427,6 +448,9 @@ def main():
     except ImportError as error:
         parser.exit(1, f"{error}. Install pyserial and Pillow first.\n")
     raw = None
+    count = presented = unchanged = 0
+    prepare_total = upload_total = present_wait_total = cycle_total = 0.0
+    playback_started = completed_at = 0.0
     try:
         print(f"Opening Display Link on {args.port}...", file=sys.stderr, flush=True)
         with serial.Serial(args.port, args.baud, timeout=0.05, write_timeout=2) as port:
@@ -442,25 +466,56 @@ def main():
                 frames = raw_frames(raw, ((width + 7) // 8) * height)
             else:
                 frames = image_frames(args.images, width, height, args.loop)
-            for count, frame in enumerate(frames, 1):
+            frames = iter(frames)
+            playback_started = time.monotonic()
+            completed_at = playback_started
+            while True:
+                cycle_started = time.monotonic()
+                try:
+                    frame = next(frames)
+                except StopIteration:
+                    break
+                prepared = time.monotonic()
+                prepare_ms = (prepared - cycle_started) * 1000
+                count += 1
                 if args.reconnect_every and count > 1 and (count - 1) % args.reconnect_every == 0:
                     link.connect()
-                started = time.monotonic()
-                sent, received, previous = link.tx_bytes, link.rx_bytes, link.frame
+                sent, received = link.tx_bytes, link.rx_bytes
                 frame_id = link.send_frame(frame)
+                completed_at = time.monotonic()
+                timing = link.last_frame_stats
+                presented += int(timing.presented)
+                unchanged += int(not timing.presented)
+                prepare_total += prepare_ms
+                upload_total += timing.upload_ms
+                present_wait_total += timing.present_wait_ms
+                cycle_ms = (completed_at - cycle_started) * 1000
+                cycle_total += cycle_ms
+                fps = presented / max(1e-9, completed_at - playback_started)
                 if args.stats:
-                    print(f"Frame {count}: TX {link.tx_bytes - sent}, RX {link.rx_bytes - received} bytes"
-                          f"{' (unchanged)' if previous == frame_id else ''}", file=sys.stderr, flush=True)
+                    print(f"Frame {count}: prep={prepare_ms:.2f}ms upload={timing.upload_ms:.2f}ms "
+                          f"present_wait={timing.present_wait_ms:.2f}ms total={cycle_ms:.2f}ms "
+                          f"TX={link.tx_bytes - sent} RX={link.rx_bytes - received} "
+                          f"completed_fps={fps:.2f}{' (unchanged)' if not timing.presented else ''}",
+                          file=sys.stderr, flush=True)
                 if count == 1 or count % 10 == 0 or count == args.frames:
                     print(f"Presented frame {frame_id}", file=sys.stderr, flush=True)
                 if args.frames and count >= args.frames:
                     break
-                time.sleep(max(0, 1 / args.fps - (time.monotonic() - started)))
+                time.sleep(max(0, 1 / args.fps - (time.monotonic() - cycle_started)))
     except KeyboardInterrupt:
         return 130
     except (OSError, ValueError, RuntimeError) as error:
         parser.exit(1, f"{error}\n")
     finally:
+        finished = presented + unchanged
+        if args.stats and finished:
+            elapsed = completed_at - playback_started
+            print(f"Summary: inputs={finished} presented={presented} unchanged={unchanged} "
+                  f"elapsed={elapsed:.3f}s completed_fps={presented / max(1e-9, elapsed):.2f}; "
+                  f"average prep={prepare_total / finished:.2f}ms upload={upload_total / finished:.2f}ms "
+                  f"present_wait={present_wait_total / finished:.2f}ms total={cycle_total / finished:.2f}ms",
+                  file=sys.stderr, flush=True)
         if raw is not None and raw is not sys.stdin.buffer:
             raw.close()
     return 0

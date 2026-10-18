@@ -99,6 +99,9 @@ def main():
             # Closing serial alone leaves an endpoint listening for another sender.
             status = command("dlp status")
             assert "frames=3" in status, status
+            assert "Presentation timing: n=3" in status, status
+            assert "  render:" in status and "  display:" in status and "  total:" in status, status
+            assert "completion rate:" in status, status
             # Pause behind another display session, then restore the receiver.
             output = command(f"session create clock {args.display}")
             match = re.search(r"session (\d+) created", output)
@@ -107,16 +110,22 @@ def main():
                 assert "suspended" in command("dlp status")
             finally:
                 command("session close " + match[1])
-            assert "serving" in command("dlp status")
+            resumed = command("dlp status")
+            assert "serving" in resumed and "Presentation timing: n=3" in resumed, resumed
             with serial.Serial(args.port, 115200, timeout=.05, write_timeout=2) as port:
-                link = DisplayLink(port, compact=compact)
-                link.connect()
-                link.send_frame(image)
+                # Continue the same protocol session with a delta after redraw.
+                link.port = port
+                link.send_frame(next(frames))
                 color = compact and send_rgb565(link, width, height)
-            assert f"frames={5 if color else 4}" in command("dlp status")
+                if color:
+                    link.connect()
+                    link.send_frame(image)  # RGB565 -> MONO1 must repaint fully.
+            count = 6 if color else 4
+            assert f"frames={count}" in command("dlp status")
             command(f"dlp stop {args.display}")
             running = False
-            assert "DLP: stopped" in command("dlp status")
+            stopped = command("dlp status")
+            assert "DLP: stopped" in stopped and f"Presentation timing: n={count}" in stopped, stopped
             ports = command("port list")
             assert "app-dlp" not in ports, ports
         command("session list")

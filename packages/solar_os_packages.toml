@@ -1600,7 +1600,7 @@ sources = ["../protocol/display_link/src/sdlp.c"]
 [packages.service_dlp]
 label = "service.dlp"
 depends = ["service_display_link"]
-sources = ["services/solar_os_dlp_receiver.c"]
+sources = ["services/solar_os_dlp_receiver.c", "services/solar_os_dlp_raster.c"]
 
 [packages.expansion_spi_display]
 label = "expansion.spi-display"

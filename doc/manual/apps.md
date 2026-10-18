@@ -54,6 +54,12 @@ use an advertised format. Updates are staged; the display changes on PRESENT.
 Changed rectangles and RLE are supported. A new connection/session must send a
 full image before partial updates.
 
+MONO1 uses direct presentation where supported. Displays with an INDEX2 raster
+backend use batched MONO1 conversion and send changed regions,
+without rebuilding a graphics canvas. This path needs an extra two-bit-per-pixel
+conversion buffer (38,400 bytes at 480×320). Initial frames and resume redraws
+repaint the full display. Other targets use the regular graphics canvas.
+
 The normal app-exit key or `dlp stop <display>` closes the receiver, releases
 the stream, and restores the previous session. Suspension pauses protocol
 processing; resuming redraws the last completed image. I/O errors close the
@@ -66,6 +72,7 @@ The desktop test sender requires Python, pyserial, and Pillow:
 python3 -m pip install pyserial Pillow
 python3 scripts/dlp_image.py --port /dev/ttyACM0 image.png
 python3 scripts/dlp_image.py --port /dev/ttyACM0 --demo --frames 20 --stats
+python3 scripts/dlp_image.py --port /dev/ttyACM0 --demo --fps 30 --frames 100 --stats
 python3 scripts/dlp_image.py --port /dev/ttyACM0 --demo --frames 6 --reconnect-every 2
 ```
 
@@ -73,6 +80,29 @@ Start the receiver before running the sender. The script discovers geometry,
 fits images on a white background, and sends MONO1 frames. `--legacy-cells`
 tests fixed-cell framing; compact DLP framing is the default. This is an image
 test tool; desktop virtual-monitor integration belongs to a host project.
+
+`--stats` prints actual completion rate, byte counts, and host wall times per
+input frame: `prep` generates/loads and converts the image; `upload` plans and
+sends the update; `present_wait` runs from PRESENT through the completion-status
+reply. `total` includes preparation and any requested reconnect, and excludes
+the intentional frame-rate sleep. The final summary counts presented frames
+and unchanged images separately; unchanged images do not increase completed
+FPS. The default rate limit is 2 FPS; `--fps 30` sets a 30 FPS ceiling and
+includes image preparation in that budget.
+
+Run `dlp status` from a separate shell for receiver-side last/average/maximum
+timings in microseconds. `render` measures MONO1 canvas preparation or changed-area
+detection and batched INDEX2 conversion; `display`
+measures the display-service call, including driver conversion, rotation,
+tile checks and I/O. Unconverted direct rasters have zero separate `render`
+time. All driver work is included under `display`. `total` is their sum.
+These measurements exclude wire upload, startup and resume/overlay redraws;
+they measure service completion, not panel scanout. Completion rate averages
+the intervals between the first and last DLP frame, including host pacing.
+The statistics remain available after stopping, until the next receiver start.
+Host `present_wait` includes USB/stream round trips, scheduling and polling,
+so it is not a device-only or SPI-only measurement. Diagnostics never enter
+the DLP byte stream.
 
 ## rtsp
 
