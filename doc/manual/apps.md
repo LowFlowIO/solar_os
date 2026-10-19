@@ -606,6 +606,12 @@ Gateway setup and room lifecycle use `gateway status`, `gateway configure`,
 the `gateway-sync` job name. Selecting a known gateway room in the Channels tab
 requests a join automatically and opens it after the server confirms `joined`.
 
+Additional Gateway connections use `messages add gateway NAME URL [TOKEN]`,
+`messages connect NAME`, and `messages join NAME ROOM`. The same `gateway-sync`
+job maintains every enabled instance independently. In Chat, use `/add gateway
+NAME URL [TOKEN]`, `/connect NAME`, and `/join NAME ROOM`. `/remove NAME` closes
+the instance and deletes its settings, pending sends, and local history.
+
 Conversation rows show provider, unread, and security state. Outbound rows show
 queued/sending/sent/delivered/failed state. Use `/new CONTACT_ID` to open a
 direct conversation with the contact's preferred endpoint. Sending to a

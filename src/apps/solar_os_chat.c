@@ -1589,6 +1589,7 @@ static void chat_execute_command(char *line)
         chat_append_statusf("/join instance channel | /query instance nick");
         chat_append_statusf("/leave | /connect instance | /disconnect instance");
         chat_append_statusf("/remove instance (delete local history)");
+        chat_append_statusf("/add class instance settings... | /configure instance settings...");
 #if SOLAR_OS_PACKAGE_SERVICE_IRC
         chat_append_statusf("/server instance host port nick");
         chat_append_statusf("/sasl instance account password");
@@ -1636,6 +1637,13 @@ static void chat_execute_command(char *line)
     } else if (strcasecmp(argv[0], "/leave") == 0 && argc == 1) {
         esp_err_t error = solar_os_messaging_leave(chat_current_conversation_id());
         chat_set_status(error == ESP_OK ? "leave requested" : esp_err_to_name(error));
+    } else if (strcasecmp(argv[0], "/add") == 0 && argc >= 3) {
+        solar_os_messaging_provider_id_t id;
+        esp_err_t error = solar_os_messaging_instance_add(argv[1], argv[2], argc - 3, (const char *const *)(argv + 3), &id);
+        chat_set_status(error == ESP_OK ? "instance saved; /connect instance" : esp_err_to_name(error));
+    } else if (strcasecmp(argv[0], "/configure") == 0 && argc >= 2) {
+        esp_err_t error = solar_os_messaging_instance_configure(solar_os_messaging_provider_find(argv[1]), argc - 2, (const char *const *)(argv + 2));
+        chat_set_status(error == ESP_OK ? "configuration saved" : esp_err_to_name(error));
     } else if (strcasecmp(argv[0], "/remove") == 0 && argc == 2) {
         esp_err_t error = solar_os_messaging_instance_remove(solar_os_messaging_provider_find(argv[1]));
         chat_refresh_conversations();
@@ -1708,7 +1716,8 @@ static void chat_submit_input(solar_os_context_t *ctx)
     }
 
     strlcpy(line, chat_app.input, CHAT_APP_INPUT_MAX);
-    if (strncasecmp(line, "/sasl ", 6) != 0) chat_history_add(line);
+    if (strncasecmp(line, "/sasl ", 6) != 0 && strncasecmp(line, "/add ", 5) != 0 &&
+        strncasecmp(line, "/configure ", 11) != 0) chat_history_add(line);
     chat_history_cancel();
     chat_set_input("");
     chat_app.message_scroll = 0;

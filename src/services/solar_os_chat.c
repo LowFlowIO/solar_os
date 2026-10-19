@@ -1,6 +1,8 @@
 #include "solar_os_chat.h"
+#include "solar_os_gateway_instances.h"
 
 #include <string.h>
+#include <stdatomic.h>
 
 #include "esp_attr.h"
 #include "freertos/FreeRTOS.h"
@@ -27,7 +29,12 @@ typedef struct {
     char channels[SOLAR_OS_CHAT_CHANNEL_CAPACITY][SOLAR_OS_CHAT_CHANNEL_MAX];
 } solar_os_chat_saved_config_t;
 
-typedef struct {
+typedef struct gateway_store {
+    struct gateway_store *next;
+    solar_os_messaging_provider_id_t provider;
+    char instance_name[SOLAR_OS_MESSAGING_LABEL_MAX];
+    void *transport_state;
+    void *worker_state;
     bool initialized;
     bool configured;
     bool enabled;
@@ -56,7 +63,45 @@ typedef struct {
     SemaphoreHandle_t edit_lock;
 } solar_os_chat_store_state_t;
 
-static EXT_RAM_BSS_ATTR solar_os_chat_store_state_t chat;
+static EXT_RAM_BSS_ATTR solar_os_chat_store_state_t default_chat;
+static _Thread_local solar_os_chat_store_state_t *selected_chat;
+#define chat (*(selected_chat ? selected_chat : &default_chat))
+static struct {
+    bool initialized;
+    SemaphoreHandle_t edit_lock, worker_lock;
+    solar_os_chat_store_state_t *instances;
+    const solar_os_gateway_runtime_hooks_t *runtime;
+} gateways;
+static atomic_flag gateway_init_lock = ATOMIC_FLAG_INIT;
+static atomic_bool gateway_ready;
+
+void *solar_os_gateway_scope_enter(void *instance)
+{
+    void *previous = selected_chat; selected_chat = instance; return previous;
+}
+void solar_os_gateway_scope_leave(void *previous) { selected_chat = previous; }
+void *solar_os_gateway_current_instance(void) { return &chat; }
+solar_os_messaging_provider_id_t solar_os_gateway_current_id(void)
+{ return chat.provider ? chat.provider : SOLAR_OS_MESSAGING_PROVIDER_GATEWAY; }
+const char *solar_os_gateway_current_name(void)
+{ return chat.instance_name[0] ? chat.instance_name : "gateway"; }
+void **solar_os_gateway_transport_slot(void) { return &chat.transport_state; }
+void **solar_os_gateway_worker_slot(void) { return &chat.worker_state; }
+void solar_os_gateway_workers_lock(void) { xSemaphoreTake(gateways.worker_lock, portMAX_DELAY); }
+void solar_os_gateway_workers_unlock(void) { xSemaphoreGive(gateways.worker_lock); }
+void solar_os_gateway_set_runtime_hooks(const solar_os_gateway_runtime_hooks_t *hooks) { gateways.runtime = hooks; }
+void *solar_os_gateway_instance_next(solar_os_messaging_provider_id_t *cursor)
+{
+    solar_os_chat_store_state_t *found = NULL;
+    for (solar_os_chat_store_state_t *node = gateways.instances; node; node = node->next)
+        if (node->provider > *cursor && (!found || node->provider < found->provider)) found = node;
+    if (found) *cursor = found->provider;
+    return found;
+}
+
+static esp_err_t chat_state_init(void);
+static esp_err_t gateway_remove_prepare(void *context);
+static void gateway_remove_finish(void *context, bool removed);
 
 static void chat_lock(void)
 {
@@ -160,7 +205,7 @@ static uint32_t chat_security_flags(void)
 static void chat_upsert_room(const char *channel)
 {
     const solar_os_messaging_conversation_upsert_t request = {
-        .provider = SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+        .provider = solar_os_gateway_current_id(),
         .provider_key = channel,
         .kind = SOLAR_OS_CONVERSATION_ROOM,
         .title = channel,
@@ -221,7 +266,7 @@ static void chat_snapshot_config_locked(solar_os_chat_saved_config_t *config)
 
 static esp_err_t chat_save_config(const solar_os_chat_saved_config_t *config)
 {
-    return solar_os_messaging_profile_save(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, config, sizeof(*config));
+    return solar_os_messaging_profile_save(solar_os_gateway_current_id(), config, sizeof(*config));
 }
 
 static bool chat_saved_config_valid(const solar_os_chat_saved_config_t *config)
@@ -266,12 +311,14 @@ static void chat_load_config(void)
     solar_os_chat_saved_config_t *config = solar_os_memory_calloc(1, sizeof(*config),
         SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "gateway.config");
     if (!config) return;
-    esp_err_t file_error = solar_os_messaging_profile_load(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, config, sizeof(*config));
+    esp_err_t file_error = solar_os_messaging_profile_load(solar_os_gateway_current_id(), config, sizeof(*config));
     if (file_error == ESP_OK && chat_saved_config_valid(config)) {
         chat_apply_saved_config(config);
         /* Also finish a migration interrupted after file promotion. */
-        chat_erase_legacy_config(); goto done;
+        if (solar_os_gateway_current_id() == SOLAR_OS_MESSAGING_PROVIDER_GATEWAY) chat_erase_legacy_config();
+        goto done;
     }
+    if (solar_os_gateway_current_id() != SOLAR_OS_MESSAGING_PROVIDER_GATEWAY) goto done;
     /* Read-only legacy fallback. Delete old keys only after a verified file
      * round trip, so an absent/full volume never destroys configuration. */
     nvs_handle_t nvs;
@@ -288,7 +335,7 @@ static void chat_load_config(void)
     if (error == ESP_OK && (token_error == ESP_OK || token_error == ESP_ERR_NVS_NOT_FOUND) && chat_saved_config_valid(config)) {
         chat_apply_saved_config(config);
         if (chat_save_config(config) == ESP_OK &&
-            solar_os_messaging_profile_load(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, config, sizeof(*config)) == ESP_OK &&
+            solar_os_messaging_profile_load(solar_os_gateway_current_id(), config, sizeof(*config)) == ESP_OK &&
             chat_saved_config_valid(config)) chat_erase_legacy_config();
     }
 done:
@@ -298,21 +345,51 @@ done:
 }
 
 static esp_err_t gateway_join(void *context, const char *target)
-{ return context == &chat ? solar_os_chat_join(target) : ESP_ERR_INVALID_STATE; }
+{
+    if (!context) return ESP_ERR_INVALID_STATE;
+    void *previous = solar_os_gateway_scope_enter(context);
+    esp_err_t error = solar_os_chat_join(target);
+    solar_os_gateway_scope_leave(previous); return error;
+}
 static esp_err_t gateway_leave(void *context, const char *target)
-{ return context == &chat ? solar_os_chat_leave(target) : ESP_ERR_INVALID_STATE; }
+{
+    if (!context) return ESP_ERR_INVALID_STATE;
+    void *previous = solar_os_gateway_scope_enter(context);
+    esp_err_t error = solar_os_chat_leave(target);
+    solar_os_gateway_scope_leave(previous); return error;
+}
 static esp_err_t gateway_connect(void *context, bool enabled)
 {
-    if (context != &chat) return ESP_ERR_INVALID_STATE;
-    return enabled ? solar_os_chat_connect(NULL, NULL) : solar_os_chat_disconnect();
+    if (!context) return ESP_ERR_INVALID_STATE;
+    void *previous = solar_os_gateway_scope_enter(context);
+    esp_err_t error = enabled ? solar_os_chat_connect(NULL, NULL) : solar_os_chat_disconnect();
+    solar_os_gateway_scope_leave(previous); return error;
+}
+static esp_err_t gateway_create(const char *name, int argc, const char *const *argv,
+    solar_os_messaging_provider_id_t *id)
+{
+    return argc == 1 || argc == 2 ? solar_os_gateway_instance_create(name, argv[0], argc == 2 ? argv[1] : "", id) : ESP_ERR_INVALID_ARG;
+}
+static esp_err_t gateway_configure(void *context, int argc, const char *const *argv)
+{
+    if (!context || (argc != 1 && argc != 2)) return ESP_ERR_INVALID_ARG;
+    void *previous = solar_os_gateway_scope_enter(context);
+    esp_err_t error = solar_os_chat_configure(argv[0], argc == 2 ? argv[1] : NULL);
+    solar_os_gateway_scope_leave(previous); return error;
 }
 static const solar_os_messaging_provider_class_t gateway_class = {
     .name = "gateway", .connection_oriented = true, .capabilities = SOLAR_OS_ENDPOINT_CAP_ROOM,
     .join = gateway_join, .leave = gateway_leave, .connect = gateway_connect,
+    .create = gateway_create, .configure = gateway_configure,
+    .remove_prepare = gateway_remove_prepare, .remove_finish = gateway_remove_finish,
 };
 
-esp_err_t solar_os_chat_init(void)
+static esp_err_t chat_state_init(void)
 {
+    if (!selected_chat) {
+        esp_err_t error = solar_os_gateway_instances_init();
+        return error != ESP_OK ? error : (default_chat.initialized ? ESP_OK : ESP_ERR_NOT_FOUND);
+    }
     if (chat.initialized) {
         return ESP_OK;
     }
@@ -352,7 +429,7 @@ esp_err_t solar_os_chat_init(void)
     (void)chat_add_channel_locked(CHAT_DEFAULT_CHANNEL, !chat.configured, false);
     chat.initialized = true;
     (void)solar_os_messaging_instance_register(
-        SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, "gateway", "gateway", &chat);
+        solar_os_gateway_current_id(), "gateway", solar_os_gateway_current_name(), &chat);
     chat_upsert_room(CHAT_DEFAULT_CHANNEL);
     for (size_t i = 0; i < chat.channel_count; i++) chat_upsert_room(chat.channels[i].name);
     return ESP_OK;
@@ -368,7 +445,7 @@ static esp_err_t chat_change_connection(const char *url, const char *token, int 
 {
     if ((url && url[0] && !chat_url_is_valid(url)) ||
         (token && !chat_string_is_valid(token, SOLAR_OS_CHAT_TOKEN_MAX, true))) return ESP_ERR_INVALID_ARG;
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) return error;
     solar_os_chat_saved_config_t *config = solar_os_memory_calloc(1, sizeof(*config), SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "gateway.config");
     if (!config) return ESP_ERR_NO_MEM;
@@ -400,7 +477,7 @@ esp_err_t solar_os_chat_disconnect(void)
 static esp_err_t chat_change_membership(const char *channel, solar_os_chat_command_type_t type)
 {
     if (!chat_string_is_valid(channel, SOLAR_OS_CHAT_CHANNEL_MAX, false)) return ESP_ERR_INVALID_ARG;
-    esp_err_t error = solar_os_chat_init(); if (error != ESP_OK) return error;
+    esp_err_t error = chat_state_init(); if (error != ESP_OK) return error;
     solar_os_chat_saved_config_t *config = solar_os_memory_calloc(1, sizeof(*config), SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "gateway.membership");
     if (!config) return ESP_ERR_NO_MEM;
     xSemaphoreTake(chat.edit_lock, portMAX_DELAY);
@@ -434,10 +511,10 @@ static esp_err_t chat_change_membership(const char *channel, solar_os_chat_comma
     if (error == ESP_OK) {
         if (joining) {
             chat_upsert_room(channel);
-            (void)solar_os_messaging_join_update(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+            (void)solar_os_messaging_join_update(solar_os_gateway_current_id(),
                 channel, SOLAR_OS_MESSAGING_JOIN_PENDING, NULL);
         } else if (type == SOLAR_OS_CHAT_COMMAND_DELETE_CHANNEL)
-            (void)solar_os_messaging_conversation_remove(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, channel);
+            (void)solar_os_messaging_conversation_remove(solar_os_gateway_current_id(), channel);
     }
     return error;
 }
@@ -456,12 +533,12 @@ esp_err_t solar_os_chat_send(const char *channel, const char *text)
         strlen(text) >= SOLAR_OS_CHAT_TEXT_MAX) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) {
         return error;
     }
     const solar_os_messaging_conversation_upsert_t request = {
-        .provider = SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+        .provider = solar_os_gateway_current_id(),
         .provider_key = channel,
         .kind = SOLAR_OS_CONVERSATION_ROOM,
         .title = channel,
@@ -482,7 +559,7 @@ esp_err_t solar_os_chat_read_event_after(uint32_t *cursor,
     if (cursor == NULL || event == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) {
         return error;
     }
@@ -511,7 +588,7 @@ esp_err_t solar_os_chat_read_event(solar_os_chat_event_t *event,
     if (event == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) {
         return error;
     }
@@ -570,7 +647,7 @@ size_t solar_os_chat_message_visit(solar_os_chat_message_visitor_t visitor,
     };
     return solar_os_messaging_message_visit(
         0,
-        SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+        solar_os_gateway_current_id(),
         chat_visit_message,
         &context,
         event_cursor);
@@ -608,7 +685,7 @@ esp_err_t solar_os_chat_mark_channel_read(const char *channel)
         SOLAR_OS_MESSAGING_CONVERSATION_CAPACITY);
     for (size_t i = 0; i < count; i++) {
         if (conversations[i].provider ==
-                SOLAR_OS_MESSAGING_PROVIDER_GATEWAY &&
+                solar_os_gateway_current_id() &&
             strcmp(conversations[i].provider_key, channel) == 0) {
             const esp_err_t error =
                 solar_os_messaging_mark_read(conversations[i].id);
@@ -625,7 +702,7 @@ esp_err_t solar_os_chat_get_status(solar_os_chat_status_t *status)
     if (status == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) {
         return error;
     }
@@ -681,7 +758,7 @@ esp_err_t solar_os_chat_get_config(solar_os_chat_config_t *config)
     if (config == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) {
         return error;
     }
@@ -704,7 +781,7 @@ size_t solar_os_chat_channel_snapshot(solar_os_chat_channel_t *channels,
                                       size_t max_channels)
 {
     if (channels == NULL || max_channels == 0 ||
-        solar_os_chat_init() != ESP_OK) {
+        chat_state_init() != ESP_OK) {
         return 0;
     }
     chat_lock();
@@ -721,7 +798,7 @@ uint64_t solar_os_chat_channel_cursor(const char *channel)
         return 0;
     }
     return solar_os_messaging_provider_cursor(
-        SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+        solar_os_gateway_current_id(),
         channel);
 }
 
@@ -730,7 +807,7 @@ esp_err_t solar_os_gateway_sync_set_status(bool running,
                                         esp_err_t error,
                                         const char *message)
 {
-    esp_err_t init_error = solar_os_chat_init();
+    esp_err_t init_error = chat_state_init();
     if (init_error != ESP_OK) {
         return init_error;
     }
@@ -748,7 +825,7 @@ esp_err_t solar_os_gateway_sync_set_status(bool running,
             sizeof(chat.last_error));
     chat_unlock();
     return solar_os_messaging_provider_set_status(
-        SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+        solar_os_gateway_current_id(),
         running,
         connected,
         error,
@@ -768,7 +845,7 @@ esp_err_t solar_os_gateway_sync_publish(const solar_os_chat_event_t *event,
     if (message_key != NULL) {
         *message_key = 0;
     }
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) {
         return error;
     }
@@ -776,7 +853,7 @@ esp_err_t solar_os_gateway_sync_publish(const solar_os_chat_event_t *event,
     if (event->type == SOLAR_OS_CHAT_EVENT_MESSAGE) {
         const uint32_t security_flags = chat_security_flags();
         const solar_os_messaging_inbound_t request = {
-            .provider = SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+            .provider = solar_os_gateway_current_id(),
             .conversation_key =
                 event->channel[0] != '\0' ?
                     event->channel : CHAT_DEFAULT_CHANNEL,
@@ -835,14 +912,14 @@ esp_err_t solar_os_gateway_sync_publish(const solar_os_chat_event_t *event,
          event->type == SOLAR_OS_CHAT_EVENT_JOINED)) {
         chat_upsert_room(event->channel);
         if (event->type == SOLAR_OS_CHAT_EVENT_JOINED)
-            (void)solar_os_messaging_join_update(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+            (void)solar_os_messaging_join_update(solar_os_gateway_current_id(),
                 event->channel, SOLAR_OS_MESSAGING_JOIN_JOINED, NULL);
     } else if (event->type == SOLAR_OS_CHAT_EVENT_LEFT) {
-        (void)solar_os_messaging_join_update(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+        (void)solar_os_messaging_join_update(solar_os_gateway_current_id(),
             event->channel, SOLAR_OS_MESSAGING_JOIN_LEFT, NULL);
     } else if (event->type == SOLAR_OS_CHAT_EVENT_CHANNEL_DELETED) {
         (void)solar_os_messaging_conversation_remove(
-            SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+            solar_os_gateway_current_id(),
             event->channel);
     }
     if (message_key != NULL) {
@@ -862,7 +939,7 @@ esp_err_t solar_os_gateway_sync_set_inbox_id(uint64_t message_key,
 uint64_t solar_os_chat_context_id(void)
 {
     return solar_os_messaging_provider_context(
-        SOLAR_OS_MESSAGING_PROVIDER_GATEWAY);
+        solar_os_gateway_current_id());
 }
 
 esp_err_t solar_os_chat_outbox_peek(solar_os_chat_command_t *command)
@@ -870,7 +947,7 @@ esp_err_t solar_os_chat_outbox_peek(solar_os_chat_command_t *command)
     if (command == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) {
         return error;
     }
@@ -892,7 +969,7 @@ esp_err_t solar_os_chat_outbox_ack(uint32_t id)
     if (id == 0) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t error = solar_os_chat_init();
+    esp_err_t error = chat_state_init();
     if (error != ESP_OK) {
         return error;
     }
@@ -927,6 +1004,152 @@ const char *solar_os_chat_state_name(solar_os_chat_state_t state)
     default:
         return "unknown";
     }
+}
+
+
+static void gateway_store_free(solar_os_chat_store_state_t *store)
+{
+    solar_os_memory_free(store->events); solar_os_memory_free(store->commands);
+    if (store->lock) vSemaphoreDelete(store->lock);
+    if (store->edit_lock) vSemaphoreDelete(store->edit_lock);
+    volatile unsigned char *bytes = (volatile unsigned char *)store;
+    for (size_t i = 0; i < sizeof(*store); i++) bytes[i] = 0;
+    if (store != &default_chat) solar_os_memory_free(store);
+}
+
+static esp_err_t gateway_attach(solar_os_messaging_provider_id_t id, const char *name)
+{
+    for (solar_os_chat_store_state_t *node = gateways.instances; node; node = node->next)
+        if (node->provider == id) return ESP_OK;
+    solar_os_chat_store_state_t *store = id == SOLAR_OS_MESSAGING_PROVIDER_GATEWAY ? &default_chat :
+        solar_os_memory_calloc(1, sizeof(*store), SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "gateway.instance");
+    if (!store) return ESP_ERR_NO_MEM;
+    store->provider = id; strlcpy(store->instance_name, name, sizeof(store->instance_name));
+    void *previous = solar_os_gateway_scope_enter(store);
+    esp_err_t error = chat_state_init();
+    solar_os_gateway_scope_leave(previous);
+    if (error != ESP_OK) { gateway_store_free(store); return error; }
+    solar_os_gateway_workers_lock(); store->next = gateways.instances; gateways.instances = store; solar_os_gateway_workers_unlock();
+    return ESP_OK;
+}
+
+esp_err_t solar_os_gateway_instances_init(void)
+{
+    if (atomic_load(&gateway_ready)) return ESP_OK;
+    while (atomic_flag_test_and_set(&gateway_init_lock)) vTaskDelay(1);
+    esp_err_t error = solar_os_messaging_init();
+    if (error != ESP_OK) goto done;
+    if (!gateways.edit_lock) gateways.edit_lock = xSemaphoreCreateMutex();
+    if (!gateways.worker_lock) gateways.worker_lock = xSemaphoreCreateMutex();
+    if (!gateways.edit_lock || !gateways.worker_lock) { error = ESP_ERR_NO_MEM; goto done; }
+    error = solar_os_messaging_class_register(&gateway_class);
+    if (error != ESP_OK) goto done;
+    xSemaphoreTake(gateways.edit_lock, portMAX_DELAY);
+    solar_os_messaging_provider_id_t cursor = 0;
+    solar_os_messaging_provider_status_t status;
+    while (solar_os_messaging_provider_next(&cursor, &status)) {
+        if (strcmp(status.class_name, "gateway") != 0) continue;
+        error = gateway_attach(cursor, status.name);
+        if (error != ESP_OK) break;
+    }
+    gateways.initialized = error == ESP_OK;
+    atomic_store(&gateway_ready, gateways.initialized);
+    xSemaphoreGive(gateways.edit_lock);
+done:
+    atomic_flag_clear(&gateway_init_lock);
+    return error;
+}
+esp_err_t solar_os_chat_init(void) { return solar_os_gateway_instances_init(); }
+
+esp_err_t solar_os_gateway_instance_create(const char *name, const char *url,
+    const char *token, solar_os_messaging_provider_id_t *id)
+{
+    if (!id || !chat_url_is_valid(url) || !chat_string_is_valid(token, SOLAR_OS_CHAT_TOKEN_MAX, true)) return ESP_ERR_INVALID_ARG;
+    esp_err_t error = solar_os_gateway_instances_init(); if (error != ESP_OK) return error;
+    solar_os_chat_saved_config_t *config = solar_os_memory_calloc(1, sizeof(*config), SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "gateway.config");
+    if (!config) return ESP_ERR_NO_MEM;
+    config->version = 1; strlcpy(config->url, url, sizeof(config->url));
+    strlcpy(config->token, token ? token : "", sizeof(config->token));
+    xSemaphoreTake(gateways.edit_lock, portMAX_DELAY);
+    error = solar_os_messaging_instance_create("gateway", name, config, sizeof(*config), id);
+    if (error == ESP_OK) error = gateway_attach(*id, name);
+    if (error != ESP_OK) atomic_store(&gateway_ready, false);
+    xSemaphoreGive(gateways.edit_lock); chat_wipe_config(config); solar_os_memory_free(config); return error;
+}
+
+static solar_os_chat_store_state_t *gateway_find(solar_os_messaging_provider_id_t id)
+{
+    for (solar_os_chat_store_state_t *node = gateways.instances; node; node = node->next)
+        if (node->provider == id) return node;
+    return NULL;
+}
+
+esp_err_t solar_os_gateway_instance_configure(solar_os_messaging_provider_id_t id, const char *url, const char *token)
+{
+    esp_err_t error = solar_os_gateway_instances_init(); if (error != ESP_OK) return error;
+    xSemaphoreTake(gateways.edit_lock, portMAX_DELAY);
+    solar_os_chat_store_state_t *store = gateway_find(id);
+    if (!store) error = ESP_ERR_NOT_FOUND;
+    else {
+        void *previous = solar_os_gateway_scope_enter(store);
+        error = solar_os_chat_configure(url, token);
+        solar_os_gateway_scope_leave(previous);
+    }
+    xSemaphoreGive(gateways.edit_lock); return error;
+}
+esp_err_t solar_os_gateway_instance_get_status(solar_os_messaging_provider_id_t id, solar_os_chat_status_t *status)
+{
+    esp_err_t error = solar_os_gateway_instances_init(); if (error != ESP_OK) return error;
+    xSemaphoreTake(gateways.edit_lock, portMAX_DELAY);
+    solar_os_chat_store_state_t *store = gateway_find(id);
+    if (!store) error = ESP_ERR_NOT_FOUND;
+    else {
+        void *previous = solar_os_gateway_scope_enter(store);
+        error = solar_os_chat_get_status(status);
+        solar_os_gateway_scope_leave(previous);
+    }
+    xSemaphoreGive(gateways.edit_lock); return error;
+}
+size_t solar_os_gateway_instance_channels(solar_os_messaging_provider_id_t id, solar_os_chat_channel_t *channels, size_t capacity)
+{
+    if (solar_os_gateway_instances_init() != ESP_OK) return 0;
+    xSemaphoreTake(gateways.edit_lock, portMAX_DELAY);
+    solar_os_chat_store_state_t *store = gateway_find(id); size_t count = 0;
+    if (store) {
+        void *previous = solar_os_gateway_scope_enter(store);
+        count = solar_os_chat_channel_snapshot(channels, capacity);
+        solar_os_gateway_scope_leave(previous);
+    }
+    xSemaphoreGive(gateways.edit_lock); return count;
+}
+
+static esp_err_t gateway_remove_prepare(void *context)
+{
+    xSemaphoreTake(gateways.edit_lock, portMAX_DELAY); solar_os_gateway_workers_lock();
+    solar_os_chat_store_state_t *store = context;
+    xSemaphoreTake(store->edit_lock, portMAX_DELAY);
+    void *previous = solar_os_gateway_scope_enter(store);
+    esp_err_t error = gateways.runtime ? gateways.runtime->prepare() : ESP_OK;
+    solar_os_gateway_scope_leave(previous);
+    if (error != ESP_OK) {
+        xSemaphoreGive(store->edit_lock); solar_os_gateway_workers_unlock(); xSemaphoreGive(gateways.edit_lock);
+    }
+    return error;
+}
+static void gateway_remove_finish(void *context, bool removed)
+{
+    solar_os_chat_store_state_t *store = context;
+    if (removed) {
+        void *previous = solar_os_gateway_scope_enter(store);
+        if (gateways.runtime) gateways.runtime->destroy();
+        solar_os_gateway_scope_leave(previous);
+        solar_os_chat_store_state_t **link = &gateways.instances;
+        while (*link && *link != store) link = &(*link)->next;
+        if (*link) *link = store->next;
+    }
+    xSemaphoreGive(store->edit_lock);
+    if (removed) gateway_store_free(store);
+    solar_os_gateway_workers_unlock(); xSemaphoreGive(gateways.edit_lock);
 }
 
 const char *solar_os_chat_event_type_name(solar_os_chat_event_type_t type)

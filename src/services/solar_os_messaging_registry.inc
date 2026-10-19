@@ -41,6 +41,22 @@ esp_err_t solar_os_messaging_class_register(const solar_os_messaging_provider_cl
     return ESP_OK;
 }
 
+bool solar_os_messaging_class_next(const char *after, solar_os_messaging_class_status_t *status)
+{
+    if (!after || !status || solar_os_messaging_init() != ESP_OK) return false;
+    messaging_lock();
+    const solar_os_messaging_provider_class_t *found = NULL;
+    for (messaging_class_node_t *node = messaging.classes; node; node = node->next) {
+        const solar_os_messaging_provider_class_t *type = node->type;
+        if (strcmp(type->name, after) > 0 && (!found || strcmp(type->name, found->name) < 0)) found = type;
+    }
+    if (found) {
+        strlcpy(status->name, found->name, sizeof(status->name));
+        status->capabilities = found->capabilities; status->creatable = found->create != NULL;
+    }
+    messaging_unlock(); return found != NULL;
+}
+
 esp_err_t solar_os_messaging_instance_register(solar_os_messaging_provider_id_t id,
     const char *class_name, const char *name, void *context)
 {
@@ -282,19 +298,25 @@ static void messaging_profiles_restore(void)
         }
         if (messaging_profile_read(path, &header, data, MESSAGING_PROFILE_MAX, false) == ESP_OK && header.id == id) {
             if (header.size) (void)solar_os_messaging_instance_register(id, header.class_name, header.name, NULL);
-            else if (id > SOLAR_OS_MESSAGING_PROVIDER_LINK) {
+            else {
                 /* Empty profiles are credential-free removal records. Keep
                  * labels and reserve IDs even after their history is cleared. */
-                messaging_provider_node_t *archived = solar_os_memory_calloc(1, sizeof(*archived),
+                messaging_provider_node_t *candidate = solar_os_memory_calloc(1, sizeof(*candidate),
                     SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "messages.archive");
+                messaging_lock();
+                messaging_provider_node_t *archived = messaging_provider_node_locked(id);
+                bool fresh = archived == NULL;
+                if (!archived) archived = candidate;
                 if (archived) {
                     archived->status.id = id; archived->status.registered = true;
                     archived->status.removed = true;
                     strlcpy(archived->status.name, header.name, sizeof(archived->status.name));
                     strlcpy(archived->status.class_name, header.class_name, sizeof(archived->status.class_name));
                     strlcpy(archived->status.detail, "removed", sizeof(archived->status.detail));
-                    messaging_lock(); archived->next = messaging.providers; messaging.providers = archived; messaging_unlock();
+                    if (fresh) { archived->next = messaging.providers; messaging.providers = archived; candidate = NULL; }
                 }
+                messaging_unlock();
+                solar_os_memory_free(candidate);
             }
         }
     }
@@ -321,6 +343,28 @@ static esp_err_t messaging_instance_acquire(solar_os_messaging_provider_id_t id,
 
 static void messaging_instance_release(messaging_provider_node_t *node)
 { messaging_lock(); node->operations--; messaging_unlock(); }
+
+esp_err_t solar_os_messaging_instance_add(const char *class_name, const char *name,
+    int argc, const char *const *argv, solar_os_messaging_provider_id_t *id)
+{
+    if (!class_name || !name || !id || argc < 0 || (argc && !argv)) return ESP_ERR_INVALID_ARG;
+    esp_err_t error = solar_os_messaging_init(); if (error != ESP_OK) return error;
+    messaging_lock();
+    const solar_os_messaging_provider_class_t *type = messaging_class_locked(class_name);
+    messaging_unlock();
+    return type && type->create ? type->create(name, argc, argv, id) : ESP_ERR_NOT_SUPPORTED;
+}
+
+esp_err_t solar_os_messaging_instance_configure(solar_os_messaging_provider_id_t id,
+    int argc, const char *const *argv)
+{
+    if (argc < 0 || (argc && !argv)) return ESP_ERR_INVALID_ARG;
+    messaging_provider_node_t *node; const solar_os_messaging_provider_class_t *type; void *context;
+    esp_err_t error = messaging_instance_acquire(id, &node, &type, &context);
+    if (error != ESP_OK) return error;
+    error = type && type->configure ? type->configure(context, argc, argv) : ESP_ERR_NOT_SUPPORTED;
+    messaging_instance_release(node); return error;
+}
 
 static esp_err_t messaging_operation_leased(solar_os_messaging_provider_id_t id, const char *target,
     unsigned operation, solar_os_conversation_id_t *conversation,

@@ -11,13 +11,17 @@
 
 static const char * const messages_commands[] = {
     "status", "conversations", "list", "send", "read", "delete",
-    "clear", "outbox", "cancel", "join", "leave", "query", "connect", "disconnect",
+    "clear", "outbox", "cancel", "join", "leave", "query", "connect", "disconnect", "remove", "classes", "instances", "add", "configure",
 };
 
 static void messages_usage(solar_os_shell_io_t *io)
 {
     solar_os_shell_io_writeln(io, "usage:");
     solar_os_shell_io_writeln(io, "  messages status");
+    solar_os_shell_io_writeln(io, "  messages classes|instances");
+    solar_os_shell_io_writeln(io, "  messages add <class> <instance> <settings...>");
+    solar_os_shell_io_writeln(io, "  messages configure <instance> <settings...>");
+    solar_os_shell_io_writeln(io, "  messages remove <instance|id> (delete history)");
     solar_os_shell_io_writeln(io, "  messages join|query <instance> <target>");
     solar_os_shell_io_writeln(io, "  messages leave <conversation-id>");
     solar_os_shell_io_writeln(io, "  messages connect|disconnect <instance>");
@@ -322,6 +326,35 @@ void solar_os_shell_cmd_messages(solar_os_context_t *ctx,
 {
     solar_os_shell_io_t *io = solar_os_context_shell_io(ctx);
     if (io == NULL) {
+        return;
+    }
+    if (argc == 2 && strcmp(argv[1], "classes") == 0) {
+        char cursor[16] = ""; solar_os_messaging_class_status_t status;
+        while (solar_os_messaging_class_next(cursor, &status)) {
+            solar_os_shell_io_printf(io, "%s%s\n", status.name, status.creatable ? " (configurable)" : "");
+            strlcpy(cursor, status.name, sizeof(cursor));
+        }
+        return;
+    }
+    if (argc == 2 && strcmp(argv[1], "instances") == 0) {
+        solar_os_messaging_provider_id_t cursor = 0; solar_os_messaging_provider_status_t status;
+        while (solar_os_messaging_provider_next(&cursor, &status))
+            solar_os_shell_io_printf(io, "%" PRIu32 " %s %s: %s, %s\n", cursor, status.class_name,
+                status.name, status.connected ? "connected" : status.running ? "running" : "stopped", status.detail);
+        return;
+    }
+    if (argc >= 4 && strcmp(argv[1], "add") == 0) {
+        solar_os_messaging_provider_id_t id;
+        esp_err_t error = solar_os_messaging_instance_add(argv[2], argv[3], argc - 4, (const char *const *)(argv + 4), &id);
+        if (error == ESP_OK) solar_os_shell_io_printf(io, "messages: saved instance %s (%" PRIu32 ")\n", argv[3], id);
+        else solar_os_shell_io_printf(io, "messages: %s\n", solar_os_shell_error_text(error));
+        return;
+    }
+    if (argc >= 3 && strcmp(argv[1], "configure") == 0) {
+        solar_os_messaging_provider_id_t id;
+        esp_err_t error = messages_parse_provider(argv[2], &id) && id ?
+            solar_os_messaging_instance_configure(id, argc - 3, (const char *const *)(argv + 3)) : ESP_ERR_NOT_FOUND;
+        solar_os_shell_io_printf(io, "messages: %s\n", error == ESP_OK ? "configuration saved" : solar_os_shell_error_text(error));
         return;
     }
     if (argc == 2 && strcmp(argv[1], "status") == 0) {

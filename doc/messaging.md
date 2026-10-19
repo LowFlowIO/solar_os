@@ -30,8 +30,9 @@ only then invoke callers or perform I/O.
 A provider class supplies protocol capabilities and operations. Independent
 instances carry stable numeric IDs, names, configuration, status, and runtime
 contexts. Classes and instances register at runtime; enumeration follows the
-registry rather than protocol enums or fixed provider arrays. Several IRC
-instances can run simultaneously. Gateway and existing radio workers retain
+registry rather than protocol enums or fixed provider arrays. Several IRC and
+Gateway instances can run simultaneously, with independent transport state,
+room membership, queues, and reconnect handling. Existing radio workers retain
 their default instances and resource ownership rules.
 
 The original IDs retain their meaning as default instances:
@@ -50,7 +51,7 @@ contact endpoints, events, and outbound requests reference an instance, so
 matching channel names or nicknames on different connections remain separate.
 The existing history record layout remains compatible.
 
-Classes expose optional join, leave, direct-open, connect, and target
+Classes expose optional create, configure, join, leave, direct-open, connect, and target
 normalization operations. Messaging dispatches them outside its global lock.
 Chat and scripts consume common membership states: none, left, pending, joined,
 and failed with a bounded reason. Class descriptors have static lifetime;
@@ -59,8 +60,8 @@ while an operation is in progress. A class's `remove_prepare` excludes workers
 until `remove_finish` commits destruction or resumes them after a storage error.
 Registry labels remain stable and instance IDs are never reused.
 
-`solar_os_messaging_instance_remove` protects the three built-in instances. It
-replaces a configurable instance's profile with a checked zero-payload record,
+`solar_os_messaging_instance_remove` requires lifecycle hooks before removing a
+bound instance, including a default instance. It replaces the profile with a checked zero-payload record,
 then destroys its runtime context, cancels queued work, and deletes its retained
 messages, conversations, and Inbox projections. A reset after committing the
 record completes the history purge during Messaging initialization. The record retains only ID, name, and class; no
@@ -77,6 +78,15 @@ recover its backup. Gateway configuration migrates from NVS only after a
 verified file round trip; legacy keys remain intact when saving fails. IRC
 does not add NVS records. Its authentication settings are stored in its profile
 and excluded from status and scripting enumeration.
+
+`messages classes` lists registered classes; `messages instances` lists active
+instances. `messages add gateway NAME URL [TOKEN]` creates a disabled Gateway
+instance and `messages configure NAME URL [TOKEN]` changes its connection.
+Use `messages connect NAME`, `messages join NAME ROOM`, and `messages remove NAME`
+for its lifecycle. Chat exposes the same settings through `/add gateway NAME URL
+[TOKEN]` and `/configure NAME URL [TOKEN]`. Configuration commands are omitted
+from shell and Chat input history. `gateway` commands address the default Gateway.
+`job start gateway-sync` maintains all enabled Gateway instances.
 
 Native IRC provides live TLS sessions with optional SASL, channels, private
 messages, reconnect/rejoin, bounded buffers, and paced sends. It requests no

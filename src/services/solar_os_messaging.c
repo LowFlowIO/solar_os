@@ -2686,7 +2686,6 @@ static esp_err_t messaging_remove_history(solar_os_messaging_provider_id_t id)
 esp_err_t solar_os_messaging_instance_remove(solar_os_messaging_provider_id_t id)
 {
     if (!messaging_provider_valid(id)) return ESP_ERR_INVALID_ARG;
-    if (id <= SOLAR_OS_MESSAGING_PROVIDER_LINK) return ESP_ERR_NOT_SUPPORTED;
     esp_err_t error = solar_os_messaging_init();
     if (error != ESP_OK) return error;
     messaging_lock();
@@ -2703,6 +2702,10 @@ esp_err_t solar_os_messaging_instance_remove(solar_os_messaging_provider_id_t id
     if (node->removing || node->operations) { messaging_unlock(); return ESP_ERR_INVALID_STATE; }
     const solar_os_messaging_provider_class_t *type = messaging_class_locked(node->status.class_name);
     void *context = node->context;
+    if (id <= SOLAR_OS_MESSAGING_PROVIDER_LINK &&
+        (!context || !type || !type->remove_prepare || !type->remove_finish)) {
+        messaging_unlock(); return ESP_ERR_NOT_SUPPORTED;
+    }
     if (context && (!type || !type->remove_prepare || !type->remove_finish)) {
         messaging_unlock(); return ESP_ERR_NOT_SUPPORTED;
     }

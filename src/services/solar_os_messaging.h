@@ -61,6 +61,9 @@ typedef struct {
     esp_err_t (*direct_open)(void *context, const char *target,
                              solar_os_conversation_id_t *conversation);
     esp_err_t (*connect)(void *context, bool enabled);
+    esp_err_t (*create)(const char *name, int argc, const char *const *argv,
+                        solar_os_messaging_provider_id_t *id);
+    esp_err_t (*configure)(void *context, int argc, const char *const *argv);
     esp_err_t (*normalize_target)(void *context, const char *target,
                                   char *normalized, size_t size);
     /* Prepare excludes transport work until finish, including on failure.
@@ -193,6 +196,13 @@ bool solar_os_messaging_provider_next(solar_os_messaging_provider_id_t *cursor,
 solar_os_messaging_provider_id_t solar_os_messaging_provider_find(const char *name);
 bool solar_os_messaging_provider_is_class(solar_os_messaging_provider_id_t id,
                                          const char *class_name);
+typedef struct {
+    char name[16];
+    uint32_t capabilities;
+    bool creatable;
+} solar_os_messaging_class_status_t;
+/* Pass an empty string initially, then the previous status.name. */
+bool solar_os_messaging_class_next(const char *after, solar_os_messaging_class_status_t *status);
 esp_err_t solar_os_messaging_profile_save(solar_os_messaging_provider_id_t id,
                                          const void *data, size_t size);
 esp_err_t solar_os_messaging_profile_load(solar_os_messaging_provider_id_t id,
@@ -204,6 +214,10 @@ esp_err_t solar_os_messaging_instance_create(const char *class_name,
  * A small credential-free record reserves its identity and retries interrupted
  * history deletion after reboot. */
 esp_err_t solar_os_messaging_instance_remove(solar_os_messaging_provider_id_t id);
+esp_err_t solar_os_messaging_instance_add(const char *class_name, const char *name,
+    int argc, const char *const *argv, solar_os_messaging_provider_id_t *id);
+esp_err_t solar_os_messaging_instance_configure(solar_os_messaging_provider_id_t id,
+    int argc, const char *const *argv);
 esp_err_t solar_os_messaging_join(solar_os_messaging_provider_id_t instance,
     const char *target, solar_os_conversation_id_t *conversation);
 esp_err_t solar_os_messaging_leave(solar_os_conversation_id_t conversation);

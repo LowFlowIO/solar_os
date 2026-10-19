@@ -1383,6 +1383,7 @@ static const char * const messages_subcommands[] = {
     "clear",
     "outbox",
     "cancel", "join", "leave", "query", "connect", "disconnect", "remove",
+    "classes", "instances", "add", "configure",
 };
 static const char * const outbox_subcommands[] = {"list", "cancel"};
 static const char * const messages_clear_values[] = {"all"};
@@ -4683,7 +4684,9 @@ static void shell_history_load(solar_os_shell_session_t *session)
 
 static void shell_history_add(solar_os_context_t *ctx, const char *line)
 {
-    if (strncmp(line, "irc sasl ", 9) == 0 || strncmp(line, "irc pass ", 9) == 0) return;
+    if (strncmp(line, "irc sasl ", 9) == 0 || strncmp(line, "irc pass ", 9) == 0 ||
+        strncmp(line, "messages add ", 13) == 0 || strncmp(line, "messages configure ", 19) == 0 ||
+        strncmp(line, "gateway configure ", 18) == 0 || strncmp(line, "gateway connect ", 16) == 0) return;
     solar_os_shell_session_t *session = shell_session(ctx);
 
     if (shell_history_add_ram(session, line)) {
