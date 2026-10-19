@@ -116,8 +116,8 @@ meshcore advert flood
 
 Generating with `--force`, importing, or editing channels is rejected while the
 job runs. Private export is deliberately explicit and prints a warning.
-Treat the output as a password: current NVS is not encrypted, and physical
-flash access can recover the stored identity and group keys.
+Treat the output as a password. Identity and group keys use the unencrypted
+mounted credential file; access to its volume can recover those secrets.
 
 No periodic advert is sent. `meshcore advert zero` reaches only local receivers;
 `meshcore advert flood` deliberately requests a network-wide flood.

@@ -58,9 +58,9 @@ remain usable for the current boot; check `contacts status` for save errors.
 Imports keep existing contacts and report skipped entries when full.
 
 The credential store holds provider keys and tokens. Secret values are not
-shown in Inbox, logs, autocomplete, agent tools, Python, or Lua. NVS is not
-encrypted in the current firmware, so physical flash access can reveal stored
-secrets. SSH keys, agent API keys, and other provider tokens keep their separate
+shown in Inbox, logs, autocomplete, agent tools, Python, or Lua. They are saved in
+`.settings/credentials.bin` on mounted storage. Existing NVS records migrate only
+after a checked file is committed. The file is not encrypted. SSH keys, agent API keys, and other provider tokens keep their separate
 stores.
 
 See `contacts` for the TUI and mutation commands. `chat` is the unified

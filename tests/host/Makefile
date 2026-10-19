@@ -42,7 +42,7 @@ TARGETS += tensor_image_test
 TARGETS += tensor_image_lua_test
 TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
-TARGETS += messaging_service_test irc_protocol_test gateway_config_test link_messaging_test
+TARGETS += messaging_service_test irc_protocol_test gateway_config_test link_messaging_test chat_settings_test
 TARGETS += nmea_test nmea_gnss_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
@@ -249,7 +249,8 @@ epd_ssd1677_test: epd_ssd1677_test.c $(ROOT)/src/drivers/epd_ssd1677.c $(ROOT)/s
 irc_protocol_test: irc_protocol_test.c $(ROOT)/src/services/solar_os_irc_protocol.c
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -I$(ROOT)/src/services $^ -o $@
 
-messaging_service_test gateway_config_test link_messaging_test: %: %.c $(ROOT)/src/services/solar_os_contacts.c \
+messaging_service_test gateway_config_test link_messaging_test chat_settings_test: %: %.c $(ROOT)/src/services/solar_os_contacts.c \
+        $(ROOT)/src/services/solar_os_saved_config.h $(ROOT)/src/services/solar_os_credentials.c \
         $(ROOT)/src/services/solar_os_link_messaging.c $(ROOT)/src/services/solar_os_link_messaging.h \
         $(ROOT)/src/services/solar_os_chat.c messaging_service_test.c \
         $(ROOT)/src/services/solar_os_messaging.c $(ROOT)/src/services/solar_os_messaging_registry.inc $(ROOT)/src/services/solar_os_messaging_types.c \
@@ -1037,6 +1038,7 @@ test: $(TARGETS)
 	./messaging_service_test
 	./gateway_config_test
 	./link_messaging_test
+	./chat_settings_test
 	./irc_protocol_test
 	./ble_service_test
 	./ble_multi_peer_test

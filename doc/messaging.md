@@ -80,6 +80,13 @@ verified file round trip; legacy keys remain intact when saving fails. IRC
 does not add NVS records. Its authentication settings are stored in its profile
 and excluded from status and scripting enumeration.
 
+Shared credentials, user radio profiles, and configured ESP-NOW peers use checked
+files in `.settings` on mounted storage. Each store pins its selected volume for
+the boot and recovers an interrupted replacement from a valid backup. Legacy NVS
+blobs remain until a valid file has been committed. New settings writes use files;
+there is no NVS fallback for mutations. Removing an instance also deletes its
+shared credential records, and boot recovery repeats that purge for retired IDs.
+
 `messages classes` lists registered classes; `messages instances` lists active
 instances. `messages add gateway NAME URL [TOKEN]` creates a disabled Gateway
 instance and `messages configure NAME URL [TOKEN]` changes its connection.
@@ -156,9 +163,8 @@ provider, kind, and label. Secret reads name one exact record and copy into a
 caller-provided buffer.
 
 Secret bytes are never published to Inbox, logs, autocomplete, native agent
-tools, Python, or Lua. Temporary secret buffers must be wiped. SolarOS
-currently stores NVS without flash encryption; physical flash access can
-therefore recover these records.
+tools, Python, or Lua. Temporary secret buffers must be wiped. The mounted
+credential file is unencrypted; access to its volume can recover these records.
 
 SSH keys, native-agent API keys, and existing tokens are not migrated into this
 service in this release.

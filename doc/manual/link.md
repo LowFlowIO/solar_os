@@ -115,7 +115,8 @@ espnow peer add 0x12345678 24:6f:28:11:22:33
 espnow peer remove 0x12345678
 ```
 
-There are 19 peer slots. Configured peers are stored in NVS; learned peers are
+There are 19 peer slots. Configured peers are stored in `.settings/espnow-peers.bin`
+on mounted storage; legacy NVS peers migrate after a verified save. Learned peers are
 volatile and the oldest learned entry is evicted when necessary. SolarOS
 rejects a learned mapping that conflicts with an existing source ID or MAC
 instead of silently redirecting traffic.

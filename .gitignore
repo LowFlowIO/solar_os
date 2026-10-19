@@ -77,3 +77,4 @@ tests/host/irc_protocol_test
 tests/host/gateway_config_test
 tests/host/messaging_service_test
 tests/host/link_messaging_test
+tests/host/chat_settings_test

@@ -18,6 +18,10 @@
 #include "solar_os_memory.h"
 #include "solar_os_contacts.h"
 #include "solar_os_storage.h"
+#include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_CREDENTIALS
+#include "solar_os_credentials.h"
+#endif
 
 #define MESSAGING_STORE_MAGIC 0x47534d53UL
 #define MESSAGING_STORE_VERSION 1U
@@ -2668,6 +2672,10 @@ static void messaging_archive_runtime(messaging_provider_node_t *node)
 static esp_err_t messaging_remove_history(solar_os_messaging_provider_id_t id)
 {
     esp_err_t error = solar_os_messaging_clear(id, NULL);
+#if SOLAR_OS_PACKAGE_SERVICE_CREDENTIALS
+    esp_err_t credentials_error = solar_os_credentials_remove_provider(id);
+    if (error == ESP_OK) error = credentials_error;
+#endif
     messaging_lock();
     for (size_t i = 0; i < messaging.conversation_count;) {
         solar_os_messaging_conversation_t *conversation = &messaging.conversations[i];

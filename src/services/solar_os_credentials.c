@@ -6,6 +6,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
+#include "solar_os_saved_config.h"
 #include "solar_os_memory.h"
 
 #define CREDENTIALS_NVS_NAMESPACE "credentials"
@@ -289,52 +290,25 @@ static void credentials_blob_to_runtime(
     credentials_store.count = blob->count;
 }
 
+static solar_os_saved_config_t credentials_file;
+static bool credentials_file_valid(const void *data, size_t length)
+{ return credentials_blob_valid(data, length); }
+
 static esp_err_t credentials_load(void)
 {
-    nvs_handle_t nvs;
-    esp_err_t error =
-        nvs_open(CREDENTIALS_NVS_NAMESPACE, NVS_READONLY, &nvs);
-    if (error != ESP_OK) {
-        return error;
-    }
     size_t length = sizeof(*credentials_store.scratch);
-    error = nvs_get_blob(nvs,
-                         CREDENTIALS_NVS_BLOB_KEY,
-                         credentials_store.scratch,
-                         &length);
-    nvs_close(nvs);
-    if (error != ESP_OK) {
-        return error;
-    }
-    if (!credentials_blob_valid(credentials_store.scratch, length)) {
-        solar_os_credentials_wipe(credentials_store.scratch,
-                                  sizeof(*credentials_store.scratch));
-        return ESP_ERR_INVALID_CRC;
-    }
-    credentials_blob_to_runtime(credentials_store.scratch);
-    solar_os_credentials_wipe(credentials_store.scratch,
-                              sizeof(*credentials_store.scratch));
-    return ESP_OK;
+    esp_err_t error = solar_os_saved_config_load(&credentials_file, "credentials",
+        CREDENTIALS_NVS_NAMESPACE, CREDENTIALS_NVS_BLOB_KEY, credentials_store.scratch,
+        sizeof(*credentials_store.scratch), &length, credentials_file_valid);
+    if (error == ESP_OK) credentials_blob_to_runtime(credentials_store.scratch);
+    solar_os_credentials_wipe(credentials_store.scratch, sizeof(*credentials_store.scratch));
+    return error;
 }
 
-static esp_err_t credentials_write_blob(
-    const credentials_store_blob_t *blob,
-    size_t length)
+static esp_err_t credentials_write_blob(const credentials_store_blob_t *blob, size_t length)
 {
-    nvs_handle_t nvs;
-    esp_err_t error =
-        nvs_open(CREDENTIALS_NVS_NAMESPACE, NVS_READWRITE, &nvs);
-    if (error != ESP_OK) {
-        return error;
-    }
-    error = nvs_set_blob(nvs,
-                         CREDENTIALS_NVS_BLOB_KEY,
-                         blob,
-                         length);
-    if (error == ESP_OK) {
-        error = nvs_commit(nvs);
-    }
-    nvs_close(nvs);
+    esp_err_t error = solar_os_saved_config_save(&credentials_file, "credentials", blob, length);
+    if (error == ESP_OK) solar_os_saved_config_erase_legacy(CREDENTIALS_NVS_NAMESPACE, CREDENTIALS_NVS_BLOB_KEY);
     return error;
 }
 
@@ -411,7 +385,7 @@ esp_err_t solar_os_credentials_init(void)
         credentials_store.storage_error = error;
     }
     credentials_store.initialized = true;
-    if (error == ESP_ERR_NVS_NOT_FOUND ||
+    if (error == ESP_ERR_NVS_NOT_FOUND || error == ESP_ERR_NOT_FOUND ||
         error == ESP_ERR_NVS_NOT_INITIALIZED) {
         (void)credentials_persist_current();
     }
@@ -611,6 +585,22 @@ esp_err_t solar_os_credentials_remove(solar_os_credential_id_t record_id)
     if (index < 0) {
         return ESP_ERR_NOT_FOUND;
     }
+    return credentials_persist_current();
+}
+
+esp_err_t solar_os_credentials_remove_provider(solar_os_messaging_provider_id_t provider)
+{
+    if (!credentials_provider_valid(provider)) return ESP_ERR_INVALID_ARG;
+    esp_err_t error = solar_os_credentials_init(); if (error != ESP_OK) return error;
+    credentials_lock();
+    for (size_t i = 0; i < SOLAR_OS_CREDENTIAL_CAPACITY; i++) {
+        credentials_slot_t *slot = &credentials_store.records[i];
+        if (!slot->active || slot->info.provider != provider) continue;
+        solar_os_credentials_wipe(slot, sizeof(*slot));
+        credentials_store.count--;
+    }
+    credentials_store.generation = credentials_next_generation(credentials_store.generation);
+    credentials_unlock();
     return credentials_persist_current();
 }
 

@@ -182,8 +182,9 @@ partition. The file contains unencrypted credentials and settings, so protect
 it like a password. `nvs restore` accepts only a complete backup for the current
 NVS partition address and size, verifies its CRC before changing flash, verifies
 the written partition again, and reboots. `nvs clear` erases the complete
-default NVS partition, including identity, Wi-Fi and BLE state, credentials,
-service settings, and radio profiles, then reboots. Files on SD or the internal
+default NVS partition, including identity, Wi-Fi and BLE state and remaining
+service settings, then reboots. Migrated Chat credentials, radio profiles, and
+ESP-NOW peers are files on mounted storage. Files on SD or the internal
 FAT filesystem are not affected.
 
 Sessions are foreground application state plus shell instances attached to a
