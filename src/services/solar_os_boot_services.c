@@ -33,6 +33,9 @@
 #include "solar_os_json.h"
 #endif
 #include "solar_os_log.h"
+#if SOLAR_OS_PACKAGE_SERVICE_MESHCORE_COMMON
+#include "solar_os_meshcore_instances.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_LINK && SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 #include "solar_os_link_messaging.h"
 #endif
@@ -190,6 +193,11 @@ void solar_os_boot_services_init(uint32_t now_ms)
 #if SOLAR_OS_PACKAGE_SERVICE_LINK && SOLAR_OS_PACKAGE_SERVICE_MESSAGING
     const esp_err_t link_chat_err = solar_os_link_messaging_init();
     if (link_chat_err != ESP_OK) SOLAR_OS_LOGW(TAG, "Link messaging unavailable: %s", esp_err_to_name(link_chat_err));
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_MESHCORE_COMMON
+    const esp_err_t meshcore_instances_err = solar_os_meshcore_instances_init();
+    if (meshcore_instances_err != ESP_OK) SOLAR_OS_LOGW(TAG, "MeshCore instances unavailable: %s", esp_err_to_name(meshcore_instances_err));
 #endif
 
 #if SOLAR_OS_PACKAGE_SERVICE_UART

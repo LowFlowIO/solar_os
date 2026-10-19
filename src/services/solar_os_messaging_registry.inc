@@ -344,6 +344,18 @@ static esp_err_t messaging_instance_acquire(solar_os_messaging_provider_id_t id,
 static void messaging_instance_release(messaging_provider_node_t *node)
 { messaging_lock(); node->operations--; messaging_unlock(); }
 
+esp_err_t solar_os_messaging_instance_retain(solar_os_messaging_provider_id_t id, void **lease)
+{
+    if (!lease) return ESP_ERR_INVALID_ARG;
+    *lease = NULL;
+    messaging_provider_node_t *node; const solar_os_messaging_provider_class_t *type; void *context;
+    esp_err_t error = messaging_instance_acquire(id, &node, &type, &context);
+    if (error == ESP_OK) *lease = node;
+    return error;
+}
+void solar_os_messaging_instance_release(void *lease)
+{ if (lease) messaging_instance_release(lease); }
+
 esp_err_t solar_os_messaging_instance_add(const char *class_name, const char *name,
     int argc, const char *const *argv, solar_os_messaging_provider_id_t *id)
 {
@@ -372,6 +384,7 @@ static esp_err_t messaging_operation_leased(solar_os_messaging_provider_id_t id,
 {
     if (!type) return ESP_ERR_NOT_SUPPORTED;
     esp_err_t error;
+    if (operation == 0 && type->join_open) return type->join_open(context, target, conversation);
     char normalized[SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX];
     if (type->normalize_target) {
         error = type->normalize_target(context, target, normalized, sizeof(normalized));

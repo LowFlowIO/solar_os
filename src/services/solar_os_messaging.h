@@ -57,6 +57,10 @@ typedef struct {
     uint32_t capabilities;
     bool connection_oriented;
     esp_err_t (*join)(void *context, const char *target);
+    /* Group backends can resolve/configure a subscription and return its
+     * canonical conversation instead of allocating a room before the call. */
+    esp_err_t (*join_open)(void *context, const char *target,
+                           solar_os_conversation_id_t *conversation);
     esp_err_t (*leave)(void *context, const char *target);
     esp_err_t (*direct_open)(void *context, const char *target,
                              solar_os_conversation_id_t *conversation);
@@ -190,6 +194,10 @@ esp_err_t solar_os_messaging_class_register(
 esp_err_t solar_os_messaging_instance_register(
     solar_os_messaging_provider_id_t id, const char *class_name,
     const char *name, void *context);
+/* Retain an instance during setup of another resource that refers to it.
+ * Removal refuses active leases. Release exactly once after successful retain. */
+esp_err_t solar_os_messaging_instance_retain(solar_os_messaging_provider_id_t id, void **lease);
+void solar_os_messaging_instance_release(void *lease);
 /* Cursor is an instance ID, initially zero. No caller-sized provider array. */
 bool solar_os_messaging_provider_next(solar_os_messaging_provider_id_t *cursor,
     solar_os_messaging_provider_status_t *status);

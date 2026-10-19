@@ -34,7 +34,10 @@ registry rather than protocol enums or fixed provider arrays. Several IRC and
 Gateway instances can run simultaneously, with independent transport state,
 room membership, queues, and reconnect handling. Link projections bind separate
 instances to named Link transports, each with its own send and acknowledgement
-tracker. Hardware transport workers retain their resource ownership rules.
+tracker. MeshCore instances carry separate local-radio or BLE-companion runtime
+contexts. Each MeshCore job maintains all enabled bindings of its transport type;
+both jobs can run concurrently. Duplicate physical-radio or companion bindings
+are rejected. Hardware transport workers retain their resource ownership rules.
 
 The original IDs retain their meaning as default instances:
 
@@ -54,6 +57,8 @@ The existing history record layout remains compatible.
 
 Classes expose optional create, configure, join, leave, direct-open, connect, and target
 normalization operations. Messaging dispatches them outside its global lock.
+Group backends can resolve a subscription and return its canonical conversation
+through `join_open`, so membership does not allocate a placeholder room.
 Chat and scripts consume common membership states: none, left, pending, joined,
 and failed with a bounded reason. Class descriptors have static lifetime;
 instance contexts are leased until each operation finishes. Removal is refused

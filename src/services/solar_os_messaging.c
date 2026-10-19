@@ -228,6 +228,11 @@ static messaging_provider_node_t *messaging_provider_node_locked(
     return NULL;
 }
 static void messaging_profiles_restore(void);
+static bool messaging_provider_class_locked(solar_os_messaging_provider_id_t id, const char *name)
+{
+    messaging_provider_node_t *node = messaging_provider_node_locked(id);
+    return node && strcmp(node->status.class_name, name) == 0;
+}
 static esp_err_t messaging_remove_history(solar_os_messaging_provider_id_t id);
 
 static int messaging_conversation_index_locked(
@@ -835,7 +840,7 @@ static void messaging_restore_record_locked(
                 sizeof(slot->message.error));
     }
     const int restored_index = messaging_conversation_id_index_locked(conversation_id);
-    if (restored_index >= 0 && record->message.provider == SOLAR_OS_MESSAGING_PROVIDER_MESHCORE &&
+    if (restored_index >= 0 && messaging_provider_class_locked(record->message.provider, "meshcore") &&
         record->conversation_kind == SOLAR_OS_CONVERSATION_GROUP) {
         messaging.conversations[restored_index].history_only = true;
     }
@@ -1024,14 +1029,16 @@ static void messaging_restore_inbox(void)
         solar_os_messaging_conversation_upsert_t conversation_request = {
             .provider = provider,
             .provider_key = provider_key,
-            .kind = provider > SOLAR_OS_MESSAGING_PROVIDER_LINK ?
-                ((provider_key[0] == '#' || provider_key[0] == '&') ?
-                    SOLAR_OS_CONVERSATION_ROOM : SOLAR_OS_CONVERSATION_DIRECT) :
-                provider == SOLAR_OS_MESSAGING_PROVIDER_GATEWAY ?
+            .kind = messaging_provider_class_locked(provider, "gateway") ?
                     SOLAR_OS_CONVERSATION_ROOM :
-                provider == SOLAR_OS_MESSAGING_PROVIDER_LINK &&
+                messaging_provider_class_locked(provider, "meshcore") &&
+                    (!strncmp(provider_key, "group:", 6) || !strncmp(provider_key, "ble-group:", 10)) ?
+                    SOLAR_OS_CONVERSATION_GROUP :
+                messaging_provider_class_locked(provider, "link") &&
                     strncmp(provider_key, "b:", 2U) == 0 ?
                     SOLAR_OS_CONVERSATION_BROADCAST :
+                messaging_provider_class_locked(provider, "irc") &&
+                    (provider_key[0] == '#' || provider_key[0] == '&') ? SOLAR_OS_CONVERSATION_ROOM :
                     SOLAR_OS_CONVERSATION_DIRECT,
             .title = provider_key,
         };
@@ -1039,6 +1046,10 @@ static void messaging_restore_inbox(void)
             messaging_upsert_conversation_locked(&conversation_request, false);
         if (conversation_id == SOLAR_OS_CONVERSATION_ID_NONE) {
             continue;
+        }
+        if (conversation_request.kind == SOLAR_OS_CONVERSATION_GROUP && messaging_provider_class_locked(provider, "meshcore")) {
+            int index = messaging_conversation_id_index_locked(conversation_id);
+            if (index >= 0) messaging.conversations[index].history_only = true;
         }
         messaging_message_slot_t *slot =
             &messaging.messages[messaging.message_head];
@@ -1459,7 +1470,7 @@ void solar_os_messaging_conversation_label(
 {
     if (conversation == NULL || label == NULL || capacity == 0U) return;
     const char *transport = "";
-    if (conversation->provider == SOLAR_OS_MESSAGING_PROVIDER_MESHCORE &&
+    if (solar_os_messaging_provider_is_class(conversation->provider, "meshcore") &&
         conversation->kind == SOLAR_OS_CONVERSATION_GROUP) {
         if (strncmp(conversation->provider_key, "ble-group:", 10U) == 0) transport = " [companion]";
         else if (strncmp(conversation->provider_key, "group:", 6U) == 0) transport = " [radio]";
@@ -1586,6 +1597,8 @@ esp_err_t solar_os_messaging_direct_open(
             pass == 0 ? SOLAR_OS_CONTACT_TRUST_TRUSTED :
                         SOLAR_OS_CONTACT_TRUST_DISCOVERED;
         for (size_t i = 0; i < count; i++) {
+            solar_os_messaging_provider_status_t provider;
+            if (solar_os_messaging_provider_get_status(endpoints[i].provider, &provider) != ESP_OK || provider.removed) continue;
             if (endpoints[i].trust == desired &&
                 (endpoints[i].capabilities & SOLAR_OS_ENDPOINT_CAP_DIRECT) != 0) {
                 selected = &endpoints[i];
@@ -1603,7 +1616,7 @@ esp_err_t solar_os_messaging_direct_open(
              "direct:%" PRIu32,
              selected->id);
     uint32_t security_flags = 0;
-    if (selected->provider == SOLAR_OS_MESSAGING_PROVIDER_MESHCORE) {
+    if (solar_os_messaging_provider_is_class(selected->provider, "meshcore")) {
         security_flags |= SOLAR_OS_SECURITY_ENCRYPTED |
             SOLAR_OS_SECURITY_PEER_KEY_KNOWN;
     }

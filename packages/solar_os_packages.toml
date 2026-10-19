@@ -1536,9 +1536,17 @@ sources = [
 ]
 requires = ["esp_hw_support"]
 
+[packages.service_meshcore_common]
+label = "service.meshcore-common"
+depends = ["service_contacts", "service_messaging"]
+sources = ["services/solar_os_meshcore_instances.c"]
+requires = ["nvs_flash"]
+capabilities = ["psram"]
+
 [packages.service_meshcore]
 label = "service.meshcore"
 depends = [
+  "service_meshcore_common",
   "service_contacts",
   "service_credentials",
   "service_link",
@@ -1580,7 +1588,7 @@ any_capabilities = ["expansion_spi", "expansion_gpio", "expansion_uart"]
 
 [packages.service_meshcore_ble]
 label = "service.meshcore-ble"
-depends = ["service_ble", "service_contacts", "service_messaging"]
+depends = ["service_ble", "service_contacts", "service_messaging", "service_meshcore_common"]
 sources = [
   "services/solar_os_meshcore_ble.c",
   "services/solar_os_meshcore_ble_protocol.c",
