@@ -187,6 +187,7 @@ static const char *chat_provider_state_name(
     }
     if (status.removed) return "removed";
     if (status.connection_oriented) {
+        if (status.last_error != ESP_OK) return "error";
         return status.connected ? "connected" :
             (status.running ? "connecting" : "disconnected");
     }
@@ -197,6 +198,23 @@ static const char *chat_provider_state_name(
         return "error";
     }
     return status.connected ? "ready" : "starting";
+}
+
+static const char *chat_status_text(uint8_t channel_index,
+                                   char *error_text, size_t error_size)
+{
+    if (channel_index < chat_app.channel_count &&
+        !chat_app.channels[channel_index].system) {
+        solar_os_messaging_provider_status_t provider;
+        if (solar_os_messaging_provider_get_status(
+                chat_app.channels[channel_index].provider, &provider) == ESP_OK &&
+            provider.last_error != ESP_OK) {
+            strlcpy(error_text, provider.detail[0] ? provider.detail :
+                esp_err_to_name(provider.last_error), error_size);
+            return error_text;
+        }
+    }
+    return chat_app.status;
 }
 
 static void chat_set_status(const char *status)
@@ -1312,6 +1330,9 @@ static void chat_draw_messages(size_t start_row,
 
 static void chat_draw_input(size_t rows, size_t cols)
 {
+    char error_text[CHAT_APP_STATUS_MAX];
+    const char *status = chat_status_text(chat_app.current_channel,
+                                          error_text, sizeof(error_text));
     const size_t help_rows = solar_os_tui_screen_bottom_rows(&chat_app.tui, 1U);
     const size_t input_rows = CHAT_APP_INPUT_ROWS - 1U + help_rows;
     if (rows < input_rows) {
@@ -1324,15 +1345,15 @@ static void chat_draw_input(size_t rows, size_t cols)
     solar_os_tui_set_cursor_visible(&chat_app.tui, false);
     solar_os_tui_hline(&chat_app.tui, sep_row, 0, cols, 0, SOLAR_OS_TUI_ATTR_NORMAL);
     if (solar_os_tui_screen_fullscreen(&chat_app.tui)) {
-        if (chat_app.status[0] != '\0') {
+        if (status[0] != '\0') {
             solar_os_tui_write_cell(&chat_app.tui, sep_row, 0U, cols,
-                                    chat_app.status,
+                                    status,
                                     SOLAR_OS_TUI_ATTR_INVERSE);
         }
     } else {
         solar_os_tui_draw_help(
             &chat_app.tui,
-            chat_app.status[0] != '\0' ? chat_app.status :
+            status[0] != '\0' ? status :
                 "TAB channels  ENTER send  /help commands  ESC exits");
     }
 
@@ -1370,7 +1391,10 @@ static void chat_draw_channel_footer(size_t rows, size_t cols)
         return;
     }
     solar_os_tui_set_cursor_visible(&chat_app.tui, false);
-    solar_os_tui_draw_footer(&chat_app.tui, chat_app.status,
+    char error_text[CHAT_APP_STATUS_MAX];
+    const char *status = chat_status_text(chat_app.selected_channel,
+                                          error_text, sizeof(error_text));
+    solar_os_tui_draw_footer(&chat_app.tui, status,
                              "UP/DOWN select  ENTER join/open  TAB chat  ESC exits");
 }
 
@@ -1547,9 +1571,11 @@ static void chat_show_status(void)
     solar_os_messaging_provider_status_t provider_status;
     while (solar_os_messaging_provider_next(&provider, &provider_status)) {
         {
-            chat_append_statusf("%s: %s",
+            chat_append_statusf("%s: %s%s%s",
                                 provider_status.name,
-                                chat_provider_state_name(provider));
+                                chat_provider_state_name(provider),
+                                provider_status.detail[0] ? ", " : "",
+                                provider_status.detail);
         }
     }
 }

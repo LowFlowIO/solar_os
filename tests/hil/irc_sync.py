@@ -248,9 +248,14 @@ def main():
         # Exercise Chat's actual setup parser with spaces, backslashes and
         # both kinds of quote in the password. The server checks exact bytes.
         console.command("setterm profile ansi")
-        console.serial.write(b"chat\r")
-        console.wait_for("Channels")
-        console.serial.write(("\t/sasl hil-irc-b hil-account " + json.dumps(HIL_PASSWORD) + "\r").encode())
+        output = console.command("messages join hil-irc-b #same")
+        failed_room = int(re.search(r"conversation (\d+)", output)[1])
+        console.serial.write(f"chat {failed_room}\r".encode())
+        view = console.wait_for("Channels")
+        if "Invalid credentials" not in view:
+            view += console.wait_for("Invalid credentials")
+        assert "error" in view, view
+        console.serial.write(("/sasl hil-irc-b hil-account " + json.dumps(HIL_PASSWORD) + "\r").encode())
         b.wait(lambda: any(event[1] == "CAP END" for event in b.events))
         console.collect(1)
         console.serial.write(b"\x1d")
