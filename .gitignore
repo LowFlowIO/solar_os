@@ -76,3 +76,4 @@ tests/host/indexed_raster_test
 tests/host/irc_protocol_test
 tests/host/gateway_config_test
 tests/host/messaging_service_test
+tests/host/link_messaging_test

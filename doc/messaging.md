@@ -32,8 +32,9 @@ instances carry stable numeric IDs, names, configuration, status, and runtime
 contexts. Classes and instances register at runtime; enumeration follows the
 registry rather than protocol enums or fixed provider arrays. Several IRC and
 Gateway instances can run simultaneously, with independent transport state,
-room membership, queues, and reconnect handling. Existing radio workers retain
-their default instances and resource ownership rules.
+room membership, queues, and reconnect handling. Link projections bind separate
+instances to named Link transports, each with its own send and acknowledgement
+tracker. Hardware transport workers retain their resource ownership rules.
 
 The original IDs retain their meaning as default instances:
 
@@ -87,6 +88,18 @@ for its lifecycle. Chat exposes the same settings through `/add gateway NAME URL
 [TOKEN]` and `/configure NAME URL [TOKEN]`. Configuration commands are omitted
 from shell and Chat input history. `gateway` commands address the default Gateway.
 `job start gateway-sync` maintains all enabled Gateway instances.
+
+`messages add link NAME TRANSPORT` binds a Chat instance to a named Link
+transport; two Chat instances cannot bind the same transport. Its transport job
+must run with `chat=on`. `messages connect NAME` enables the projection and
+`messages join NAME broadcast` selects its broadcast conversation. Direct
+targets use hexadecimal device IDs with `messages query NAME DEVICE_ID`.
+`messages configure NAME TRANSPORT` changes the binding. Removal detaches only
+that Chat projection and deletes its history; a shared transport and its byte
+streams continue running. Legacy `chat=on` starts reuse the saved projection for
+that transport, or allocate one when no binding exists. The first legacy
+projection uses default ID 3 when available. Bindings and enabled state are
+saved in mounted storage.
 
 Native IRC provides live TLS sessions with optional SASL, channels, private
 messages, reconnect/rejoin, bounded buffers, and paced sends. It requests no

@@ -20,9 +20,15 @@ from the shell. See [Native IRC](messaging.irc.md).
 `messages remove INSTANCE` (name or ID), or `/remove INSTANCE` in Chat, removes
 a configurable provider instance. It closes the connection, stops retries,
 cancels queued sends, and removes the saved connection settings and credentials.
-Local messages, conversations, and associated Inbox notifications are deleted. Built-in `gateway`,
-`meshcore`, and `link` instances cannot be removed; disconnect their transports
-instead. Removal requires writable mounted storage.
+Local messages, conversations, and associated Inbox notifications are deleted.
+Gateway and Link support removing their default instances too. MeshCore removal
+requires backend lifecycle support. Removal requires writable mounted storage.
+
+`messages classes` lists provider classes; `messages instances` lists configured
+connections. `messages add gateway NAME URL [TOKEN]` creates a Gateway connection.
+`messages add link NAME TRANSPORT` creates a Link projection. Enable it with
+`messages connect NAME`, and run the corresponding transport job. Chat accepts
+the same arguments after `/add`, and changes settings with `/configure NAME ...`.
 
 A small record containing only the retired instance ID, name, and class stays
 on mounted storage. Retired IDs are never reused, so contacts and retained

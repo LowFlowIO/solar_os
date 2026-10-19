@@ -66,6 +66,20 @@ Its capacity does not limit Chat delivery. `chat=on` and `inbox=on` are mutually
 exclusive because generic messaging already publishes received Chat messages to
 Inbox.
 
+Each named transport has an independent Chat instance. For example, a radio
+link and an ESP-NOW link can run together with `chat=on`; their contacts,
+conversations, send queues, and acknowledgements stay separate. The first legacy
+projection uses `link`; further projections receive names such as `link-link1`.
+Use `messages instances` to see their names and IDs.
+
+To choose a name before starting its transport, use `messages add link NAME
+TRANSPORT`, then `messages connect NAME`. `messages join NAME broadcast` opens
+the broadcast conversation; `messages query NAME HEX_DEVICE_ID` opens a direct
+conversation. `messages configure NAME TRANSPORT` changes the transport binding.
+Only one Chat instance can bind each transport. Bindings and enabled state are
+saved on mounted storage. `messages remove NAME` deletes that projection and its
+local history while keeping the transport and byte streams running.
+
 ## ESP-NOW Quick Start
 
 Start the ESP-NOW adapter on two SolarOS devices using the same channel:
