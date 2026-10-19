@@ -163,6 +163,8 @@ static void stop_instance(meshcore_instance_t *node)
     node->active = false; node->retry_at = 0; node->retry_delay = 1000;
     selected_instance = previous;
 }
+void solar_os_meshcore_current_pause(void)
+{ if (selected_instance) stop_instance(selected_instance); }
 
 static esp_err_t connect_instance(void *context, bool enabled)
 {
@@ -206,7 +208,6 @@ static esp_err_t join_instance(void *context, const char *target, solar_os_conve
     xSemaphoreTake(meshcore_instances.edit, portMAX_DELAY); workers_lock();
     const solar_os_meshcore_backend_t *ops = meshcore_instances.backends[node->config.backend];
     meshcore_instance_t *previous = selected_instance; selected_instance = node;
-    if (node->config.backend == 1) stop_instance(node);
     esp_err_t error = ops && ops->join ? ops->join(target, conversation) : ESP_ERR_NOT_SUPPORTED;
     selected_instance = previous;
     workers_unlock(); xSemaphoreGive(meshcore_instances.edit); return error;
@@ -249,7 +250,9 @@ static esp_err_t direct_instance(void *context, const char *target, solar_os_con
     char address[SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX];
     snprintf(address, sizeof(address), "direct:%" PRIu32, endpoint_id);
     solar_os_messaging_conversation_upsert_t request = {.provider = node->id, .provider_key = address,
-        .kind = SOLAR_OS_CONVERSATION_DIRECT, .title = title, .contact_id = contact, .endpoint_id = endpoint_id};
+        .kind = SOLAR_OS_CONVERSATION_DIRECT, .title = title, .contact_id = contact, .endpoint_id = endpoint_id,
+        .security_flags = SOLAR_OS_SECURITY_ENCRYPTED | SOLAR_OS_SECURITY_PEER_KEY_KNOWN |
+            (endpoint.trust == SOLAR_OS_CONTACT_TRUST_TRUSTED ? SOLAR_OS_SECURITY_PEER_TRUSTED : 0)};
     return solar_os_messaging_conversation_upsert(&request, conversation);
 }
 

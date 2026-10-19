@@ -2371,12 +2371,14 @@ static esp_err_t radio_instance_join(const char *target, solar_os_conversation_i
             solar_os_messaging_conversation_upsert_t request{};
             request.provider = solar_os_meshcore_current_id(); request.provider_key = key;
             request.kind = SOLAR_OS_CONVERSATION_GROUP; request.title = channels[i].name; request.group_ref = channels[i].id;
-            request.security_flags = SOLAR_OS_SECURITY_ENCRYPTED | SOLAR_OS_SECURITY_SENDER_UNVERIFIED;
+            request.security_flags = SOLAR_OS_SECURITY_ENCRYPTED | SOLAR_OS_SECURITY_SHARED_KEY | SOLAR_OS_SECURITY_SENDER_UNVERIFIED;
             error = solar_os_messaging_conversation_upsert(&request, conversation);
-            if (error == ESP_OK) (void)solar_os_messaging_join_update(request.provider, key, SOLAR_OS_MESSAGING_JOIN_PENDING, nullptr);
+            if (error == ESP_OK) (void)solar_os_messaging_join_update(request.provider, key,
+                service.status.running ? SOLAR_OS_MESSAGING_JOIN_JOINED : SOLAR_OS_MESSAGING_JOIN_PENDING, nullptr);
             return error;
         }
         if (attempt) break;
+        solar_os_meshcore_current_pause();
         error = !strcmp(target, SOLAR_OS_MESHCORE_PUBLIC_GROUP) ? solar_os_meshcore_channel_public_set(true) :
             target[0] == '#' ? solar_os_meshcore_channel_add(target, nullptr) : ESP_ERR_NOT_FOUND;
         if (error != ESP_OK) return error;

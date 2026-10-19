@@ -36,6 +36,9 @@ void solar_os_meshcore_current_state_free(unsigned kind);
 esp_err_t solar_os_meshcore_current_config(solar_os_meshcore_instance_config_t *config);
 esp_err_t solar_os_meshcore_current_name_set(const char *name);
 esp_err_t solar_os_meshcore_current_public_set(bool enabled);
+/* Backend subscription edits can pause their own runtime while its manager
+ * scope is held. The manager restarts it when the saved binding is enabled. */
+void solar_os_meshcore_current_pause(void);
 
 /* Legacy APIs acquire the default instance; nested calls in an existing scope
  * reuse it. The returned lease must be ended on every exit path. */

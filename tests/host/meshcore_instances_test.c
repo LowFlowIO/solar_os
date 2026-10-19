@@ -112,8 +112,10 @@ int main(void)
     solar_os_meshcore_instances_poll(1); solar_os_meshcore_instances_poll(2);
     assert(polls[a] == 1 && polls[b] == 1 && polls[companion] == 1);
     solar_os_conversation_id_t room_a, room_b;
+    unsigned previous_stops = stops;
     assert(solar_os_messaging_join(a, "same-group", &room_a) == ESP_OK);
     assert(solar_os_messaging_join(b, "same-group", &room_b) == ESP_OK && room_a != room_b);
+    assert(solar_os_messaging_join(a, "same-group", &room_a) == ESP_OK && stops == previous_stops);
     const char *peer_key = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     solar_os_conversation_id_t direct_a, direct_b;
     assert(solar_os_messaging_open_direct(a, peer_key, &direct_a) == ESP_OK);

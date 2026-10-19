@@ -451,7 +451,8 @@ static esp_err_t direct_instance(void *context, const char *target, solar_os_con
     char key[SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX];
     snprintf(key, sizeof(key), "direct:%" PRIu32, endpoint_id);
     solar_os_messaging_conversation_upsert_t request = {.provider = state->provider, .provider_key = key,
-        .kind = SOLAR_OS_CONVERSATION_DIRECT, .title = target, .contact_id = contact, .endpoint_id = endpoint_id};
+        .kind = SOLAR_OS_CONVERSATION_DIRECT, .title = target, .contact_id = contact, .endpoint_id = endpoint_id,
+        .security_flags = endpoint.trust == SOLAR_OS_CONTACT_TRUST_TRUSTED ? SOLAR_OS_SECURITY_PEER_TRUSTED : 0};
     return solar_os_messaging_conversation_upsert(&request, conversation);
 }
 
