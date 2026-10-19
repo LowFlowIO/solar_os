@@ -9,6 +9,14 @@ packages_any = ["service_contacts", "service_credentials"]
 +++
 # Messaging identities and security
 
+Provider classes describe protocols; named instances describe individual
+connections. Multiple IRC instances can share a class while keeping server
+settings, rooms, nicknames, and message routing separate. Chat groups by
+instance and accepts `chat INSTANCE`, `chat CLASS`, or a conversation ID.
+Use `/join INSTANCE TARGET`, `/query INSTANCE NICK`, and `/leave` in Chat,
+or `messages join|query INSTANCE TARGET` and `messages leave CONVERSATION_ID`
+from the shell. See [Native IRC](messaging.irc.md).
+
 SolarOS separates messaging identity from transport. A contact is one local
 address-book entry, while each gateway, MeshCore, or SolarOS Link address is an
 endpoint with its own trust and capabilities. Linking endpoints does not copy

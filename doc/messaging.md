@@ -25,15 +25,51 @@ Zero is the invalid value for every identifier. Public snapshot and visitor
 APIs copy records while holding the owning service lock, release the lock, and
 only then invoke callers or perform I/O.
 
-## Providers
+## Provider classes and instances
 
-The assigned provider identifiers are:
+A provider class supplies protocol capabilities and operations. Independent
+instances carry stable numeric IDs, names, configuration, status, and runtime
+contexts. Classes and instances register at runtime; enumeration follows the
+registry rather than protocol enums or fixed provider arrays. Several IRC
+instances can run simultaneously. Gateway and existing radio workers retain
+their default instances and resource ownership rules.
 
-| ID | Name | Purpose |
+The original IDs retain their meaning as default instances:
+
+| Instance ID | Name | Purpose |
 | --- | --- | --- |
 | 1 | `gateway` | Existing SolarOS gateway Chat protocol |
 | 2 | `meshcore` | MeshCore companion/chat provider |
 | 3 | `link` | SolarOS Link text, direct, and broadcast projection |
+
+Additional instance IDs are allocated from 4 through 255, preserving the
+byte-sized identity field in existing Contacts and Credentials files. This
+identity-space bound is independent of the number of protocol classes;
+runtime memory admission still limits active connections. Conversation keys,
+contact endpoints, events, and outbound requests reference an instance, so
+matching channel names or nicknames on different connections remain separate.
+The existing history record layout remains compatible.
+
+Classes expose optional join, leave, direct-open, connect, and target
+normalization operations. Messaging dispatches them outside its global lock.
+Chat and scripts consume common membership states: none, left, pending, joined,
+and failed with a bounded reason. Class descriptors have static lifetime;
+instance contexts stay valid for the registry lifetime. Runtime nodes are not
+reused while callers or retained history can refer to them.
+
+Saved connection profiles use checked, versioned files in `.chat/profiles` on
+mounted storage. The selected volume remains fixed during a boot. Temporary
+files are verified before replacement and an interrupted replacement can
+recover its backup. Gateway configuration migrates from NVS only after a
+verified file round trip; legacy keys remain intact when saving fails. IRC
+does not add NVS records. Its authentication settings are stored in its profile
+and excluded from status and scripting enumeration.
+
+Native IRC provides live TLS sessions with optional SASL, channels, private
+messages, reconnect/rejoin, bounded buffers, and paced sends. It requests no
+history or echo-message capabilities. A completed socket write becomes `sent`,
+without a recipient-delivery claim. Interrupted sends fail without automatic
+replay. See `manual/messaging.irc.md` for setup and controls.
 
 A provider owns transport configuration, connection state, wire identifiers,
 and provider-specific metadata. Generic services own contacts, trust,

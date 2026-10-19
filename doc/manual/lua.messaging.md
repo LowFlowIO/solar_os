@@ -28,6 +28,15 @@ Blocked direct endpoints are always rejected; discovered endpoints require the
 optional boolean for that one send. `solaros.contacts` returns only contact
 summaries and endpoint IDs, never credentials or endpoint secret material.
 
+`solaros.messages.instances()` lists instance IDs, names, provider classes,
+capabilities, and connection status without authentication secrets. Use
+`messages.join(instance_id, channel)`, `messages.query(instance_id, nickname)`,
+`messages.leave(conversation_id)`, and `messages.connect(instance_id, enabled)`
+on that same submodule. Join and query return a conversation ID. Connection
+settings are saved; the provider job must also be running.
+
+Conversation summaries include `instance_id`, `provider_class`, `join_state`
+(0 none, 1 left, 2 joining, 3 joined, 4 failed), and `join_error`.
 Conversation summaries include the raw `title`, a display `label` that identifies
 MeshCore group transports, and `history_only`. History-only conversations are
 readable but reject sends.

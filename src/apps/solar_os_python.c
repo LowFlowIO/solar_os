@@ -7346,6 +7346,12 @@ static mp_obj_t python_conversation_to_dict(
     solar_os_messaging_conversation_label(conversation, label, sizeof(label));
     python_dict_store_cstr(dict, "label", label);
     python_dict_store_bool(dict, "history_only", conversation->history_only);
+    python_dict_store_uint(dict, "instance_id", conversation->provider);
+    solar_os_messaging_provider_status_t provider;
+    if (solar_os_messaging_provider_get_status(conversation->provider, &provider) == ESP_OK)
+        python_dict_store_cstr(dict, "provider_class", provider.class_name);
+    python_dict_store_uint(dict, "join_state", conversation->join_state);
+    python_dict_store_cstr(dict, "join_error", conversation->join_error);
     python_dict_store_uint(dict, "contact_id", conversation->contact_id);
     python_dict_store_uint(dict, "endpoint_id", conversation->endpoint_id);
     python_dict_store_uint(dict, "group_ref", conversation->group_ref);
@@ -7358,6 +7364,50 @@ static mp_obj_t python_conversation_to_dict(
                            conversation->security_flags);
     return dict;
 }
+
+static mp_obj_t solaros_messages_instances(void)
+{
+    mp_obj_t list = mp_obj_new_list(0, NULL);
+    solar_os_messaging_provider_id_t cursor = 0;
+    solar_os_messaging_provider_status_t status;
+    while (solar_os_messaging_provider_next(&cursor, &status)) {
+        mp_obj_t item = mp_obj_new_dict(8);
+        python_dict_store_uint(item, "id", cursor);
+        python_dict_store_cstr(item, "name", status.name);
+        python_dict_store_cstr(item, "class", status.class_name);
+        python_dict_store_bool(item, "running", status.running);
+        python_dict_store_bool(item, "connected", status.connected);
+        python_dict_store_uint(item, "capabilities", status.capabilities);
+        python_dict_store_cstr(item, "detail", status.detail);
+        mp_obj_list_append(list, item);
+    }
+    return list;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_messages_instances_obj, solaros_messages_instances);
+static mp_obj_t solaros_messages_join(mp_obj_t instance, mp_obj_t target)
+{
+    solar_os_conversation_id_t conversation;
+    python_check_esp(solar_os_messaging_join(python_u32_from_obj(instance), mp_obj_str_get_str(target), &conversation));
+    return mp_obj_new_int_from_uint(conversation);
+}
+MP_DEFINE_CONST_FUN_OBJ_2(solaros_messages_join_obj, solaros_messages_join);
+static mp_obj_t solaros_messages_query(mp_obj_t instance, mp_obj_t target)
+{
+    solar_os_conversation_id_t conversation;
+    python_check_esp(solar_os_messaging_open_direct(python_u32_from_obj(instance), mp_obj_str_get_str(target), &conversation));
+    return mp_obj_new_int_from_uint(conversation);
+}
+MP_DEFINE_CONST_FUN_OBJ_2(solaros_messages_query_obj, solaros_messages_query);
+static mp_obj_t solaros_messages_leave(mp_obj_t conversation)
+{
+    python_check_esp(solar_os_messaging_leave(python_u32_from_obj(conversation))); return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_messages_leave_obj, solaros_messages_leave);
+static mp_obj_t solaros_messages_connect(mp_obj_t instance, mp_obj_t enabled)
+{
+    python_check_esp(solar_os_messaging_connect(python_u32_from_obj(instance), mp_obj_is_true(enabled))); return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_2(solaros_messages_connect_obj, solaros_messages_connect);
 
 static mp_obj_t solaros_messages_conversations(void)
 {

@@ -105,8 +105,7 @@ static uint32_t credentials_next_generation(uint32_t generation)
 static bool credentials_provider_valid(
     solar_os_messaging_provider_id_t provider)
 {
-    return provider >= SOLAR_OS_MESSAGING_PROVIDER_GATEWAY &&
-        provider <= SOLAR_OS_MESSAGING_PROVIDER_LINK;
+    return provider != 0 && provider <= SOLAR_OS_MESSAGING_INSTANCE_ID_MAX;
 }
 
 static bool credentials_kind_valid(solar_os_credential_kind_t kind)

@@ -20,9 +20,11 @@
 #define CHAT_EVENT_WAIT_POLL_MS 20U
 
 typedef struct {
+    uint32_t version;
     bool enabled;
     char url[SOLAR_OS_CHAT_URL_MAX];
     char token[SOLAR_OS_CHAT_TOKEN_MAX];
+    char channels[SOLAR_OS_CHAT_CHANNEL_CAPACITY][SOLAR_OS_CHAT_CHANNEL_MAX];
 } solar_os_chat_saved_config_t;
 
 typedef struct {
@@ -51,6 +53,7 @@ typedef struct {
     solar_os_chat_channel_t channels[SOLAR_OS_CHAT_CHANNEL_CAPACITY];
     size_t channel_count;
     SemaphoreHandle_t lock;
+    SemaphoreHandle_t edit_lock;
 } solar_os_chat_store_state_t;
 
 static EXT_RAM_BSS_ATTR solar_os_chat_store_state_t chat;
@@ -81,7 +84,7 @@ static bool chat_string_is_valid(const char *text,
     if (text == NULL) {
         return allow_empty;
     }
-    const size_t len = strlen(text);
+    const size_t len = strnlen(text, max_len);
     if ((!allow_empty && len == 0) || len >= max_len) {
         return false;
     }
@@ -207,6 +210,10 @@ static esp_err_t chat_queue_command_locked(solar_os_chat_command_type_t type,
 
 static void chat_snapshot_config_locked(solar_os_chat_saved_config_t *config)
 {
+    memset(config, 0, sizeof(*config)); config->version = 1;
+    size_t desired = 0;
+    for (size_t i = 0; i < chat.channel_count; i++)
+        if (chat.channels[i].desired) strlcpy(config->channels[desired++], chat.channels[i].name, sizeof(config->channels[0]));
     config->enabled = chat.enabled;
     strlcpy(config->url, chat.url, sizeof(config->url));
     strlcpy(config->token, chat.token, sizeof(config->token));
@@ -214,73 +221,95 @@ static void chat_snapshot_config_locked(solar_os_chat_saved_config_t *config)
 
 static esp_err_t chat_save_config(const solar_os_chat_saved_config_t *config)
 {
-    nvs_handle_t nvs;
-    esp_err_t error =
-        nvs_open(CHAT_NVS_NAMESPACE, NVS_READWRITE, &nvs);
-    if (error != ESP_OK) {
-        return error;
-    }
-    error = nvs_set_str(nvs, CHAT_NVS_URL_KEY, config->url);
-    if (error == ESP_OK) {
-        error = nvs_set_str(nvs, CHAT_NVS_TOKEN_KEY, config->token);
-    }
-    if (error == ESP_OK) {
-        error = nvs_set_u8(nvs,
-                           CHAT_NVS_ENABLED_KEY,
-                           config->enabled ? 1U : 0U);
-    }
-    if (error == ESP_OK) {
-        error = nvs_commit(nvs);
-    }
-    nvs_close(nvs);
-    return error;
+    return solar_os_messaging_profile_save(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, config, sizeof(*config));
 }
 
-static void chat_remove_legacy_user_config(void)
+static bool chat_saved_config_valid(const solar_os_chat_saved_config_t *config)
+{
+    if (config->version != 1 || !chat_string_is_valid(config->url, sizeof(config->url), false) || !chat_url_is_valid(config->url) ||
+        !chat_string_is_valid(config->token, sizeof(config->token), true)) return false;
+    for (size_t i = 0; i < SOLAR_OS_CHAT_CHANNEL_CAPACITY; i++)
+        if (!chat_string_is_valid(config->channels[i], sizeof(config->channels[i]), true)) return false;
+    return true;
+}
+
+static void chat_apply_saved_config(const solar_os_chat_saved_config_t *config)
+{
+    strlcpy(chat.url, config->url, sizeof(chat.url));
+    strlcpy(chat.token, config->token, sizeof(chat.token));
+    chat.configured = true; chat.enabled = config->enabled; chat.config_revision = 1;
+    for (size_t i = 0; i < SOLAR_OS_CHAT_CHANNEL_CAPACITY; i++)
+        if (config->channels[i][0]) (void)chat_add_channel_locked(config->channels[i], true, false);
+}
+
+static void chat_erase_legacy_config(void)
 {
     nvs_handle_t nvs;
-    if (nvs_open(CHAT_NVS_NAMESPACE, NVS_READWRITE, &nvs) != ESP_OK) {
-        return;
+    if (nvs_open(CHAT_NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) return;
+    bool found = false;
+    const char *keys[] = {CHAT_NVS_URL_KEY, CHAT_NVS_TOKEN_KEY, CHAT_NVS_LEGACY_USER_KEY};
+    for (size_t i = 0; i < sizeof(keys) / sizeof(keys[0]); i++) {
+        size_t size = 0;
+        if (nvs_get_str(nvs, keys[i], NULL, &size) == ESP_OK) found = true;
     }
-    if (nvs_erase_key(nvs, CHAT_NVS_LEGACY_USER_KEY) == ESP_OK) {
-        (void)nvs_commit(nvs);
-    }
+    uint8_t enabled;
+    if (nvs_get_u8(nvs, CHAT_NVS_ENABLED_KEY, &enabled) == ESP_OK) found = true;
     nvs_close(nvs);
+    if (!found || nvs_open(CHAT_NVS_NAMESPACE, NVS_READWRITE, &nvs) != ESP_OK) return;
+    (void)nvs_erase_key(nvs, CHAT_NVS_URL_KEY); (void)nvs_erase_key(nvs, CHAT_NVS_TOKEN_KEY);
+    (void)nvs_erase_key(nvs, CHAT_NVS_ENABLED_KEY); (void)nvs_erase_key(nvs, CHAT_NVS_LEGACY_USER_KEY);
+    (void)nvs_commit(nvs); nvs_close(nvs);
 }
 
 static void chat_load_config(void)
 {
+    solar_os_chat_saved_config_t *config = solar_os_memory_calloc(1, sizeof(*config),
+        SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "gateway.config");
+    if (!config) return;
+    esp_err_t file_error = solar_os_messaging_profile_load(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, config, sizeof(*config));
+    if (file_error == ESP_OK && chat_saved_config_valid(config)) {
+        chat_apply_saved_config(config);
+        /* Also finish a migration interrupted after file promotion. */
+        chat_erase_legacy_config(); goto done;
+    }
+    /* Read-only legacy fallback. Delete old keys only after a verified file
+     * round trip, so an absent/full volume never destroys configuration. */
     nvs_handle_t nvs;
-    if (nvs_open(CHAT_NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) {
-        return;
-    }
-    char url[SOLAR_OS_CHAT_URL_MAX] = {0};
-    char token[SOLAR_OS_CHAT_TOKEN_MAX] = {0};
-    size_t length = sizeof(url);
-    esp_err_t error = nvs_get_str(nvs, CHAT_NVS_URL_KEY, url, &length);
-    if (error == ESP_OK && chat_url_is_valid(url)) {
-        length = sizeof(token);
-        if (nvs_get_str(nvs,
-                        CHAT_NVS_TOKEN_KEY,
-                        token,
-                        &length) == ESP_ERR_NVS_NOT_FOUND) {
-            token[0] = '\0';
-        }
-        if (chat_string_is_valid(token, sizeof(token), true)) {
-            strlcpy(chat.url, url, sizeof(chat.url));
-            strlcpy(chat.token, token, sizeof(chat.token));
-            chat.configured = true;
-            uint8_t enabled = 1U;
-            const esp_err_t enabled_error =
-                nvs_get_u8(nvs, CHAT_NVS_ENABLED_KEY, &enabled);
-            chat.enabled =
-                enabled_error == ESP_ERR_NVS_NOT_FOUND || enabled != 0;
-            chat.config_revision = 1U;
-        }
-    }
+    if (nvs_open(CHAT_NVS_NAMESPACE, NVS_READONLY, &nvs) != ESP_OK) goto done;
+    memset(config, 0, sizeof(*config)); config->version = 1;
+    size_t size = sizeof(config->url);
+    esp_err_t error = nvs_get_str(nvs, CHAT_NVS_URL_KEY, config->url, &size);
+    size = sizeof(config->token);
+    esp_err_t token_error = nvs_get_str(nvs, CHAT_NVS_TOKEN_KEY, config->token, &size);
+    uint8_t enabled = 1;
+    (void)nvs_get_u8(nvs, CHAT_NVS_ENABLED_KEY, &enabled); config->enabled = enabled != 0;
+    strlcpy(config->channels[0], CHAT_DEFAULT_CHANNEL, sizeof(config->channels[0]));
     nvs_close(nvs);
-    chat_remove_legacy_user_config();
+    if (error == ESP_OK && (token_error == ESP_OK || token_error == ESP_ERR_NVS_NOT_FOUND) && chat_saved_config_valid(config)) {
+        chat_apply_saved_config(config);
+        if (chat_save_config(config) == ESP_OK &&
+            solar_os_messaging_profile_load(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, config, sizeof(*config)) == ESP_OK &&
+            chat_saved_config_valid(config)) chat_erase_legacy_config();
+    }
+done:
+    volatile unsigned char *wipe = (volatile unsigned char *)config;
+    for (size_t i = 0; i < sizeof(*config); i++) wipe[i] = 0;
+    solar_os_memory_free(config);
 }
+
+static esp_err_t gateway_join(void *context, const char *target)
+{ return context == &chat ? solar_os_chat_join(target) : ESP_ERR_INVALID_STATE; }
+static esp_err_t gateway_leave(void *context, const char *target)
+{ return context == &chat ? solar_os_chat_leave(target) : ESP_ERR_INVALID_STATE; }
+static esp_err_t gateway_connect(void *context, bool enabled)
+{
+    if (context != &chat) return ESP_ERR_INVALID_STATE;
+    return enabled ? solar_os_chat_connect(NULL, NULL) : solar_os_chat_disconnect();
+}
+static const solar_os_messaging_provider_class_t gateway_class = {
+    .name = "gateway", .connection_oriented = true, .capabilities = SOLAR_OS_ENDPOINT_CAP_ROOM,
+    .join = gateway_join, .leave = gateway_leave, .connect = gateway_connect,
+};
 
 esp_err_t solar_os_chat_init(void)
 {
@@ -292,8 +321,11 @@ esp_err_t solar_os_chat_init(void)
         return error;
     }
     chat.lock = xSemaphoreCreateMutex();
-    if (chat.lock == NULL) {
-        return ESP_ERR_NO_MEM;
+    chat.edit_lock = xSemaphoreCreateMutex();
+    if (chat.lock == NULL || chat.edit_lock == NULL) {
+        if (chat.lock) vSemaphoreDelete(chat.lock);
+        if (chat.edit_lock) vSemaphoreDelete(chat.edit_lock);
+        memset(&chat, 0, sizeof(chat)); return ESP_ERR_NO_MEM;
     }
     chat.events = solar_os_memory_calloc(
         SOLAR_OS_CHAT_STORE_CAPACITY,
@@ -309,173 +341,113 @@ esp_err_t solar_os_chat_init(void)
         solar_os_memory_free(chat.events);
         solar_os_memory_free(chat.commands);
         vSemaphoreDelete(chat.lock);
+        vSemaphoreDelete(chat.edit_lock);
         memset(&chat, 0, sizeof(chat));
         return ESP_ERR_NO_MEM;
     }
+    (void)solar_os_messaging_class_register(&gateway_class);
     chat.next_event_id = 1U;
     chat.next_command_id = 1U;
     chat_load_config();
-    (void)chat_add_channel_locked(CHAT_DEFAULT_CHANNEL, true, false);
+    (void)chat_add_channel_locked(CHAT_DEFAULT_CHANNEL, !chat.configured, false);
     chat.initialized = true;
-    (void)solar_os_messaging_provider_register(
-        SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
-        "gateway");
+    (void)solar_os_messaging_instance_register(
+        SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, "gateway", "gateway", &chat);
     chat_upsert_room(CHAT_DEFAULT_CHANNEL);
+    for (size_t i = 0; i < chat.channel_count; i++) chat_upsert_room(chat.channels[i].name);
     return ESP_OK;
 }
 
-esp_err_t solar_os_chat_configure(const char *url,
-                                  const char *token)
+static void chat_wipe_config(solar_os_chat_saved_config_t *config)
 {
-    if ((url != NULL && url[0] != '\0' && !chat_url_is_valid(url)) ||
-        (token != NULL &&
-         !chat_string_is_valid(token, SOLAR_OS_CHAT_TOKEN_MAX, true))) {
-        return ESP_ERR_INVALID_ARG;
-    }
+    volatile unsigned char *wipe = (volatile unsigned char *)config;
+    for (size_t i = 0; i < sizeof(*config); i++) wipe[i] = 0;
+}
+
+static esp_err_t chat_change_connection(const char *url, const char *token, int enabled)
+{
+    if ((url && url[0] && !chat_url_is_valid(url)) ||
+        (token && !chat_string_is_valid(token, SOLAR_OS_CHAT_TOKEN_MAX, true))) return ESP_ERR_INVALID_ARG;
     esp_err_t error = solar_os_chat_init();
-    if (error != ESP_OK) {
-        return error;
-    }
+    if (error != ESP_OK) return error;
+    solar_os_chat_saved_config_t *config = solar_os_memory_calloc(1, sizeof(*config), SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "gateway.config");
+    if (!config) return ESP_ERR_NO_MEM;
+    xSemaphoreTake(chat.edit_lock, portMAX_DELAY);
+    chat_lock(); chat_snapshot_config_locked(config); chat_unlock();
+    if (url && url[0]) strlcpy(config->url, url, sizeof(config->url));
+    if (token) strlcpy(config->token, token, sizeof(config->token));
+    if (enabled >= 0) config->enabled = enabled != 0;
+    error = chat_saved_config_valid(config) ? chat_save_config(config) : ESP_ERR_INVALID_STATE;
     chat_lock();
-    if (url != NULL && url[0] != '\0') {
-        strlcpy(chat.url, url, sizeof(chat.url));
-        chat.configured = true;
+    if (error == ESP_OK) {
+        strlcpy(chat.url, config->url, sizeof(chat.url)); strlcpy(chat.token, config->token, sizeof(chat.token));
+        chat.configured = true; chat.enabled = config->enabled;
+        if (++chat.config_revision == 0) chat.config_revision = 1;
+    } else {
+        chat.last_esp_error = error; strlcpy(chat.last_error, esp_err_to_name(error), sizeof(chat.last_error));
     }
-    if (token != NULL) {
-        strlcpy(chat.token, token, sizeof(chat.token));
-    }
-    if (!chat.configured || !chat_url_is_valid(chat.url)) {
-        chat_unlock();
-        return ESP_ERR_INVALID_STATE;
-    }
-    chat.config_revision++;
-    if (chat.config_revision == 0) {
-        chat.config_revision = 1U;
-    }
-    solar_os_chat_saved_config_t config;
-    chat_snapshot_config_locked(&config);
+    chat_unlock(); xSemaphoreGive(chat.edit_lock);
+    chat_wipe_config(config); solar_os_memory_free(config); return error;
+}
+
+esp_err_t solar_os_chat_configure(const char *url, const char *token)
+{ return chat_change_connection(url, token, -1); }
+esp_err_t solar_os_chat_connect(const char *url, const char *token)
+{ return chat_change_connection(url, token, 1); }
+esp_err_t solar_os_chat_disconnect(void)
+{ return chat_change_connection(NULL, NULL, 0); }
+
+static esp_err_t chat_change_membership(const char *channel, solar_os_chat_command_type_t type)
+{
+    if (!chat_string_is_valid(channel, SOLAR_OS_CHAT_CHANNEL_MAX, false)) return ESP_ERR_INVALID_ARG;
+    esp_err_t error = solar_os_chat_init(); if (error != ESP_OK) return error;
+    solar_os_chat_saved_config_t *config = solar_os_memory_calloc(1, sizeof(*config), SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "gateway.membership");
+    if (!config) return ESP_ERR_NO_MEM;
+    xSemaphoreTake(chat.edit_lock, portMAX_DELAY);
+    chat_lock(); chat_snapshot_config_locked(config);
+    int index = chat_channel_index_locked(channel);
+    bool room_available = index >= 0 || chat.channel_count < SOLAR_OS_CHAT_CHANNEL_CAPACITY;
+    bool queue_available = chat.command_count < SOLAR_OS_CHAT_OUTBOX_CAPACITY;
     chat_unlock();
-    error = chat_save_config(&config);
-    if (error != ESP_OK) {
+    bool joining = type == SOLAR_OS_CHAT_COMMAND_JOIN;
+    int saved = -1, empty = -1;
+    for (size_t i = 0; i < SOLAR_OS_CHAT_CHANNEL_CAPACITY; i++) {
+        if (!config->channels[i][0]) empty = (int)i;
+        if (strcmp(config->channels[i], channel) == 0) saved = (int)i;
+    }
+    if (!queue_available || (joining && (!room_available || (saved < 0 && empty < 0)))) error = ESP_ERR_NO_MEM;
+    else {
+        if (joining && saved < 0) strlcpy(config->channels[empty], channel, sizeof(config->channels[empty]));
+        if (!joining && saved >= 0) config->channels[saved][0] = 0;
+        error = chat_save_config(config);
+    }
+    if (error == ESP_OK) {
+        uint64_t cursor = joining ? solar_os_chat_channel_cursor(channel) : 0;
         chat_lock();
-        chat.last_esp_error = error;
-        strlcpy(chat.last_error,
-                esp_err_to_name(error),
-                sizeof(chat.last_error));
+        error = chat_queue_command_locked(type, channel, cursor);
+        if (joining) index = chat_add_channel_locked(channel, true, false);
+        else index = chat_channel_index_locked(channel);
+        if (index >= 0) chat.channels[index].desired = joining;
         chat_unlock();
+    }
+    xSemaphoreGive(chat.edit_lock); chat_wipe_config(config); solar_os_memory_free(config);
+    if (error == ESP_OK) {
+        if (joining) {
+            chat_upsert_room(channel);
+            (void)solar_os_messaging_join_update(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+                channel, SOLAR_OS_MESSAGING_JOIN_PENDING, NULL);
+        } else if (type == SOLAR_OS_CHAT_COMMAND_DELETE_CHANNEL)
+            (void)solar_os_messaging_conversation_remove(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY, channel);
     }
     return error;
-}
-
-esp_err_t solar_os_chat_connect(const char *url,
-                                const char *token)
-{
-    esp_err_t error = solar_os_chat_configure(url, token);
-    if (error != ESP_OK) {
-        return error;
-    }
-    chat_lock();
-    chat.enabled = true;
-    solar_os_chat_saved_config_t config;
-    chat_snapshot_config_locked(&config);
-    chat_unlock();
-    return chat_save_config(&config);
-}
-
-esp_err_t solar_os_chat_disconnect(void)
-{
-    esp_err_t error = solar_os_chat_init();
-    if (error != ESP_OK) {
-        return error;
-    }
-    chat_lock();
-    chat.enabled = false;
-    solar_os_chat_saved_config_t config;
-    chat_snapshot_config_locked(&config);
-    chat_unlock();
-    return chat_save_config(&config);
 }
 
 esp_err_t solar_os_chat_join(const char *channel)
-{
-    if (!chat_string_is_valid(channel, SOLAR_OS_CHAT_CHANNEL_MAX, false)) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    esp_err_t error = solar_os_chat_init();
-    if (error != ESP_OK) {
-        return error;
-    }
-    const uint64_t cursor = solar_os_chat_channel_cursor(channel);
-    chat_lock();
-    const int existing_index = chat_channel_index_locked(channel);
-    if (existing_index >= 0 && chat.channels[existing_index].desired) {
-        error = ESP_OK;
-    } else if (existing_index < 0 &&
-        chat.channel_count >= SOLAR_OS_CHAT_CHANNEL_CAPACITY) {
-        error = ESP_ERR_NO_MEM;
-    } else {
-        error = chat_queue_command_locked(SOLAR_OS_CHAT_COMMAND_JOIN,
-                                          channel,
-                                          cursor);
-        if (error == ESP_OK) {
-            const int index = chat_add_channel_locked(channel, true, false);
-            if (index >= 0) {
-                chat.channels[index].desired = true;
-            }
-        }
-    }
-    chat_unlock();
-    if (error == ESP_OK) {
-        chat_upsert_room(channel);
-    }
-    return error;
-}
-
+{ return chat_change_membership(channel, SOLAR_OS_CHAT_COMMAND_JOIN); }
 esp_err_t solar_os_chat_leave(const char *channel)
-{
-    if (!chat_string_is_valid(channel, SOLAR_OS_CHAT_CHANNEL_MAX, false)) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    esp_err_t error = solar_os_chat_init();
-    if (error != ESP_OK) {
-        return error;
-    }
-    chat_lock();
-    const int index = chat_channel_index_locked(channel);
-    error = chat_queue_command_locked(SOLAR_OS_CHAT_COMMAND_LEAVE, channel, 0);
-    if (error == ESP_OK && index >= 0) {
-        chat.channels[index].desired = false;
-    }
-    chat_unlock();
-    return error;
-}
-
+{ return chat_change_membership(channel, SOLAR_OS_CHAT_COMMAND_LEAVE); }
 esp_err_t solar_os_chat_delete_channel(const char *channel)
-{
-    if (!chat_string_is_valid(channel, SOLAR_OS_CHAT_CHANNEL_MAX, false)) {
-        return ESP_ERR_INVALID_ARG;
-    }
-    esp_err_t error = solar_os_chat_init();
-    if (error != ESP_OK) {
-        return error;
-    }
-    chat_lock();
-    const int index = chat_channel_index_locked(channel);
-    error =
-        chat_queue_command_locked(SOLAR_OS_CHAT_COMMAND_DELETE_CHANNEL,
-                                  channel,
-                                  0);
-    if (error == ESP_OK && index >= 0) {
-        chat.channels[index].desired = false;
-    }
-    chat_unlock();
-    if (error == ESP_OK) {
-        (void)solar_os_messaging_conversation_remove(
-            SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
-            channel);
-    }
-    return error;
-}
+{ return chat_change_membership(channel, SOLAR_OS_CHAT_COMMAND_DELETE_CHANNEL); }
 
 esp_err_t solar_os_chat_send(const char *channel, const char *text)
 {
@@ -862,6 +834,12 @@ esp_err_t solar_os_gateway_sync_publish(const solar_os_chat_event_t *event,
         (event->type == SOLAR_OS_CHAT_EVENT_CHANNEL ||
          event->type == SOLAR_OS_CHAT_EVENT_JOINED)) {
         chat_upsert_room(event->channel);
+        if (event->type == SOLAR_OS_CHAT_EVENT_JOINED)
+            (void)solar_os_messaging_join_update(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+                event->channel, SOLAR_OS_MESSAGING_JOIN_JOINED, NULL);
+    } else if (event->type == SOLAR_OS_CHAT_EVENT_LEFT) {
+        (void)solar_os_messaging_join_update(SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,
+            event->channel, SOLAR_OS_MESSAGING_JOIN_LEFT, NULL);
     } else if (event->type == SOLAR_OS_CHAT_EVENT_CHANNEL_DELETED) {
         (void)solar_os_messaging_conversation_remove(
             SOLAR_OS_MESSAGING_PROVIDER_GATEWAY,

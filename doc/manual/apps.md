@@ -559,8 +559,8 @@ Graphical controls:
 
 ## chat
 
-Tabbed provider-neutral conversation client. The Channels tab lists gateway and
-radio conversations. Enter selects a conversation and opens its bounded shared
+Tabbed provider-neutral conversation client. The Channels tab groups conversations
+by named instance, including IRC, Gateway, MeshCore, and Link. Enter selects a conversation and opens its bounded shared
 history on the Chat tab, which also contains the message/command input. The app
 opens and remains useful offline; network or radio transport jobs connect
 independently.
@@ -573,11 +573,11 @@ a message, the footer follows its delivery state through `queued`, `sending`,
 Usage:
 
 ```text
-chat [gateway|meshcore|link|conversation-id]
+chat [instance|class|conversation-id]
 ```
 
 With no selector, Chat opens a unified view and initially selects the newest
-unread conversation. A provider name filters the list. A decimal conversation
+unread conversation. An instance name or provider class filters the list. A decimal conversation
 ID opens exactly that conversation.
 
 The background `gateway-sync` job owns the gateway transport connection, retries, and
@@ -612,7 +612,7 @@ direct conversation with the contact's preferred endpoint. Sending to a
 discovered endpoint asks for a second Enter confirmation; blocked endpoints
 cannot be messaged.
 
-The conversation header reports the selected provider's state. Gateway uses
+The conversation header reports the selected instance's state. Connection providers use
 `disconnected`, `connecting`, and `connected`; connectionless MeshCore and Link
 providers use `stopped`, `starting`, `ready`, and `error`.
 
@@ -621,6 +621,14 @@ In-app commands:
 ```text
 /help
 /new contact-id
+/join instance channel
+/query instance nickname
+/leave
+/connect instance
+/disconnect instance
+/server instance host port nickname
+/sasl instance account password
+/sasl instance off
 /status
 /quit
 ```

@@ -26,6 +26,7 @@ static size_t contacts_test_write(const void *data, size_t size, size_t count, F
 #include "../../src/services/solar_os_messaging.c"
 
 static char test_root[] = "/tmp/solaros-messaging-XXXXXX";
+bool solar_os_disk_image_path_busy(const char *path) { (void)path; return false; }
 size_t strlcpy(char *dst, const char *src, size_t size)
 {
     size_t length = strlen(src);
@@ -90,6 +91,14 @@ static void restart_contacts(void)
 }
 static void restart_messages(void)
 {
+    while (messaging.providers) {
+        messaging_provider_node_t *next = messaging.providers->next;
+        free(messaging.providers); messaging.providers = next;
+    }
+    while (messaging.classes) {
+        messaging_class_node_t *next = messaging.classes->next;
+        free(messaging.classes); messaging.classes = next;
+    }
     free(messaging.conversations); free(messaging.messages); free(messaging.outbox);
     free(messaging.events); free(messaging.record_scratch);
     vSemaphoreDelete(messaging.lock); vSemaphoreDelete(messaging.io_lock);
@@ -264,11 +273,88 @@ static void test_channel_ownership_and_restart(void)
     free(message);
 }
 
+static unsigned test_joins;
+static bool reject_join;
+static esp_err_t test_normalize(void *context, const char *target, char *out, size_t size)
+{
+    assert(context == &test_joins);
+    if (strncmp(target, "ROOM:", 5) == 0) target += 5;
+    return strlcpy(out, target, size) < size ? ESP_OK : ESP_ERR_INVALID_SIZE;
+}
+static esp_err_t test_join(void *context, const char *target)
+{
+    assert(context == &test_joins); assert(strcmp(target, "#same") == 0);
+    solar_os_messaging_status_t status;
+    assert(solar_os_messaging_get_status(&status) == ESP_OK);
+    test_joins++; return reject_join ? ESP_FAIL : ESP_OK;
+}
+static const solar_os_messaging_provider_class_t test_class = {
+    .name = "test-net", .capabilities = SOLAR_OS_ENDPOINT_CAP_ROOM, .join = test_join,
+    .normalize_target = test_normalize,
+};
+static void test_provider_instances(void)
+{
+    assert(solar_os_messaging_class_register(&test_class) == ESP_OK);
+    unsigned config = 0x12345678;
+    solar_os_messaging_provider_id_t a, b;
+    assert(solar_os_messaging_instance_create("test-net", "network-a", &config, sizeof(config), &a) == ESP_OK);
+    assert(solar_os_messaging_instance_create("test-net", "network-b", &config, sizeof(config), &b) == ESP_OK);
+    assert(a > 3 && b > a);
+    assert(solar_os_messaging_instance_register(a, "test-net", "network-a", &test_joins) == ESP_OK);
+    assert(solar_os_messaging_instance_register(b, "test-net", "network-b", &test_joins) == ESP_OK);
+    solar_os_conversation_id_t room_a, room_b;
+    assert(solar_os_messaging_join(a, "ROOM:#same", &room_a) == ESP_OK);
+    assert(solar_os_messaging_join(b, "#same", &room_b) == ESP_OK);
+    assert(room_a != room_b && test_joins == 2);
+    assert(solar_os_messaging_join_update(a, "#same", SOLAR_OS_MESSAGING_JOIN_JOINED, NULL) == ESP_OK);
+    assert(solar_os_messaging_join(a, "#same", NULL) == ESP_OK && test_joins == 2);
+    solar_os_messaging_conversation_t room;
+    assert(solar_os_messaging_conversation_get(room_b, &room) == ESP_OK);
+    assert(room.join_state == SOLAR_OS_MESSAGING_JOIN_PENDING);
+    assert(solar_os_messaging_join_update(a, "#same", SOLAR_OS_MESSAGING_JOIN_LEFT, NULL) == ESP_OK);
+    reject_join = true;
+    assert(solar_os_messaging_join(a, "#same", NULL) == ESP_FAIL);
+    assert(solar_os_messaging_conversation_get(room_a, &room) == ESP_OK && room.join_state == SOLAR_OS_MESSAGING_JOIN_FAILED);
+    reject_join = false;
+    solar_os_message_key_t key_a, key_b;
+    assert(solar_os_messaging_send(room_a, "only A", false, &key_a) == ESP_OK);
+    assert(solar_os_messaging_send(room_b, "only B", false, &key_b) == ESP_OK);
+    solar_os_messaging_outbound_t *out = calloc(1, sizeof(*out)); assert(out);
+    assert(solar_os_messaging_outbox_peek(a, out) == ESP_OK && out->message_key == key_a);
+    assert(solar_os_messaging_outbox_update(out->id, SOLAR_OS_DELIVERY_SENT, NULL) == ESP_OK);
+    assert(solar_os_messaging_outbox_peek(b, out) == ESP_OK && out->message_key == key_b);
+    assert(solar_os_messaging_outbox_update(out->id, SOLAR_OS_DELIVERY_FAILED, "test") == ESP_OK);
+    free(out);
+    unsigned restored = 0;
+    assert(solar_os_messaging_profile_load(a, &restored, sizeof(restored)) == ESP_OK && restored == config);
+    fail_migration_promotion = true; unsigned updated = 0x77777777;
+    assert(solar_os_messaging_profile_save(a, &updated, sizeof(updated)) != ESP_OK);
+    assert(solar_os_messaging_profile_load(a, &restored, sizeof(restored)) == ESP_OK && restored == config);
+    restart_messages();
+    assert(solar_os_messaging_provider_find("network-a") == a);
+    assert(solar_os_messaging_provider_find("network-b") == b);
+    assert(solar_os_messaging_provider_is_class(a, "test-net"));
+    assert(solar_os_messaging_profile_load(a, &restored, sizeof(restored)) == ESP_OK && restored == config);
+    assert(solar_os_messaging_class_register(&test_class) == ESP_OK);
+    assert(solar_os_messaging_instance_register(a, "test-net", "network-a", &test_joins) == ESP_OK);
+    assert(solar_os_messaging_join(a, "#same", NULL) == ESP_OK);
+    solar_os_messaging_provider_id_t cursor = 0; solar_os_messaging_provider_status_t status;
+    unsigned count = 0;
+    while (solar_os_messaging_provider_next(&cursor, &status)) count++;
+    assert(count == 5);
+    char path[160];
+    assert(solar_os_storage_default_path(".chat/profiles/004.bin", path, sizeof(path)) == ESP_OK); assert(unlink(path) == 0);
+    assert(solar_os_storage_default_path(".chat/profiles/005.bin", path, sizeof(path)) == ESP_OK); assert(unlink(path) == 0);
+    assert(solar_os_storage_default_path(".chat/profiles", path, sizeof(path)) == ESP_OK); assert(rmdir(path) == 0);
+    assert(solar_os_storage_default_path(".chat", path, sizeof(path)) == ESP_OK); assert(rmdir(path) == 0);
+}
+
 int main(void)
 {
     assert(mkdtemp(test_root));
     test_contacts_migration_and_import();
     test_channel_ownership_and_restart();
+    test_provider_instances();
     char path[160];
     const char *paths[] = { ".contacts/contacts.bin", ".messages/messages.bin", ".contacts", ".messages" };
     for (size_t i = 0; i < 4; i++) {

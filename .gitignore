@@ -73,3 +73,6 @@ tests/host/tab5_keyboard_test
 tests/host/apple2_vm_test
 tests/host/apple2_vm_entry_test
 tests/host/indexed_raster_test
+tests/host/irc_protocol_test
+tests/host/gateway_config_test
+tests/host/messaging_service_test

@@ -2,6 +2,9 @@
 
 #include "esp_err.h"
 #include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_IRC
+#include "solar_os_irc.h"
+#endif
 #include "solar_os_adc.h"
 #include "solar_os_adc_dpad.h"
 #include "solar_os_battery.h"
@@ -9,7 +12,7 @@
 #include "solar_os_board_caps.h"
 #include "solar_os_buttons.h"
 #include "solar_os_cdc.h"
-#if SOLAR_OS_PACKAGE_SERVICE_CHAT
+#if SOLAR_OS_PACKAGE_SERVICE_GATEWAY
 #include "solar_os_chat.h"
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_DOCS
@@ -169,11 +172,16 @@ void solar_os_boot_services_init(uint32_t now_ms)
     }
 #endif
 
-#if SOLAR_OS_PACKAGE_SERVICE_CHAT
+#if SOLAR_OS_PACKAGE_SERVICE_GATEWAY
     const esp_err_t chat_err = solar_os_chat_init();
     if (chat_err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "Chat service unavailable: %s", esp_err_to_name(chat_err));
     }
+#endif
+
+#if SOLAR_OS_PACKAGE_SERVICE_IRC
+    const esp_err_t irc_err = solar_os_irc_init();
+    if (irc_err != ESP_OK) SOLAR_OS_LOGW(TAG, "IRC unavailable: %s", esp_err_to_name(irc_err));
 #endif
 
 #if SOLAR_OS_PACKAGE_SERVICE_UART
