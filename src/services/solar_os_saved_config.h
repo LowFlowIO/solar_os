@@ -84,6 +84,18 @@ static inline esp_err_t solar_os_saved_config_save(solar_os_saved_config_t *stor
     return error;
 }
 
+static inline esp_err_t solar_os_saved_config_cleanup(const solar_os_saved_config_t *store)
+{
+    if (!store->path[0]) return ESP_ERR_INVALID_STATE;
+    char path[SOLAR_OS_STORAGE_PATH_MAX];
+    const char *suffixes[] = {".bak", ".tmp"};
+    for (size_t i = 0; i < 2; i++) {
+        if (snprintf(path, sizeof(path), "%s%s", store->path, suffixes[i]) >= (int)sizeof(path)) return ESP_ERR_INVALID_SIZE;
+        if (unlink(path) != 0 && errno != ENOENT) return ESP_FAIL;
+    }
+    return ESP_OK;
+}
+
 static inline void solar_os_saved_config_erase_legacy(const char *space, const char *key)
 {
     nvs_handle_t handle;

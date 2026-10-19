@@ -46,6 +46,7 @@ typedef struct __attribute__((packed)) {
 
 typedef struct {
     bool initialized;
+    bool loaded;
     bool records_in_psram;
     bool persistent;
     uint32_t generation;
@@ -377,6 +378,8 @@ esp_err_t solar_os_credentials_init(void)
     credentials_store.storage_error = ESP_ERR_INVALID_STATE;
 
     esp_err_t error = credentials_load();
+    credentials_store.loaded = error == ESP_OK || error == ESP_ERR_NOT_FOUND ||
+        error == ESP_ERR_NVS_NOT_FOUND || error == ESP_ERR_NVS_NOT_INITIALIZED;
     if (error == ESP_OK) {
         credentials_store.persistent = true;
         credentials_store.storage_error = ESP_OK;
@@ -485,6 +488,7 @@ esp_err_t solar_os_credentials_put(solar_os_messaging_provider_id_t provider,
     }
 
     solar_os_credential_id_t id = SOLAR_OS_CREDENTIAL_ID_NONE;
+    if (!credentials_store.loaded) return credentials_store.storage_error;
     credentials_lock();
     int index = credentials_find_record_locked(provider, kind, label);
     if (index >= 0 && !replace) {
@@ -570,6 +574,7 @@ esp_err_t solar_os_credentials_remove(solar_os_credential_id_t record_id)
     if (error != ESP_OK) {
         return error;
     }
+    if (!credentials_store.loaded) return credentials_store.storage_error;
     credentials_lock();
     const int index = credentials_find_id_locked(record_id);
     if (index >= 0) {
@@ -592,16 +597,20 @@ esp_err_t solar_os_credentials_remove_provider(solar_os_messaging_provider_id_t 
 {
     if (!credentials_provider_valid(provider)) return ESP_ERR_INVALID_ARG;
     esp_err_t error = solar_os_credentials_init(); if (error != ESP_OK) return error;
+    if (!credentials_store.loaded) return credentials_store.storage_error;
     credentials_lock();
+    bool changed = false;
     for (size_t i = 0; i < SOLAR_OS_CREDENTIAL_CAPACITY; i++) {
         credentials_slot_t *slot = &credentials_store.records[i];
         if (!slot->active || slot->info.provider != provider) continue;
         solar_os_credentials_wipe(slot, sizeof(*slot));
         credentials_store.count--;
+        changed = true;
     }
-    credentials_store.generation = credentials_next_generation(credentials_store.generation);
+    if (changed) credentials_store.generation = credentials_next_generation(credentials_store.generation);
+    bool pending = !credentials_store.persistent;
     credentials_unlock();
-    return credentials_persist_current();
+    return changed || pending ? credentials_persist_current() : solar_os_saved_config_cleanup(&credentials_file);
 }
 
 const char *solar_os_credential_kind_name(solar_os_credential_kind_t kind)

@@ -74,6 +74,12 @@ int main(void)
     reboot_credentials();
     assert(solar_os_credentials_read_secret(private_id, secret, sizeof(secret), &length) == ESP_ERR_NOT_FOUND);
     assert(solar_os_credentials_find(2, SOLAR_OS_CREDENTIAL_SHARED_KEY, "group:example", &record) == ESP_OK);
+    uint32_t generation = credentials_store.generation;
+    fail_migration_promotion = true;
+    assert(solar_os_credentials_remove_provider(id) == ESP_OK && credentials_store.generation == generation);
+    assert(fail_migration_promotion); fail_migration_promotion = false;
+    FILE *stale = fopen(backup, "wb"); assert(stale); assert(fputs("stale secret", stale) >= 0); fclose(stale);
+    assert(solar_os_credentials_remove_provider(id) == ESP_OK && access(backup, F_OK) != 0);
     /* Simulate a reset after the removal marker but before credential purge. */
     assert(solar_os_credentials_put(id, SOLAR_OS_CREDENTIAL_TOKEN, "interrupted", "leftover", 8, false, &private_id) == ESP_OK);
     restart_messages(); reboot_credentials();
@@ -83,6 +89,8 @@ int main(void)
     legacy_present = true; reboot_credentials();
     solar_os_credentials_status_t status;
     assert(solar_os_credentials_get_status(&status) == ESP_OK && status.storage_error != ESP_OK && legacy_present);
+    assert(solar_os_credentials_put(id, SOLAR_OS_CREDENTIAL_TOKEN, "unsafe", "secret", 6, false, NULL) == status.storage_error);
+    assert(solar_os_credentials_remove_provider(id) == status.storage_error);
     const char *files[] = {".settings/credentials.bin", ".chat/profiles/004.bin", ".messages/messages.bin"};
     char path[160];
     for (size_t i = 0; i < sizeof(files)/sizeof(files[0]); i++) {
