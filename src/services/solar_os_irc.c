@@ -39,7 +39,7 @@ typedef struct irc_instance {
     esp_tls_cfg_t tls_config;
     char *ca;
     bool tls_ready, registered, sasl_ok, cap_sasl, sasl_started, sasl_payload_sent;
-    bool dropping, ping_pending;
+    bool dropping, ping_pending, tx_throttled;
     solar_os_irc_casemapping_t casemapping;
     unsigned registration_step;
     unsigned nick_retries;
@@ -383,6 +383,7 @@ static void irc_close(irc_instance_t *node, esp_err_t error, const char *reason,
     node->cap_sasl = false; node->ping_pending = false;
     node->sasl_started = node->sasl_payload_sent = false;
     node->rx_used = node->tx_size = node->tx_used = 0;
+    node->tx_throttled = false;
     node->control_count = node->control_head = 0; node->pong[0] = 0; node->dropping = false;
     node->registration_step = node->nick_retries = 0;
     irc_wipe(node->controls, sizeof(node->controls)); irc_wipe(node->tx, sizeof(node->tx));
@@ -609,6 +610,7 @@ static bool irc_contains(char values[][SOLAR_OS_IRC_TARGET_MAX], const char *tar
 static void irc_prepare_tx(irc_instance_t *node, uint32_t now)
 {
     if (node->tx_size) return;
+    node->tx_throttled = false;
     if (node->pong[0]) { strlcpy(node->tx, node->pong, sizeof(node->tx)); node->pong[0] = 0; }
     else if (node->control_count) {
         strlcpy(node->tx, node->controls[node->control_head], sizeof(node->tx));
@@ -660,7 +662,7 @@ static void irc_prepare_tx(irc_instance_t *node, uint32_t now)
                 node->outbound_id = 0; irc_wipe(node->tx, sizeof(node->tx)); return;
             }
         }
-        if (node->tx[0]) node->next_tx = now + IRC_TX_INTERVAL_MS;
+        node->tx_throttled = node->tx[0] != 0;
     }
     if (node->tx[0]) { node->tx_size = strlen(node->tx); node->tx_used = 0; node->tx_at = now; }
 }
@@ -675,6 +677,11 @@ static void irc_write(irc_instance_t *node, uint32_t now)
     if (written <= 0) { irc_close(node, ESP_FAIL, "IRC send interrupted", true); return; }
     node->tx_used += written;
     if (node->tx_used == node->tx_size) {
+        /* Profile/outbox persistence and partial TLS writes can delay a send.
+         * Pace from the completed write so that delay cannot shorten the next
+         * interval. Keep registration and keepalive controls independent. */
+        if (node->tx_throttled) node->next_tx = irc_now() + IRC_TX_INTERVAL_MS;
+        node->tx_throttled = false;
         if (node->outbound_id) {
             (void)solar_os_messaging_outbox_update(node->outbound_id, SOLAR_OS_DELIVERY_SENT, NULL);
             node->outbound_id = 0;
@@ -743,6 +750,9 @@ static void irc_tick(irc_instance_t *node)
     }
     irc_read(node);
     if (!node->tls) return;
+    /* Receiving a line can persist messages and advance last_rx. Use a fresh
+     * timestamp so unsigned elapsed-time checks cannot see it in the future. */
+    now = irc_now();
     if (!node->registered && (uint32_t)(now - node->connect_at) > 45000) {
         irc_close(node, ESP_ERR_TIMEOUT, "IRC registration timed out", true); return;
     }
