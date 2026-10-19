@@ -2,8 +2,8 @@
 """Opt-in display-shell IRC stack and completion regression over a USB shell.
 
 Run after flashing and starting the USB shell. Requires the selected display
-shell to be at an empty prompt. Uses a disabled, temporary loopback profile;
-its runtime instance disappears on the next reboot.
+shell to be at an empty prompt. Uses a disabled, temporary loopback profile
+and removes it through the display shell after testing.
 """
 import argparse
 import json
@@ -16,7 +16,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True)
     parser.add_argument("--display-session", type=int, default=0)
-    parser.add_argument("--profile-root", default="/sdcard/.chat/profiles")
     args = parser.parse_args()
     console = Console(args.port)
     name = "hil-irc-display"
@@ -59,7 +58,8 @@ def main():
         console.collect(0.6)
         console.command("")
         tasks = console.command("top")
-        console.command(f"rm {args.profile_root}/{instance:03}.bin")
+        display(f"irc remove {name}")
+        assert name not in console.command("irc status")
         print(json.dumps({"result": "pass", "instance": instance,
             "display_session": args.display_session, "tasks": tasks}, indent=2))
     finally:

@@ -5,7 +5,7 @@ Requires pyserial and cryptography. Pass --host-address with the LAN address
 reachable by the device. Creates only hil-irc-a/b profiles and removes them
 on success. The caller starts the USB port shell before running this test.
 --test-removal also exercises display-shell, Chat, and Python instance removal;
---keep-removal-records leaves its archives/history for a reboot recovery check.
+--keep-removal-records leaves its removal markers for a reboot recovery check.
 """
 import argparse
 import base64
@@ -57,6 +57,15 @@ class Console:
                 print(output, flush=True)
                 return output
         raise TimeoutError(f"shell command {command.split()[0] if command else '(prompt)'}: {output}")
+
+    def wait_for(self, marker, timeout=20):
+        output = ""
+        end = time.monotonic() + timeout
+        while time.monotonic() < end:
+            output += self.collect(0.2)
+            if marker in output:
+                return output
+        raise TimeoutError(f"console marker {marker!r}: {output}")
 
 
 class IRCServer:
@@ -183,7 +192,7 @@ def main():
         before = console.command("mem policy")
         nvs_before = console.command("nvs status")
         console.serial.write(b"python\r")
-        assert ">>>" in console.collect(2)
+        console.wait_for(">>>")
         device_ca = "/sdcard/irc-hil-ca.pem"
         def repl(line):
             # The REPL limits input to the terminal's visible columns.
@@ -257,7 +266,7 @@ def main():
         assert b.connections == old_b, "reconnecting A disturbed B"
         console.command("setterm profile ansi")
         console.serial.write(b"chat\r")
-        view = console.collect(2)
+        view = console.wait_for("Channels")
         assert "channels" in view.lower(), view
         console.serial.write(b"\t/join hil-irc-a #ui-check\r")
         a.wait(lambda: any(event[1] == "JOIN #ui-check" for event in a.events))
@@ -295,10 +304,11 @@ def main():
             replacement = int(re.search(r"saved instance .* \((\d+)\)", output)[1])
             assert replacement > max(ids), output
             console.serial.write(b"chat\r")
-            console.collect(1)
+            console.wait_for("Channels")
             console.serial.write(b"\t/remove hil-irc-a\r")
-            view = console.collect(2)
-            assert "instance and history removed" in view, view
+            # Incremental terminal redraws may split the status text across
+            # cursor movements; verify removal through the service below.
+            console.wait_for("removed")
             console.serial.write(b"\x1d")
             assert PROMPT.search(console.collect(1))
             assert "hil-irc-a:" not in console.command("irc status")
@@ -308,7 +318,7 @@ def main():
         console.command("job stop irc-sync")
         offline = 'b' if args.test_removal else 'a'
         console.serial.write(f"chat {rooms[offline]}\r".encode())
-        console.collect(1)
+        console.wait_for("Channels")
         # A conversation-ID selector starts directly on the Chat tab. Go to
         # Channels and select it again to exercise offline membership handling.
         console.serial.write(b"\t")
@@ -319,7 +329,7 @@ def main():
         console.serial.write(b"\x1d")
         assert PROMPT.search(console.collect(1))
         console.serial.write(b"python\r")
-        assert ">>>" in console.collect(2)
+        console.wait_for(">>>")
         repl("import solaros")
         assert "hil-irc-b" in repl("print(solaros.messages.instances()[-1]['name'])")
         repl(f"print(solaros.messages.query({ids[1]},'Remote'))")
