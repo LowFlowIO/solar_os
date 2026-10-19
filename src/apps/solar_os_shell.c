@@ -4685,12 +4685,9 @@ static void shell_history_load(solar_os_shell_session_t *session)
     }
 }
 
-static void shell_history_add(solar_os_context_t *ctx, const char *line)
+static void shell_history_add(solar_os_context_t *ctx, const char *line, int argc, char **argv)
 {
-    if (strncmp(line, "irc sasl ", 9) == 0 || strncmp(line, "irc pass ", 9) == 0 ||
-        strncmp(line, "messages add ", 13) == 0 || strncmp(line, "messages configure ", 19) == 0 ||
-        strncmp(line, "job start meshcore-ble ", 23) == 0 ||
-        strncmp(line, "gateway configure ", 18) == 0 || strncmp(line, "gateway connect ", 16) == 0) return;
+    if (solar_os_shell_command_has_secrets(argc, (const char *const *)argv)) return;
     solar_os_shell_session_t *session = shell_session(ctx);
 
     if (shell_history_add_ram(session, line)) {
@@ -10156,7 +10153,7 @@ static bool SHELL_NOINLINE shell_launch_raw_agent_ask(
     }
     *matched = true;
     if (add_history) {
-        shell_history_add(ctx, line);
+        shell_history_add(ctx, line, 0, NULL);
     }
 
     char chunks[SOLAR_OS_APP_ARG_MAX][SOLAR_OS_APP_ARG_LEN] = {{0}};
@@ -10269,7 +10266,7 @@ static bool shell_execute_line(solar_os_context_t *ctx,
     }
 
     if (add_history) {
-        shell_history_add(ctx, line);
+        shell_history_add(ctx, line, argc, argv);
     }
 
     for (size_t i = 0; i < shell_builtin_command_count; i++) {
