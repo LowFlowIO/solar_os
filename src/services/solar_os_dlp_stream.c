@@ -11,7 +11,10 @@ typedef struct {
   char name[SOLAR_OS_STREAM_ID_MAX], owner[SOLAR_OS_STREAM_OWNER_MAX];
   solar_os_display_link_options_t options;
   sdlp_stream_t parser;
-  uint8_t rx[SDLP_CELL_SIZE];
+  /* Transport callbacks are serialized by the link owner. Keep protocol
+   * scratch with that owner rather than nesting it on the display shell stack. */
+  uint8_t rx[SDLP_CELL_SIZE], packet[SDLP_CELL_SIZE];
+  sdlp_cell_t cell;
   size_t rx_at, rx_size;
   bool compact, failed;
 } stream_transport_t;
@@ -50,11 +53,10 @@ static void destroy(void *ctx) {
   solar_os_memory_free(s);
 }
 static int send_packet(stream_transport_t *s, const uint8_t *cell, uint64_t deadline) {
-  uint8_t packet[SDLP_CELL_SIZE];
-  size_t size = sdlp_stream_encode(packet, cell, s->compact), at = 0;
+  size_t size = sdlp_stream_encode(s->packet, cell, s->compact), at = 0;
   while (at < size && now_us(s) < deadline && !cancelled(s)) {
     size_t n = 0;
-    esp_err_t error = solar_os_stream_write(&s->handle, packet + at, size - at, 0, &n);
+    esp_err_t error = solar_os_stream_write(&s->handle, s->packet + at, size - at, 0, &n);
     if ((error != ESP_OK && error != ESP_ERR_TIMEOUT) || n > size - at) {
       s->failed = true; return SDLP_LINK_ERROR;
     }
@@ -69,10 +71,11 @@ static int push(void *ctx, const uint8_t cell[SDLP_CELL_SIZE], uint64_t deadline
 static int request(void *ctx, const uint8_t tx[SDLP_CELL_SIZE],
     uint8_t rx[SDLP_CELL_SIZE], uint64_t deadline) {
   stream_transport_t *s = ctx;
-  sdlp_cell_t wanted;
-  if (!sdlp_decode(&wanted, tx)) return SDLP_LINK_ERROR;
+  if (!sdlp_decode(&s->cell, tx)) return SDLP_LINK_ERROR;
+  uint8_t opcode = s->cell.opcode;
+  uint32_t sequence = s->cell.sequence, session = s->cell.session;
   uint64_t start = now_us(s), retry_at = 0;
-  bool discovery = wanted.opcode == SDLP_GET_INFO, fallback = false;
+  bool discovery = opcode == SDLP_GET_INFO, fallback = false;
   while (now_us(s) < deadline && !owner_cancelled(s)) {
     if (s->failed) {
       /* A listener may still be fencing its previous peer. Discovery can
@@ -112,10 +115,9 @@ static int request(void *ctx, const uint8_t tx[SDLP_CELL_SIZE],
     while (!ready && s->rx_at < s->rx_size)
       ready = sdlp_stream_feed(&s->parser, s->rx[s->rx_at++], rx, &compact);
     if (ready) {
-      sdlp_cell_t reply;
-      if (sdlp_decode(&reply, rx) && reply.kind == SDLP_RESPONSE &&
-          reply.opcode == wanted.opcode && reply.sequence == wanted.sequence &&
-          reply.session == wanted.session) {
+      if (sdlp_decode(&s->cell, rx) && s->cell.kind == SDLP_RESPONSE &&
+          s->cell.opcode == opcode && s->cell.sequence == sequence &&
+          s->cell.session == session) {
         if (discovery) s->compact = compact;
         return SDLP_OK;
       }

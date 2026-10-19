@@ -19,13 +19,22 @@ class DlpLifecycleTest(unittest.TestCase):
 #define SOLAR_OS_EVENT_RESUME 1
 #define SOLAR_OS_EVENT_CHAR 2
 #define SOLAR_OS_EVENT_TICK 3
+#define SOLAR_OS_EVENT_KEY 4
 #define SOLAR_OS_KEY_APP_EXIT 0x92u
+#define SOLAR_OS_KEY_DELETE 0x96u
 #define SOLAR_OS_KEY_ESCAPE 27
+#define SOLAR_OS_INPUT_KEY_PRESS 0
+#define SOLAR_OS_INPUT_KEY_RELEASE 1
+#define SOLAR_OS_INPUT_MOD_CTRL 1
+#define SOLAR_OS_INPUT_MOD_ALT 2
 #define SOLAR_OS_STREAM_DIRECTION_DUPLEX 3
 #define SOLAR_OS_GFX_COLOR_WHITE 0
 #define SOLAR_OS_GFX_COLOR_BLACK 3
 #define DLP_OK 0
-typedef struct { int type; union { char ch; } data; } solar_os_event_t;
+typedef struct { int type; union {
+    char ch;
+    struct { uint8_t key, modifiers; int action; } key;
+} data; } solar_os_event_t;
 typedef struct { int direction; } solar_os_stream_open_options_t;
 typedef struct { bool valid; } stream_t;
 typedef struct { bool finished, graphics; } solar_os_context_t;
@@ -119,8 +128,39 @@ int main(void) {
     key.data.ch = (char)SOLAR_OS_KEY_APP_EXIT; event(&ctx, &key); assert(ctx.finished);
     ctx.finished = false; state.retry_at_us = clock_us + 250000;
     key.data.ch = SOLAR_OS_KEY_ESCAPE; event(&ctx, &key); assert(ctx.finished);
+    ctx.finished = false; key.data.ch = 0x1d;
+    event(&ctx, &key); assert(ctx.finished);
+    /* Raw key sources preserve modifiers instead of sending APP_EXIT. Test
+     * both an idle receiver and one backing off after a transport failure. */
+    for (unsigned retry = 0; retry < 2; retry++) {
+        state.retry_at_us = retry ? clock_us + 250000 : 0;
+        key.type = SOLAR_OS_EVENT_KEY;
+        key.data.key.action = SOLAR_OS_INPUT_KEY_PRESS;
+        key.data.key.key = SOLAR_OS_KEY_DELETE;
+        key.data.key.modifiers = SOLAR_OS_INPUT_MOD_ALT;
+        ctx.finished = false; event(&ctx, &key); assert(!ctx.finished);
+        key.data.key.modifiers |= SOLAR_OS_INPUT_MOD_CTRL;
+        key.data.key.action = SOLAR_OS_INPUT_KEY_RELEASE;
+        event(&ctx, &key); assert(!ctx.finished);
+        key.data.key.action = SOLAR_OS_INPUT_KEY_PRESS;
+        event(&ctx, &key); assert(ctx.finished);
+        ctx.finished = false;
+        key.data.key.key = ']'; key.data.key.modifiers = SOLAR_OS_INPUT_MOD_CTRL;
+        event(&ctx, &key); assert(ctx.finished);
+        ctx.finished = false;
+        key.data.key.key = SOLAR_OS_KEY_APP_EXIT; key.data.key.modifiers = 0;
+        event(&ctx, &key); assert(ctx.finished);
+        ctx.finished = false;
+        key.data.key.key = SOLAR_OS_KEY_ESCAPE;
+        event(&ctx, &key); assert(ctx.finished);
+    }
 }
 ''')
+
+    def test_receiver_requests_key_events_with_modifiers(self):
+        source = (ROOT / "src/apps/solar_os_dlp_app.c").read_text()
+        descriptor = source[source.index("const solar_os_app_t solar_os_dlp_app ="):]
+        self.assertIn("SOLAR_OS_APP_FLAG_KEY_EVENTS", descriptor)
 
     def test_remote_close_resumes_display_parent_before_restoring_caller(self):
         run_c(r'''

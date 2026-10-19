@@ -620,6 +620,21 @@ static uint32_t host_timeout_ms(const sdlp_host_t *h, uint32_t ms) {
         h->transport.minimum_timeout_ms : h->command_limit_ms;
   return ms;
 }
+/* SPI needs idle polls between command retries. Byte streams never use these
+ * cells, so do not reserve them in every command's stack frame. Keep this
+ * boundary even with size optimization, which otherwise inlines the scratch. */
+#if defined(__GNUC__) || defined(__clang__)
+__attribute__((noinline))
+#endif
+static int host_exchange(sdlp_host_t *h, const uint8_t request[256],
+                         uint8_t rx[256], unsigned count, uint64_t deadline) {
+  if (count % 4 == 0)
+    return h->transport.exchange(h->transport.ctx, request, rx, h->clock_hz, h->gap_us, deadline);
+  sdlp_cell_t blank = {0};
+  uint8_t idle[256];
+  (void)sdlp_encode(idle, &blank);
+  return h->transport.exchange(h->transport.ctx, idle, rx, h->clock_hz, h->gap_us, deadline);
+}
 int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
                       sdlp_cell_t *answer, uint64_t deadline) {
   if (!h || (!h->transport.exchange && !h->transport.request) || !h->transport.now_us ||
@@ -631,19 +646,18 @@ int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
   uint32_t *seq = discovery ? &h->discovery_sequence : &h->sequence;
   if (*seq == UINT32_MAX)
     return SDLP_BAD_SEQUENCE;
-  sdlp_cell_t q = {0}, a;
-  q.kind = SDLP_REQUEST;
-  q.opcode = (uint8_t)op;
-  q.sequence = ++*seq;
-  q.session = discovery ? 0 : h->session;
-  q.boot = discovery ? 0 : h->boot;
-  q.length = (uint16_t)n;
+  sdlp_cell_t cell = {0};
+  uint32_t sequence = ++*seq, session = discovery ? 0 : h->session;
+  cell.kind = SDLP_REQUEST;
+  cell.opcode = (uint8_t)op;
+  cell.sequence = sequence;
+  cell.session = session;
+  cell.boot = discovery ? 0 : h->boot;
+  cell.length = (uint16_t)n;
   if (n)
-    memcpy(q.payload, p, n);
-  uint8_t request[256], idle[256], rx[256];
-  (void)sdlp_encode(request, &q);
-  sdlp_cell_t blank = {0};
-  (void)sdlp_encode(idle, &blank);
+    memcpy(cell.payload, p, n);
+  uint8_t request[256], rx[256];
+  (void)sdlp_encode(request, &cell);
   uint64_t now = h->transport.now_us(h->transport.ctx);
   uint32_t ms = discovery ? 1000 : h->info.command_ms;
   if (op == SDLP_WINDOW_SYNC && n == 8 && sdlp_get_u32((const uint8_t *)p + 4))
@@ -660,30 +674,29 @@ int sdlp_host_command(sdlp_host_t *h, unsigned op, const void *p, size_t n,
       h->configured = false;
       return SDLP_LINK_ERROR;
     }
-    const uint8_t *tx = (count % 4 == 0) ? request : idle;
     int exchanged = h->transport.request ?
         h->transport.request(h->transport.ctx, request, rx, deadline) :
-        h->transport.exchange(h->transport.ctx, tx, rx, h->clock_hz, h->gap_us, deadline);
+        host_exchange(h, request, rx, count, deadline);
     if (exchanged) {
       if (!discovery)
         h->configured = false;
       return SDLP_LINK_ERROR;
     }
-    if (!sdlp_decode(&a, rx) ||
-        (a.kind != SDLP_IDLE && a.kind != SDLP_RESPONSE) || !a.boot)
+    if (!sdlp_decode(&cell, rx) ||
+        (cell.kind != SDLP_IDLE && cell.kind != SDLP_RESPONSE) || !cell.boot)
       continue;
-    if (!discovery && a.boot != h->boot) {
+    if (!discovery && cell.boot != h->boot) {
       h->configured = false;
       return SDLP_STALE_BOOT;
     }
-    if (a.kind != SDLP_RESPONSE || a.opcode != op || a.sequence != q.sequence ||
-        a.session != q.session)
+    if (cell.kind != SDLP_RESPONSE || cell.opcode != op || cell.sequence != sequence ||
+        cell.session != session)
       continue;
-    if (discovery && a.result == SDLP_OK)
-      h->boot = a.boot;
+    if (discovery && cell.result == SDLP_OK)
+      h->boot = cell.boot;
     if (answer)
-      *answer = a;
-    return a.result;
+      *answer = cell;
+    return cell.result;
   }
   if (!discovery)
     h->configured = false;

@@ -51,6 +51,29 @@ class DlpStreamClientTest(unittest.TestCase):
                 str(ROOT / "src/services/solar_os_port.c"),
                 str(ROOT / "src/services/solar_os_stream.c"),
                 str(ROOT / "protocol/display_link/src/sdlp.c"), "-o", str(binary)], check=True)
+            # Measure optimized, uninstrumented frames separately: ASan adds
+            # its own stack overhead. Discovery nests these frames below the
+            # display shell and network stack; they previously used >2 KiB.
+            subprocess.run(["cc", "-std=c11", "-Os", "-fstack-usage", "-c",
+                "-include", str(ROOT / "tests/host/compat.h"),
+                "-I" + directory, "-I" + str(ROOT / "tests/host"),
+                "-I" + str(ROOT / "src/drivers"), "-I" + str(ROOT / "src/services"),
+                "-I" + str(ROOT / "src"), "-I" + str(ROOT / "include"),
+                "-I" + str(ROOT / "protocol/display_link/include"),
+                str(ROOT / "src/services/solar_os_dlp_stream.c"),
+                str(ROOT / "protocol/display_link/src/sdlp.c")], cwd=path, check=True)
+            budgets = {"sdlp_host_command": 1024, "request": 192, "send_packet": 192}
+            measured = {}
+            for usage in path.glob("*.su"):
+                if not (usage.name.endswith("sdlp.su") or usage.name.endswith("solar_os_dlp_stream.su")):
+                    continue
+                for line in usage.read_text().splitlines():
+                    location, size, _kind = line.split("\t")
+                    name = location.rsplit(":", 1)[-1]
+                    if name in budgets:
+                        measured[name] = int(size)
+                        self.assertLessEqual(int(size), budgets[name], name)
+            self.assertEqual(measured.keys(), budgets.keys())
             subprocess.run([str(binary)], check=True, timeout=20)
 
 

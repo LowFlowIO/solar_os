@@ -19,6 +19,7 @@
 #include "solar_os_expansion.h"
 #include "solar_os_gpio_controller.h"
 #include "solar_os_keys.h"
+#include "solar_os_memory.h"
 #include "solar_os_pins.h"
 #include "solar_os_resources.h"
 #include "solar_os_shell.h"
@@ -1396,9 +1397,9 @@ static void expansion_print_attach_diagnostics(solar_os_shell_io_t *term, const 
 #endif
 }
 
-static void expansion_cmd_attach(solar_os_shell_io_t *term, int argc, char **argv)
+static void expansion_cmd_attach_with_bindings(solar_os_shell_io_t *term, int argc,
+    char **argv, solar_os_expansion_binding_t *bindings)
 {
-    solar_os_expansion_binding_t bindings[SOLAR_OS_EXPANSION_DEVICE_BINDING_MAX];
     size_t binding_count = 0;
     solar_os_expansion_driver_t driver;
 
@@ -1486,6 +1487,22 @@ static void expansion_cmd_attach(solar_os_shell_io_t *term, int argc, char **arg
         return;
     }
     solar_os_shell_io_printf(term, "attached %s using %s\n", argv[3], argv[2]);
+}
+
+static void expansion_cmd_attach(solar_os_shell_io_t *term, int argc, char **argv)
+{
+    /* Driver discovery and connection run below this frame on the 8 KiB main
+     * stack when invoked from the display shell. Bindings live until attach
+     * returns, including every validation and transport failure path. */
+    solar_os_expansion_binding_t *bindings = solar_os_memory_alloc(
+        SOLAR_OS_EXPANSION_DEVICE_BINDING_MAX * sizeof(*bindings),
+        SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "expansion.attach.bindings");
+    if (bindings == NULL) {
+        solar_os_shell_diag_esp(term, "expansion attach", ESP_ERR_NO_MEM, NULL, NULL);
+        return;
+    }
+    expansion_cmd_attach_with_bindings(term, argc, argv, bindings);
+    solar_os_memory_free(bindings);
 }
 
 static void expansion_cmd_detach(solar_os_shell_io_t *term, int argc, char **argv)
