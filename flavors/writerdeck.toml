@@ -74,3 +74,4 @@ es8311 = true
 speech = true
 player = true
 recorder = true
+synth = true

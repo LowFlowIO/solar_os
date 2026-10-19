@@ -20,6 +20,9 @@ esp_err_t solar_os_log_write(solar_os_log_level_t level, const char *tag, const 
 }
 #include "../../src/drivers/epd_ssd1683.c"
 
+const u8g2_cb_t u8g2_cb_r0 = {0}, u8g2_cb_r1 = {0};
+const u8g2_cb_t u8g2_cb_r2 = {0}, u8g2_cb_r3 = {0};
+
 /* The shared worker's real concurrency is covered by epd_scan_worker_test.
  * Here deterministic ticks exercise the adapter's hardware/state contract.
  */
@@ -1131,7 +1134,67 @@ static void test_relax_errors_and_other_profiles(void) {
     }
 }
 
+static void test_mono_frames(void) {
+    const u8g2_cb_t *rotations[] = {U8G2_R0, U8G2_R1, U8G2_R2, U8G2_R3};
+    /* Odd width, explicit row padding, and set bits beyond the visible tail. */
+    const uint8_t bitmap[] = {0xa5, 0xe3, 0xff, 0x81, 0xff, 0xff,
+                              0x66, 0xe9, 0xff, 0x18, 0xf8, 0xff};
+    for (unsigned dual = 0; dual < 2; ++dual) {
+        const unsigned nw = dual ? SSD1683_DUAL_WIDTH : SSD1683_WIDTH;
+        const unsigned nh = dual ? SSD1683_DUAL_HEIGHT : SSD1683_HEIGHT;
+        for (unsigned rotation = 0; rotation < 4; ++rotation) {
+            for (unsigned invert = 0; invert < 2; ++invert) {
+                epd_ssd1683_t d = dual ? display() : single_display();
+                d.u8g2.cb = rotations[rotation];
+                d.u8g2.width = rotation & 1 ? nh : nw;
+                d.u8g2.height = rotation & 1 ? nw : nh;
+                assert(epd_scan_worker_init(&d.scan_worker, d.buffer_size,
+                    ssd1683_scan_process, &d) == ESP_OK);
+                epd_scan_worker_enable(&d.scan_worker, true);
+                d.scan_submit_ready = 1;
+                assert(epd_ssd1683_present_mono_xbm(&d, bitmap, sizeof(bitmap),
+                    5, 7, 13, 4, 3, invert) == ESP_OK);
+                assert(capture_count == 0); /* Queued, no synchronous SPI. */
+                assert(d.scan_worker.stats.submitted == 1);
+                assert(!memcmp(d.scan_worker.latest, d.buffer, d.buffer_size));
+                for (unsigned ny = 0; ny < nh; ++ny) {
+                    for (unsigned nx = 0; nx < nw; ++nx) {
+                        unsigned lx = nx, ly = ny;
+                        if (rotation == 1) { lx = ny; ly = nw - 1 - nx; }
+                        else if (rotation == 2) { lx = nw - 1 - nx; ly = nh - 1 - ny; }
+                        else if (rotation == 3) { lx = nh - 1 - ny; ly = nx; }
+                        bool black = false;
+                        if (lx >= 5 && lx < 18 && ly >= 7 && ly < 11)
+                            black = (bitmap[(ly - 7) * 3 + (lx - 5) / 8] &
+                                (1U << ((lx - 5) & 7))) != 0;
+                        bool white = (d.buffer[(ny / 8) * nw + nx] & (1U << (ny & 7))) != 0;
+                        assert(white == (black == (bool)invert));
+                    }
+                }
+                assert(epd_ssd1683_present_mono_xbm(&d, bitmap, sizeof(bitmap),
+                    5, 7, 13, 4, 3, !invert) == ESP_OK);
+                assert(d.scan_worker.stats.submitted == 2 && d.scan_worker.stats.coalesced == 1);
+                memcpy(d.shadow, d.buffer, d.buffer_size);
+                assert(epd_ssd1683_present_mono_xbm(&d, bitmap, 1,
+                    5, 7, 13, 4, 3, false) == ESP_ERR_INVALID_ARG);
+                assert(epd_ssd1683_present_mono_xbm(&d, bitmap, sizeof(bitmap),
+                    d.u8g2.width - 1, 0, 13, 4, 3, false) == ESP_ERR_INVALID_ARG);
+                assert(epd_ssd1683_present_mono_xbm(&d, bitmap, sizeof(bitmap),
+                    0, 0, 13, 4, 0, false) == ESP_ERR_INVALID_ARG);
+                assert(!memcmp(d.shadow, d.buffer, d.buffer_size));
+                epd_scan_worker_deinit(&d.scan_worker);
+                d.scan_submit_ready = 0;
+                /* An unchanged native frame uses the ordinary refresh path. */
+                assert(epd_ssd1683_present_mono_xbm(&d, bitmap, sizeof(bitmap),
+                    5, 7, 13, 4, 3, !invert) == ESP_OK);
+                assert(capture_count == 0);
+            }
+        }
+    }
+}
+
 int main(void) {
+    test_mono_frames();
     test_control_pin_sleep_retention();
     test_native(); test_pulse_and_restore(); test_default_drive_budget();
     test_settled_pixels_replace_mask();

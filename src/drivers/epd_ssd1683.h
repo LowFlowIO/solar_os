@@ -105,6 +105,13 @@ typedef struct {
 esp_err_t epd_ssd1683_init(epd_ssd1683_t *display,
                            const epd_ssd1683_config_t *config);
 esp_err_t epd_ssd1683_resume(epd_ssd1683_t *display);
+/* Compose a complete frame with a white (or inverted black) border. Source
+ * rows are byte-padded, LSB-first MONO1, with set bits representing black. */
+esp_err_t epd_ssd1683_present_mono_xbm(epd_ssd1683_t *display,
+                                      const uint8_t *bitmap, size_t bitmap_size,
+                                      uint16_t x, uint16_t y,
+                                      uint16_t width, uint16_t height,
+                                      uint16_t stride, bool palette_inverted);
 esp_err_t epd_ssd1683_present_power_state(epd_ssd1683_t *display);
 esp_err_t epd_ssd1683_relax(epd_ssd1683_t *display,
                             solar_os_display_relax_phase_t phase);

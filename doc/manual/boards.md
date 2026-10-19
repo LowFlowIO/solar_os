@@ -1069,6 +1069,10 @@ presentation's blocking time. The default `pulse-scan=async` submits the newest
 image to a persistent scan worker. It delivers one pulse per scan and continues
 settling without further presentations. New targets can arrive between cycles;
 queued images coalesce to the latest target. Settling can span several scans.
+The SSD1683 adapter also accepts monochrome raster frames from native foreground
+apps. The shared presenter scales and dithers indexed emulator frames before
+submission. These frames use the same refresh mode and latest-image queue as
+ordinary UI updates; physical cadence and ink settling follow the panel waveform.
 Select asynchronous operation with:
 
 ```text

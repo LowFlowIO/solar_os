@@ -2102,6 +2102,65 @@ static uint8_t ssd1683_u8x8_display_cb(u8x8_t *u8x8,
     return err == ESP_OK ? 1 : 0;
 }
 
+esp_err_t epd_ssd1683_present_mono_xbm(epd_ssd1683_t *display,
+                                      const uint8_t *bitmap, size_t bitmap_size,
+                                      uint16_t x, uint16_t y,
+                                      uint16_t width, uint16_t height,
+                                      uint16_t stride, bool palette_inverted)
+{
+    if (display == NULL || display->buffer == NULL || bitmap == NULL ||
+        width == 0U || height == 0U ||
+        stride < ((size_t)width + 7U) / 8U ||
+        height > SIZE_MAX / stride || bitmap_size < (size_t)height * stride ||
+        (uint32_t)x + width > u8g2_GetDisplayWidth(&display->u8g2) ||
+        (uint32_t)y + height > u8g2_GetDisplayHeight(&display->u8g2)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const u8g2_cb_t *rotation = display->u8g2.cb;
+    if (rotation != U8G2_R0 && rotation != U8G2_R1 &&
+        rotation != U8G2_R2 && rotation != U8G2_R3) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    const unsigned native_width = ssd1683_is_dual(display) ?
+        SSD1683_DUAL_WIDTH : SSD1683_WIDTH;
+    const unsigned native_height = ssd1683_is_dual(display) ?
+        SSD1683_DUAL_HEIGHT : SSD1683_HEIGHT;
+    if (display->buffer_size < native_width * ((native_height + 7U) / 8U) ||
+        !display->powered || display->power_state_present || display->relax_storage != NULL) {
+        return ESP_ERR_INVALID_STATE;
+    }
+
+    /* Like ordinary u8g2 drawing, compose before submitting the immutable
+     * snapshot. The pulse worker reads its own snapshot, never this buffer. */
+    memset(display->buffer, palette_inverted ? 0x00 : 0xff, display->buffer_size);
+    for (unsigned row = 0; row < height; ++row) {
+        const uint8_t *source = bitmap + (size_t)row * stride;
+        for (unsigned column = 0; column < width; ++column) {
+            const unsigned lx = x + column, ly = y + row;
+            unsigned nx = lx, ny = ly;
+            if (rotation == U8G2_R1) { nx = native_width - 1U - ly; ny = lx; }
+            else if (rotation == U8G2_R2) {
+                nx = native_width - 1U - lx; ny = native_height - 1U - ly;
+            } else if (rotation == U8G2_R3) { nx = ly; ny = native_height - 1U - lx; }
+            uint8_t *destination = display->buffer + (ny / 8U) * native_width + nx;
+            const uint8_t mask = (uint8_t)(1U << (ny & 7U));
+            const bool black = (source[column / 8U] & (1U << (column & 7U))) != 0U;
+            if (black == palette_inverted) *destination |= mask;
+            else *destination &= (uint8_t)~mask;
+        }
+    }
+    if (__atomic_load_n(&display->scan_submit_ready, __ATOMIC_ACQUIRE)) {
+        const esp_err_t err = epd_scan_worker_submit(&display->scan_worker, display->buffer);
+        if (err == ESP_OK) return ESP_OK;
+    }
+    if (display->lock != NULL) xSemaphoreTake(display->lock, portMAX_DELAY);
+    const esp_err_t err = ssd1683_refresh(display);
+    display->last_error = err;
+    ssd1683_scan_update_accepting(display);
+    if (display->lock != NULL) xSemaphoreGive(display->lock);
+    return err;
+}
+
 static bool ssd1683_pin_valid(int pin)
 {
     return pin >= 0 && pin < GPIO_NUM_MAX;

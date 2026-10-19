@@ -2,6 +2,13 @@
 
 ## 4.x
 
+- **4.16.21** — 2026-10-19 — Added Fastwave waveforms for SolarWriter and
+  supported CrowPanel e-paper panels, with automatic cleanup and recovery.
+  The cancellable `display relax` command runs repeated black/white recovery
+  cycles and restores the saved image and refresh settings afterward.
+  SSD1683 displays now accept monochrome raster frames from native apps,
+  including scaled and dithered emulator output. Writerdeck now includes the
+  synthesizer and shared synth service for native-app audio.
 - **4.16.20** — 2026-10-19 — Added native IRC to unified Chat with verified
   TLS, optional SASL authentication, channels, private messages, automatic
   reconnect and rejoin, bounded buffers, and flood control. Each IRC instance
