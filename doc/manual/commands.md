@@ -272,6 +272,7 @@ job for periodic polling.
 | `identity` | `identity hostname <name>` | Save the device hostname in NVS; reboot to update Wi-Fi. |
 | `engine` | `engine [status|reset]` | Print or reset generic engine utilization counters for CPU/SIMD-style backends and vector bulk operations. |
 | `display` | `display [list]`; `display layouts`; `display test <target>`; `display mode <target> [mode]` | List targets and layouts, draw a test pattern, or change driver-specific display settings. |
+| `display` | `display relax <target> [seconds]` | Run timed native black/white recovery cycles on supported EPDs, then restore the saved image and refresh mode. |
 | `dlp` | `dlp serve <display> stream=<byte-stream>`; `dlp status`; `dlp stop <display>` | Receive DLP images on a named display through an exclusive duplex byte stream. See [DLP](apps.md#dlp). |
 | `display` | `display join <name> --horizontal\|--vertical <target> <target> [target ...]`; `display unjoin <name>` | Join two to four physical targets into one logical display, or remove the join. |
 | `display` | `display split <target> --horizontal\|--vertical <first> <second>`; `display unsplit <target>` | Split one physical target into two equal logical viewports, or remove the split. |
@@ -1355,6 +1356,24 @@ then releases it. `display mode <target>` lists driver-specific display
 settings for supported display drivers; `display mode <target> <mode>` applies
 one setting.
 
+`display relax display0` runs black/white recovery for 60 seconds. Supply a
+duration from 1 to 86400 seconds, for example `display relax display0 3600` for
+one hour. It alternates solid black and white using synchronous native full
+refreshes, with up to one second of hold after each refresh. It completes a
+black/white pair when the time expires; a hardware refresh can extend the run
+beyond the requested duration. The app-exit key (normally `Ctrl+]`), `Ctrl+C`,
+or Escape stops it between refreshes. The command returns to the shell after
+restoring the saved image and previous refresh mode, including pulse tuning.
+Sleep and shutdown interrupt recovery before the power transition.
+
+Recovery is supported on the CrowPanel 5.79-inch/SolarWriter dual-SSD1683,
+Waveshare 4.2-inch V2, and Elecrow 4.2-inch green-sticker profiles. Other display
+profiles return unsupported. It claims the whole physical target; close apps
+or remove layouts that own it first. A display-shell session can recover its
+own target without closing that session. Ordinary presentation and pulse scans
+are suspended during recovery. Completion reports black/white cycles, not a
+measurement of ghost removal; inspect the physical panel afterward.
+
 `display join wall0 --horizontal display0 lcd0` claims two to four backing
 targets and registers `wall0` as one logical target. Horizontal joins place
 targets from left to right; vertical joins place them from top to bottom. The
@@ -1407,7 +1426,8 @@ The Elecrow 5.79-inch dual-SSD1683, Elecrow 4.2-inch green-sticker, and
 Waveshare 4.2-inch V2/revision-2.2 profiles also accept the optional
 `refresh=pulse` monochrome mode. `display mode <target> drive-cycles=<1..32>`
 sets the per-pixel budget, `pulse-frames=<1..32>` sets each drive phase's scan
-duration, `waveform-fr=<1..12>` selects a raw frame-rate code, and
+duration, `waveform-fr=<1..12>` selects a raw frame-rate code (the dual SSD1683
+accepts only 1–5 or 9–12), and
 `cleanup-every=<1..128>` sets the cleanup baseline.
 `cleanup-policy=adaptive` tracks actual successful drives per pixel.
 It cleans up when the most-driven pixel reaches `cleanup-every * drive-cycles`
@@ -1424,13 +1444,20 @@ These runtime settings apply only to pulse mode and are listed by
 cycles before returning. `pulse-scan=async` runs one cycle per scan in a
 persistent worker and accepts new targets while earlier pixels settle.
 `pulse-period=<10..1000>` requests the minimum scan interval in milliseconds;
-actual timing and submitted/coalesced image counts appear in the mode output.
+the dual-SSD1683 profile instead accepts 67–1000 ms and enforces at least 67 ms
+between physical pulse activations in synchronous and asynchronous operation.
+Actual timing and submitted/coalesced image counts appear in the mode output.
 `pulse-power=<cycle,hold>` selects supply cycling or retention during settling,
 `pulse-ramp=<normal,fast>` selects booster duration, and
 `pulse-spi-khz=<100..20000>` overrides the SPI clock only for pulse operation.
-Elecrow 5.79-inch defaults are asynchronous, 10 ms requested interval, retained supplies, fast
+Elecrow 5.79-inch defaults are asynchronous, 67 ms requested interval, retained supplies, fast
 booster ramp, 20000 kHz pulse SPI, 6 drive cycles, 8 scan frames, FR code 4,
-and adaptive cleanup with a baseline of 64. The default refresh policy remains auto. Requested
+and adaptive cleanup with a baseline of 64. This profile uses the Fastwave
+waveform builder on both controllers, reported as `waveform=fastwave`, with
+no reset kick and one VSS settle frame after the configured drive phase.
+Grayscale images use the existing dithering path.
+CrowPanel 5.79-inch and SolarWriter
+start in pulse mode, with native auto as the fallback if the worker cannot start. Requested
 scan cadence is not a guarantee of achieved cadence or optical settling.
 Waveshare 4.2-inch defaults are asynchronous, 100 ms requested interval,
 supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,

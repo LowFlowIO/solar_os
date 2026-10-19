@@ -70,13 +70,29 @@ class RuntimeBoundaryTest(unittest.TestCase):
             "src/services/solar_os_radio.c":
                 "static EXT_RAM_BSS_ATTR radio_device_t radio_devices",
             "src/services/solar_os_chat.c":
-                "static EXT_RAM_BSS_ATTR solar_os_chat_store_state_t chat",
-            "src/services/solar_os_chat_transport_gateway.c":
-                "static EXT_RAM_BSS_ATTR solar_os_chat_state_data_t chat_state",
+                "static EXT_RAM_BSS_ATTR solar_os_chat_store_state_t default_chat",
         }
         for relative_path, declaration in declarations.items():
             source = (ROOT / relative_path).read_text(encoding="utf-8")
             self.assertIn(declaration, source, relative_path)
+
+    def test_gateway_transport_state_uses_per_instance_external_memory(self):
+        source = (ROOT / "src/services/solar_os_chat_transport_gateway.c").read_text(
+            encoding="utf-8"
+        )
+        initializer = re.search(
+            r"^static esp_err_t solar_os_chat_gateway_init\(void\)\n\{.*?^\}",
+            source, re.M | re.S,
+        )
+        self.assertIsNotNone(initializer)
+        self.assertIn("void **slot = solar_os_gateway_transport_slot();", initializer.group())
+        self.assertIn("*slot = chat_calloc(1, sizeof(solar_os_chat_state_data_t))", initializer.group())
+        allocator = re.search(
+            r"^static void \*chat_calloc\([^;]*?\n\{.*?^\}", source, re.M | re.S,
+        )
+        self.assertIsNotNone(allocator)
+        self.assertIn("solar_os_memory_calloc(", allocator.group())
+        self.assertIn("SOLAR_OS_MEMORY_EXTERNAL_REQUIRED", allocator.group())
 
     def test_expansion_registry_prefers_external_memory(self):
         source = (ROOT / "src/services/solar_os_expansion.c").read_text(

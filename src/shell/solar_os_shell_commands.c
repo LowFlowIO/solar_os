@@ -2,7 +2,7 @@
 #include "solar_os_shell_common.h"
 
 static const char * const display_commands[] = {
-    "list", "layouts", "test", "mode", "join", "unjoin", "split", "unsplit",
+    "list", "layouts", "test", "mode", "relax", "join", "unjoin", "split", "unsplit",
 };
 #if SOLAR_OS_PACKAGE_SERVICE_OTA
 static const char * const ota_commands[] = {"status", "check", "upgrade", "url", "flavor", "boot"};
@@ -291,6 +291,7 @@ static void display_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  display layouts");
     solar_os_shell_io_writeln(term, "  display test <target>");
     solar_os_shell_io_writeln(term, "  display mode <target> [mode]");
+    solar_os_shell_io_writeln(term, "  display relax <target> [seconds]");
     solar_os_shell_io_writeln(term,
                               "  display join <name> --horizontal|--vertical <target> <target> [target ...]");
     solar_os_shell_io_writeln(term, "  display unjoin <name>");
@@ -717,6 +718,66 @@ static void display_cmd_mode(solar_os_shell_io_t *term, int argc, char **argv)
     solar_os_shell_io_printf(term, "display mode: %s -> %s\n", argv[2], argv[3]);
 }
 
+static bool display_relax_cancel_key(void *user)
+{
+    solar_os_context_t *ctx = user;
+    if (ctx->exit_requested || ctx->sleep_requested || ctx->deep_sleep_requested) return true;
+    solar_os_shell_io_t *term = terminal(ctx);
+    uint8_t chars[16];
+    size_t count = 0;
+    do {
+        if (solar_os_shell_io_kind(term) == SOLAR_OS_SHELL_IO_KIND_PORT) {
+            if (solar_os_port_read(&term->port, chars, sizeof(chars), 0, &count) != ESP_OK)
+                return true;
+        } else {
+            count = solar_os_input_read_chars((char *)chars, sizeof(chars));
+        }
+        for (size_t i = 0; i < count; ++i) {
+            if (chars[i] == SOLAR_OS_KEY_APP_EXIT || chars[i] == 0x1d ||
+                chars[i] == 0x03 || chars[i] == SOLAR_OS_KEY_ESCAPE) return true;
+        }
+    } while (count != 0);
+    return false;
+}
+
+static void display_cmd_relax(solar_os_context_t *ctx, solar_os_shell_io_t *term,
+                              int argc, char **argv)
+{
+    size_t seconds = 60;
+    if ((argc != 3 && argc != 4) ||
+        (argc == 4 && !solar_os_shell_parse_size_arg(argv[3], 1, 86400, &seconds))) {
+        solar_os_shell_io_writeln(term, "usage: display relax <target> [seconds: 1..86400, default 60]");
+        return;
+    }
+    solar_os_shell_io_printf(term, "display relax: %s, %u seconds; %s or Ctrl+C stops\n",
+                             argv[2], (unsigned)seconds, solar_os_shell_io_app_exit_key(term));
+    (void)solar_os_shell_io_flush(term);
+    char busy_owner[SOLAR_OS_DISPLAY_TARGET_OWNER_MAX] = {0};
+    char owner[SOLAR_OS_DISPLAY_TARGET_OWNER_MAX] = "shell:display-relax";
+    char local_target[SOLAR_OS_DISPLAY_TARGET_NAME_MAX];
+    solar_os_display_target_t target;
+    /* A display-shell session can temporarily reuse its own claim. Port
+     * shells must acquire a free target rather than borrowing another owner.
+     */
+    if (solar_os_shell_io_kind(term) == SOLAR_OS_SHELL_IO_KIND_TERMINAL &&
+        ctx->gfx != NULL && solar_os_gfx_display_target_name(ctx->gfx, local_target, sizeof(local_target)) &&
+        strcmp(local_target, argv[2]) == 0 && solar_os_display_find_target(argv[2], &target) &&
+        target.owner[0] != '\0') strlcpy(owner, target.owner, sizeof(owner));
+    solar_os_display_relax_result_t result;
+    const esp_err_t err = solar_os_display_relax(argv[2], owner, (unsigned)seconds,
+        display_relax_cancel_key, ctx, &result, busy_owner, sizeof(busy_owner));
+    if (err != ESP_OK) {
+        if (busy_owner[0] != '\0')
+            solar_os_shell_io_printf(term, "display relax: %s owned by %s\n", argv[2], busy_owner);
+        else
+            solar_os_shell_io_printf(term, "display relax: %s failed: %s\n",
+                                     argv[2], solar_os_shell_error_text(err));
+        return;
+    }
+    solar_os_shell_io_printf(term, "display relax: %s after %u black/white cycles; image and mode restored\n",
+                             result.cancelled ? "stopped" : "done", (unsigned)result.cycles);
+}
+
 void solar_os_shell_cmd_display(solar_os_context_t *ctx, int argc, char **argv)
 {
     solar_os_shell_io_t *term = terminal(ctx);
@@ -731,6 +792,10 @@ void solar_os_shell_cmd_display(solar_os_context_t *ctx, int argc, char **argv)
     }
     if (argc >= 2 && strcmp(argv[1], "mode") == 0) {
         display_cmd_mode(term, argc, argv);
+        return;
+    }
+    if (argc >= 2 && strcmp(argv[1], "relax") == 0) {
+        display_cmd_relax(ctx, term, argc, argv);
         return;
     }
     if (argc == 2 && strcmp(argv[1], "layouts") == 0) {

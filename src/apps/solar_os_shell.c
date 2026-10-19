@@ -828,6 +828,7 @@ static const char * const display_subcommands[] = {
     "layouts",
     "test",
     "mode",
+    "relax",
     "join",
     "unjoin",
     "split",
@@ -1932,6 +1933,7 @@ static const char * const path_dlp_stream[] = {"dlp", "serve", SHELL_COMPLETION_
 #endif
 static const char * const path_display_test[] = {"display", "test"};
 static const char * const path_display_mode[] = {"display", "mode"};
+static const char * const path_display_relax[] = {"display", "relax"};
 static const char * const path_display_mode_target[] = {"display", "mode", SHELL_COMPLETION_ANY};
 static const char * const path_display_join_name[] = {"display", "join", SHELL_COMPLETION_ANY};
 static const char * const path_display_join_target_1[] = {
@@ -3293,6 +3295,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_gesture_unbind, gesture_unbind_values),
     SHELL_COMPLETION_DISPLAY_TARGETS(path_display_test),
     SHELL_COMPLETION_DISPLAY_TARGETS(path_display_mode),
+    SHELL_COMPLETION_DISPLAY_TARGETS(path_display_relax),
     SHELL_COMPLETION_DISPLAY_MODES(path_display_mode_target),
     SHELL_COMPLETION_STATIC(path_display_join_name, display_layout_axes),
     SHELL_COMPLETION_DISPLAY_TARGETS(path_display_join_target_1),
