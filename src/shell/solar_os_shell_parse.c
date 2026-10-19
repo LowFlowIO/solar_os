@@ -3,10 +3,13 @@
 #include <stdbool.h>
 #include <stdint.h>
 #include <string.h>
+#include <strings.h>
 
 bool solar_os_shell_command_has_secrets(int argc, const char *const *argv)
 {
     if (argc < 2 || !argv) return false;
+    if (argv[0][0] == '/') return !strcasecmp(argv[0], "/sasl") ||
+        !strcasecmp(argv[0], "/add") || !strcasecmp(argv[0], "/configure");
     if (!strcmp(argv[0], "irc")) return !strcmp(argv[1], "sasl") || !strcmp(argv[1], "pass");
     if (!strcmp(argv[0], "messages")) return !strcmp(argv[1], "add") || !strcmp(argv[1], "configure");
     if (!strcmp(argv[0], "gateway")) return !strcmp(argv[1], "configure") || !strcmp(argv[1], "connect");

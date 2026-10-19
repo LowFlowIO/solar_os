@@ -55,6 +55,10 @@ the same arguments after `/add irc` and `/configure`. Setup commands are exclude
 from input history. Nicknames must use IRC nickname characters; `nils-sol` is
 valid, while `nils@sol` is rejected before configuration is saved.
 
+Shell and Chat setup commands use the same quoting rules. Single quotes
+preserve spaces and backslashes literally; double quotes allow backslash
+escapes. Unclosed quotes are rejected without changing saved settings.
+
 TLS always verifies the server certificate and hostname. The default trust
 source is the firmware certificate bundle. `irc ca` selects a PEM CA file on
 mounted storage, limited to 8191 bytes. Keep the system clock correct for

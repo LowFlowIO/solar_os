@@ -29,6 +29,7 @@ from cryptography.x509.oid import NameOID
 
 ANSI = re.compile(r"\x1b(?:\[[0-?]*[ -/]*[@-~]|\][^\x07]*(?:\x07|\x1b\\))")
 PROMPT = re.compile(r"[\w.-]+@[\w.-]+:[^\r\n]* ")
+HIL_PASSWORD = "hil password\\with'and\"quotes"
 
 
 class Console:
@@ -109,7 +110,7 @@ class IRCServer:
                 elif text == "AUTHENTICATE PLAIN":
                     send("AUTHENTICATE +")
                 elif command == "AUTHENTICATE":
-                    if base64.b64decode(rest) == b"\0hil-account\0hil-password":
+                    if base64.b64decode(rest) == b"\0hil-account\0" + HIL_PASSWORD.encode():
                         authenticated = True
                         send(f":test 903 {nickname} :SASL authentication successful")
                     else:
@@ -244,7 +245,16 @@ def main():
                 break
             assert time.monotonic() < deadline, status
         assert not any(event[1] == "CAP END" for event in b.events), "rejected SASL fell back to anonymous login"
-        assert "configuration saved" in console.command("messages configure hil-irc-b sasl hil-account hil-password")
+        # Exercise Chat's actual setup parser with spaces, backslashes and
+        # both kinds of quote in the password. The server checks exact bytes.
+        console.command("setterm profile ansi")
+        console.serial.write(b"chat\r")
+        console.wait_for("Channels")
+        console.serial.write(("\t/sasl hil-irc-b hil-account " + json.dumps(HIL_PASSWORD) + "\r").encode())
+        b.wait(lambda: any(event[1] == "CAP END" for event in b.events))
+        console.collect(1)
+        console.serial.write(b"\x1d")
+        assert PROMPT.search(console.collect(2)), "Chat setup did not restore the shell prompt"
         assert "irc: ok" in console.command(f"irc ca hil-irc-a {device_ca}")
         for server in (a, b):
             server.wait(lambda s=server: any("USER " in event[1] for event in s.events))

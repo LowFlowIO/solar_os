@@ -20,6 +20,7 @@
 #include "solar_os_keys.h"
 #include "solar_os_memory.h"
 #include "solar_os_messaging.h"
+#include "solar_os_shell_parse.h"
 #include "solar_os_terminal.h"
 #include "solar_os_tui.h"
 #include "solar_os_tui_widgets.h"
@@ -1524,29 +1525,6 @@ static void chat_check_messaging_generation(void)
     }
 }
 
-static int chat_tokenize(char *line, char **argv, int argv_max)
-{
-    int argc = 0;
-    char *p = line;
-
-    while (*p != '\0' && argc < argv_max) {
-        while (isspace((unsigned char)*p)) {
-            p++;
-        }
-        if (*p == '\0') {
-            break;
-        }
-        argv[argc++] = p;
-        while (*p != '\0' && !isspace((unsigned char)*p)) {
-            p++;
-        }
-        if (*p != '\0') {
-            *p++ = '\0';
-        }
-    }
-    return argc;
-}
-
 static void chat_show_status(void)
 {
     solar_os_messaging_status_t status;
@@ -1576,10 +1554,8 @@ static void chat_show_status(void)
     }
 }
 
-static void chat_execute_command(char *line)
+static void chat_execute_command(int argc, char **argv)
 {
-    char *argv[9];
-    const int argc = chat_tokenize(line, argv, 9);
     if (argc == 0) {
         return;
     }
@@ -1723,15 +1699,24 @@ static void chat_submit_input(solar_os_context_t *ctx)
     }
 
     strlcpy(line, chat_app.input, CHAT_APP_INPUT_MAX);
-    if (strncasecmp(line, "/sasl ", 6) != 0 && strncasecmp(line, "/add ", 5) != 0 &&
-        strncasecmp(line, "/configure ", 11) != 0) chat_history_add(line);
+    const bool command = line[0] == '/';
+    char *argv[9];
+    solar_os_shell_parse_result_t parsed = {0};
+    if (command) parsed = solar_os_shell_tokenize(line, argv, 9);
+    /* Preserve the original spelling for ordinary history entries. Never
+     * retain malformed commands or parsed setup commands containing secrets. */
+    if (!command || (parsed.error == SOLAR_OS_SHELL_PARSE_OK &&
+        !solar_os_shell_command_has_secrets(parsed.argc, (const char *const *)argv)))
+        chat_history_add(chat_app.input);
     chat_history_cancel();
     chat_set_input("");
     chat_app.message_scroll = 0;
     chat_app.redraw = true;
 
-    if (line[0] == '/') {
-        chat_execute_command(line);
+    if (command) {
+        if (parsed.error != SOLAR_OS_SHELL_PARSE_OK)
+            chat_set_status(solar_os_shell_parse_error_text(parsed.error));
+        else chat_execute_command(parsed.argc, argv);
         volatile unsigned char *wipe = (volatile unsigned char *)line;
         for (size_t i = 0; i < CHAT_APP_INPUT_MAX; i++) wipe[i] = 0;
         solar_os_memory_free(line);
