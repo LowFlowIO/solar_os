@@ -44,10 +44,10 @@
 #define SSD1683_WAVESHARE_RESET_LOW_MS 2U
 #define SSD1683_RESET_RECOVERY_LOW_MS 1000U
 #define SSD1683_AUTO_FULL_INTERVAL 20U
-/* ceil(1000 / 15): limit physical dual-panel pulse activations, including
+/* ceil(1000 / 15): limit physical Fastwave pulse activations, including
  * synchronous settling and continued scans without new image submissions.
  */
-#define SSD1683_DUAL_MIN_PULSE_PERIOD_MS 67U
+#define SSD1683_FASTWAVE_MIN_PULSE_PERIOD_MS 67U
 
 _Static_assert(SSD1683_DUAL_WIDTH + SSD1683_DUAL_SEAM_WIDTH ==
                    SSD1683_DUAL_PADDED_WIDTH,
@@ -140,6 +140,12 @@ static bool ssd1683_is_dual(const epd_ssd1683_t *display)
         display->panel_variant == EPD_SSD1683_PANEL_ELECROW_579_DUAL;
 }
 
+static bool ssd1683_uses_fastwave(const epd_ssd1683_t *display)
+{
+    return ssd1683_is_dual(display) || (display != NULL &&
+        display->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER);
+}
+
 static epd_pulse_tuning_t ssd1683_default_pulse_tuning(epd_ssd1683_panel_variant_t panel)
 {
     epd_pulse_tuning_t tuning = epd_pulse_default_tuning();
@@ -178,7 +184,7 @@ static void ssd1683_pulse_defaults(epd_ssd1683_t *display,
     display->pulse_tuning = ssd1683_default_pulse_tuning(config->panel_variant);
     display->scan_async = dual || config->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2 ||
         config->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER;
-    display->scan_period_ms = dual ? SSD1683_DUAL_MIN_PULSE_PERIOD_MS : (green ? 10 : 100);
+    display->scan_period_ms = dual || green ? SSD1683_FASTWAVE_MIN_PULSE_PERIOD_MS : 100;
     display->pulse_power_hold = dual;
     display->pulse_ramp_fast = dual || green;
     display->pulse_spi_clock_hz = dual || green ? 20000000 : config->spi_clock_hz;
@@ -1179,6 +1185,17 @@ static esp_err_t ssd1683_green_write_pulse(epd_ssd1683_t *display)
 
 static esp_err_t ssd1683_green_load_pulse_lut(epd_ssd1683_t *display)
 {
+    /* UC8276c A0.6 sections 14-18: KW mode has the same six 7-byte groups
+     * per LUT as SSD1683. Reuse phases only; PLL and voltage registers have
+     * different encodings. DDX=01 maps block 2 to white, block 3 to black,
+     * opposite to the dual-panel adapter's rail selections.
+     */
+    solar_os_ssd1683_waveform_params_t params = solar_os_ssd1683_waveform_defaults();
+    params.drive_tp = display->pulse_tuning.pulse_frames;
+    params.invert = true;
+    params.volt_mask = 0;
+    uint8_t waveform[SOLAR_OS_SSD1683_WAVEFORM_BYTES];
+    if (!solar_os_ssd1683_waveform_build(waveform, &params)) return ESP_ERR_INVALID_ARG;
     /* The native automatic GC sequence leaves this revision needing reset
      * before a changed update. Reinitialize when entering a pulse waveform;
      * preserve the software budgets and replace both hardware RAM masks. */
@@ -1198,14 +1215,8 @@ static esp_err_t ssd1683_green_load_pulse_lut(epd_ssd1683_t *display)
     ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x06, booster, sizeof(booster)),
                         TAG, "green pulse booster failed");
     for (unsigned entry = 0; entry < 5; ++entry) {
-        uint8_t lut[42] = {0};
-        lut[0] = 1; /* One group, one state, drive followed by neutral frame. */
-        lut[1] = (uint8_t)display->pulse_tuning.pulse_frames;
-        if (entry == 2) lut[1] |= 0x80; /* NEW=1 OLD=0: white/VSL. */
-        if (entry == 3) lut[1] |= 0x40; /* NEW=0 OLD=1: black/VSH. */
-        lut[2] = 1;
-        lut[5] = 1;
-        ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x20U + entry, lut, sizeof(lut)),
+        ESP_RETURN_ON_ERROR(ssd1683_cmd_data(display, 0x20U + entry,
+                            waveform + entry * 42U, 42),
                             TAG, "green pulse LUT failed");
     }
     display->pulse_lut_loaded = true;
@@ -1416,9 +1427,9 @@ static esp_err_t ssd1683_pulse_activate(epd_ssd1683_t *display)
 
 static void ssd1683_pulse_wait_interval(epd_ssd1683_t *display)
 {
-    if (!ssd1683_is_dual(display) || display->pulse_last_drive_start == 0) return;
+    if (!ssd1683_uses_fastwave(display) || display->pulse_last_drive_start == 0) return;
     const int64_t due = display->pulse_last_drive_start +
-        (int64_t)SSD1683_DUAL_MIN_PULSE_PERIOD_MS * 1000;
+        (int64_t)SSD1683_FASTWAVE_MIN_PULSE_PERIOD_MS * 1000;
     int64_t remaining;
     while ((remaining = due - esp_timer_get_time()) > 0) {
         TickType_t ticks = pdMS_TO_TICKS((remaining + 999) / 1000);
@@ -2459,7 +2470,8 @@ const char *epd_ssd1683_controller_mode(const epd_ssd1683_t *display)
             "pulse-scan=%s pulse-period=%u pulse-power=%s pulse-ramp=%s pulse-spi-khz=%u "
             "scan-last-us=%lld scan-interval-us=%lld scan-count=%u "
             "scan-submitted=%u scan-coalesced=%u pending=%u",
-            refresh, ssd1683_is_dual(d) ? " waveform=fastwave" : "",
+            refresh, ssd1683_is_dual(d) ? " waveform=fastwave" :
+                (d->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER ? " waveform=fastwave-uc8276" : ""),
             d->pulse_tuning.drive_cycles, d->pulse_tuning.pulse_frames,
             d->pulse_tuning.waveform_fr, d->pulse_tuning.cleanup_every,
             d->pulse_tuning.cleanup_adaptive ? "adaptive" : "fixed",
@@ -2492,6 +2504,12 @@ const char *epd_ssd1683_controller_mode_values(const epd_ssd1683_t *display)
     if (ssd1683_is_dual(display))
         return "refresh=<auto,fast,full,pulse> drive-cycles=<1..32> "
                "pulse-frames=<1..32> waveform-fr=<1..5,9..12> cleanup-every=<1..128> "
+               "cleanup-policy=<adaptive,fixed> "
+               "pulse-scan=<sync,async> pulse-period=<67..1000> "
+               "pulse-power=<cycle,hold> pulse-ramp=<normal,fast> pulse-spi-khz=<100..20000>";
+    if (display != NULL && display->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER)
+        return "refresh=<auto,fast,full,pulse> drive-cycles=<1..32> "
+               "pulse-frames=<1..32> waveform-fr=<1..12> cleanup-every=<1..128> "
                "cleanup-policy=<adaptive,fixed> "
                "pulse-scan=<sync,async> pulse-period=<67..1000> "
                "pulse-power=<cycle,hold> pulse-ramp=<normal,fast> pulse-spi-khz=<100..20000>";
@@ -2567,7 +2585,7 @@ esp_err_t epd_ssd1683_set_controller_mode(epd_ssd1683_t *display, const char *mo
                 value = value * 10U + (unsigned)(*p - '0');
             }
             const unsigned minimum = spi_option ? 100U :
-                (ssd1683_is_dual(display) ? SSD1683_DUAL_MIN_PULSE_PERIOD_MS : 10U);
+                (ssd1683_uses_fastwave(display) ? SSD1683_FASTWAVE_MIN_PULSE_PERIOD_MS : 10U);
             if (value < minimum || value > maximum) err = ESP_ERR_INVALID_ARG;
             if (err == ESP_OK && !spi_option && display->scan_worker.task != NULL)
                 err = epd_scan_worker_set_period(&display->scan_worker, value);

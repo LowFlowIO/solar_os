@@ -879,10 +879,17 @@ static void test_green_mask_waveform_and_power(void) {
     assert(find(0x50, count(0x50) - 1)->data[0] == 0xd7 && find(0x30, 0)->data[0] == 9);
     for (unsigned i = 0; i < 5; ++i) {
         capture_t *c = find(0x20 + i, 0);
-        assert(c->size == 42 && c->data[0] == 1 && c->data[2] == 1 && c->data[5] == 1);
-        assert(c->data[1] == ((i == 2 ? 0x80 : (i == 3 ? 0x40 : 0)) | 8));
-        for (unsigned n = 7; n < 42; ++n) assert(c->data[n] == 0);
+        uint8_t expected[42] = {0};
+        if (i == 2 || i == 3) {
+            expected[0] = 1;
+            expected[2] = (i == 2 ? 0x80 : 0x40) | 8;
+            expected[3] = expected[5] = expected[6] = 1;
+        }
+        assert(c->size == 42 && !memcmp(c->data, expected, 42));
     }
+    assert(find(0x82, 0)->data[0] == 0x05); /* UC8276's own VCOM encoding. */
+    assert(count(0x2c) == 0 && count(0x3f) == 0 && count(0x03) == 0);
+    assert(strstr(epd_ssd1683_controller_mode(&d), "waveform=fastwave-uc8276"));
     assert(d.pixel_budget.pending == 0 && d.pixel_budget.peak_drive_cycles == 3);
     assert(epd_ssd1683_set_controller_mode(&d, "pulse-power=hold") == ESP_OK);
     assert(epd_ssd1683_set_controller_mode(&d, "pulse-ramp=fast") == ESP_OK);
@@ -902,6 +909,40 @@ static void test_green_mask_waveform_and_power(void) {
     assert(ssd1683_refresh(&d) == ESP_OK);
     assert(d.pixel_budget.pixels == NULL && d.shadow_valid);
     assert(find(0x22, 0)->data[1] == 0x54 && find(0x17, 0)->data[0] == 0xa5);
+}
+static void test_green_fastwave_rate_limit(void) {
+    for (unsigned async = 0; async < 2; ++async) {
+        for (unsigned hold = 0; hold < 2; ++hold) {
+            epd_ssd1683_t d = green_display();
+            assert(epd_ssd1683_set_controller_mode(&d, async ? "pulse-scan=async" : "pulse-scan=sync") == ESP_OK);
+            assert(epd_ssd1683_set_controller_mode(&d, hold ? "pulse-power=hold" : "pulse-power=cycle") == ESP_OK);
+            assert(epd_ssd1683_set_controller_mode(&d, "pulse-frames=1") == ESP_OK);
+            assert(epd_ssd1683_set_controller_mode(&d, "pulse-period=66") == ESP_ERR_INVALID_ARG);
+            assert(epd_ssd1683_set_controller_mode(&d, "pulse-period=67") == ESP_OK);
+            assert(epd_ssd1683_set_controller_mode(&d, "refresh=pulse") == ESP_OK);
+            assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+            if (async) assert(worker_tick(&d.scan_worker) == ESP_OK);
+            int64_t previous = 0;
+            for (unsigned burst = 0; burst < 2; ++burst) {
+                capture_count = 0;
+                single_pixel(0, 0, burst != 0);
+                assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
+                if (async)
+                    for (unsigned scan = 0; scan < 3; ++scan)
+                        assert(worker_tick(&d.scan_worker) == ESP_OK);
+                assert(d.pixel_budget.pending == 0 && !d.pulse_analog_on);
+                assert(count(hold ? 0x12 : 0x17) == 3);
+                for (unsigned scan = 0; scan < 3; ++scan) {
+                    const int64_t now = find(hold ? 0x12 : 0x17, scan)->at_us;
+                    if (previous) assert(now - previous >= 67000);
+                    previous = now;
+                }
+            }
+            assert(strstr(epd_ssd1683_controller_mode_values(&d), "pulse-period=<67..1000>"));
+            if (async) epd_scan_worker_deinit(&d.scan_worker);
+            free_budget(&d);
+        }
+    }
 }
 static void test_green_detection_and_native_busy(void) {
     epd_ssd1683_t d = green_display();
@@ -975,7 +1016,7 @@ static void test_green_startup_pulse_defaults(void) {
     assert(d.pulse_tuning.drive_cycles == 8 && d.pulse_tuning.pulse_frames == 8);
     assert(d.pulse_tuning.waveform_fr == 12 && d.pulse_tuning.cleanup_every == 8);
     assert(!d.pulse_tuning.cleanup_adaptive && !d.pulse_power_hold);
-    assert(d.scan_async && d.scan_period_ms == 10 && d.pulse_ramp_fast);
+    assert(d.scan_async && d.scan_period_ms == 67 && d.pulse_ramp_fast);
     assert(d.pulse_spi_clock_hz == 20000000);
     config.startup_pulse = false;
     ssd1683_start_default_refresh(&d, &config);
@@ -986,7 +1027,7 @@ static void test_green_startup_pulse_defaults(void) {
     worker_init_fail = false;
     ssd1683_start_default_refresh(&d, &config);
     assert(d.refresh_mode == EPD_SSD1683_REFRESH_PULSE && d.scan_worker.task);
-    assert(d.scan_worker.period_ms == 10 && d.scan_submit_ready && d.pulse_needs_cleanup);
+    assert(d.scan_worker.period_ms == 67 && d.scan_submit_ready && d.pulse_needs_cleanup);
     assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
     assert(worker_tick(&d.scan_worker) == ESP_OK && d.shadow_valid);
     epd_scan_worker_deinit(&d.scan_worker); free_budget(&d);
@@ -1108,6 +1149,7 @@ int main(void) {
     test_single_pulse_transport_and_native_restore();
     test_single_async_retarget_and_recovery();
     test_green_mask_waveform_and_power();
+    test_green_fastwave_rate_limit();
     test_green_detection_and_native_busy();
     test_green_async_failure_and_idle_cleanup();
     test_green_startup_pulse_defaults();

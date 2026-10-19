@@ -854,13 +854,19 @@ pinout but requires a different reset, initialization, refresh, and sleep
 sequence. SolarOS detects the revision from its post-reset BUSY behavior and
 selects the matching command and waveform path automatically.
 
-The green-sticker revision starts in `refresh=pulse` by default. Its preset is
+The green-sticker revision starts in `refresh=pulse` with the Fastwave phase
+builder adapted to its UC8276 controller. `display mode display0` reports
+`waveform=fastwave-uc8276`. Its preset is
 8 drive cycles, 8 scan frames, raw PLL code 12, asynchronous scanning with a
-10 ms requested interval, supply cycling, fast ramp, and 20000 kHz pulse SPI.
+67 ms requested interval, supply cycling, fast ramp, and 20000 kHz pulse SPI.
 Fixed cleanup runs every 8 changed targets consumed by the worker.
 It shares per-pixel drive budgets and the scan worker with the other
-pulse-capable panels, using a separate waveform and RAM adapter. Runtime tuning
-remains available through `display mode display0`; internal scan frequency is
+pulse-capable panels. The builder drives only changing pixels, with no reset
+kick and one neutral settle frame. The adapter keeps the UC8276's own voltage,
+PLL, RAM, and power commands. `pulse-period` accepts 67–1000 ms; physical pulse
+activations are spaced by at least 67 ms in synchronous and asynchronous modes,
+including settling scans. This ceiling does not guarantee an achieved rate.
+Runtime tuning remains available through `display mode display0`; internal scan frequency is
 separate from image update rate.
 Use `display mode display0 refresh=auto` to restore the native waveform.
 The original Elecrow 4.2-inch panel currently rejects pulse mode.

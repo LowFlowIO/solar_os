@@ -1444,8 +1444,9 @@ These runtime settings apply only to pulse mode and are listed by
 cycles before returning. `pulse-scan=async` runs one cycle per scan in a
 persistent worker and accepts new targets while earlier pixels settle.
 `pulse-period=<10..1000>` requests the minimum scan interval in milliseconds;
-the dual-SSD1683 profile instead accepts 67–1000 ms and enforces at least 67 ms
-between physical pulse activations in synchronous and asynchronous operation.
+the dual-SSD1683 and Elecrow green-sticker profiles instead accept 67–1000 ms.
+They enforce at least 67 ms between physical pulse activations in synchronous
+and asynchronous operation.
 Actual timing and submitted/coalesced image counts appear in the mode output.
 `pulse-power=<cycle,hold>` selects supply cycling or retention during settling,
 `pulse-ramp=<normal,fast>` selects booster duration, and
@@ -1463,10 +1464,12 @@ Waveshare 4.2-inch defaults are asynchronous, 100 ms requested interval,
 supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
 8 scan frames, FR code 4, and adaptive cleanup with baseline 64. Native and
 pulse timing logs support comparison on that panel.
-The Elecrow green-sticker profile uses its own OLD/NEW RAM and programmable
-waveform registers. It uploads both full RAM masks; neutral waveform entries
-leave unbudgeted pixels undriven. Its defaults are asynchronous, 10 ms requested
-interval, supply cycling, fast ramp, 20000 kHz pulse SPI, 8 drive cycles,
+The Elecrow green-sticker profile adapts the Fastwave phase builder to its
+UC8276 OLD/NEW RAM and programmable waveform registers, reported as
+`waveform=fastwave-uc8276`. It retains the controller's voltage and PLL setup,
+uploads both full RAM masks, and leaves unbudgeted pixels undriven. Its defaults
+are asynchronous, 67 ms requested interval, supply cycling, fast ramp,
+20000 kHz pulse SPI, 8 drive cycles,
 8 scan frames, raw PLL code 12, and fixed cleanup every 8 changed images.
 The Elecrow 4.2-inch board starts this revision in pulse mode. For this profile,
 `waveform-fr` selects a raw PLL code; internal scan frequency is separate from
