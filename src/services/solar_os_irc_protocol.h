@@ -19,6 +19,7 @@ typedef struct {
 /* In-place parser; pointers are valid until the input buffer is reused. */
 bool solar_os_irc_parse(char *line, solar_os_irc_message_t *message);
 bool solar_os_irc_atom_valid(const char *text, size_t capacity);
+bool solar_os_irc_nick_valid(const char *text, size_t capacity);
 bool solar_os_irc_target_valid(const char *text, size_t capacity);
 void solar_os_irc_casefold(const char *text, char *out, size_t capacity,
                            solar_os_irc_casemapping_t mapping);

@@ -15,6 +15,20 @@ bool solar_os_irc_target_valid(const char *text, size_t capacity)
         text[0] != '+' && text[0] != '%' && text[0] != '~';
 }
 
+bool solar_os_irc_nick_valid(const char *text, size_t capacity)
+{
+    /* RFC 2812 section 2.3.1 character grammar; accept longer nicknames up to
+     * the configured buffer limit as recommended by section 1.2.1. */
+    if (!text || !text[0] || strnlen(text, capacity) >= capacity) return false;
+    for (size_t i = 0; text[i]; i++) {
+        unsigned char c = text[i];
+        bool letter = (c >= 'A' && c <= 'Z') || (c >= 'a' && c <= 'z');
+        bool special = (c >= 0x5b && c <= 0x60) || (c >= 0x7b && c <= 0x7d);
+        if (!letter && !special && !(i && ((c >= '0' && c <= '9') || c == '-'))) return false;
+    }
+    return true;
+}
+
 bool solar_os_irc_parse(char *line, solar_os_irc_message_t *message)
 {
     if (!line || !message) return false;

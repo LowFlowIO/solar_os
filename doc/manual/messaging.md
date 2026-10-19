@@ -32,6 +32,20 @@ the same arguments after `/add`, and changes settings with `/configure NAME ...`
 MeshCore settings are `messages add meshcore NAME radio RADIO PROFILE` or
 `messages add meshcore NAME ble ADDRESS TYPE [PIN]`; see [MeshCore](meshcore.md).
 
+| Class | Settings after `messages add CLASS NAME` | Worker |
+| --- | --- | --- |
+| `gateway` | `URL [TOKEN]` | `gateway-sync` |
+| `irc` | `HOST PORT NICK` | `irc-sync` |
+| `meshcore` | `radio RADIO PROFILE` or `ble ADDRESS TYPE [PIN]` | `meshcore` or `meshcore-ble` |
+| `link` | `TRANSPORT` | Its `radio-link` or `espnow-link` transport with `chat=on` |
+
+New instances start disabled. Use `messages connect NAME` and start the worker.
+`messages configure NAME SETTINGS...` changes connection settings; IRC also
+accepts `sasl ACCOUNT PASSWORD`, `sasl off`, `pass PASSWORD|off`, and `ca FILE|default`.
+Chat exposes `/classes`, `/instances`, `/add CLASS NAME SETTINGS...`,
+`/configure NAME SETTINGS...`, and `/remove NAME`. Python and Lua expose the same
+class registry and instance operations through `solaros.messages`.
+
 A small record containing only the retired instance ID, name, and class stays
 on mounted storage. Retired IDs are never reused, so contacts and retained
 messages cannot be routed through a different account. Creating the same name

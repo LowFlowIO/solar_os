@@ -207,13 +207,16 @@ def main():
         console.serial.write(b"exit()\r")
         assert PROMPT.search(console.collect(2))
         ids = []
+        invalid = console.command(f"messages add irc hil-invalid {args.host_address} {a.port} nils@sol")
+        assert "saved instance" not in invalid and "hil-invalid:" not in console.command("irc status"), invalid
         for label, server in [("a", a), ("b", b)]:
-            output = console.command(f"irc add hil-irc-{label} {args.host_address} {server.port} pocket{label}")
+            setup = "messages add irc" if label == "a" else "irc add"
+            output = console.command(f"{setup} hil-irc-{label} {args.host_address} {server.port} pocket{label}")
             ids.append(int(re.search(r"saved instance .* \((\d+)\)", output)[1]))
             if label == "b":
                 assert "irc: ok" in console.command(f"irc ca hil-irc-{label} {device_ca}")
             if server.sasl:
-                assert "irc: ok" in console.command(f"irc sasl hil-irc-{label} hil-account hil-password")
+                assert "configuration saved" in console.command(f"messages configure hil-irc-{label} sasl hil-account hil-password")
             assert "irc: ok" in console.command(f"irc connect hil-irc-{label}")
         console.command("job start irc-sync")
         # A self-signed server must fail with the normal trust bundle, while B

@@ -154,6 +154,10 @@ The display-shell app exit chord is `CTRL+ALT+DEL`. Port shells use `Ctrl+]`.
 | `messages` | `messages classes` / `messages instances` | List available provider classes or configured instances. |
 | `messages` | `messages add gateway <name> <url> [token]` | Save an independent Gateway instance. Enable it with `messages connect <name>` and start `gateway-sync`. |
 | `messages` | `messages configure <name> <url> [token]` | Change a Gateway instance's connection settings. |
+| `messages` | `messages add irc <name> <host> <port> <nick>` | Save an independent native IRC connection. |
+| `messages` | `messages add meshcore <name> radio <radio> <profile>` | Save a MeshCore instance on a local radio. |
+| `messages` | `messages add meshcore <name> ble <address> <type> [pin]` | Save a MeshCore companion binding. |
+| `messages` | `messages add link <name> <transport>` | Bind an independent Chat projection to a named Link transport. |
 | `gateway` | `gateway connect [url] [token]` | Enable gateway synchronization, optionally updating settings. |
 | `gateway` | `gateway disconnect` | Disable gateway synchronization. |
 | `gateway` | `gateway rooms` | List known and joined gateway rooms. |

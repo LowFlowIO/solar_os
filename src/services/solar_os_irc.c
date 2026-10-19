@@ -75,11 +75,14 @@ static esp_err_t irc_connect(void *context, bool enabled);
 static esp_err_t irc_normalize(void *context, const char *target, char *out, size_t size);
 static esp_err_t irc_remove_prepare(void *context);
 static void irc_remove_finish(void *context, bool removed);
+static esp_err_t irc_class_create(const char *name, int argc, const char *const *argv, solar_os_messaging_provider_id_t *id);
+static esp_err_t irc_class_configure(void *context, int argc, const char *const *argv);
 static const solar_os_messaging_provider_class_t irc_class = {
     .name = "irc", .connection_oriented = true, .capabilities = SOLAR_OS_ENDPOINT_CAP_ROOM | SOLAR_OS_ENDPOINT_CAP_DIRECT,
     .join = irc_join, .leave = irc_leave, .direct_open = irc_direct, .connect = irc_connect,
     .normalize_target = irc_normalize,
     .remove_prepare = irc_remove_prepare, .remove_finish = irc_remove_finish,
+    .create = irc_class_create, .configure = irc_class_configure,
 };
 
 static uint32_t irc_now(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
@@ -120,8 +123,7 @@ static bool irc_config_valid(const solar_os_irc_config_t *config)
 {
     if (!config || config->version != 1 || !config->port ||
         !solar_os_irc_atom_valid(config->host, sizeof(config->host)) ||
-        !solar_os_irc_atom_valid(config->nick, sizeof(config->nick)) ||
-        strchr("#&0123456789-", config->nick[0]) ||
+        !solar_os_irc_nick_valid(config->nick, sizeof(config->nick)) ||
         !irc_secret_valid(config->account, sizeof(config->account)) ||
         !irc_secret_valid(config->password, sizeof(config->password)) ||
         !irc_secret_valid(config->server_password, sizeof(config->server_password)) ||
@@ -220,10 +222,11 @@ esp_err_t solar_os_irc_get_config(solar_os_messaging_provider_id_t id, solar_os_
     esp_err_t error = solar_os_irc_init(); if (error != ESP_OK) return error;
     xSemaphoreTake(irc.edit_lock, portMAX_DELAY);
     irc_instance_t *node = irc_find(id);
-    if (!node) { xSemaphoreGive(irc.edit_lock); return ESP_ERR_NOT_FOUND; }
-    xSemaphoreTake(irc.lock, portMAX_DELAY); *config = node->config; xSemaphoreGive(irc.lock);
+    if (!node) error = solar_os_messaging_provider_is_class(id, "irc") ?
+        solar_os_messaging_profile_load(id, config, sizeof(*config)) : ESP_ERR_NOT_FOUND;
+    else { xSemaphoreTake(irc.lock, portMAX_DELAY); *config = node->config; xSemaphoreGive(irc.lock); }
     xSemaphoreGive(irc.edit_lock);
-    return ESP_OK;
+    return error;
 }
 
 /* Caller owns edit_lock, but never the runtime lock during filesystem I/O. */
@@ -243,9 +246,55 @@ esp_err_t solar_os_irc_configure(solar_os_messaging_provider_id_t id, const sola
     esp_err_t error = solar_os_irc_init(); if (error != ESP_OK) return error;
     xSemaphoreTake(irc.edit_lock, portMAX_DELAY);
     irc_instance_t *node = irc_find(id);
-    error = node ? irc_save(node, config) : ESP_ERR_NOT_FOUND;
+    if (node) error = irc_save(node, config);
+    else if (!solar_os_messaging_provider_is_class(id, "irc")) error = ESP_ERR_NOT_FOUND;
+    else {
+        error = solar_os_messaging_profile_save(id, config, sizeof(*config));
+        if (error == ESP_OK) error = irc_attach(id, config);
+    }
     xSemaphoreGive(irc.edit_lock);
     return error;
+}
+
+static bool irc_parse_port(const char *text, uint16_t *port)
+{
+    if (!text || !text[0]) return false;
+    unsigned value = 0;
+    for (const unsigned char *p = (const unsigned char *)text; *p; p++) {
+        if (*p < '0' || *p > '9') return false;
+        value = value * 10 + *p - '0'; if (value > 65535) return false;
+    }
+    *port = value; return value != 0;
+}
+static esp_err_t irc_class_create(const char *name, int argc, const char *const *argv, solar_os_messaging_provider_id_t *id)
+{
+    uint16_t port;
+    if (argc != 3 || !irc_parse_port(argv[1], &port)) return ESP_ERR_INVALID_ARG;
+    return solar_os_irc_create(name, argv[0], port, argv[2], id);
+}
+static esp_err_t irc_class_configure(void *context, int argc, const char *const *argv)
+{
+    irc_instance_t *node = context;
+    if (!node || !argc) return ESP_ERR_INVALID_ARG;
+    solar_os_irc_config_t *config = irc_config_alloc(); if (!config) return ESP_ERR_NO_MEM;
+    xSemaphoreTake(irc.edit_lock, portMAX_DELAY);
+    xSemaphoreTake(irc.lock, portMAX_DELAY); *config = node->config; xSemaphoreGive(irc.lock);
+    bool valid = false;
+    if (argc == 3 && !strcmp(argv[0], "sasl")) {
+        valid = strlcpy(config->account, argv[1], sizeof(config->account)) < sizeof(config->account) &&
+            strlcpy(config->password, argv[2], sizeof(config->password)) < sizeof(config->password);
+    } else if (argc == 2 && !strcmp(argv[0], "sasl") && !strcmp(argv[1], "off")) {
+        irc_wipe(config->account, sizeof(config->account)); irc_wipe(config->password, sizeof(config->password)); valid = true;
+    } else if (argc == 2 && !strcmp(argv[0], "pass")) {
+        valid = strlcpy(config->server_password, !strcmp(argv[1], "off") ? "" : argv[1], sizeof(config->server_password)) < sizeof(config->server_password);
+    } else if (argc == 2 && !strcmp(argv[0], "ca")) {
+        valid = strlcpy(config->ca_file, !strcmp(argv[1], "default") ? "" : argv[1], sizeof(config->ca_file)) < sizeof(config->ca_file);
+    } else if (argc == 3) {
+        valid = irc_parse_port(argv[1], &config->port) && strlcpy(config->host, argv[0], sizeof(config->host)) < sizeof(config->host) &&
+            strlcpy(config->nick, argv[2], sizeof(config->nick)) < sizeof(config->nick);
+    }
+    esp_err_t error = valid && irc_config_valid(config) ? irc_save(node, config) : ESP_ERR_INVALID_ARG;
+    xSemaphoreGive(irc.edit_lock); irc_config_free(config); return error;
 }
 
 static esp_err_t irc_connect(void *context, bool enabled)

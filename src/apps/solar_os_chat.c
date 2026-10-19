@@ -1590,6 +1590,7 @@ static void chat_execute_command(char *line)
         chat_append_statusf("/leave | /connect instance | /disconnect instance");
         chat_append_statusf("/remove instance (delete local history)");
         chat_append_statusf("/add class instance settings... | /configure instance settings...");
+        chat_append_statusf("/classes | /instances");
 #if SOLAR_OS_PACKAGE_SERVICE_IRC
         chat_append_statusf("/server instance host port nick");
         chat_append_statusf("/sasl instance account password");
@@ -1637,6 +1638,12 @@ static void chat_execute_command(char *line)
     } else if (strcasecmp(argv[0], "/leave") == 0 && argc == 1) {
         esp_err_t error = solar_os_messaging_leave(chat_current_conversation_id());
         chat_set_status(error == ESP_OK ? "leave requested" : esp_err_to_name(error));
+    } else if (strcasecmp(argv[0], "/classes") == 0 && argc == 1) {
+        char cursor[16] = ""; solar_os_messaging_class_status_t status;
+        while (solar_os_messaging_class_next(cursor, &status)) {
+            chat_append_statusf("%s%s", status.name, status.creatable ? " (configurable)" : "");
+            strlcpy(cursor, status.name, sizeof(cursor));
+        }
     } else if (strcasecmp(argv[0], "/add") == 0 && argc >= 3) {
         solar_os_messaging_provider_id_t id;
         esp_err_t error = solar_os_messaging_instance_add(argv[1], argv[2], argc - 3, (const char *const *)(argv + 3), &id);
@@ -1690,7 +1697,7 @@ static void chat_execute_command(char *line)
         solar_os_memory_free(config);
         chat_set_status(error == ESP_OK ? "SASL settings saved" : esp_err_to_name(error));
 #endif
-    } else if (strcasecmp(argv[0], "/status") == 0) {
+    } else if (strcasecmp(argv[0], "/status") == 0 || strcasecmp(argv[0], "/instances") == 0) {
         chat_show_status();
     } else if (strcasecmp(argv[0], "/quit") == 0 || strcasecmp(argv[0], "/exit") == 0) {
         chat_app.active = false;

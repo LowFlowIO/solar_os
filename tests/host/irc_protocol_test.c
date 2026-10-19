@@ -36,6 +36,14 @@ int main(void)
     assert(!solar_os_irc_target_valid("nick\r\nJOIN #bad", 64));
     assert(!solar_os_irc_target_valid(":nick", 64));
     assert(!solar_os_irc_atom_valid("", 32));
+    assert(solar_os_irc_nick_valid("nils-sol_2", 32));
+    assert(solar_os_irc_nick_valid("[nils]", 32));
+    assert(!solar_os_irc_nick_valid("nils@sol", 32));
+    assert(!solar_os_irc_nick_valid("2nils", 32));
+    assert(!solar_os_irc_nick_valid("-nils", 32));
+    assert(!solar_os_irc_nick_valid("nils!user", 32));
+    assert(!solar_os_irc_nick_valid("nils\r\nOPER", 32));
+    assert(!solar_os_irc_nick_valid("", 32));
     puts("IRC protocol tests: ok");
     return 0;
 }

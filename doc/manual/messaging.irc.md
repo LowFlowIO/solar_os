@@ -47,6 +47,14 @@ job status irc-sync
 job stop irc-sync
 ```
 
+The common interface also supports `messages add irc community HOST PORT NICK`
+and `messages configure community HOST PORT NICK`. For authentication, use
+`messages configure community sasl ACCOUNT PASSWORD` or `sasl off`; server
+passwords use `pass PASSWORD|off` and CA files use `ca FILE|default`. Chat accepts
+the same arguments after `/add irc` and `/configure`. Setup commands are excluded
+from input history. Nicknames must use IRC nickname characters; `nils-sol` is
+valid, while `nils@sol` is rejected before configuration is saved.
+
 TLS always verifies the server certificate and hostname. The default trust
 source is the firmware certificate bundle. `irc ca` selects a PEM CA file on
 mounted storage, limited to 8191 bytes. Keep the system clock correct for

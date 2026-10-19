@@ -163,6 +163,7 @@ typedef enum {
     SHELL_COMPLETION_SOURCE_MESSAGE_IDS,
     SHELL_COMPLETION_SOURCE_CONTACT_IDS,
     SHELL_COMPLETION_SOURCE_MESSAGING_INSTANCES,
+    SHELL_COMPLETION_SOURCE_MESSAGING_CLASSES,
     SHELL_COMPLETION_SOURCE_MESSAGING_SELECTORS,
     SHELL_COMPLETION_SOURCE_IRC_INSTANCES,
     SHELL_COMPLETION_SOURCE_ENDPOINT_IDS,
@@ -2006,6 +2007,7 @@ static const char * const path_contacts_link_source[] = {
 static const char * const path_chat[] = {"chat"};
 static const char * const path_messages[] = {"messages"};
 static const char * const path_messages_instance[] = {"messages", SHELL_COMPLETION_ANY};
+static const char * const path_messages_add[] = {"messages", "add"};
 static const char * const path_messages_delete[] = {"messages", "delete"};
 static const char * const path_messages_cancel[] = {"messages", "cancel"};
 static const char * const path_messages_clear[] = {"messages", "clear"};
@@ -3592,6 +3594,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #if SOLAR_OS_PACKAGE_APP_CHAT
     {.path = path_chat, .path_count = SHELL_ARRAY_COUNT(path_chat), .source = SHELL_COMPLETION_SOURCE_MESSAGING_SELECTORS},
     {.path = path_messages_instance, .path_count = SHELL_ARRAY_COUNT(path_messages_instance), .source = SHELL_COMPLETION_SOURCE_MESSAGING_INSTANCES},
+    {.path = path_messages_add, .path_count = SHELL_ARRAY_COUNT(path_messages_add), .source = SHELL_COMPLETION_SOURCE_MESSAGING_CLASSES},
     SHELL_COMPLETION_STATIC(path_messages, messages_subcommands),
     SHELL_COMPLETION_MESSAGE_IDS(path_messages_delete),
     SHELL_COMPLETION_MESSAGE_IDS(path_messages_cancel),
@@ -8445,6 +8448,19 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
         case SHELL_COMPLETION_SOURCE_MESSAGING_INSTANCES:
             shell_completion_emit_messaging_instances(state, false, NULL);
             break;
+        case SHELL_COMPLETION_SOURCE_MESSAGING_CLASSES:
+#if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
+        {
+            char cursor[16] = ""; solar_os_messaging_class_status_t status;
+            while (solar_os_messaging_class_next(cursor, &status)) {
+                if (status.creatable) shell_completion_emit(state, status.name);
+                strlcpy(cursor, status.name, sizeof(cursor));
+            }
+            break;
+        }
+#else
+            break;
+#endif
         case SHELL_COMPLETION_SOURCE_IRC_INSTANCES:
             shell_completion_emit_messaging_instances(state, false, "irc");
             break;

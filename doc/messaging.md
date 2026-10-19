@@ -101,6 +101,13 @@ for its lifecycle. Chat exposes the same settings through `/add gateway NAME URL
 from shell and Chat input history. `gateway` commands address the default Gateway.
 `job start gateway-sync` maintains all enabled Gateway instances.
 
+All installed backends expose setup through the same class registry. IRC accepts
+`HOST PORT NICK`, MeshCore accepts `radio RADIO PROFILE` or `ble ADDRESS TYPE [PIN]`,
+and Link accepts `TRANSPORT`. The `solaros.messages` Python and Lua submodules
+expose `classes()`, `add(class, name, settings)`, and `configure(instance, settings)`;
+settings are bounded lists/tables in shell argument order. Enumeration excludes
+authentication material.
+
 `messages add link NAME TRANSPORT` binds a Chat instance to a named Link
 transport; two Chat instances cannot bind the same transport. Its transport job
 must run with `chat=on`. `messages connect NAME` enables the projection and

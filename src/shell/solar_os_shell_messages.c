@@ -413,11 +413,14 @@ void solar_os_shell_cmd_messages(solar_os_context_t *ctx,
         solar_os_shell_io_printf(io, "messages: %s\n", error == ESP_OK ? "leave requested" : solar_os_shell_error_text(error)); return;
     }
     if (argc == 3 && (strcmp(argv[1], "connect") == 0 || strcmp(argv[1], "disconnect") == 0)) {
-        esp_err_t error = solar_os_messaging_connect(solar_os_messaging_provider_find(argv[2]), strcmp(argv[1], "connect") == 0);
+        solar_os_messaging_provider_id_t instance = 0;
+        esp_err_t error = messages_parse_provider(argv[2], &instance) && instance ?
+            solar_os_messaging_connect(instance, strcmp(argv[1], "connect") == 0) : ESP_ERR_NOT_FOUND;
         solar_os_shell_io_printf(io, "messages: %s\n", error == ESP_OK ? "connection setting saved" : solar_os_shell_error_text(error)); return;
     }
     if (argc == 4 && (strcmp(argv[1], "join") == 0 || strcmp(argv[1], "query") == 0)) {
-        solar_os_messaging_provider_id_t instance = solar_os_messaging_provider_find(argv[2]);
+        solar_os_messaging_provider_id_t instance = 0;
+        (void)messages_parse_provider(argv[2], &instance);
         esp_err_t error = strcmp(argv[1], "join") == 0 ? solar_os_messaging_join(instance, argv[3], &conversation_id) :
             solar_os_messaging_open_direct(instance, argv[3], &conversation_id);
         if (error == ESP_OK) solar_os_shell_io_printf(io, "messages: conversation %" PRIu32 "\n", conversation_id);
@@ -454,7 +457,7 @@ void solar_os_shell_cmd_messages(solar_os_context_t *ctx,
                                    "messages",
                                    argc,
                                    argv,
-                                   "messages status|conversations|list|send|read|delete|clear|outbox|cancel|join|leave|query|connect|disconnect|remove",
+                                   "messages classes|instances|add|configure|status|conversations|list|send|read|delete|clear|outbox|cancel|join|leave|query|connect|disconnect|remove",
                                    messages_commands,
                                    sizeof(messages_commands) / sizeof(messages_commands[0]));
 }

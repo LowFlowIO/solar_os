@@ -36,6 +36,21 @@ capabilities, and connection status without authentication secrets. Use
 on that same submodule. Join and query return a conversation ID. Connection
 settings are saved; the provider job must also be running.
 
+`solaros.messages.classes()` lists class names, capabilities, and `creatable`.
+`messages.add(class_name, name, settings)` returns the new instance ID;
+`messages.configure(instance_id, settings)` changes its settings. Pass settings
+as a list or tuple of at most eight strings, using the same order as
+`messages add` and `messages configure` in the shell. For example:
+
+```python
+community = solaros.messages.add("irc", "community", ["irc.example.org", "6697", "nils"])
+solaros.messages.configure(community, ["sasl", "account", "password"])
+solaros.messages.connect(community, True)
+```
+
+The corresponding provider job must run to connect. Authentication settings are
+written to the instance profile and are never returned by enumeration.
+
 `solaros.messages.remove_instance(instance_id)` closes and removes a configurable
 instance, credentials, pending sends, local history, and Inbox notifications. Default
 instances require backend removal support. Removal requires writable mounted storage. Removed instances

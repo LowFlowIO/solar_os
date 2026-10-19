@@ -7384,6 +7384,42 @@ static mp_obj_t solaros_messages_instances(void)
     return list;
 }
 MP_DEFINE_CONST_FUN_OBJ_0(solaros_messages_instances_obj, solaros_messages_instances);
+static mp_obj_t solaros_messages_classes(void)
+{
+    mp_obj_t list = mp_obj_new_list(0, NULL);
+    char cursor[16] = ""; solar_os_messaging_class_status_t status;
+    while (solar_os_messaging_class_next(cursor, &status)) {
+        mp_obj_t item = mp_obj_new_dict(3);
+        python_dict_store_cstr(item, "name", status.name);
+        python_dict_store_uint(item, "capabilities", status.capabilities);
+        python_dict_store_bool(item, "creatable", status.creatable);
+        mp_obj_list_append(list, item); strlcpy(cursor, status.name, sizeof(cursor));
+    }
+    return list;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_messages_classes_obj, solaros_messages_classes);
+static size_t python_messages_settings(mp_obj_t settings, const char **arguments)
+{
+    size_t count; mp_obj_t *items; mp_obj_get_array(settings, &count, &items);
+    if (count > 8) mp_raise_ValueError(MP_ERROR_TEXT("at most eight provider settings"));
+    for (size_t i = 0; i < count; i++) arguments[i] = mp_obj_str_get_str(items[i]);
+    return count;
+}
+static mp_obj_t solaros_messages_add(mp_obj_t class_name, mp_obj_t name, mp_obj_t settings)
+{
+    const char *arguments[8]; size_t count = python_messages_settings(settings, arguments);
+    solar_os_messaging_provider_id_t id;
+    python_check_esp(solar_os_messaging_instance_add(mp_obj_str_get_str(class_name), mp_obj_str_get_str(name), count, arguments, &id));
+    return mp_obj_new_int_from_uint(id);
+}
+MP_DEFINE_CONST_FUN_OBJ_3(solaros_messages_add_obj, solaros_messages_add);
+static mp_obj_t solaros_messages_configure(mp_obj_t instance, mp_obj_t settings)
+{
+    const char *arguments[8]; size_t count = python_messages_settings(settings, arguments);
+    python_check_esp(solar_os_messaging_instance_configure(python_u32_from_obj(instance), count, arguments));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_2(solaros_messages_configure_obj, solaros_messages_configure);
 static mp_obj_t solaros_messages_join(mp_obj_t instance, mp_obj_t target)
 {
     solar_os_conversation_id_t conversation;
