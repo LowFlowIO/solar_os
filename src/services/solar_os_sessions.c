@@ -1155,12 +1155,19 @@ static bool session_claim_display(solar_os_session_entry_t *session)
 
     solar_os_shell_io_t *io = solar_os_context_shell_io(session_state.ctx);
     if (io != NULL && solar_os_shell_io_kind(io) != SOLAR_OS_SHELL_IO_KIND_NONE) {
-        solar_os_shell_io_printf(io,
-                                 "%s: already running on %s\n",
-                                 app_display_name(session->app),
-                                 busy_owner[0] != '\0' ? busy_owner : "another session");
+        if (err == ESP_ERR_INVALID_STATE && busy_owner[0] != '\0') {
+            solar_os_shell_io_printf(io, "%s: already running on %s\n",
+                                     app_display_name(session->app), busy_owner);
+        } else {
+            solar_os_shell_io_printf(io, "%s: cannot start: %s\n",
+                                     app_display_name(session->app),
+                                     err == ESP_ERR_NO_MEM ? "not enough memory" :
+                                         esp_err_to_name(err));
+        }
         solar_os_shell_io_flush(io);
     }
+    SOLAR_OS_LOGW(TAG, "App %s claim failed: %s", app_display_name(session->app),
+                  esp_err_to_name(err));
     return false;
 }
 
@@ -1222,7 +1229,7 @@ static bool display_claim_app(const solar_os_app_t *app, bool *claimed)
         return true;
     }
 
-    if (err == ESP_ERR_INVALID_STATE) {
+    if (err == ESP_ERR_INVALID_STATE && busy_owner[0] != '\0') {
         solar_os_shell_io_t *io = solar_os_context_shell_io(session_state.ctx);
         if (io != NULL && solar_os_shell_io_kind(io) != SOLAR_OS_SHELL_IO_KIND_NONE) {
             solar_os_shell_io_printf(io,

@@ -1693,6 +1693,7 @@ depends = ["service_expansion", "service_spi", "driver_epd_pixel_budget", "drive
 sources = [
   "board/solar_os_board_display_expansion.c",
   "drivers/epd_ssd1683.c",
+  "drivers/epd_ssd1683_waveform.c",
   "services/solar_os_ssd1683.c",
   "services/solar_os_ssd1683_driver.c",
 ]

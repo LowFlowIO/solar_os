@@ -60,9 +60,9 @@ class FlavorPackagesTest(unittest.TestCase):
         name, _, groups, packages = self.resolve("classic")
         self.assertEqual(name, "classic")
         self.assertEqual({key for key in compact_groups if compact_groups[key] != groups[key]},
-                         {"adc_dpad"})
+                         {"adc_dpad", "synth"})
         self.assertEqual({key for key in compact_packages if compact_packages[key] != packages[key]},
-                         {"service_adc_dpad"})
+                         {"service_adc_dpad", "app_synth", "service_synth", "service_midi"})
         self.assertTrue(packages["service_adc_dpad"])
         self.assertFalse(packages["app_lua"])
         self.assertTrue(packages["app_python"])
@@ -837,6 +837,7 @@ class FlavorPackagesTest(unittest.TestCase):
             "speech",
             "player",
             "recorder",
+            "synth",
             "audio_pwm",
             "pcm5102",
             "web_browser",
@@ -876,6 +877,8 @@ class FlavorPackagesTest(unittest.TestCase):
             "app_view",
             "app_player",
             "app_recorder",
+            "app_synth",
+            "service_synth",
             "service_speech",
             "job_speechd",
             "expansion_audio_pwm",

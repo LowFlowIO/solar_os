@@ -4,6 +4,11 @@
 #include "esp_heap_caps.h"
 #include "esp_timer.h"
 
+/* Scanning includes pixel processing and polling SPI transfers. Keep it below
+ * audio decoding (priority 2) and DMA feeding (priority 3), so a refresh cannot
+ * exhaust the playback buffers while those workers are ready to run. */
+#define EPD_SCAN_TASK_PRIORITY (tskIDLE_PRIORITY + 1U)
+
 static void scan_task(void *arg)
 {
     epd_scan_worker_t *w = arg;
@@ -77,7 +82,8 @@ esp_err_t epd_scan_worker_init(epd_scan_worker_t *w, size_t size,
     w->process = process;
     w->context = context;
     w->period_ms = 100;
-    if (xTaskCreate(scan_task, "epd-pulse", 4096, w, 4, &w->task) != pdPASS) {
+    if (xTaskCreate(scan_task, "epd-pulse", 4096, w,
+                    EPD_SCAN_TASK_PRIORITY, &w->task) != pdPASS) {
         epd_scan_worker_deinit(w);
         return ESP_ERR_NO_MEM;
     }

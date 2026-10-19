@@ -854,13 +854,19 @@ pinout but requires a different reset, initialization, refresh, and sleep
 sequence. SolarOS detects the revision from its post-reset BUSY behavior and
 selects the matching command and waveform path automatically.
 
-The green-sticker revision starts in `refresh=pulse` by default. Its preset is
+The green-sticker revision starts in `refresh=pulse` with the Fastwave phase
+builder adapted to its UC8276 controller. `display mode display0` reports
+`waveform=fastwave-uc8276`. Its preset is
 8 drive cycles, 8 scan frames, raw PLL code 12, asynchronous scanning with a
-10 ms requested interval, supply cycling, fast ramp, and 20000 kHz pulse SPI.
+67 ms requested interval, supply cycling, fast ramp, and 20000 kHz pulse SPI.
 Fixed cleanup runs every 8 changed targets consumed by the worker.
 It shares per-pixel drive budgets and the scan worker with the other
-pulse-capable panels, using a separate waveform and RAM adapter. Runtime tuning
-remains available through `display mode display0`; internal scan frequency is
+pulse-capable panels. The builder drives only changing pixels, with no reset
+kick and one neutral settle frame. The adapter keeps the UC8276's own voltage,
+PLL, RAM, and power commands. `pulse-period` accepts 67–1000 ms; physical pulse
+activations are spaced by at least 67 ms in synchronous and asynchronous modes,
+including settling scans. This ceiling does not guarantee an achieved rate.
+Runtime tuning remains available through `display mode display0`; internal scan frequency is
 separate from image update rate.
 Use `display mode display0 refresh=auto` to restore the native waveform.
 The original Elecrow 4.2-inch panel currently rejects pulse mode.
@@ -919,7 +925,11 @@ one contiguous 792x272 graphics surface.
 
 The panel uses GPIO12 SCK, GPIO11 MOSI, GPIO47 reset, GPIO46 D/C, GPIO45 chip
 select, GPIO48 BUSY, and GPIO7 display-power enable. The driver follows
-Elecrow's master/slave RAM addressing and temperature-load sequence. Auto mode
+Elecrow's master/slave RAM addressing and temperature-load sequence. The board
+starts in asynchronous monochrome pulse mode with a 67 ms minimum activation
+interval, held supplies, and automatic cleanup, as described under
+[SolarWriter](#solarwriter). To select the native waveform, use
+`display mode display0 refresh=auto`. Auto mode
 uses one full cleanup refresh after initialization, then transfers changed
 frames with Elecrow's non-flashing `0xDC` partial-update waveform; unchanged
 frames are skipped. Use `display mode display0 refresh=full` when an explicit
@@ -993,9 +1003,12 @@ playback data stream; the DAC provides stereo line output and the amplifier
 plays its default mono mix. The PCM5102 jack requires a line-level load,
 such as powered speakers or a headphone amplifier.
 
-The 5.79-inch dual-SSD1683 display has an optional monochrome pulse mode.
-It uses the shared EPD pixel-budget layer and a waveform specific to this
-panel profile. Select it and tune it with:
+The 5.79-inch dual-SSD1683 display starts in monochrome pulse mode on both
+SolarWriter and the base CrowPanel 5.79-inch target. It uses the shared EPD
+pixel-budget layer and the [Fastwave SSD1683 waveform builder](https://github.com/bootdsc/Fastwave-Eink-Driver/tree/c7d20eeefd0b0a5015b335a54bb9b63b37bca88f/ports/ssd1683-crowpanel-579).
+Mode output identifies this adapter as `waveform=fastwave`. If the scan
+worker cannot start, the display retains native `refresh=auto` mode.
+Inspect the mode with `display mode display0`, or select and tune it with:
 
 ```text
 display mode display0 refresh=pulse
@@ -1005,7 +1018,7 @@ display mode display0 waveform-fr=4
 display mode display0 cleanup-every=64
 display mode display0 cleanup-policy=adaptive
 display mode display0 pulse-scan=async
-display mode display0 pulse-period=10
+display mode display0 pulse-period=67
 display mode display0 pulse-power=hold
 display mode display0 pulse-ramp=fast
 display mode display0 pulse-spi-khz=20000
@@ -1015,9 +1028,16 @@ display mode display0
 Each changed pixel receives `drive-cycles` completed waveform activations
 (1–32). Settled pixels select the neutral waveform; submitting the same target
 does not refill its budget. `pulse-frames` is the scan-frame duration of each
-drive phase (1–32); `waveform-fr` is a raw SSD1683 frame-rate code (1–12), not a
-frequency in Hz. Defaults are 6 cycles, 8 scan frames, code 4, and adaptive
-cleanup with `cleanup-every=64`. Each successful drive accumulates in a per-pixel
+drive phase (1–32); `waveform-fr` is a raw SSD1683 frame-rate code
+(1–5 or 9–12), not a frequency in Hz. Defaults are 6 cycles, 8 scan frames,
+code 4, and adaptive cleanup with `cleanup-every=64`. The builder uses no
+opposite-polarity reset kick, the configured drive duration, and one VSS settle
+frame. Both controllers receive the same generated LUT and nominal source rails
+(+15 V / -15 V), with VCOM set to `0x08`. EOPT is excluded from the
+voltage-register write mask. Grayscale rendering continues to use the existing
+dithering path.
+
+Each successful drive accumulates in a per-pixel
 history since the last native cleanup. Adaptive cleanup runs when the most-driven
 pixel reaches `cleanup-every * drive-cycles` activations (384 at the defaults),
 or after `4 * cleanup-every` changed images (256 at the defaults), whichever
@@ -1049,16 +1069,24 @@ presentation's blocking time. The default `pulse-scan=async` submits the newest
 image to a persistent scan worker. It delivers one pulse per scan and continues
 settling without further presentations. New targets can arrive between cycles;
 queued images coalesce to the latest target. Settling can span several scans.
+The SSD1683 adapter also accepts monochrome raster frames from native foreground
+apps. The shared presenter scales and dithers indexed emulator frames before
+submission. These frames use the same refresh mode and latest-image queue as
+ordinary UI updates; physical cadence and ink settling follow the panel waveform.
 Select asynchronous operation with:
 
 ```text
 display mode display0 pulse-scan=async
-display mode display0 pulse-period=10
+display mode display0 pulse-period=67
 ```
 
-`pulse-period` requests a minimum start-to-start interval of 10–1000 ms;
-the default is 10 ms. Hardware work can exceed that interval, so 10 ms does not
-establish a 100 scans/s capability.
+On this dual-controller panel, `pulse-period` requests a minimum scan interval
+of 67–1000 ms; the default is 67 ms. The driver also enforces at least 67 ms
+between physical pulse activations in synchronous and asynchronous operation,
+including continued settling without new images. This limits pulse activations
+to less than 15 per second. Hardware work and pixel settling can require longer;
+the limit is not a promise of 15 fully settled images per second. The six-cycle,
+eight-frame preset retains its settling budget when the rate limit applies.
 `display mode display0` reports `scan-last-us`, `scan-interval-us`, completed
 `scan-count`, submitted/coalesced image counts, and pending pixel count. These
 measure actual completed scan work; image submission rate is separate from
@@ -1067,7 +1095,10 @@ scan rate and optical settling.
 Additional panel-specific controls are `pulse-power=<cycle,hold>`,
 `pulse-ramp=<normal,fast>`, and `pulse-spi-khz=<100..20000>`. The default power
 policy is `hold`, which retains the supply stages during a settling sequence
-and powers down when all budgets finish. The normal booster ramp uses
+and powers down when all budgets finish. It enables the analog stages on the
+first pulse of a sequence and uses display-only activations for subsequent
+pulses. A new sequence after idle power-down or reset enables the stages again.
+The normal booster ramp uses
 approximately 40/40/10 ms phases; the default `fast` uses 10/10/10 ms with the
 same current settings and voltage targets. Both ramp settings require optical
 calibration. Pulse SPI speed defaults to 20000 kHz;
@@ -1085,14 +1116,19 @@ paint; asynchronous mode immediately performs a native recovery of the newest
 accepted target. Sleep suspends scans; waking reseeds from a native baseline.
 Use `display mode display0 refresh=auto` to restore the standard waveform;
 the next presentation resets the controller and performs a full cleanup.
+For repeated native black/white recovery cycles, use `display relax display0`
+(60 seconds) or `display relax display0 3600` (one hour). The command restores
+the saved image and pulse settings when it finishes or is interrupted. See
+[Display commands](commands.md#hardware-and-time) for supported panels and cancellation.
 The pattern script `tests/hil/epd_pulse_pattern.py` exercises both transition
 directions and moves patches across both controller halves. Its printed
 messages mark queued presentations; `gfx.present()` returns before physical
 completion. Read the driver timings in `log show` and judge optical settling
 and ghosting on the actual screen.
-`tests/hil/epd_pulse_scan_pattern.py` queues moving-patch targets at 100 ms
-intervals for asynchronous cadence tests, then holds the final image so its
-pixels can settle. Use the driver statistics and physical screen to assess it.
+`tests/hil/epd_pulse_scan_pattern.py` queues targets at 67 ms intervals with
+moving black and dithered patches and a stationary shade ramp, then holds the
+final image so its pixels can settle. Use the driver statistics and physical
+screen to assess contrast, erased trails, static shades, and the panel seam.
 
 `battery0` attaches automatically at I2C address `0x0b`. Battery capacity
 defaults to 3000 mAh and remains configurable:

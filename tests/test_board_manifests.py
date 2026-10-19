@@ -123,6 +123,7 @@ class BoardManifestTest(unittest.TestCase):
         self.assertEqual(board["board"]["name"], "SolarWriter")
         self.assertEqual(board["target"]["platformio_board"], "solar_writer")
         devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(devices["display0"]["bindings"]["startup-pulse"], 1)
         self.assertEqual(devices["audio0"]["bindings"],
                          {"i2s": 1, "bck": 14, "ws": 15, "din": 17, "dout": 16, "slot": 1})
         self.assertEqual(devices["battery0"]["bindings"]["addr"], 0x0b)
@@ -598,6 +599,7 @@ bindings = { gpio = 7 }
         )
         header = generate_header(board, self.drivers)
         self.assertIn('#define SOLAR_OS_BOARD_DISPLAY_CONTROLLER "SSD1683x2"', header)
+        self.assertIn('.role = "startup-pulse", .value = 1', header)
         self.assertIn("#define SOLAR_OS_BOARD_DISPLAY_WIDTH 792", header)
         self.assertIn("#define SOLAR_OS_BOARD_DISPLAY_HEIGHT 272", header)
         self.assertIn('.role = "panel", .value = 4', header)
