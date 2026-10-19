@@ -2,6 +2,9 @@
 
 #include "esp_err.h"
 #include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_CREDENTIALS
+#include "solar_os_credentials.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_IRC
 #include "solar_os_irc.h"
 #endif
@@ -115,6 +118,12 @@ void solar_os_boot_services_init(uint32_t now_ms)
     if (identity_err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "Identity unavailable: %s", esp_err_to_name(identity_err));
     }
+#if SOLAR_OS_PACKAGE_SERVICE_CREDENTIALS
+    const esp_err_t credentials_err = solar_os_credentials_init();
+    if (credentials_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "Credentials unavailable: %s", esp_err_to_name(credentials_err));
+    }
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_INBOX
     const esp_err_t inbox_err = solar_os_inbox_init();
     if (inbox_err != ESP_OK) {
