@@ -2,6 +2,26 @@
 
 ## 4.x
 
+- **4.16.20** — 2026-10-19 — Added native IRC to unified Chat with verified
+  TLS, optional SASL authentication, channels, private messages, automatic
+  reconnect and rejoin, bounded buffers, and flood control. Each IRC instance
+  has independent server, nickname, authentication, and conversation settings.
+  Gateway, MeshCore, and Link now support named instances with isolated
+  messaging state. MeshCore supports independent radio and BLE companion
+  instances; Link instances use named transports.
+  Added common instance setup, connection, join, and private conversation
+  controls across the shell, Chat, Python, and Lua. Removing an instance also
+  deletes its local history, notifications, settings, and credentials, cancels
+  queued sends, and finishes interrupted removal after reboot.
+  Moved messaging profiles, shared credentials, radio profiles, and ESP-NOW
+  peers to mounted storage, with checked migration from legacy NVS settings.
+  Fixed display-shell stack overflows during IRC setup and disconnect, provider
+  completion, join metadata, and direct-message security metadata. Chat uses
+  shell quoting rules for setup commands, excludes credentials from input
+  history, and displays connection and authentication failures. IRC status
+  includes SASL rejection codes and server reasons.
+  Fixed DLP exit shortcuts and display attachment stack usage. BLE discovery
+  can run while the keyboard is reconnecting.
 - **4.16.19** — 2026-10-18 — Serve named displays with `dlp` over USB/UART,
   TCP/Wi-Fi, BLE, or compatible radio byte streams. Attach remote displays with
   `stream-dlp`, or open private DLP connections from Python and Lua without

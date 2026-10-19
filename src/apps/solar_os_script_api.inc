@@ -757,6 +757,15 @@ SOLAR_OS_SCRIPT_API_FUNCTION(contacts, get, get);
 SOLAR_OS_SCRIPT_API_MODULE_END(contacts);
 
 SOLAR_OS_SCRIPT_API_MODULE_BEGIN(messages);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, classes, classes);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, add, add);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, configure, configure);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, instances, instances);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, join, join);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, leave, leave);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, query, query);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, connect, connect);
+SOLAR_OS_SCRIPT_API_FUNCTION(messages, remove_instance, remove_instance);
 SOLAR_OS_SCRIPT_API_FUNCTION(messages, conversations, conversations);
 SOLAR_OS_SCRIPT_API_FUNCTION(messages, list, list);
 SOLAR_OS_SCRIPT_API_FUNCTION(messages, send, send);

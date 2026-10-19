@@ -42,7 +42,7 @@ TARGETS += tensor_image_test
 TARGETS += tensor_image_lua_test
 TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
-TARGETS += messaging_service_test
+TARGETS += messaging_service_test irc_protocol_test gateway_config_test link_messaging_test chat_settings_test meshcore_instances_test
 TARGETS += nmea_test nmea_gnss_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
@@ -246,16 +246,23 @@ epd_ssd1677_test: epd_ssd1677_test.c $(ROOT)/src/drivers/epd_ssd1677.c $(ROOT)/s
 		-Iepd_stubs -I. -I$(ROOT)/components/u8g2/src/clib \
 		epd_ssd1677_test.c -Wl,--gc-sections -o $@
 
-messaging_service_test: messaging_service_test.c $(ROOT)/src/services/solar_os_contacts.c \
-        $(ROOT)/src/services/solar_os_messaging.c $(ROOT)/src/services/solar_os_messaging_types.c \
+irc_protocol_test: irc_protocol_test.c $(ROOT)/src/services/solar_os_irc_protocol.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -I$(ROOT)/src/services $^ -o $@
+
+messaging_service_test gateway_config_test link_messaging_test chat_settings_test meshcore_instances_test: %: %.c $(ROOT)/src/services/solar_os_contacts.c \
+        $(ROOT)/src/services/solar_os_meshcore_instances.c $(ROOT)/src/services/solar_os_meshcore_instances.h \
+        $(ROOT)/src/services/solar_os_saved_config.h $(ROOT)/src/services/solar_os_credentials.c \
+        $(ROOT)/src/services/solar_os_link_messaging.c $(ROOT)/src/services/solar_os_link_messaging.h \
+        $(ROOT)/src/services/solar_os_chat.c messaging_service_test.c \
+        $(ROOT)/src/services/solar_os_messaging.c $(ROOT)/src/services/solar_os_messaging_registry.inc $(ROOT)/src/services/solar_os_messaging_types.c \
         $(ROOT)/src/services/solar_os_contacts.h $(ROOT)/src/services/solar_os_messaging.h \
         $(ROOT)/src/services/solar_os_messaging_types.h messaging_stubs/freertos/semphr.h \
         $(ROOT)/src/services/solar_os_storage.c $(ROOT)/src/services/solar_os_storage.h
-	$(CC) $(CFLAGS) -D_GNU_SOURCE -DpdTICKS_TO_MS\(ticks\)=\(ticks\) -include compat.h \
+	$(CC) $(CFLAGS) -pthread -D_GNU_SOURCE -DpdTICKS_TO_MS\(ticks\)=\(ticks\) -include compat.h \
 		-ffunction-sections -fdata-sections \
 		-Imessaging_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services \
 		-I$(ROOT)/src/board -I$(ROOT)/src/drivers \
-		messaging_service_test.c $(ROOT)/src/services/solar_os_messaging_types.c \
+		$< $(ROOT)/src/services/solar_os_messaging_types.c \
 		$(ROOT)/src/services/solar_os_storage.c -Wl,--gc-sections \
 		-Wl,--wrap=solar_os_storage_is_mounted,--wrap=solar_os_storage_sd_is_mounted \
 		-Wl,--wrap=solar_os_storage_default_path,--wrap=solar_os_storage_mkdir \
@@ -1030,6 +1037,11 @@ test: $(TARGETS)
 	./rtc_ds3231_test
 	./axp2101_service_test
 	./messaging_service_test
+	./gateway_config_test
+	./link_messaging_test
+	./chat_settings_test
+	./meshcore_instances_test
+	./irc_protocol_test
 	./ble_service_test
 	./ble_multi_peer_test
 	./ble_nimble_test

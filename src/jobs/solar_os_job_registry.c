@@ -40,6 +40,9 @@
 #if SOLAR_OS_PACKAGE_JOB_CHATD
 #include "solar_os_chatd_job.h"
 #endif
+#if SOLAR_OS_PACKAGE_JOB_IRC_SYNC
+#include "solar_os_irc_sync_job.h"
+#endif
 #if SOLAR_OS_PACKAGE_JOB_GATEWAY_SYNC
 #include "solar_os_gateway_sync_job.h"
 #endif
@@ -131,6 +134,9 @@ static const solar_os_job_registry_entry_t registered_jobs[] = {
 #endif
 #if SOLAR_OS_PACKAGE_JOB_CHATD
     {"chatd", "local chat gateway server", &solar_os_chatd_job},
+#endif
+#if SOLAR_OS_PACKAGE_JOB_IRC_SYNC
+    {"irc-sync", "maintain native IRC messaging instances", &solar_os_irc_sync_job},
 #endif
 #if SOLAR_OS_PACKAGE_JOB_GATEWAY_SYNC
     {"gateway-sync", "synchronize the gateway messaging provider", &solar_os_gateway_sync_job},

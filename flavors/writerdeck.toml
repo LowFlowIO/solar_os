@@ -49,6 +49,7 @@ contacts = true
 chat = true
 chat_gateway = true
 gateway_sync = true
+irc = true
 chat_server = true
 agent = true
 espnow = true

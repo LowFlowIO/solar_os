@@ -10,6 +10,7 @@
 #include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "nvs.h"
+#include "solar_os_saved_config.h"
 
 #define SOLAR_OS_RADIO_DEVICE_MAX 4
 #define RADIO_RELEASE_WAIT_MS 3500U
@@ -1065,38 +1066,16 @@ static void radio_profile_store_empty(radio_profile_store_t *store)
     store->size = sizeof(*store);
 }
 
-static esp_err_t radio_profile_store_load(radio_profile_store_t *store)
+static solar_os_saved_config_t radio_profile_file;
+
+static bool radio_profile_store_valid(const void *data, size_t length)
 {
-    if (store == NULL) {
-        return ESP_ERR_INVALID_ARG;
-    }
-
-    radio_profile_store_empty(store);
-
-    nvs_handle_t nvs;
-    esp_err_t ret = nvs_open(RADIO_PROFILE_NVS_NAMESPACE, NVS_READONLY, &nvs);
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        return ESP_OK;
-    }
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    size_t len = sizeof(*store);
-    ret = nvs_get_blob(nvs, RADIO_PROFILE_NVS_KEY, store, &len);
-    nvs_close(nvs);
-    if (ret == ESP_ERR_NVS_NOT_FOUND) {
-        radio_profile_store_empty(store);
-        return ESP_OK;
-    }
-    if (ret != ESP_OK) {
-        return ret;
-    }
-    if (len != sizeof(*store) ||
+    const radio_profile_store_t *store = data;
+    if (length != sizeof(*store) ||
         store->magic != RADIO_PROFILE_MAGIC ||
         store->version != RADIO_PROFILE_VERSION ||
         store->size != sizeof(*store)) {
-        return ESP_ERR_INVALID_VERSION;
+        return false;
     }
 
     for (size_t i = 0; i < SOLAR_OS_RADIO_USER_PROFILE_MAX; i++) {
@@ -1114,26 +1093,28 @@ static esp_err_t radio_profile_store_load(radio_profile_store_t *store)
                     SOLAR_OS_RADIO_MODULATION_GMSK |
                     SOLAR_OS_RADIO_MODULATION_OOK |
                     SOLAR_OS_RADIO_MODULATION_LORA) != ESP_OK) {
-            return ESP_ERR_INVALID_RESPONSE;
+            return false;
         }
     }
-    return ESP_OK;
+    return true;
+}
+
+static esp_err_t radio_profile_store_load(radio_profile_store_t *store)
+{
+    if (!store) return ESP_ERR_INVALID_ARG;
+    radio_profile_store_empty(store);
+    size_t length = sizeof(*store);
+    esp_err_t error = solar_os_saved_config_load(&radio_profile_file, "radio-profiles",
+        RADIO_PROFILE_NVS_NAMESPACE, RADIO_PROFILE_NVS_KEY, store, sizeof(*store), &length, radio_profile_store_valid);
+    if (error == ESP_ERR_NVS_NOT_FOUND || error == ESP_ERR_NOT_FOUND) {
+        radio_profile_store_empty(store); return ESP_OK;
+    }
+    return error;
 }
 
 static esp_err_t radio_profile_store_save(const radio_profile_store_t *store)
 {
-    nvs_handle_t nvs;
-    esp_err_t ret = nvs_open(RADIO_PROFILE_NVS_NAMESPACE, NVS_READWRITE, &nvs);
-    if (ret != ESP_OK) {
-        return ret;
-    }
-
-    ret = nvs_set_blob(nvs, RADIO_PROFILE_NVS_KEY, store, sizeof(*store));
-    if (ret == ESP_OK) {
-        ret = nvs_commit(nvs);
-    }
-    nvs_close(nvs);
-    return ret;
+    return solar_os_saved_config_save(&radio_profile_file, "radio-profiles", store, sizeof(*store));
 }
 
 esp_err_t solar_os_radio_profile_list(solar_os_radio_profile_t *profiles,

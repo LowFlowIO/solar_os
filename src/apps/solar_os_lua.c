@@ -8063,6 +8063,13 @@ static void solua_push_conversation(
     lua_setfield(L, -2, "label");
     lua_pushboolean(L, conversation->history_only);
     lua_setfield(L, -2, "history_only");
+    solua_set_int(L, -1, "instance_id", conversation->provider);
+    solar_os_messaging_provider_status_t provider;
+    if (solar_os_messaging_provider_get_status(conversation->provider, &provider) == ESP_OK) {
+        lua_pushstring(L, provider.class_name); lua_setfield(L, -2, "provider_class");
+    }
+    solua_set_int(L, -1, "join_state", conversation->join_state);
+    lua_pushstring(L, conversation->join_error); lua_setfield(L, -2, "join_error");
     lua_pushinteger(L, conversation->contact_id);
     lua_setfield(L, -2, "contact_id");
     lua_pushinteger(L, conversation->endpoint_id);
@@ -8076,6 +8083,81 @@ static void solua_push_conversation(
     lua_pushinteger(L, conversation->security_flags);
     lua_setfield(L, -2, "security_flags");
 }
+
+static int solua_messages_instances(lua_State *L)
+{
+    lua_newtable(L); unsigned index = 0;
+    solar_os_messaging_provider_id_t cursor = 0;
+    solar_os_messaging_provider_status_t status;
+    while (solar_os_messaging_provider_next(&cursor, &status)) {
+        lua_newtable(L);
+        solua_set_int(L, -1, "id", cursor);
+        solua_set_int(L, -1, "capabilities", status.capabilities);
+        lua_pushstring(L, status.name); lua_setfield(L, -2, "name");
+        lua_pushstring(L, status.class_name); lua_setfield(L, -2, "class");
+        lua_pushboolean(L, status.running); lua_setfield(L, -2, "running");
+        lua_pushboolean(L, status.connected); lua_setfield(L, -2, "connected");
+        lua_pushstring(L, status.detail); lua_setfield(L, -2, "detail");
+        lua_rawseti(L, -2, ++index);
+    }
+    return 1;
+}
+static int solua_messages_classes(lua_State *L)
+{
+    lua_newtable(L); unsigned index = 0;
+    char cursor[16] = ""; solar_os_messaging_class_status_t status;
+    while (solar_os_messaging_class_next(cursor, &status)) {
+        lua_newtable(L);
+        lua_pushstring(L, status.name); lua_setfield(L, -2, "name");
+        solua_set_int(L, -1, "capabilities", status.capabilities);
+        lua_pushboolean(L, status.creatable); lua_setfield(L, -2, "creatable");
+        lua_rawseti(L, -2, ++index); strlcpy(cursor, status.name, sizeof(cursor));
+    }
+    return 1;
+}
+static size_t solua_messages_settings(lua_State *L, int index, const char **arguments)
+{
+    luaL_checktype(L, index, LUA_TTABLE); size_t count = lua_rawlen(L, index);
+    if (count > 8) luaL_error(L, "at most eight provider settings");
+    /* Keep converted values on the stack until the provider copies them. */
+    for (size_t i = 0; i < count; i++) { lua_rawgeti(L, index, i + 1); arguments[i] = luaL_checkstring(L, -1); }
+    return count;
+}
+static int solua_messages_add(lua_State *L)
+{
+    const char *class_name = luaL_checkstring(L, 1), *name = luaL_checkstring(L, 2), *arguments[8];
+    size_t count = solua_messages_settings(L, 3, arguments);
+    solar_os_messaging_provider_id_t id;
+    esp_err_t error = solar_os_messaging_instance_add(class_name, name, count, arguments, &id);
+    if (error != ESP_OK) return solua_check_esp(L, error);
+    lua_pushinteger(L, id); return 1;
+}
+static int solua_messages_configure(lua_State *L)
+{
+    solar_os_messaging_provider_id_t id = (uint32_t)luaL_checkinteger(L, 1);
+    const char *arguments[8]; size_t count = solua_messages_settings(L, 2, arguments);
+    return solua_check_esp(L, solar_os_messaging_instance_configure(id, count, arguments));
+}
+static int solua_messages_join(lua_State *L)
+{
+    solar_os_conversation_id_t conversation;
+    esp_err_t error = solar_os_messaging_join((uint32_t)luaL_checkinteger(L, 1), luaL_checkstring(L, 2), &conversation);
+    if (error != ESP_OK) return solua_check_esp(L, error);
+    lua_pushinteger(L, conversation); return 1;
+}
+static int solua_messages_query(lua_State *L)
+{
+    solar_os_conversation_id_t conversation;
+    esp_err_t error = solar_os_messaging_open_direct((uint32_t)luaL_checkinteger(L, 1), luaL_checkstring(L, 2), &conversation);
+    if (error != ESP_OK) return solua_check_esp(L, error);
+    lua_pushinteger(L, conversation); return 1;
+}
+static int solua_messages_leave(lua_State *L)
+{ return solua_check_esp(L, solar_os_messaging_leave((uint32_t)luaL_checkinteger(L, 1))); }
+static int solua_messages_connect(lua_State *L)
+{ return solua_check_esp(L, solar_os_messaging_connect((uint32_t)luaL_checkinteger(L, 1), lua_toboolean(L, 2))); }
+static int solua_messages_remove_instance(lua_State *L)
+{ return solua_check_esp(L, solar_os_messaging_instance_remove((uint32_t)luaL_checkinteger(L, 1))); }
 
 static int solua_messages_conversations(lua_State *L)
 {

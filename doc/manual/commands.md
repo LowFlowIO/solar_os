@@ -138,13 +138,26 @@ The display-shell app exit chord is `CTRL+ALT+DEL`. Port shells use `Ctrl+]`.
 | `messages` | `messages send <conversation-id> <text> [--allow-untrusted]` | Queue an outbound message; discovered direct endpoints require the explicit flag. |
 | `messages` | `messages read <conversation-id>` | Mark a conversation and its linked Inbox entries read. |
 | `messages` | `messages delete <message-id>` | Delete one retained message and its linked Inbox projection by hexadecimal ID. |
-| `messages` | `messages clear <gateway\|meshcore\|link\|all>` | Clear retained history and owned Inbox projections for one provider or every messaging provider. Unrelated Inbox sources remain. |
+| `messages` | `messages clear <instance\|instance-id\|all>` | Clear retained history and owned Inbox projections, including for removed instances. Unrelated Inbox sources remain. |
+| `messages` | `messages remove <instance\|instance-id>` | Remove a configurable provider instance, connection credentials, pending sends, history and Inbox notifications. Built-in instances are protected. |
 | `messages` | `messages outbox` | List pending outbound requests in queue order. |
 | `messages` | `messages cancel <message-id>` | Cancel a queued outbound message by the hexadecimal ID printed by `list` or `send`. |
 | `outbox` | `outbox [list]` | List pending outbound messages. Sent and failed messages remain in conversation history, not Outbox. |
 | `outbox` | `outbox cancel <message-id>` | Cancel one pending message by hexadecimal ID. |
 | `gateway` | `gateway status` | Show gateway configuration, connection state, and traffic counters. |
+| `irc` | `irc add <instance> <host> <port> <nick>`; `irc set <instance> <host> <port> <nick>` | Save an IRC server profile on mounted storage. |
+| `irc` | `irc status`; `irc connect\|disconnect <instance>` | Inspect or enable individual IRC connections maintained by `irc-sync`. |
+| `irc` | `irc remove <instance>` | Remove an IRC instance, its credentials, history and associated Inbox notifications. |
+| `irc` | `irc join\|query <instance> <channel\|nick>`; `irc leave <conversation-id>` | Open rooms and private conversations through shared Messaging. |
+| `irc` | `irc sasl <instance> <account> <password>`; `irc sasl <instance> off`; `irc pass <instance> <password\|off>`; `irc ca <instance> <PEM-path\|default>` | Set optional authentication and TLS trust. See `man messaging.irc`. |
 | `gateway` | `gateway configure <url> [token]` | Save gateway connection settings. The gateway uses the global SolarOS user identity. |
+| `messages` | `messages classes` / `messages instances` | List available provider classes or configured instances. |
+| `messages` | `messages add gateway <name> <url> [token]` | Save an independent Gateway instance. Enable it with `messages connect <name>` and start `gateway-sync`. |
+| `messages` | `messages configure <name> <url> [token]` | Change a Gateway instance's connection settings. |
+| `messages` | `messages add irc <name> <host> <port> <nick>` | Save an independent native IRC connection. |
+| `messages` | `messages add meshcore <name> radio <radio> <profile>` | Save a MeshCore instance on a local radio. |
+| `messages` | `messages add meshcore <name> ble <address> <type> [pin]` | Save a MeshCore companion binding. |
+| `messages` | `messages add link <name> <transport>` | Bind an independent Chat projection to a named Link transport. |
 | `gateway` | `gateway connect [url] [token]` | Enable gateway synchronization, optionally updating settings. |
 | `gateway` | `gateway disconnect` | Disable gateway synchronization. |
 | `gateway` | `gateway rooms` | List known and joined gateway rooms. |
@@ -173,8 +186,9 @@ partition. The file contains unencrypted credentials and settings, so protect
 it like a password. `nvs restore` accepts only a complete backup for the current
 NVS partition address and size, verifies its CRC before changing flash, verifies
 the written partition again, and reboots. `nvs clear` erases the complete
-default NVS partition, including identity, Wi-Fi and BLE state, credentials,
-service settings, and radio profiles, then reboots. Files on SD or the internal
+default NVS partition, including identity, Wi-Fi and BLE state and remaining
+service settings, then reboots. Migrated Chat credentials, radio profiles, and
+ESP-NOW peers are files on mounted storage. Files on SD or the internal
 FAT filesystem are not affected.
 
 Sessions are foreground application state plus shell instances attached to a

@@ -162,6 +162,10 @@ typedef enum {
     SHELL_COMPLETION_SOURCE_INBOX_IDS,
     SHELL_COMPLETION_SOURCE_MESSAGE_IDS,
     SHELL_COMPLETION_SOURCE_CONTACT_IDS,
+    SHELL_COMPLETION_SOURCE_MESSAGING_INSTANCES,
+    SHELL_COMPLETION_SOURCE_MESSAGING_CLASSES,
+    SHELL_COMPLETION_SOURCE_MESSAGING_SELECTORS,
+    SHELL_COMPLETION_SOURCE_IRC_INSTANCES,
     SHELL_COMPLETION_SOURCE_ENDPOINT_IDS,
     SHELL_COMPLETION_SOURCE_PLAYGROUND_APPS,
     SHELL_COMPLETION_SOURCE_MODULES_AVAILABLE,
@@ -594,6 +598,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #if SOLAR_OS_PACKAGE_APP_CHAT
     {"messages", "inspect and send provider-neutral messages", solar_os_shell_cmd_messages},
     {"outbox", "list or cancel pending messages", solar_os_shell_cmd_outbox},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_IRC
+    {"irc", "configure native IRC messaging instances", solar_os_shell_cmd_irc},
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_GATEWAY
     {"gateway", "configure the gateway messaging provider", solar_os_shell_cmd_gateway},
@@ -1366,9 +1373,7 @@ static const char * const contacts_list_values[] = {
 };
 #endif
 #if SOLAR_OS_PACKAGE_APP_CHAT
-static const char * const chat_selectors[] = {
-    "gateway", "meshcore", "link"
-};
+
 static const char * const messages_subcommands[] = {
     "status",
     "conversations",
@@ -1378,12 +1383,16 @@ static const char * const messages_subcommands[] = {
     "delete",
     "clear",
     "outbox",
-    "cancel",
+    "cancel", "join", "leave", "query", "connect", "disconnect", "remove",
+    "classes", "instances", "add", "configure",
 };
 static const char * const outbox_subcommands[] = {"list", "cancel"};
-static const char * const messages_clear_values[] = {
-    "gateway", "meshcore", "link", "all"
-};
+static const char * const messages_clear_values[] = {"all"};
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_IRC
+static const char * const irc_subcommands[] = {"add", "set", "status", "sasl", "pass", "ca", "connect", "disconnect", "join", "query", "leave", "remove"};
+static const char * const path_irc[] = {"irc"};
+static const char * const path_irc_instance[] = {"irc", SHELL_COMPLETION_ANY};
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_GATEWAY
 static const char * const gateway_subcommands[] = {
@@ -1997,6 +2006,8 @@ static const char * const path_contacts_link_source[] = {
 #if SOLAR_OS_PACKAGE_APP_CHAT
 static const char * const path_chat[] = {"chat"};
 static const char * const path_messages[] = {"messages"};
+static const char * const path_messages_instance[] = {"messages", SHELL_COMPLETION_ANY};
+static const char * const path_messages_add[] = {"messages", "add"};
 static const char * const path_messages_delete[] = {"messages", "delete"};
 static const char * const path_messages_cancel[] = {"messages", "cancel"};
 static const char * const path_messages_clear[] = {"messages", "clear"};
@@ -3581,13 +3592,19 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_CONTACT_IDS(path_contacts_link_source),
 #endif
 #if SOLAR_OS_PACKAGE_APP_CHAT
-    SHELL_COMPLETION_STATIC(path_chat, chat_selectors),
+    {.path = path_chat, .path_count = SHELL_ARRAY_COUNT(path_chat), .source = SHELL_COMPLETION_SOURCE_MESSAGING_SELECTORS},
+    {.path = path_messages_instance, .path_count = SHELL_ARRAY_COUNT(path_messages_instance), .source = SHELL_COMPLETION_SOURCE_MESSAGING_INSTANCES},
+    {.path = path_messages_add, .path_count = SHELL_ARRAY_COUNT(path_messages_add), .source = SHELL_COMPLETION_SOURCE_MESSAGING_CLASSES},
     SHELL_COMPLETION_STATIC(path_messages, messages_subcommands),
     SHELL_COMPLETION_MESSAGE_IDS(path_messages_delete),
     SHELL_COMPLETION_MESSAGE_IDS(path_messages_cancel),
     SHELL_COMPLETION_STATIC(path_messages_clear, messages_clear_values),
     SHELL_COMPLETION_STATIC(path_outbox, outbox_subcommands),
     SHELL_COMPLETION_MESSAGE_IDS(path_outbox_cancel),
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_IRC
+    SHELL_COMPLETION_STATIC(path_irc, irc_subcommands),
+    {.path = path_irc_instance, .path_count = SHELL_ARRAY_COUNT(path_irc_instance), .source = SHELL_COMPLETION_SOURCE_IRC_INSTANCES},
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_GATEWAY
     SHELL_COMPLETION_STATIC(path_gateway, gateway_subcommands),
@@ -4668,8 +4685,9 @@ static void shell_history_load(solar_os_shell_session_t *session)
     }
 }
 
-static void shell_history_add(solar_os_context_t *ctx, const char *line)
+static void shell_history_add(solar_os_context_t *ctx, const char *line, int argc, char **argv)
 {
+    if (solar_os_shell_command_has_secrets(argc, (const char *const *)argv)) return;
     solar_os_shell_session_t *session = shell_session(ctx);
 
     if (shell_history_add_ram(session, line)) {
@@ -6136,6 +6154,29 @@ static void shell_completion_emit_agent_conversations(shell_completion_match_t *
     solar_os_memory_free(items);
 #else
     (void)state;
+#endif
+}
+
+static void shell_completion_emit_messaging_instances(shell_completion_match_t *state, bool classes,
+    const char *class_name)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
+    solar_os_messaging_provider_id_t cursor = 0;
+    solar_os_messaging_provider_status_t status;
+    while (solar_os_messaging_provider_next(&cursor, &status)) {
+        if (class_name && strcmp(status.class_name, class_name) != 0) continue;
+        shell_completion_emit(state, status.name);
+        if (classes && solar_os_messaging_provider_find(status.class_name) == 0) {
+            solar_os_messaging_provider_id_t earlier = 0;
+            solar_os_messaging_provider_status_t previous;
+            bool seen = false;
+            while (solar_os_messaging_provider_next(&earlier, &previous) && earlier < cursor)
+                if (strcmp(previous.class_name, status.class_name) == 0) { seen = true; break; }
+            if (!seen) shell_completion_emit(state, status.class_name);
+        }
+    }
+#else
+    (void)state; (void)classes; (void)class_name;
 #endif
 }
 
@@ -8398,6 +8439,28 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
         case SHELL_COMPLETION_SOURCE_MESSAGE_IDS:
             shell_completion_emit_message_ids(state);
             break;
+        case SHELL_COMPLETION_SOURCE_MESSAGING_SELECTORS:
+            shell_completion_emit_messaging_instances(state, true, NULL);
+            break;
+        case SHELL_COMPLETION_SOURCE_MESSAGING_INSTANCES:
+            shell_completion_emit_messaging_instances(state, false, NULL);
+            break;
+        case SHELL_COMPLETION_SOURCE_MESSAGING_CLASSES:
+#if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
+        {
+            char cursor[16] = ""; solar_os_messaging_class_status_t status;
+            while (solar_os_messaging_class_next(cursor, &status)) {
+                if (status.creatable) shell_completion_emit(state, status.name);
+                strlcpy(cursor, status.name, sizeof(cursor));
+            }
+            break;
+        }
+#else
+            break;
+#endif
+        case SHELL_COMPLETION_SOURCE_IRC_INSTANCES:
+            shell_completion_emit_messaging_instances(state, false, "irc");
+            break;
         case SHELL_COMPLETION_SOURCE_CONTACT_IDS:
             shell_completion_emit_contact_ids(state);
             break;
@@ -10090,7 +10153,7 @@ static bool SHELL_NOINLINE shell_launch_raw_agent_ask(
     }
     *matched = true;
     if (add_history) {
-        shell_history_add(ctx, line);
+        shell_history_add(ctx, line, 0, NULL);
     }
 
     char chunks[SOLAR_OS_APP_ARG_MAX][SOLAR_OS_APP_ARG_LEN] = {{0}};
@@ -10203,7 +10266,7 @@ static bool shell_execute_line(solar_os_context_t *ctx,
     }
 
     if (add_history) {
-        shell_history_add(ctx, line);
+        shell_history_add(ctx, line, argc, argv);
     }
 
     for (size_t i = 0; i < shell_builtin_command_count; i++) {

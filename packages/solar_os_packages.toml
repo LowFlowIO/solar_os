@@ -377,6 +377,11 @@ label = "Chat gateway configuration"
 category = "Messaging"
 members = ["service_gateway"]
 
+[groups.irc]
+label = "Native IRC"
+category = "Messaging"
+members = ["job_irc_sync"]
+
 [groups.gateway_sync]
 label = "Chat gateway sync"
 category = "Messaging"
@@ -1531,9 +1536,17 @@ sources = [
 ]
 requires = ["esp_hw_support"]
 
+[packages.service_meshcore_common]
+label = "service.meshcore-common"
+depends = ["service_contacts", "service_messaging"]
+sources = ["services/solar_os_meshcore_instances.c"]
+requires = ["nvs_flash"]
+capabilities = ["psram"]
+
 [packages.service_meshcore]
 label = "service.meshcore"
 depends = [
+  "service_meshcore_common",
   "service_contacts",
   "service_credentials",
   "service_link",
@@ -1575,7 +1588,7 @@ any_capabilities = ["expansion_spi", "expansion_gpio", "expansion_uart"]
 
 [packages.service_meshcore_ble]
 label = "service.meshcore-ble"
-depends = ["service_ble", "service_contacts", "service_messaging"]
+depends = ["service_ble", "service_contacts", "service_messaging", "service_meshcore_common"]
 sources = [
   "services/solar_os_meshcore_ble.c",
   "services/solar_os_meshcore_ble_protocol.c",
@@ -2897,6 +2910,19 @@ label = "job.ftpd"
 depends = ["service_ftp"]
 sources = ["jobs/solar_os_ftpd_job.c"]
 capabilities = ["wifi"]
+
+[packages.service_irc]
+label = "messaging.irc"
+depends = ["service_messaging", "service_network"]
+sources = ["services/solar_os_irc.c", "services/solar_os_irc_protocol.c", "shell/solar_os_shell_irc.c"]
+requires = ["esp-tls", "mbedtls", "esp_netif"]
+capabilities = ["psram", "wifi"]
+
+[packages.job_irc_sync]
+label = "job.irc-sync"
+depends = ["service_irc"]
+sources = ["jobs/solar_os_irc_sync_job.c"]
+capabilities = ["psram", "wifi"]
 
 [packages.job_gateway_sync]
 label = "job.gateway-sync"

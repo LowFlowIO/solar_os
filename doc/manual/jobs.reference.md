@@ -222,6 +222,14 @@ Notes:
   the Link error.
 - This is the clean base for USB-to-UART converter style workflows.
 
+## irc-sync
+
+Maintains enabled native IRC instances over verified TLS. Each instance has
+independent reconnect and channel membership state. Configure profiles with
+`irc`, then run `job start irc-sync`. The job accepts no arguments.
+Use `irc status` for each connection and `job stop irc-sync` to stop all IRC
+connections. Chat and retained messages remain available. See [Native IRC](messaging.irc.md).
+
 ## gateway-sync
 
 Background synchronizer for the gateway messaging provider. Start and stop it
