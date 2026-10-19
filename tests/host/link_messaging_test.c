@@ -46,6 +46,12 @@ int main(void)
     solar_os_conversation_id_t room_a, room_b;
     assert(solar_os_messaging_join(a, "broadcast", &room_a) == ESP_OK);
     assert(solar_os_messaging_join(b, "broadcast", &room_b) == ESP_OK && room_a != room_b);
+    solar_os_messaging_conversation_t broadcast;
+    assert(solar_os_messaging_conversation_get(room_a, &broadcast) == ESP_OK);
+    assert(broadcast.kind == SOLAR_OS_CONVERSATION_BROADCAST &&
+        broadcast.group_ref == SOLAR_OS_LINK_BROADCAST &&
+        broadcast.join_state == SOLAR_OS_MESSAGING_JOIN_JOINED &&
+        !strcmp(broadcast.title, "a broadcast"));
     solar_os_conversation_id_t direct_a, direct_b;
     assert(solar_os_messaging_open_direct(a, "1234", &direct_a) == ESP_OK);
     assert(solar_os_messaging_open_direct(b, "1234", &direct_b) == ESP_OK && direct_a != direct_b);

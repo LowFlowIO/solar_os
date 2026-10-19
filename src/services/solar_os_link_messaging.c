@@ -401,13 +401,25 @@ static esp_err_t connect_instance(void *context, bool enabled)
     return error;
 }
 
-static esp_err_t join_instance(void *context, const char *target)
+static esp_err_t join_instance(void *context, const char *target,
+    solar_os_conversation_id_t *conversation_id)
 {
     link_messaging_state_t *state = context;
     xSemaphoreTake(instances_lock, portMAX_DELAY);
     char key[SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX];
     snprintf(key, sizeof(key), "b:%s", state->config.link);
-    esp_err_t error = strcmp(target, key) ? ESP_ERR_INVALID_ARG : save_enabled(state, true);
+    char title[SOLAR_OS_MESSAGING_TITLE_MAX];
+    snprintf(title, sizeof(title), "%s broadcast", state->config.link);
+    const solar_os_messaging_conversation_upsert_t conversation = {
+        .provider = state->provider, .provider_key = key,
+        .kind = SOLAR_OS_CONVERSATION_BROADCAST, .title = title,
+        .group_ref = SOLAR_OS_LINK_BROADCAST,
+    };
+    esp_err_t error = !state->config.link[0] ? ESP_ERR_INVALID_STATE :
+        (strcmp(target, key) && strcmp(target, "broadcast") &&
+         strcmp(target, state->config.link)) ? ESP_ERR_INVALID_ARG :
+        solar_os_messaging_conversation_upsert(&conversation, conversation_id);
+    if (error == ESP_OK) error = save_enabled(state, true);
     if (error == ESP_OK) (void)solar_os_messaging_join_update(state->provider, key,
         state->active ? SOLAR_OS_MESSAGING_JOIN_JOINED : SOLAR_OS_MESSAGING_JOIN_PENDING, NULL);
     xSemaphoreGive(instances_lock);
@@ -536,7 +548,7 @@ static void remove_finish(void *context, bool removed)
 static const solar_os_messaging_provider_class_t link_class = {
     .name = "link", .capabilities = SOLAR_OS_ENDPOINT_CAP_DIRECT | SOLAR_OS_ENDPOINT_CAP_BROADCAST | SOLAR_OS_ENDPOINT_CAP_ACK,
     .create = create_instance, .configure = configure_instance, .connect = connect_instance,
-    .normalize_target = normalize_instance, .join = join_instance, .leave = leave_instance, .direct_open = direct_instance,
+    .normalize_target = normalize_instance, .join_open = join_instance, .leave = leave_instance, .direct_open = direct_instance,
     .remove_prepare = remove_prepare, .remove_finish = remove_finish,
 };
 
