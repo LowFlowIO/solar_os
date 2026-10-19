@@ -78,6 +78,7 @@ class IRCServer:
         self.events, self.clients, self.errors = [], [], []
         self.connections = 0
         self.rejected_tls = 0
+        self.rejected_auth = 0
         threading.Thread(target=self.accept, daemon=True).start()
 
     def accept(self):
@@ -108,9 +109,12 @@ class IRCServer:
                 elif text == "AUTHENTICATE PLAIN":
                     send("AUTHENTICATE +")
                 elif command == "AUTHENTICATE":
-                    assert base64.b64decode(rest) == b"\0hil-account\0hil-password"
-                    authenticated = True
-                    send(f":test 903 {nickname} :SASL authentication successful")
+                    if base64.b64decode(rest) == b"\0hil-account\0hil-password":
+                        authenticated = True
+                        send(f":test 903 {nickname} :SASL authentication successful")
+                    else:
+                        self.rejected_auth += 1
+                        send(f":test 904 {nickname} :SASL authentication failed: Invalid credentials")
                 elif command == "NICK":
                     nickname = rest
                 elif command == "USER":
@@ -225,13 +229,22 @@ def main():
             if label == "b":
                 assert "irc: ok" in console.command(f"irc ca hil-irc-{label} {device_ca}")
             if server.sasl:
-                assert "configuration saved" in console.command(f"messages configure hil-irc-{label} sasl hil-account hil-password")
+                assert "configuration saved" in console.command(f"messages configure hil-irc-{label} sasl hil-account hil-wrong-password")
             assert "irc: ok" in console.command(f"irc connect hil-irc-{label}")
         console.command("job start irc-sync")
-        # A self-signed server must fail with the normal trust bundle, while B
-        # can independently register with its explicit CA and SASL credentials.
+        # A must reject its untrusted certificate. B must expose an exact SASL
+        # rejection without registering, then recover after credentials change.
         a.wait(lambda: a.rejected_tls > 0)
         assert a.connections == 0 and not a.events, "untrusted TLS connection was accepted"
+        b.wait(lambda: b.rejected_auth > 0)
+        deadline = time.monotonic() + 15
+        while True:
+            status = console.command("irc status")
+            if "IRC SASL 904: SASL authentication failed: Invalid credentials" in status:
+                break
+            assert time.monotonic() < deadline, status
+        assert not any(event[1] == "CAP END" for event in b.events), "rejected SASL fell back to anonymous login"
+        assert "configuration saved" in console.command("messages configure hil-irc-b sasl hil-account hil-password")
         assert "irc: ok" in console.command(f"irc ca hil-irc-a {device_ca}")
         for server in (a, b):
             server.wait(lambda s=server: any("USER " in event[1] for event in s.events))
@@ -347,7 +360,8 @@ def main():
                 console.command(f"rm /sdcard/.chat/profiles/{instance:03}.bin")
         console.command(f"rm {device_ca}")
         print(json.dumps({"result": "pass", "instances": ids, "flood_spacing_seconds": [round(y - x, 3) for x, y in zip(sends, sends[1:])],
-            "connections": {"a": a.connections, "b": b.connections}, "memory_before": before, "memory_after": after,
+            "connections": {"a": a.connections, "b": b.connections}, "sasl_rejections": b.rejected_auth,
+            "memory_before": before, "memory_after": after,
             "nvs_before": nvs_before, "nvs_after": nvs_after, "removal": removal}, indent=2))
         console.serial.close()
 

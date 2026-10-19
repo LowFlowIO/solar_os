@@ -497,8 +497,16 @@ static void irc_received(irc_instance_t *node, char *line)
     if (strcmp(command, "903") == 0 && node->sasl_started && node->sasl_payload_sent) {
         node->sasl_ok = true; (void)irc_control(node, "CAP END"); return;
     }
-    if (strcmp(command, "904") == 0 || strcmp(command, "905") == 0 || strcmp(command, "906") == 0) {
-        irc_close(node, ESP_FAIL, "IRC SASL authentication failed", true); return;
+    if (strcmp(command, "902") == 0 || strcmp(command, "904") == 0 ||
+        strcmp(command, "905") == 0 || strcmp(command, "906") == 0) {
+        char reason[SOLAR_OS_MESSAGING_ERROR_MAX];
+        const char *detail = "authentication rejected";
+        if (count > 1) {
+            solar_os_irc_clean_text(p[count - 1]);
+            if (p[count - 1][0]) detail = p[count - 1];
+        }
+        snprintf(reason, sizeof(reason), "IRC SASL %s: %s", command, detail);
+        irc_close(node, ESP_FAIL, reason, true); return;
     }
     if (strcmp(command, "001") == 0 && count) {
         if (node->active.account[0] && !node->sasl_ok) { irc_close(node, ESP_FAIL, "IRC registered without required authentication", true); return; }
