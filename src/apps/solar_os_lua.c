@@ -8120,6 +8120,8 @@ static int solua_messages_leave(lua_State *L)
 { return solua_check_esp(L, solar_os_messaging_leave((uint32_t)luaL_checkinteger(L, 1))); }
 static int solua_messages_connect(lua_State *L)
 { return solua_check_esp(L, solar_os_messaging_connect((uint32_t)luaL_checkinteger(L, 1), lua_toboolean(L, 2))); }
+static int solua_messages_remove_instance(lua_State *L)
+{ return solua_check_esp(L, solar_os_messaging_instance_remove((uint32_t)luaL_checkinteger(L, 1))); }
 
 static int solua_messages_conversations(lua_State *L)
 {

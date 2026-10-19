@@ -63,7 +63,7 @@ typedef struct irc_instance {
 static struct {
     bool initialized, running;
     volatile bool stop_requested, worker_done;
-    SemaphoreHandle_t lock, edit_lock;
+    SemaphoreHandle_t lock, edit_lock, worker_lock;
     TaskHandle_t worker;
     irc_instance_t *instances;
 } irc;
@@ -73,10 +73,13 @@ static esp_err_t irc_leave(void *context, const char *target);
 static esp_err_t irc_direct(void *context, const char *target, solar_os_conversation_id_t *conversation);
 static esp_err_t irc_connect(void *context, bool enabled);
 static esp_err_t irc_normalize(void *context, const char *target, char *out, size_t size);
+static esp_err_t irc_remove_prepare(void *context);
+static void irc_remove_finish(void *context, bool removed);
 static const solar_os_messaging_provider_class_t irc_class = {
     .name = "irc", .connection_oriented = true, .capabilities = SOLAR_OS_ENDPOINT_CAP_ROOM | SOLAR_OS_ENDPOINT_CAP_DIRECT,
     .join = irc_join, .leave = irc_leave, .direct_open = irc_direct, .connect = irc_connect,
     .normalize_target = irc_normalize,
+    .remove_prepare = irc_remove_prepare, .remove_finish = irc_remove_finish,
 };
 
 static uint32_t irc_now(void) { return (uint32_t)(esp_timer_get_time() / 1000); }
@@ -162,9 +165,11 @@ esp_err_t solar_os_irc_init(void)
     esp_err_t error = solar_os_messaging_init();
     if (error != ESP_OK) return error;
     irc.lock = xSemaphoreCreateMutex(); irc.edit_lock = xSemaphoreCreateMutex();
-    if (!irc.lock || !irc.edit_lock) {
+    irc.worker_lock = xSemaphoreCreateMutex();
+    if (!irc.lock || !irc.edit_lock || !irc.worker_lock) {
         if (irc.lock) vSemaphoreDelete(irc.lock);
         if (irc.edit_lock) vSemaphoreDelete(irc.edit_lock);
+        if (irc.worker_lock) vSemaphoreDelete(irc.worker_lock);
         memset(&irc, 0, sizeof(irc)); return ESP_ERR_NO_MEM;
     }
     error = solar_os_messaging_class_register(&irc_class);
@@ -174,7 +179,8 @@ esp_err_t solar_os_irc_init(void)
     solar_os_irc_config_t *config = irc_config_alloc();
     if (!config) {
         vSemaphoreDelete(irc.lock); vSemaphoreDelete(irc.edit_lock);
-        irc.lock = irc.edit_lock = NULL;
+        vSemaphoreDelete(irc.worker_lock);
+        irc.lock = irc.edit_lock = irc.worker_lock = NULL;
         return ESP_ERR_NO_MEM;
     }
     irc.initialized = true;
@@ -212,8 +218,11 @@ esp_err_t solar_os_irc_get_config(solar_os_messaging_provider_id_t id, solar_os_
 {
     if (!config) return ESP_ERR_INVALID_ARG;
     esp_err_t error = solar_os_irc_init(); if (error != ESP_OK) return error;
-    irc_instance_t *node = irc_find(id); if (!node) return ESP_ERR_NOT_FOUND;
+    xSemaphoreTake(irc.edit_lock, portMAX_DELAY);
+    irc_instance_t *node = irc_find(id);
+    if (!node) { xSemaphoreGive(irc.edit_lock); return ESP_ERR_NOT_FOUND; }
     xSemaphoreTake(irc.lock, portMAX_DELAY); *config = node->config; xSemaphoreGive(irc.lock);
+    xSemaphoreGive(irc.edit_lock);
     return ESP_OK;
 }
 
@@ -232,8 +241,10 @@ esp_err_t solar_os_irc_configure(solar_os_messaging_provider_id_t id, const sola
 {
     if (!irc_config_valid(config)) return ESP_ERR_INVALID_ARG;
     esp_err_t error = solar_os_irc_init(); if (error != ESP_OK) return error;
-    irc_instance_t *node = irc_find(id); if (!node) return ESP_ERR_NOT_FOUND;
-    xSemaphoreTake(irc.edit_lock, portMAX_DELAY); error = irc_save(node, config); xSemaphoreGive(irc.edit_lock);
+    xSemaphoreTake(irc.edit_lock, portMAX_DELAY);
+    irc_instance_t *node = irc_find(id);
+    error = node ? irc_save(node, config) : ESP_ERR_NOT_FOUND;
+    xSemaphoreGive(irc.edit_lock);
     return error;
 }
 
@@ -252,7 +263,7 @@ static esp_err_t irc_connect(void *context, bool enabled)
 esp_err_t solar_os_irc_enable(solar_os_messaging_provider_id_t id, bool enabled)
 {
     esp_err_t error = solar_os_irc_init(); if (error != ESP_OK) return error;
-    return irc_connect(irc_find(id), enabled);
+    return solar_os_messaging_connect(id, enabled);
 }
 
 static esp_err_t irc_channel_change(irc_instance_t *node, const char *target, bool join)
@@ -334,6 +345,30 @@ static void irc_close(irc_instance_t *node, esp_err_t error, const char *reason,
     if (retry && node->retry_delay < 60000) node->retry_delay *= 2;
     if (node->retry_delay > 60000) node->retry_delay = 60000;
     irc_status(node, error, reason);
+}
+
+static esp_err_t irc_remove_prepare(void *context)
+{
+    if (!context) return ESP_ERR_INVALID_ARG;
+    xSemaphoreTake(irc.edit_lock, portMAX_DELAY);
+    xSemaphoreTake(irc.worker_lock, portMAX_DELAY);
+    return ESP_OK;
+}
+
+static void irc_remove_finish(void *context, bool removed)
+{
+    irc_instance_t *node = context;
+    if (removed) {
+        irc_close(node, ESP_OK, "instance removed", false);
+        xSemaphoreTake(irc.lock, portMAX_DELAY);
+        irc_instance_t **link = &irc.instances;
+        while (*link && *link != node) link = &(*link)->next;
+        if (*link) *link = node->next;
+        xSemaphoreGive(irc.lock);
+        irc_wipe(node, sizeof(*node)); solar_os_memory_free(node);
+    }
+    xSemaphoreGive(irc.worker_lock);
+    xSemaphoreGive(irc.edit_lock);
 }
 
 static bool irc_control(irc_instance_t *node, const char *command)
@@ -676,16 +711,20 @@ static void irc_worker(void *argument)
 {
     (void)argument;
     while (!irc.stop_requested) {
+        xSemaphoreTake(irc.worker_lock, portMAX_DELAY);
         xSemaphoreTake(irc.lock, portMAX_DELAY); irc_instance_t *node = irc.instances; xSemaphoreGive(irc.lock);
         for (; node && !irc.stop_requested; node = node->next) irc_tick(node);
+        xSemaphoreGive(irc.worker_lock);
         (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(25));
     }
+    xSemaphoreTake(irc.worker_lock, portMAX_DELAY);
     xSemaphoreTake(irc.lock, portMAX_DELAY); irc_instance_t *node = irc.instances; xSemaphoreGive(irc.lock);
     irc.running = false;
     for (; node; node = node->next) {
         irc_close(node, ESP_OK, "stopped", false);
         irc_wipe(&node->active, sizeof(node->active));
     }
+    xSemaphoreGive(irc.worker_lock);
     irc.worker_done = true; solar_os_task_delete(NULL);
 }
 

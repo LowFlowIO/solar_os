@@ -7408,6 +7408,11 @@ static mp_obj_t solaros_messages_connect(mp_obj_t instance, mp_obj_t enabled)
     python_check_esp(solar_os_messaging_connect(python_u32_from_obj(instance), mp_obj_is_true(enabled))); return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(solaros_messages_connect_obj, solaros_messages_connect);
+static mp_obj_t solaros_messages_remove_instance(mp_obj_t instance)
+{
+    python_check_esp(solar_os_messaging_instance_remove(python_u32_from_obj(instance))); return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_messages_remove_instance_obj, solaros_messages_remove_instance);
 
 static mp_obj_t solaros_messages_conversations(void)
 {

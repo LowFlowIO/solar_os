@@ -36,6 +36,11 @@ capabilities, and connection status without authentication secrets. Use
 on that same submodule. Join and query return a conversation ID. Connection
 settings are saved; the provider job must also be running.
 
+`solaros.messages.remove_instance(instance_id)` closes and removes a configurable
+instance, credentials, pending sends, local history, and Inbox notifications. It protects the
+built-in instances and requires writable mounted storage. Removed instances
+are omitted from `instances()`. Creating the same name again allocates a different ID.
+
 Conversation summaries include `instance_id`, `provider_class`, `join_state`
 (0 none, 1 left, 2 joining, 3 joined, 4 failed), and `join_error`.
 Conversation summaries include the raw `title`, a display `label` that identifies

@@ -67,6 +67,8 @@ typedef struct messaging_provider_node {
     solar_os_messaging_provider_status_t status;
     char group_prefix[SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX];
     void *context;
+    unsigned operations;
+    bool removing;
 } messaging_provider_node_t;
 typedef struct messaging_class_node {
     struct messaging_class_node *next;
@@ -222,6 +224,7 @@ static messaging_provider_node_t *messaging_provider_node_locked(
     return NULL;
 }
 static void messaging_profiles_restore(void);
+static esp_err_t messaging_remove_history(solar_os_messaging_provider_id_t id);
 
 static int messaging_conversation_index_locked(
     solar_os_messaging_provider_id_t provider,
@@ -280,6 +283,7 @@ static solar_os_conversation_id_t messaging_upsert_conversation_locked(
     conversation->history_only = request->kind == SOLAR_OS_CONVERSATION_GROUP &&
         group_prefix[0] != '\0' &&
         strncmp(request->provider_key, group_prefix, strlen(group_prefix)) != 0;
+    if (provider_node && provider_node->status.removed) conversation->history_only = true;
     strlcpy(conversation->provider_key,
             request->provider_key,
             sizeof(conversation->provider_key));
@@ -1221,6 +1225,13 @@ esp_err_t solar_os_messaging_init(void)
     solar_os_inbox_set_clear_observer(messaging_unlink_all_inbox_projections,
                                       NULL);
     messaging_reconcile_inbox_projections();
+    /* A committed removal record is also a durable purge request. Complete
+     * deletions interrupted by reset before exposing restored conversations. */
+    for (messaging_provider_node_t *node = messaging.providers; node; node = node->next) {
+        if (!node->status.removed) continue;
+        esp_err_t error = messaging_remove_history(node->status.id);
+        if (error != ESP_OK) messaging.storage_error = error;
+    }
     return ESP_OK;
 }
 
@@ -1280,7 +1291,7 @@ esp_err_t solar_os_messaging_provider_set_status(
     messaging_provider_node_t *node = messaging_provider_node_locked(provider);
     if (node == NULL) { messaging_unlock(); return ESP_ERR_NOT_FOUND; }
     solar_os_messaging_provider_status_t *status = &node->status;
-    if (!status->registered) {
+    if (!status->registered || status->removed) {
         messaging_unlock();
         return ESP_ERR_NOT_FOUND;
     }
@@ -1333,7 +1344,7 @@ esp_err_t solar_os_messaging_provider_claim(
     messaging_provider_node_t *node = messaging_provider_node_locked(provider);
     if (node == NULL) { messaging_unlock(); return ESP_ERR_NOT_FOUND; }
     solar_os_messaging_provider_status_t *status = &node->status;
-    if (!status->registered) {
+    if (!status->registered || status->removed || node->removing) {
         messaging_unlock();
         return ESP_ERR_NOT_FOUND;
     }
@@ -1395,6 +1406,10 @@ esp_err_t solar_os_messaging_conversation_upsert(
         return error;
     }
     messaging_lock();
+    messaging_provider_node_t *provider = messaging_provider_node_locked(request->provider);
+    if (provider && (provider->status.removed || provider->removing)) {
+        messaging_unlock(); return ESP_ERR_INVALID_STATE;
+    }
     const solar_os_conversation_id_t id =
         messaging_upsert_conversation_locked(request, true);
     messaging_unlock();
@@ -1691,6 +1706,8 @@ esp_err_t solar_os_messaging_publish_inbound(
         .group_ref = request->group_ref,
         .security_flags = request->security_flags,
     };
+    messaging_provider_node_t *provider = messaging_provider_node_locked(request->provider);
+    if (provider && provider->status.removed) { messaging_unlock(); return ESP_ERR_INVALID_STATE; }
     const solar_os_conversation_id_t conversation_id =
         messaging_upsert_conversation_locked(&conversation_request, false);
     if (conversation_id == 0) {
@@ -1829,6 +1846,10 @@ esp_err_t solar_os_messaging_send(solar_os_conversation_id_t conversation_id,
         return ESP_ERR_NOT_FOUND;
     }
     conversation = &messaging.conversations[current_conversation_index];
+    messaging_provider_node_t *provider = messaging_provider_node_locked(conversation->provider);
+    if (provider && (provider->status.removed || provider->removing)) {
+        messaging_unlock(); return ESP_ERR_INVALID_STATE;
+    }
     if (conversation->history_only) {
         messaging_unlock();
         return ESP_ERR_NOT_SUPPORTED;
@@ -2427,6 +2448,10 @@ esp_err_t solar_os_messaging_outbox_peek(
         return error;
     }
     messaging_lock();
+    messaging_provider_node_t *provider_node = messaging_provider_node_locked(provider);
+    if (provider_node && (provider_node->status.removed || provider_node->removing)) {
+        messaging_unlock(); return ESP_ERR_NOT_FOUND;
+    }
     const size_t oldest =
         (messaging.outbox_head + SOLAR_OS_MESSAGING_OUTBOX_CAPACITY -
          messaging.outbox_count) % SOLAR_OS_MESSAGING_OUTBOX_CAPACITY;
@@ -2473,6 +2498,10 @@ esp_err_t solar_os_messaging_outbox_update(
             &messaging.outbox[(oldest + i) %
                               SOLAR_OS_MESSAGING_OUTBOX_CAPACITY];
         if (candidate->id == request_id) {
+            messaging_provider_node_t *node = messaging_provider_node_locked(candidate->provider);
+            if (state == SOLAR_OS_DELIVERY_SENDING && node && (node->status.removed || node->removing)) {
+                messaging_unlock(); return ESP_ERR_INVALID_STATE;
+            }
             found_offset = i;
             key = candidate->message_key;
             if (state == SOLAR_OS_DELIVERY_QUEUED) {
@@ -2569,4 +2598,127 @@ uint64_t solar_os_messaging_provider_context(
     const char *name = solar_os_messaging_provider_name(provider);
     hash = messaging_hash_string(hash, name);
     return hash != 0 ? hash : 1U;
+}
+
+/* Caller owns io_lock. Retry this even for an already retired instance so a
+ * previous cleanup error cannot leave an old credential-bearing backup. */
+static esp_err_t messaging_archive_cleanup(const solar_os_messaging_provider_status_t *status)
+{
+    char active[SOLAR_OS_STORAGE_PATH_MAX], path[SOLAR_OS_STORAGE_PATH_MAX];
+    esp_err_t error = messaging_profile_path(status->id, active, sizeof(active));
+    const char *suffixes[] = {".bak", ".tmp"};
+    for (size_t i = 0; error == ESP_OK && i < 2; i++) {
+        if (snprintf(path, sizeof(path), "%s%s", active, suffixes[i]) >= (int)sizeof(path)) error = ESP_ERR_INVALID_SIZE;
+        else if (unlink(path) != 0 && errno != ENOENT) error = ESP_FAIL;
+    }
+    return error;
+}
+
+static esp_err_t messaging_archive_profile(const solar_os_messaging_provider_status_t *status,
+    bool *committed)
+{
+    const unsigned char empty = 0;
+    xSemaphoreTake(messaging.io_lock, portMAX_DELAY);
+    esp_err_t error = messaging_profile_write(status, &empty, 0);
+    *committed = error == ESP_OK;
+    if (*committed) error = messaging_archive_cleanup(status);
+    xSemaphoreGive(messaging.io_lock); return error;
+}
+
+static void messaging_archive_runtime(messaging_provider_node_t *node)
+{
+    /* Transport work has stopped. Drop even requests whose history slot has
+     * been evicted, and keep every other instance's queue in the same order. */
+    messaging_lock();
+    const solar_os_messaging_provider_id_t id = node->status.id;
+    const size_t oldest = (messaging.outbox_head + SOLAR_OS_MESSAGING_OUTBOX_CAPACITY -
+        messaging.outbox_count) % SOLAR_OS_MESSAGING_OUTBOX_CAPACITY;
+    size_t kept = 0;
+    for (size_t i = 0; i < messaging.outbox_count; i++) {
+        solar_os_messaging_outbound_t *entry = &messaging.outbox[(oldest + i) % SOLAR_OS_MESSAGING_OUTBOX_CAPACITY];
+        if (entry->provider != id) messaging.outbox[(oldest + kept++) % SOLAR_OS_MESSAGING_OUTBOX_CAPACITY] = *entry;
+    }
+    for (size_t i = kept; i < messaging.outbox_count; i++)
+        memset(&messaging.outbox[(oldest + i) % SOLAR_OS_MESSAGING_OUTBOX_CAPACITY], 0, sizeof(*messaging.outbox));
+    messaging.outbox_count = kept; messaging.outbox_head = (oldest + kept) % SOLAR_OS_MESSAGING_OUTBOX_CAPACITY;
+    for (size_t i = 0; i < messaging.message_count; i++) {
+        messaging_message_slot_t *slot = &messaging.messages[(messaging_message_oldest_locked() + i) % SOLAR_OS_MESSAGING_MESSAGE_CAPACITY];
+        if (slot->message.provider != id || slot->message.direction != SOLAR_OS_MESSAGE_OUTBOUND ||
+            (slot->message.delivery != SOLAR_OS_DELIVERY_QUEUED && slot->message.delivery != SOLAR_OS_DELIVERY_SENDING)) continue;
+        slot->message.delivery = slot->message.delivery == SOLAR_OS_DELIVERY_SENDING ?
+            SOLAR_OS_DELIVERY_FAILED : SOLAR_OS_DELIVERY_CANCELLED;
+        strlcpy(slot->message.error, "instance removed", sizeof(slot->message.error)); slot->revision++;
+        messaging_publish_event_locked(SOLAR_OS_MESSAGING_EVENT_DELIVERY, id, slot->message.conversation_id,
+            slot->message.key, slot->message.delivery, ESP_OK);
+    }
+    for (size_t i = 0; i < messaging.conversation_count; i++) {
+        solar_os_messaging_conversation_t *conversation = &messaging.conversations[i];
+        if (conversation->provider != id) continue;
+        conversation->history_only = true; conversation->join_state = SOLAR_OS_MESSAGING_JOIN_LEFT;
+        strlcpy(conversation->join_error, "instance removed", sizeof(conversation->join_error));
+    }
+    node->status.removed = true; node->status.running = node->status.connected = false;
+    node->status.last_error = ESP_OK; node->context = NULL; node->removing = false;
+    strlcpy(node->status.detail, "removed", sizeof(node->status.detail));
+    messaging_note_generation_locked();
+    messaging_publish_event_locked(SOLAR_OS_MESSAGING_EVENT_PROVIDER, id, 0, 0, SOLAR_OS_DELIVERY_RECEIVED, ESP_OK);
+    messaging_unlock();
+}
+
+static esp_err_t messaging_remove_history(solar_os_messaging_provider_id_t id)
+{
+    esp_err_t error = solar_os_messaging_clear(id, NULL);
+    messaging_lock();
+    for (size_t i = 0; i < messaging.conversation_count;) {
+        solar_os_messaging_conversation_t *conversation = &messaging.conversations[i];
+        if (conversation->provider != id) { i++; continue; }
+        messaging_publish_event_locked(SOLAR_OS_MESSAGING_EVENT_CONVERSATION_REMOVED, id,
+            conversation->id, 0, SOLAR_OS_DELIVERY_RECEIVED, ESP_OK);
+        memmove(conversation, conversation + 1,
+            (messaging.conversation_count - i - 1) * sizeof(*conversation));
+        messaging.conversation_count--;
+    }
+    messaging_note_generation_locked();
+    messaging_unlock();
+    return error;
+}
+
+esp_err_t solar_os_messaging_instance_remove(solar_os_messaging_provider_id_t id)
+{
+    if (!messaging_provider_valid(id)) return ESP_ERR_INVALID_ARG;
+    if (id <= SOLAR_OS_MESSAGING_PROVIDER_LINK) return ESP_ERR_NOT_SUPPORTED;
+    esp_err_t error = solar_os_messaging_init();
+    if (error != ESP_OK) return error;
+    messaging_lock();
+    messaging_provider_node_t *node = messaging_provider_node_locked(id);
+    if (!node) { messaging_unlock(); return ESP_ERR_NOT_FOUND; }
+    if (node->status.removed) {
+        messaging_unlock();
+        xSemaphoreTake(messaging.io_lock, portMAX_DELAY);
+        error = messaging_archive_cleanup(&node->status);
+        xSemaphoreGive(messaging.io_lock);
+        esp_err_t purge = messaging_remove_history(id);
+        return error != ESP_OK ? error : purge;
+    }
+    if (node->removing || node->operations) { messaging_unlock(); return ESP_ERR_INVALID_STATE; }
+    const solar_os_messaging_provider_class_t *type = messaging_class_locked(node->status.class_name);
+    void *context = node->context;
+    if (context && (!type || !type->remove_prepare || !type->remove_finish)) {
+        messaging_unlock(); return ESP_ERR_NOT_SUPPORTED;
+    }
+    node->removing = true;
+    messaging_unlock();
+    if (context) error = type->remove_prepare(context);
+    bool committed = false;
+    if (error == ESP_OK) {
+        error = messaging_archive_profile(&node->status, &committed);
+        if (context) type->remove_finish(context, committed);
+    }
+    if (committed) {
+        messaging_archive_runtime(node);
+        esp_err_t purge = messaging_remove_history(id);
+        if (error == ESP_OK) error = purge;
+    }
+    else { messaging_lock(); node->removing = false; messaging_unlock(); }
+    return error;
 }

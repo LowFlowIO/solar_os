@@ -35,6 +35,8 @@ static void messages_usage(solar_os_shell_io_t *io)
     solar_os_shell_io_writeln(io, "  messages cancel <message-id>");
 }
 
+static bool messages_parse_u32(const char *text, uint32_t *value);
+
 static bool messages_parse_provider(
     const char *text,
     solar_os_messaging_provider_id_t *provider)
@@ -48,6 +50,11 @@ static bool messages_parse_provider(
     }
     solar_os_messaging_provider_id_t instance = solar_os_messaging_provider_find(text);
     if (instance) { *provider = instance; return true; }
+    solar_os_messaging_provider_status_t status;
+    if (messages_parse_u32(text, &instance) &&
+        solar_os_messaging_provider_get_status(instance, &status) == ESP_OK) {
+        *provider = instance; return true;
+    }
     if (strcmp(text, "gateway") == 0) {
         *provider = SOLAR_OS_MESSAGING_PROVIDER_GATEWAY;
         return true;
@@ -330,6 +337,13 @@ void solar_os_shell_cmd_messages(solar_os_context_t *ctx,
         return;
     }
     uint32_t conversation_id = 0;
+    if (argc == 3 && strcmp(argv[1], "remove") == 0) {
+        solar_os_messaging_provider_id_t instance;
+        esp_err_t error = messages_parse_provider(argv[2], &instance) && instance ?
+            solar_os_messaging_instance_remove(instance) : ESP_ERR_NOT_FOUND;
+        solar_os_shell_io_printf(io, "messages: %s\n", error == ESP_OK ?
+            "instance and history removed" : solar_os_shell_error_text(error)); return;
+    }
     if (argc == 3 && strcmp(argv[1], "list") == 0 &&
         messages_parse_u32(argv[2], &conversation_id)) {
         messages_list(io, conversation_id);
@@ -407,7 +421,7 @@ void solar_os_shell_cmd_messages(solar_os_context_t *ctx,
                                    "messages",
                                    argc,
                                    argv,
-                                   "messages status|conversations|list|send|read|delete|clear|outbox|cancel|join|leave|query|connect|disconnect",
+                                   "messages status|conversations|list|send|read|delete|clear|outbox|cancel|join|leave|query|connect|disconnect|remove",
                                    messages_commands,
                                    sizeof(messages_commands) / sizeof(messages_commands[0]));
 }

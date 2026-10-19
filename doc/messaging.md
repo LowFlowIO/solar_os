@@ -54,8 +54,21 @@ Classes expose optional join, leave, direct-open, connect, and target
 normalization operations. Messaging dispatches them outside its global lock.
 Chat and scripts consume common membership states: none, left, pending, joined,
 and failed with a bounded reason. Class descriptors have static lifetime;
-instance contexts stay valid for the registry lifetime. Runtime nodes are not
-reused while callers or retained history can refer to them.
+instance contexts are leased until each operation finishes. Removal is refused
+while an operation is in progress. A class's `remove_prepare` excludes workers
+until `remove_finish` commits destruction or resumes them after a storage error.
+Registry labels remain stable and instance IDs are never reused.
+
+`solar_os_messaging_instance_remove` protects the three built-in instances. It
+replaces a configurable instance's profile with a checked zero-payload record,
+then destroys its runtime context, cancels queued work, and deletes its retained
+messages, conversations, and Inbox projections. A reset after committing the
+record completes the history purge during Messaging initialization. The record retains only ID, name, and class; no
+connection settings or credentials remain. A committed record takes precedence
+over a stale backup during recovery. Failure before committing the record leaves
+the original profile and transport intact. File operations never hold the
+Messaging state lock. IRC also excludes configuration edits and its worker
+during the replacement, then frees the retired instance's PSRAM context.
 
 Saved connection profiles use checked, versioned files in `.chat/profiles` on
 mounted storage. The selected volume remains fixed during a boot. Temporary

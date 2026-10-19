@@ -4,6 +4,8 @@
 Requires pyserial and cryptography. Pass --host-address with the LAN address
 reachable by the device. Creates only hil-irc-a/b profiles and removes them
 on success. The caller starts the USB port shell before running this test.
+--test-removal also exercises display-shell, Chat, and Python instance removal;
+--keep-removal-records leaves its archives/history for a reboot recovery check.
 """
 import argparse
 import base64
@@ -152,7 +154,11 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--port", required=True)
     parser.add_argument("--host-address", required=True)
+    parser.add_argument("--test-removal", action="store_true")
+    parser.add_argument("--display-session", type=int, default=0)
+    parser.add_argument("--keep-removal-records", action="store_true")
     args = parser.parse_args()
+    assert not args.keep_removal_records or args.test_removal
     key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
     name = x509.Name([x509.NameAttribute(NameOID.COMMON_NAME, "SolarOS IRC HIL")])
     certificate = (x509.CertificateBuilder().subject_name(name).issuer_name(name)
@@ -264,8 +270,41 @@ def main():
         console.command("irc status")
         after = console.command("mem policy")
         nvs_after = console.command("nvs status")
+        removal = None
+        if args.test_removal:
+            for i in range(8):
+                assert "messages: queued" in console.command(f"messages send {rooms['a']} remove-queued-{i}")
+            before_remove = console.command("mem policy")
+            assert "sent command" in console.command(f"session send {args.display_session} irc remove hil-irc-a")
+            console.collect(1)
+            status = console.command("irc status")
+            assert "hil-irc-a:" not in status and "hil-irc-b: connected" in status, status
+            history = console.command(f"messages list {rooms['a']}")
+            assert "hello-a" not in history and "remove-queued-" not in history, history
+            assert "messages: queued" not in console.command(f"messages send {rooms['a']} must-fail")
+            connections_after_remove = a.connections
+            b.clients[-1].sendall(b"PING :after-remove\r\n")
+            b.wait(lambda: any(event[1] == "PONG :after-remove" for event in b.events))
+            console.collect(2)
+            assert a.connections == connections_after_remove and b.connections == old_b
+            after_remove = console.command("mem policy")
+            output = console.command(f"irc add hil-irc-a {args.host_address} {a.port} pocketnew")
+            replacement = int(re.search(r"saved instance .* \((\d+)\)", output)[1])
+            assert replacement > max(ids), output
+            console.serial.write(b"chat\r")
+            console.collect(1)
+            console.serial.write(b"\t/remove hil-irc-a\r")
+            view = console.collect(2)
+            assert "instance and history removed" in view, view
+            console.serial.write(b"\x1d")
+            assert PROMPT.search(console.collect(1))
+            assert "hil-irc-a:" not in console.command("irc status")
+            removal = {"retired": ids[0], "replacement": replacement,
+                "memory_before": before_remove, "memory_after": after_remove,
+                "tasks": console.command("top")}
         console.command("job stop irc-sync")
-        console.serial.write(f"chat {rooms['a']}\r".encode())
+        offline = 'b' if args.test_removal else 'a'
+        console.serial.write(f"chat {rooms[offline]}\r".encode())
         console.collect(1)
         # A conversation-ID selector starts directly on the Chat tab. Go to
         # Channels and select it again to exercise offline membership handling.
@@ -273,7 +312,7 @@ def main():
         console.collect(0.6)  # Commit the intermediate frame before selecting.
         console.serial.write(b"\r")
         view = console.collect(2)
-        assert "hello-a" in view, "retained IRC history was not readable with the job stopped"
+        assert f"hello-{offline}" in view, "retained IRC history was not readable with the job stopped"
         console.serial.write(b"\x1d")
         assert PROMPT.search(console.collect(1))
         console.serial.write(b"python\r")
@@ -281,16 +320,22 @@ def main():
         repl("import solaros")
         assert "hil-irc-b" in repl("print(solaros.messages.instances()[-1]['name'])")
         repl(f"print(solaros.messages.query({ids[1]},'Remote'))")
+        if args.test_removal:
+            repl(f"solaros.messages.remove_instance({ids[1]})")
+            assert "hil-irc-" not in repl("print(solaros.messages.instances())")
+            repl(f"p=open('/sdcard/.chat/profiles/{ids[0]:03}.bin','rb').read()")
+            assert "True" in repl("print(len(p)<128 and b'hil-password' not in p)")
         console.serial.write(b"exit()\r")
         assert PROMPT.search(console.collect(2))
-        for label, instance in zip(("a", "b"), ids):
-            console.command(f"irc disconnect hil-irc-{label}")
-            console.command(f"messages clear hil-irc-{label}")
-            console.command(f"rm /sdcard/.chat/profiles/{instance:03}.bin")
+        for instance in ids + ([removal["replacement"]] if removal else []):
+            assert "instance and history removed" in console.command(f"messages remove {instance}")
+            if not args.keep_removal_records:
+                console.command(f"messages clear {instance}")
+                console.command(f"rm /sdcard/.chat/profiles/{instance:03}.bin")
         console.command(f"rm {device_ca}")
         print(json.dumps({"result": "pass", "instances": ids, "flood_spacing_seconds": [round(y - x, 3) for x, y in zip(sends, sends[1:])],
             "connections": {"a": a.connections, "b": b.connections}, "memory_before": before, "memory_after": after,
-            "nvs_before": nvs_before, "nvs_after": nvs_after}, indent=2))
+            "nvs_before": nvs_before, "nvs_after": nvs_after, "removal": removal}, indent=2))
         console.serial.close()
 
 

@@ -15,6 +15,7 @@ static void irc_usage(solar_os_shell_io_t *io)
     solar_os_shell_io_writeln(io, "irc pass <instance> <password|off>");
     solar_os_shell_io_writeln(io, "irc ca <instance> <PEM-path|default>");
     solar_os_shell_io_writeln(io, "irc connect|disconnect <instance>");
+    solar_os_shell_io_writeln(io, "irc remove <instance> (delete local history)");
     solar_os_shell_io_writeln(io, "irc join|query <instance> <channel|nick>");
     solar_os_shell_io_writeln(io, "irc leave <conversation-id>");
     solar_os_shell_io_writeln(io, "irc status; job start irc-sync");
@@ -68,6 +69,9 @@ void solar_os_shell_cmd_irc(solar_os_context_t *ctx, int argc, char **argv)
     if (argc < 3) { irc_usage(io); return; }
     solar_os_messaging_provider_id_t id = solar_os_messaging_provider_find(argv[2]);
     if (!solar_os_messaging_provider_is_class(id, "irc")) { error = ESP_ERR_NOT_FOUND; goto done; }
+    if (argc == 3 && strcmp(argv[1], "remove") == 0) {
+        error = solar_os_messaging_instance_remove(id); goto done;
+    }
     if (argc == 3 && (strcmp(argv[1], "connect") == 0 || strcmp(argv[1], "disconnect") == 0)) {
         error = solar_os_messaging_connect(id, strcmp(argv[1], "connect") == 0); goto done;
     }

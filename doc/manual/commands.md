@@ -138,7 +138,8 @@ The display-shell app exit chord is `CTRL+ALT+DEL`. Port shells use `Ctrl+]`.
 | `messages` | `messages send <conversation-id> <text> [--allow-untrusted]` | Queue an outbound message; discovered direct endpoints require the explicit flag. |
 | `messages` | `messages read <conversation-id>` | Mark a conversation and its linked Inbox entries read. |
 | `messages` | `messages delete <message-id>` | Delete one retained message and its linked Inbox projection by hexadecimal ID. |
-| `messages` | `messages clear <gateway\|meshcore\|link\|all>` | Clear retained history and owned Inbox projections for one provider or every messaging provider. Unrelated Inbox sources remain. |
+| `messages` | `messages clear <instance\|instance-id\|all>` | Clear retained history and owned Inbox projections, including for removed instances. Unrelated Inbox sources remain. |
+| `messages` | `messages remove <instance\|instance-id>` | Remove a configurable provider instance, connection credentials, pending sends, history and Inbox notifications. Built-in instances are protected. |
 | `messages` | `messages outbox` | List pending outbound requests in queue order. |
 | `messages` | `messages cancel <message-id>` | Cancel a queued outbound message by the hexadecimal ID printed by `list` or `send`. |
 | `outbox` | `outbox [list]` | List pending outbound messages. Sent and failed messages remain in conversation history, not Outbox. |
@@ -146,6 +147,7 @@ The display-shell app exit chord is `CTRL+ALT+DEL`. Port shells use `Ctrl+]`.
 | `gateway` | `gateway status` | Show gateway configuration, connection state, and traffic counters. |
 | `irc` | `irc add <instance> <host> <port> <nick>`; `irc set <instance> <host> <port> <nick>` | Save an IRC server profile on mounted storage. |
 | `irc` | `irc status`; `irc connect\|disconnect <instance>` | Inspect or enable individual IRC connections maintained by `irc-sync`. |
+| `irc` | `irc remove <instance>` | Remove an IRC instance, its credentials, history and associated Inbox notifications. |
 | `irc` | `irc join\|query <instance> <channel\|nick>`; `irc leave <conversation-id>` | Open rooms and private conversations through shared Messaging. |
 | `irc` | `irc sasl <instance> <account> <password>`; `irc sasl <instance> off`; `irc pass <instance> <password\|off>`; `irc ca <instance> <PEM-path\|default>` | Set optional authentication and TLS trust. See `man messaging.irc`. |
 | `gateway` | `gateway configure <url> [token]` | Save gateway connection settings. The gateway uses the global SolarOS user identity. |

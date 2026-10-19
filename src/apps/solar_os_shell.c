@@ -1382,13 +1382,13 @@ static const char * const messages_subcommands[] = {
     "delete",
     "clear",
     "outbox",
-    "cancel", "join", "leave", "query", "connect", "disconnect",
+    "cancel", "join", "leave", "query", "connect", "disconnect", "remove",
 };
 static const char * const outbox_subcommands[] = {"list", "cancel"};
 static const char * const messages_clear_values[] = {"all"};
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_IRC
-static const char * const irc_subcommands[] = {"add", "set", "status", "sasl", "pass", "ca", "connect", "disconnect", "join", "query", "leave"};
+static const char * const irc_subcommands[] = {"add", "set", "status", "sasl", "pass", "ca", "connect", "disconnect", "join", "query", "leave", "remove"};
 static const char * const path_irc[] = {"irc"};
 static const char * const path_irc_instance[] = {"irc", SHELL_COMPLETION_ANY};
 #endif

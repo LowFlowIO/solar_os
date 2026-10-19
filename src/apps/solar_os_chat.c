@@ -184,6 +184,7 @@ static const char *chat_provider_state_name(
     if (solar_os_messaging_provider_get_status(provider, &status) != ESP_OK) {
         return "unavailable";
     }
+    if (status.removed) return "removed";
     if (status.connection_oriented) {
         return status.connected ? "connected" :
             (status.running ? "connecting" : "disconnected");
@@ -1587,6 +1588,7 @@ static void chat_execute_command(char *line)
         chat_append_statusf("/new contact-id");
         chat_append_statusf("/join instance channel | /query instance nick");
         chat_append_statusf("/leave | /connect instance | /disconnect instance");
+        chat_append_statusf("/remove instance (delete local history)");
 #if SOLAR_OS_PACKAGE_SERVICE_IRC
         chat_append_statusf("/server instance host port nick");
         chat_append_statusf("/sasl instance account password");
@@ -1634,6 +1636,10 @@ static void chat_execute_command(char *line)
     } else if (strcasecmp(argv[0], "/leave") == 0 && argc == 1) {
         esp_err_t error = solar_os_messaging_leave(chat_current_conversation_id());
         chat_set_status(error == ESP_OK ? "leave requested" : esp_err_to_name(error));
+    } else if (strcasecmp(argv[0], "/remove") == 0 && argc == 2) {
+        esp_err_t error = solar_os_messaging_instance_remove(solar_os_messaging_provider_find(argv[1]));
+        chat_refresh_conversations();
+        chat_set_status(error == ESP_OK ? "instance and history removed" : esp_err_to_name(error));
     } else if ((strcasecmp(argv[0], "/connect") == 0 || strcasecmp(argv[0], "/disconnect") == 0) && argc == 2) {
         esp_err_t error = solar_os_messaging_connect(solar_os_messaging_provider_find(argv[1]), strcasecmp(argv[0], "/connect") == 0);
         chat_set_status(error == ESP_OK ? "connection setting saved" : esp_err_to_name(error));

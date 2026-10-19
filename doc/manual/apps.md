@@ -626,6 +626,7 @@ In-app commands:
 /leave
 /connect instance
 /disconnect instance
+/remove instance
 /server instance host port nickname
 /sasl instance account password
 /sasl instance off

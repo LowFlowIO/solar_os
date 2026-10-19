@@ -41,6 +41,7 @@ irc pass community off
 irc ca community /sdcard/certs/network-ca.pem
 irc ca community default
 irc disconnect community
+irc remove community
 irc leave CONVERSATION_ID
 job status irc-sync
 job stop irc-sync
@@ -64,6 +65,7 @@ for every provider class that supports them:
 /leave
 /connect community
 /disconnect community
+/remove community
 /server another-network irc.example.net 6697 pocket
 /sasl another-network account password
 /sasl another-network off
@@ -87,6 +89,13 @@ a checked staged file and replacement with recovery of the previous file.
 Saving requires writable mounted storage. IRC adds no NVS settings. Saved
 authentication data is readable to someone with access to the volume; status
 output does not display passwords.
+
+`irc remove INSTANCE`, `messages remove INSTANCE`, and Chat's `/remove INSTANCE`
+close the connection and remove its configuration, credentials, pending sends,
+local messages, conversations, and associated Inbox notifications. The other
+IRC instances keep running. A small credential-free record preserves the old
+label and reserves its ID. A new instance with the same name gets a different
+ID. Interrupted history deletion completes on the next boot.
 
 `irc-sync` maintains independent connections, reconnects with exponential
 backoff up to 60 seconds, and rejoins desired channels. Channel joins, parts,

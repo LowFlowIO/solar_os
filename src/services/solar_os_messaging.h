@@ -38,6 +38,7 @@ typedef struct {
     char class_name[16];
     uint32_t capabilities;
     bool connection_oriented;
+    bool removed;
 } solar_os_messaging_provider_status_t;
 
 typedef enum {
@@ -48,8 +49,9 @@ typedef enum {
     SOLAR_OS_MESSAGING_JOIN_FAILED,
 } solar_os_messaging_join_state_t;
 
-/* Class descriptors have static lifetime. Instance contexts remain valid for
- * the lifetime of the registry. Operations run outside the Messaging lock. */
+/* Class descriptors have static lifetime. Operations lease instance contexts
+ * until completion; successful removal destroys them after excluding workers.
+ * Operations run outside the Messaging lock. */
 typedef struct {
     const char *name;
     uint32_t capabilities;
@@ -61,6 +63,11 @@ typedef struct {
     esp_err_t (*connect)(void *context, bool enabled);
     esp_err_t (*normalize_target)(void *context, const char *target,
                                   char *normalized, size_t size);
+    /* Prepare excludes transport work until finish, including on failure.
+     * No Messaging locks are held by either callback. Finish cannot fail;
+     * when removed is true it destroys the context, otherwise it resumes it. */
+    esp_err_t (*remove_prepare)(void *context);
+    void (*remove_finish)(void *context, bool removed);
 } solar_os_messaging_provider_class_t;
 
 typedef struct {
@@ -193,6 +200,10 @@ esp_err_t solar_os_messaging_profile_load(solar_os_messaging_provider_id_t id,
 esp_err_t solar_os_messaging_instance_create(const char *class_name,
     const char *name, const void *config, size_t size,
     solar_os_messaging_provider_id_t *id);
+/* Remove an instance, pending sends, messages, Inbox projections and credentials.
+ * A small credential-free record reserves its identity and retries interrupted
+ * history deletion after reboot. */
+esp_err_t solar_os_messaging_instance_remove(solar_os_messaging_provider_id_t id);
 esp_err_t solar_os_messaging_join(solar_os_messaging_provider_id_t instance,
     const char *target, solar_os_conversation_id_t *conversation);
 esp_err_t solar_os_messaging_leave(solar_os_conversation_id_t conversation);

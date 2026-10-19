@@ -17,6 +17,20 @@ Use `/join INSTANCE TARGET`, `/query INSTANCE NICK`, and `/leave` in Chat,
 or `messages join|query INSTANCE TARGET` and `messages leave CONVERSATION_ID`
 from the shell. See [Native IRC](messaging.irc.md).
 
+`messages remove INSTANCE` (name or ID), or `/remove INSTANCE` in Chat, removes
+a configurable provider instance. It closes the connection, stops retries,
+cancels queued sends, and removes the saved connection settings and credentials.
+Local messages, conversations, and associated Inbox notifications are deleted. Built-in `gateway`,
+`meshcore`, and `link` instances cannot be removed; disconnect their transports
+instead. Removal requires writable mounted storage.
+
+A small record containing only the retired instance ID, name, and class stays
+on mounted storage. Retired IDs are never reused, so contacts and retained
+messages cannot be routed through a different account. Creating the same name
+again creates an independent instance. `messages clear INSTANCE_ID` deletes
+history without removing an active instance. Interrupted removals finish deleting
+history on the next boot.
+
 SolarOS separates messaging identity from transport. A contact is one local
 address-book entry, while each gateway, MeshCore, or SolarOS Link address is an
 endpoint with its own trust and capabilities. Linking endpoints does not copy
@@ -78,7 +92,8 @@ messages list CONVERSATION_ID
 messages send CONVERSATION_ID TEXT [--allow-untrusted]
 messages read CONVERSATION_ID
 messages delete MESSAGE_ID
-messages clear gateway|meshcore|link|all
+messages remove INSTANCE
+messages clear INSTANCE|INSTANCE_ID|all
 messages outbox
 messages cancel MESSAGE_ID
 outbox [list]
