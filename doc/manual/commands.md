@@ -1037,6 +1037,10 @@ or erase its BLE bond. On a BLE-disabled boot, SolarOS returns the unused
 Bluetooth controller and host memory to the internal heap before normal service
 initialization.
 
+Discovery through `ble scan`, the BLE Inspector, or the scripting APIs temporarily
+pauses automatic keyboard reconnect attempts. Reconnect resumes after the scan.
+An existing keyboard connection remains open.
+
 When a keyboard exposes the standard Battery Service, SolarOS subscribes to its
 Battery Level notifications and reads the initial level when supported. `ble
 status`, the general `status` command, and the Python/Lua BLE status strings

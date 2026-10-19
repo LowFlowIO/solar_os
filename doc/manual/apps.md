@@ -64,8 +64,9 @@ without rebuilding a graphics canvas. This path needs an extra two-bit-per-pixel
 conversion buffer (38,400 bytes at 480×320). Initial frames and resume redraws
 repaint the full display. Other targets use the regular graphics canvas.
 
-The normal app-exit key, Escape, or `dlp stop <display>` closes the receiver, releases
-the stream, and restores the previous session. Suspension pauses protocol
+`Ctrl+]`, `Ctrl+Alt+Delete`, Escape, or `dlp stop <display>` closes the receiver,
+releases the stream, and restores the previous session, including while waiting
+for a host. Suspension pauses protocol
 processing; resuming redraws the last completed image. Provider disconnects and
 I/O errors leave the app waiting for a new connection, retaining the last
 completed image. The receiver retries opening an unavailable stream. Each

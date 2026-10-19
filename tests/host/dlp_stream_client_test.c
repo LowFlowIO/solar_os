@@ -19,7 +19,7 @@ static uint8_t images[52], shown[26], input[16384], output[16384];
 static size_t in_at, in_size, out_at, out_size;
 static uint64_t clock_us;
 static unsigned presented, allocations, opens, closes;
-static bool fail_write, cancel, legacy_only;
+static bool fail_write, cancel, legacy_only, silent_peer;
 static uint64_t cancel_at;
 static bool fail_cache;
 static unsigned transient_reads, transient_writes;
@@ -73,6 +73,7 @@ static esp_err_t close_port(void *ctx) { (void)ctx; closes++; return ESP_OK; }
 static esp_err_t read_port(void *ctx, uint8_t *data, size_t size, uint32_t timeout, size_t *count) {
     (void)ctx; (void)timeout;
     *count = 0;
+    if (silent_peer) return ESP_ERR_TIMEOUT;
     if (transient_reads) { transient_reads--; return ESP_FAIL; }
     assert(!solar_os_dlp_receiver_pump(&receiver, clock_us));
     size_t n = out_size - out_at; if (n > size) n = size; if (n > 5) n = 5;
@@ -148,8 +149,15 @@ int main(void) {
     assert(!allocations && opens == closes);
     link = NULL;
     options.timeout_ms = 100;
-    fail_write = true;
+    /* An open stream with no responding DLP peripheral must yield, time out,
+     * and release ownership just like an explicit transport failure. */
+    silent_peer = true;
     uint64_t started = clock_us;
+    assert(solar_os_display_link_open_stream("test0", "test", &options, &link) != ESP_OK);
+    assert(!link && !allocations && opens == closes && clock_us - started <= 120000);
+    silent_peer = false;
+    fail_write = true;
+    started = clock_us;
     assert(solar_os_display_link_open_stream("test0", "test", &options, &link) != ESP_OK);
     assert(!link && !allocations && opens == closes && clock_us - started <= 120000);
     options.timeout_ms = 500;

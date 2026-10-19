@@ -281,9 +281,20 @@ static void resume(solar_os_context_t *ctx)
 static bool event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event->type == SOLAR_OS_EVENT_RESUME) { resume(ctx); return true; }
-    if (event->type == SOLAR_OS_EVENT_CHAR) {
-        uint8_t key = (uint8_t)event->data.ch;
-        if (key == SOLAR_OS_KEY_APP_EXIT || key == SOLAR_OS_KEY_ESCAPE)
+    if (event->type == SOLAR_OS_EVENT_CHAR || event->type == SOLAR_OS_EVENT_KEY) {
+        uint8_t key;
+        if (event->type == SOLAR_OS_EVENT_CHAR) key = (uint8_t)event->data.ch;
+        else {
+            if (event->data.key.action == SOLAR_OS_INPUT_KEY_RELEASE) return true;
+            key = event->data.key.key;
+            bool ctrl = (event->data.key.modifiers & SOLAR_OS_INPUT_MOD_CTRL) != 0;
+            bool alt = (event->data.key.modifiers & SOLAR_OS_INPUT_MOD_ALT) != 0;
+            /* HID keyboards may normalize these to APP_EXIT already. Other
+             * sources deliver the logical key and modifiers separately. */
+            if (ctrl && ((alt && key == SOLAR_OS_KEY_DELETE) || (!alt && key == ']')))
+                key = SOLAR_OS_KEY_APP_EXIT;
+        }
+        if (key == SOLAR_OS_KEY_APP_EXIT || key == SOLAR_OS_KEY_ESCAPE || key == 0x1dU)
             solar_os_context_finish(ctx, 0, NULL);
         return true;
     }
@@ -302,7 +313,8 @@ static bool event(solar_os_context_t *ctx, const solar_os_event_t *event)
 
 const solar_os_app_t solar_os_dlp_app = {
     .name = "dlp", .summary = "DLP display receiver", .app_class = SOLAR_OS_APP_CLASS_GUI,
-    .flags = SOLAR_OS_APP_FLAG_RESUMABLE, .start = start, .stop = stop,
+    .flags = SOLAR_OS_APP_FLAG_RESUMABLE | SOLAR_OS_APP_FLAG_KEY_EVENTS,
+    .start = start, .stop = stop,
     .suspend = suspend, .resume = resume, .event = event,
     .state_slot = &dlp_state, .state_size = sizeof(dlp_app_state_t),
     .state_storage = SOLAR_OS_APP_STATE_EXTERNAL_PREFERRED,
