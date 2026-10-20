@@ -91,6 +91,8 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Roll trackball up / down / left / right | Corresponding arrow key. |
 | Press trackball | Enter — select/open. |
 | Keyboard Enter | Enter. |
+| Microphone-icon key | Tab — complete a shell command or argument; press twice to list matches. |
+| Sym + microphone-icon key | Type `0`. |
 | Alt+C | Escape — back/cancel where supported. |
 | Alt+Q | Close the foreground app. |
 | Alt+B | Toggle the keyboard backlight through the keyboard firmware; the shortcut does not type a character. |

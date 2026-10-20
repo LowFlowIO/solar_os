@@ -86,7 +86,27 @@ int main(void)
     process_matrix(&device, state); /* Consume B without swallowing another pressed key. */
     expect_events('a');
     sample(&device, false, false, false, false, 0);
+    /* The microphone key supplies Tab; two separate taps reach completion. */
+    uint8_t microphone[TDECK_COLUMNS] = {1U << 6, 0, 0, 0, 0};
+    process_matrix(&device, microphone);
+    expect_events('\t');
+    process_matrix(&device, microphone);
+    expect_events(0); /* Holding does not invent another completion tap. */
+    sample(&device, false, false, false, false, 0);
+    process_matrix(&device, microphone);
+    expect_events('\t');
+    sample(&device, false, false, false, false, 0);
+    microphone[0] |= 1U << 2; /* Sym+microphone remains the digit zero. */
+    process_matrix(&device, microphone);
+    expect_events('0');
+    microphone[0] &= (uint8_t)~(1U << 2);
+    process_matrix(&device, microphone);
+    expect_events(0); /* Releasing Sym while held must not leak Tab. */
+    sample(&device, false, false, false, false, 0);
+    process_matrix(&device, microphone);
+    expect_events('\t');
+    sample(&device, false, false, false, false, 0);
     solar_os_input_source_close(device.input_source);
-    puts("T-Deck consumes native Alt+B without changing ordinary keys or other shortcuts");
+    puts("T-Deck consumes Alt+B, maps microphone to Tab, and preserves Sym+microphone zero");
     return 0;
 }
