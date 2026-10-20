@@ -2,6 +2,10 @@
 #define main input_service_tests
 #include "input_test.c"
 #undef main
+/* Reuse terminal/TUI fixtures to exercise the actual full-screen consumer. */
+#define main tui_widget_tests
+#include "tui_widgets_test.c"
+#undef main
 #include <solar_os_board.h>
 #include "solar_os_input_composition.h"
 
@@ -23,6 +27,10 @@ static void expect_events(uint8_t key)
     assert(count == 2);
     assert(events[0].key == key && events[0].action == SOLAR_OS_INPUT_KEY_PRESS);
     assert(events[1].key == key && events[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    assert(events[1].modifiers == 0U);
+    if (key == SOLAR_OS_KEY_ESCAPE || key == SOLAR_OS_KEY_APP_EXIT) {
+        assert(events[0].modifiers == 0U); /* Board-translated chords are plain keys. */
+    }
 }
 
 static void sample(tdeck_device_t *device, bool alt, bool shift, bool sym, bool b, uint8_t key)
@@ -40,6 +48,66 @@ int main(void)
     assert(solar_os_input_init() == ESP_OK);
     tdeck_device_t device = {0};
     assert(solar_os_input_keyboard_source_open("tdeck", true, &device.input_source) == ESP_OK);
+
+    /* Full-screen text menus need the Alt prefix, not an ordinary Enter. */
+    uint8_t enter[TDECK_COLUMNS] = {0, 0, 0, 1U << 3, 0};
+    solar_os_tui_t tui = {
+        .terminal = (solar_os_terminal_t *)(uintptr_t)1U,
+        .screen_active = true,
+        .saved_status_bar_visible = true,
+    };
+    char chars[4];
+    process_matrix(&device, enter);
+    assert(solar_os_input_read_chars(chars, sizeof(chars)) == 1);
+    assert((uint8_t)chars[0] == SOLAR_OS_KEY_ENTER);
+    assert(solar_os_tui_screen_key(&tui, (uint8_t)chars[0]) == SOLAR_OS_TUI_SCREEN_KEY_NONE);
+    sample(&device, false, false, false, false, 0);
+    enter[0] = 1U << 4; /* Alt and Enter first appear in the same scan. */
+    process_matrix(&device, enter);
+    assert(solar_os_input_read_chars(chars, sizeof(chars)) == 2);
+    assert((uint8_t)chars[0] == SOLAR_OS_KEY_ALT_PREFIX);
+    assert((uint8_t)chars[1] == SOLAR_OS_KEY_ENTER);
+    assert(solar_os_tui_screen_key(&tui, (uint8_t)chars[0]) == SOLAR_OS_TUI_SCREEN_KEY_CONSUMED);
+    assert(solar_os_tui_screen_key(&tui, (uint8_t)chars[1]) == SOLAR_OS_TUI_SCREEN_KEY_TOGGLED);
+    assert(solar_os_tui_screen_fullscreen(&tui) && !test_status_bar_visible);
+    process_matrix(&device, enter);
+    expect_events(0); /* Holding the chord must not keep toggling full screen. */
+    enter[0] = 0; /* Releasing Alt before Enter must not emit plain Enter. */
+    process_matrix(&device, enter);
+    expect_events(0);
+    sample(&device, false, false, false, false, 0);
+
+    enter[0] = 1U << 4;
+    process_matrix(&device, enter);
+    assert(solar_os_input_read_chars(chars, sizeof(chars)) == 2);
+    assert(solar_os_tui_screen_key(&tui, (uint8_t)chars[0]) == SOLAR_OS_TUI_SCREEN_KEY_CONSUMED);
+    assert(solar_os_tui_screen_key(&tui, (uint8_t)chars[1]) == SOLAR_OS_TUI_SCREEN_KEY_TOGGLED);
+    assert(!solar_os_tui_screen_fullscreen(&tui) && test_status_bar_visible);
+    sample(&device, false, false, false, false, 0);
+
+    /* Event-based apps receive the same chord, with a real physical key and a
+     * modifier-free release so the session overlay cannot become stuck. */
+    sample(&device, true, false, false, false, 0);
+    enter[0] = 1U << 4;
+    process_matrix(&device, enter);
+    solar_os_input_key_event_t chord[3];
+    assert(solar_os_input_read_events(chord, 3) == 2);
+    assert(chord[0].key == SOLAR_OS_KEY_ENTER);
+    assert(chord[0].modifiers == SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    assert(chord[0].physical_key == 3U * TDECK_ROWS + 3U + 1U);
+    assert(chord[0].action == SOLAR_OS_INPUT_KEY_PRESS);
+    assert(chord[1].modifiers == 0U && chord[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    enter[3] = 0; /* Releasing Enter before Alt also emits nothing extra. */
+    process_matrix(&device, enter);
+    expect_events(0);
+    sample(&device, false, false, false, false, 0);
+
+    /* The microphone Tab participates in universal Alt+Tab session switching. */
+    uint8_t alt_tab[TDECK_COLUMNS] = {(1U << 4) | (1U << 6), 0, 0, 0, 0};
+    process_matrix(&device, alt_tab);
+    assert(solar_os_input_read_chars(chars, sizeof(chars)) == 2);
+    assert((uint8_t)chars[0] == SOLAR_OS_KEY_ALT_PREFIX && chars[1] == '\t');
+    sample(&device, false, false, false, false, 0);
 
     sample(&device, false, false, false, true, 'b');
     sample(&device, false, false, false, false, 0);
@@ -107,6 +175,6 @@ int main(void)
     expect_events('\t');
     sample(&device, false, false, false, false, 0);
     solar_os_input_source_close(device.input_source);
-    puts("T-Deck consumes Alt+B, maps microphone to Tab, and preserves Sym+microphone zero");
+    puts("T-Deck preserves Alt+Enter and consumes Alt+B while retaining keyboard mappings");
     return 0;
 }

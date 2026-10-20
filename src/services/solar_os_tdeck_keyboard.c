@@ -90,6 +90,7 @@ static void process_matrix(tdeck_device_t *dev,
         dev->input_source,
         (alt ? SOLAR_OS_INPUT_MOD_LEFT_ALT : 0U) |
         (shift ? SOLAR_OS_INPUT_MOD_LEFT_SHIFT : 0U));
+    const uint8_t modifiers = solar_os_input_composition_modifiers();
     for (size_t col = 0; col < TDECK_COLUMNS; col++) {
         const uint8_t pressed = state[col] & (uint8_t)~dev->previous[col];
         for (size_t row = 0; row < TDECK_ROWS; row++) {
@@ -100,8 +101,12 @@ static void process_matrix(tdeck_device_t *dev,
             uint8_t key = symbol ? keymap[col][row].symbol : keymap[col][row].normal;
             if (key == 0U) continue;
             if (shift && key >= 'a' && key <= 'z') key = (uint8_t)(key - 'a' + 'A');
-            key = solar_os_input_composition_apply(key);
-            if (key != 0U) (void)solar_os_input_write_char(dev->input_source, (char)key);
+            const uint8_t composed = solar_os_input_composition_apply_with_modifiers(key, modifiers);
+            /* Keep Alt+Enter/Tab for the shared shortcut handlers. Board chord
+             * replacements such as Alt+C -> Escape already encode the action. */
+            if (composed != 0U) (void)solar_os_input_write_key_tap(dev->input_source,
+                (uint16_t)(col * TDECK_ROWS + row + 1U), SOLAR_OS_INPUT_USAGE_NONE,
+                composed, composed == key ? modifiers : 0U);
         }
     }
     memcpy(dev->previous, state, sizeof(dev->previous));
