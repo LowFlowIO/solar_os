@@ -2,6 +2,10 @@
 
 ## 4.x
 
+- **4.16.23** — 2026-10-20 — Improved T-Deck trackball navigation and
+  keyboard shortcuts, including Mic for Tab and Shift+Mic for Ctrl.
+  Added `setterm backlight` controls. Fixed held keys, typing repeat,
+  native foreground input, T-Deck GNSS registration, and SX1262 wake from sleep.
 - **4.16.22** — 2026-10-20 — Added optional lossless LZ4 compression for DLP
   display connections. Set `compressed=1` when attaching `spi-dlp` or
   `stream-dlp` displays; saved startup attachments and board manifests retain
