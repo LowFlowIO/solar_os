@@ -9,8 +9,11 @@ static uint8_t session_switch_nav_held;
 static unsigned guest_events, overlay_closes;
 static uint8_t guest_modifiers;
 static bool char_input;
+static bool text_probe;
+static uint8_t probe_char;
 static unsigned app_exits;
 static unsigned next_sessions, previous_sessions;
+static unsigned display_moves[4];
 static void maybe_exit_suspend_for_ble_keyboard(void) {}
 static uint32_t millis_u32(void) { return 0; }
 static void solar_os_power_note_activity(uint32_t now) { (void)now; }
@@ -20,14 +23,15 @@ static void close_session_overlay(void) { overlay_active = false; overlay_closes
 static void dispatch_key_to_input_focus(const solar_os_input_key_event_t *event)
 { guest_events++; guest_modifiers = event->modifiers; }
 static void process_app_requests(void) {}
-static bool solar_os_sessions_cycle_display_focus(void) { return true; }
-static bool solar_os_sessions_cycle_display_focus_previous(void) { return true; }
-static bool solar_os_sessions_cycle_display_focus_down(void) { return true; }
-static bool solar_os_sessions_cycle_display_focus_up(void) { return true; }
+static bool solar_os_sessions_cycle_display_focus(void) { display_moves[0]++; return true; }
+static bool solar_os_sessions_cycle_display_focus_previous(void) { display_moves[1]++; return true; }
+static bool solar_os_sessions_cycle_display_focus_down(void) { display_moves[2]++; return true; }
+static bool solar_os_sessions_cycle_display_focus_up(void) { display_moves[3]++; return true; }
 static bool solar_os_sessions_cycle_input_focus(void) { next_sessions++; return true; }
 static bool solar_os_sessions_cycle_input_focus_previous(void) { previous_sessions++; return true; }
 static void dispatch_input_chars(const char *chars, size_t count)
 {
+    if (text_probe) { assert(char_input && count == 1); probe_char = (uint8_t)chars[0]; return; }
     assert(char_input && count == 1 && (uint8_t)chars[0] == SOLAR_OS_KEY_APP_EXIT);
     /* The app resumes its text shell synchronously. Its first presentation must
      * not be suppressed by the outgoing app's persistent focus overlay. */
@@ -48,6 +52,19 @@ static void dispatch_desktop_queue(void)
 #include "solar_os_buttons.h"
 #include "solar_os_input_composition.h"
 #include "solar_os_log.h"
+#include <solar_os_board.h>
+
+#define TDECK_COLUMNS 5U
+#define TDECK_ROWS 7U
+typedef struct { uint8_t normal, symbol; } tdeck_key_t;
+static const tdeck_key_t keymap[TDECK_COLUMNS][TDECK_ROWS] = SOLAR_OS_BOARD_TDECK_KEYMAP;
+typedef struct {
+    uint8_t previous[TDECK_COLUMNS];
+    bool microphone_ctrl, microphone_tab_pending;
+    uint8_t microphone_tab_modifiers;
+    solar_os_input_source_t input_source;
+} tdeck_device_t;
+#include "tdeck_matrix.inc"
 
 static int trackball_levels[64];
 static void (*trackball_handlers[64])(void *);
@@ -290,6 +307,74 @@ static void test_trackball_session_switching(void)
     solar_os_buttons_poll();
     expect_no_trackball_events();
     expect_motion_tap(SOLAR_OS_KEY_RIGHT, 0);
+
+    /* Ctrl word-navigation stays a logical arrow for native event consumers,
+     * while text readers receive the corresponding Ctrl-arrow character. */
+    assert(solar_os_input_keyboard_source_open("ctrl-gesture", true, &keyboard) == ESP_OK);
+    solar_os_input_composition_set_modifiers(keyboard, SOLAR_OS_INPUT_MOD_LEFT_CTRL);
+    expect_trackball_tap(1, SOLAR_OS_KEY_LEFT, SOLAR_OS_INPUT_MOD_LEFT_CTRL);
+    trackball_edge(2); solar_os_buttons_poll(); now_us += 80000; solar_os_buttons_poll();
+    char word[4];
+    assert(solar_os_input_read_chars(word, sizeof(word)) == 1);
+    assert((uint8_t)word[0] == SOLAR_OS_KEY_CTRL_RIGHT);
+
+    /* Ctrl+Alt must bypass the board's Alt+Up -> Page Up convenience mapping. */
+    solar_os_input_composition_set_modifiers(keyboard,
+        SOLAR_OS_INPUT_MOD_LEFT_CTRL | SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    trackball_edge(3); solar_os_buttons_poll(); now_us += 80000; solar_os_buttons_poll();
+    solar_os_input_key_event_t focus[2];
+    assert(solar_os_input_read_events(focus, 2) == 2);
+    assert(focus[0].key == SOLAR_OS_KEY_UP);
+    const unsigned up_moves = display_moves[3];
+    dispatch_input_key(&focus[0]); dispatch_input_key(&focus[1]);
+    assert(display_moves[3] == up_moves + 1 && session_switch_nav_held == 0);
+    close_session_overlay(); /* The mock has no timer for transient overlays. */
+    solar_os_input_composition_set_modifiers(keyboard, 0);
+    solar_os_input_source_close(keyboard);
+}
+
+static void test_matrix_trackball_text_navigation(void)
+{
+    tdeck_device_t keyboard = {0};
+    assert(solar_os_input_keyboard_source_open("matrix", true, &keyboard.input_source) == ESP_OK);
+    uint8_t state[5] = {0};
+    char_input = text_probe = true;
+    const size_t shift_col[] = {1, 2};
+    const uint8_t shift_mask[] = {1U << 6, 1U << 3};
+    for (unsigned side = 0; side < 2; side++) {
+        /* Actual raw Shift -> GPIO ISR -> delayed gesture -> main dispatch. */
+        state[shift_col[side]] = shift_mask[side];
+        process_matrix(&keyboard, state); dispatch_desktop_queue();
+        trackball_edge(1); solar_os_buttons_poll(); now_us += 80000; solar_os_buttons_poll();
+        dispatch_desktop_queue();
+        assert(probe_char == SOLAR_OS_KEY_SHIFT_LEFT);
+        memset(state, 0, sizeof(state)); process_matrix(&keyboard, state); dispatch_desktop_queue();
+
+        /* A modifier becoming visible during a roll must affect its key,
+         * including a controller scan that lags behind the first GPIO edge. */
+        trackball_edge(1); solar_os_buttons_poll();
+        state[shift_col[side]] = shift_mask[side];
+        process_matrix(&keyboard, state); dispatch_desktop_queue();
+        trackball_edge(1); solar_os_buttons_poll();
+        memset(state, 0, sizeof(state)); process_matrix(&keyboard, state); dispatch_desktop_queue();
+        now_us += 80000; solar_os_buttons_poll(); dispatch_desktop_queue();
+        assert(probe_char == SOLAR_OS_KEY_SHIFT_LEFT);
+
+        for (unsigned mic_first = 0; mic_first < 2; mic_first++) {
+            trackball_edge(2); solar_os_buttons_poll();
+            state[mic_first ? 0 : shift_col[side]] = mic_first ? 1U << 6 : shift_mask[side];
+            process_matrix(&keyboard, state); dispatch_desktop_queue();
+            state[0] = 1U << 6; state[shift_col[side]] = shift_mask[side];
+            process_matrix(&keyboard, state); dispatch_desktop_queue();
+            trackball_edge(2); solar_os_buttons_poll();
+            /* Releasing the chord while the ball settles preserves Ctrl. */
+            memset(state, 0, sizeof(state)); process_matrix(&keyboard, state); dispatch_desktop_queue();
+            now_us += 80000; solar_os_buttons_poll(); dispatch_desktop_queue();
+            assert(probe_char == SOLAR_OS_KEY_CTRL_RIGHT);
+        }
+    }
+    char_input = text_probe = false;
+    solar_os_input_source_close(keyboard.input_source);
 }
 #endif
 
@@ -360,9 +445,22 @@ int main(void)
         assert(!overlay_active && !session_switch_alt_held);
     }
     assert(app_exits == 2);
+    /* Main-loop text dispatch applies the same control encoding as direct
+     * read_chars consumers, without altering structured native key events. */
+    text_probe = true;
+    char_input = true;
+    solar_os_input_key_event_t control = {.source = source, .key = 'c',
+        .modifiers = SOLAR_OS_INPUT_MOD_LEFT_CTRL, .action = SOLAR_OS_INPUT_KEY_PRESS};
+    dispatch_input_key(&control);
+    assert(probe_char == 3);
+    control.key = SOLAR_OS_KEY_LEFT;
+    dispatch_input_key(&control);
+    assert(probe_char == SOLAR_OS_KEY_CTRL_LEFT);
+    text_probe = false;
     solar_os_input_source_close(source);
 #ifdef TDECK_TRACKBALL_TEST
     test_trackball_session_switching();
+    test_matrix_trackball_text_navigation();
 #endif
     puts("Foreground capture releases modifiers; app-exit dismisses the Alt switcher before handback");
     return 0;

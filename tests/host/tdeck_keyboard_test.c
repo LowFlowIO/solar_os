@@ -14,6 +14,9 @@ typedef struct { uint8_t normal, symbol; } tdeck_key_t;
 static const tdeck_key_t keymap[TDECK_COLUMNS][TDECK_ROWS] = SOLAR_OS_BOARD_TDECK_KEYMAP;
 typedef struct {
     uint8_t previous[TDECK_COLUMNS];
+    bool microphone_ctrl;
+    bool microphone_tab_pending;
+    uint8_t microphone_tab_modifiers;
     solar_os_input_source_t input_source;
 } tdeck_device_t;
 #include "tdeck_matrix.inc"
@@ -65,6 +68,9 @@ static void test_holds_layers_and_shortcuts(void)
     matrix[0] = 0; scan(); expect_none();
     clear_matrix(); expect_event('!', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0);
 
+    matrix[4] = 1U << 4; scan(); expect_event('$', SOLAR_OS_INPUT_KEY_PRESS, 0, 0);
+    clear_matrix(); expect_event('$', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0);
+
     /* Native Alt+B is consumed under Shift/Sym too, in either release order. */
     for (unsigned layer = 0; layer < 3; layer++) {
         matrix[0] = (1U << 4) | (layer == 2 ? 1U << 2 : 0);
@@ -89,9 +95,13 @@ static void test_holds_layers_and_shortcuts(void)
     expect_event(SOLAR_OS_KEY_APP_EXIT, SOLAR_OS_INPUT_KEY_PRESS, 0, 0);
     clear_matrix(); expect_event(SOLAR_OS_KEY_APP_EXIT, SOLAR_OS_INPUT_KEY_RELEASE, 0, 0);
 
-    matrix[0] = 1U << 6; scan(); expect_event('\t', SOLAR_OS_INPUT_KEY_PRESS, 0, 0x2b);
+    matrix[0] = 1U << 6; scan(); expect_none();
     scan(); expect_none();
-    clear_matrix(); expect_event('\t', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0x2b);
+    clear_matrix();
+    solar_os_input_key_event_t tab[2];
+    assert(solar_os_input_read_events(tab, 2) == 2);
+    assert(tab[0].key == '\t' && tab[0].action == SOLAR_OS_INPUT_KEY_PRESS);
+    assert(tab[1].key == '\t' && tab[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
     matrix[0] = (1U << 6) | (1U << 2); scan(); expect_event('0', SOLAR_OS_INPUT_KEY_PRESS, 0, 0);
     matrix[0] &= (uint8_t)~(1U << 2); scan(); expect_none();
     clear_matrix(); expect_event('0', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0);
@@ -128,6 +138,8 @@ static void test_fullscreen_and_completion(void)
         clear_matrix(); assert(solar_os_input_read_chars(chars, sizeof(chars)) == 0);
     }
     matrix[0] = (1U << 4) | (1U << 6); scan();
+    assert(solar_os_input_read_chars(chars, sizeof(chars)) == 0);
+    clear_matrix();
     assert(solar_os_input_read_chars(chars, sizeof(chars)) == 2);
     assert((uint8_t)chars[0] == SOLAR_OS_KEY_ALT_PREFIX && chars[1] == '\t');
     clear_matrix(); assert(solar_os_input_read_chars(chars, sizeof(chars)) == 0);
@@ -193,6 +205,86 @@ static void test_keyrate(void)
     now_us += 500000; expect_none();
 }
 
+static void test_microphone_ctrl(void)
+{
+    /* Both Shift keys can select Ctrl. The selector is consumed, rather than
+     * accidentally producing Ctrl+Shift or Shift+Tab. */
+    for (unsigned side = 0; side < 2; side++) {
+        const size_t col = side ? 2 : 1;
+        const uint8_t mask = side ? 1U << 3 : 1U << 6;
+        matrix[col] = mask; matrix[0] = 1U << 6; scan();
+        solar_os_input_key_event_t event;
+        assert(solar_os_input_read_events(&event, 1) == 1);
+        assert(event.key == 0 && event.usage == 0xe0 && event.action == SOLAR_OS_INPUT_KEY_PRESS);
+        assert(event.modifiers == SOLAR_OS_INPUT_MOD_LEFT_CTRL);
+        assert(solar_os_input_composition_modifiers() == SOLAR_OS_INPUT_MOD_LEFT_CTRL);
+        scan(); expect_none();
+        /* Shift may be released while Mic continues acting as Ctrl. */
+        matrix[col] = 0; scan(); expect_none();
+        matrix[2] |= 1U << 5; scan();
+        expect_event(3, SOLAR_OS_INPUT_KEY_PRESS, SOLAR_OS_INPUT_MOD_LEFT_CTRL, 0x06);
+        matrix[2] &= (uint8_t)~(1U << 5); scan();
+        expect_event(3, SOLAR_OS_INPUT_KEY_RELEASE, SOLAR_OS_INPUT_MOD_LEFT_CTRL, 0x06);
+        clear_matrix();
+        assert(solar_os_input_read_events(&event, 1) == 1);
+        assert(event.key == 0 && event.usage == 0xe0 && event.action == SOLAR_OS_INPUT_KEY_RELEASE);
+        assert(event.modifiers == 0 && solar_os_input_composition_modifiers() == 0);
+    }
+
+    /* Shift pressed before Mic is released and restored as an effective
+     * modifier when Mic is released first; no Tab is emitted in either order. */
+    matrix[1] = 1U << 6; scan(); expect_none();
+    matrix[0] = 1U << 6; scan();
+    solar_os_input_key_event_t events[4];
+    assert(solar_os_input_read_events(events, 4) == 2);
+    assert(events[0].usage == 0xe0 && events[0].action == SOLAR_OS_INPUT_KEY_PRESS);
+    assert(events[1].usage == 0xe1 && events[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    assert(events[0].modifiers == SOLAR_OS_INPUT_MOD_LEFT_CTRL && events[1].modifiers == SOLAR_OS_INPUT_MOD_LEFT_CTRL);
+    matrix[0] = 0; scan();
+    assert(solar_os_input_read_events(events, 4) == 2);
+    assert(events[0].usage == 0xe0 && events[0].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    assert(events[1].usage == 0xe1 && events[1].action == SOLAR_OS_INPUT_KEY_PRESS);
+    assert(solar_os_input_composition_modifiers() == SOLAR_OS_INPUT_MOD_LEFT_SHIFT);
+    clear_matrix(); expect_none();
+
+    /* Mic may be observed before Shift in the controller's partial scan. */
+    matrix[0] = 1U << 6; scan(); expect_none();
+    matrix[1] = 1U << 6; scan(); expect_none();
+    assert(solar_os_input_composition_modifiers() == SOLAR_OS_INPUT_MOD_LEFT_CTRL);
+    matrix[1] = 0; scan(); expect_none();
+    clear_matrix(); expect_none();
+
+    /* Sym keeps priority for the microphone's zero digit. */
+    matrix[0] = (1U << 2) | (1U << 6); matrix[1] = 1U << 6; scan();
+    expect_event('0', SOLAR_OS_INPUT_KEY_PRESS, SOLAR_OS_INPUT_MOD_LEFT_SHIFT, 0);
+    clear_matrix(); expect_event('0', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0);
+
+    /* Text commands receive control bytes, with no leaked Tab/Shift prefix. */
+    matrix[0] = 1U << 6; matrix[1] = 1U << 6; scan(); expect_none();
+    char chars[4];
+    matrix[1] |= 1U << 5; scan(); /* Z */
+    assert(solar_os_input_read_chars(chars, sizeof(chars)) == 1 && chars[0] == 0x1a);
+    matrix[1] &= (uint8_t)~(1U << 5); scan();
+    assert(solar_os_input_read_chars(chars, sizeof(chars)) == 0);
+    clear_matrix(); assert(solar_os_input_read_chars(chars, sizeof(chars)) == 0);
+
+    /* Captured native apps receive a real held Ctrl and a canonical C usage. */
+    int owner = 0;
+    assert(solar_os_input_capture_keyboard_with_shortcuts("tdeck", &owner) == ESP_OK);
+    matrix[0] = 1U << 6; matrix[1] = 1U << 6; scan();
+    bool reset;
+    assert(solar_os_input_read_events(&events[0], 1) == 1);
+    assert(events[0].usage == 0xe0 && events[0].modifiers == SOLAR_OS_INPUT_MOD_LEFT_CTRL);
+    matrix[2] = 1U << 5; scan();
+    assert(solar_os_input_read_captured_key(&owner, &events[0], &reset) && !reset);
+    assert(events[0].key == 3 && events[0].usage == 0x06 && events[0].modifiers == SOLAR_OS_INPUT_MOD_LEFT_CTRL);
+    clear_matrix();
+    while (solar_os_input_read_captured_key(&owner, &events[0], &reset)) assert(!reset);
+    assert(solar_os_input_read_events(&events[0], 1) == 1);
+    assert(events[0].usage == 0xe0 && events[0].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    solar_os_input_release_keyboard(&owner);
+}
+
 int main(void)
 {
     assert(solar_os_input_init() == ESP_OK);
@@ -202,6 +294,7 @@ int main(void)
     test_fullscreen_and_completion();
     test_native_capture();
     test_keyrate();
+    test_microphone_ctrl();
     solar_os_input_source_close(device.input_source);
     puts("T-Deck real holds/releases, native capture, shortcuts and keyrate passed");
     return 0;

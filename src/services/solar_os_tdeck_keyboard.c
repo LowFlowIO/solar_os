@@ -27,7 +27,8 @@ typedef struct { uint8_t normal; uint8_t symbol; } tdeck_key_t;
 #ifndef SOLAR_OS_BOARD_TDECK_KEYMAP
 /* Default raw-matrix map for LilyGO's T-Deck keyboard controller. Boards can
  * override this when their keycaps or matrix wiring differ. The microphone
- * key supplies Tab normally and digit 0 in the symbol layer. */
+ * key supplies Tab normally, digit 0 in the symbol layer, and Ctrl when
+ * pressed with Shift (handled by process_matrix). */
 #define SOLAR_OS_BOARD_TDECK_KEYMAP \
     {{{0x71,0x23},{0x77,0x31},{0,0},{0x61,0x2a},{0,0},{0x20,0},{0x09,0x30}}, \
      {{0x65,0x32},{0x73,0x34},{0x64,0x35},{0x70,0x40},{0x78,0x38},{0x7a,0x37},{0,0}}, \
@@ -46,6 +47,9 @@ typedef struct {
     char name[SOLAR_OS_EXPANSION_DEVICE_NAME_MAX];
     char i2c_bus[SOLAR_OS_EXPANSION_TARGET_MAX];
     uint8_t previous[TDECK_COLUMNS];
+    bool microphone_ctrl;
+    bool microphone_tab_pending;
+    uint8_t microphone_tab_modifiers;
     solar_os_input_source_t input_source;
     TaskHandle_t worker_task;
 } tdeck_device_t;
@@ -96,19 +100,55 @@ static void process_matrix(tdeck_device_t *dev,
 {
     const bool alt = (state[0] & (1U << 4U)) != 0U;
     const bool symbol = (state[0] & (1U << 2U)) != 0U;
-    const bool shift = (state[1] & (1U << 6U)) != 0U ||
+    const bool physical_shift = (state[1] & (1U << 6U)) != 0U ||
                        (state[2] & (1U << 3U)) != 0U;
+    const bool microphone = (state[0] & (1U << 6U)) != 0U;
+    const bool microphone_pressed = microphone &&
+        (dev->previous[0] & (1U << 6U)) == 0U;
+    const bool microphone_tab = !microphone && dev->microphone_tab_pending;
+    if (!microphone) {
+        dev->microphone_ctrl = false;
+        dev->microphone_tab_pending = false;
+    } else if (microphone_pressed) {
+        dev->microphone_ctrl = physical_shift && !symbol;
+        dev->microphone_tab_pending = !symbol && !dev->microphone_ctrl;
+    } else if (dev->microphone_tab_pending && physical_shift && !symbol) {
+        /* The controller updates matrix cells sequentially. Mic may arrive
+         * before Shift even when both were pressed together. */
+        dev->microphone_ctrl = true;
+        dev->microphone_tab_pending = false;
+        dev->previous[0] &= (uint8_t)~(1U << 6U);
+    }
+    const bool ctrl = dev->microphone_ctrl;
+    const bool shift = physical_shift && !ctrl;
+    /* Mic keeps its role until release, so letting go of Shift cannot leak a
+     * Tab. Shift selects the Ctrl chord rather than remaining a Shift modifier. */
+    uint8_t effective[TDECK_COLUMNS];
+    memcpy(effective, state, sizeof(effective));
+    if (ctrl) {
+        effective[1] &= (uint8_t)~(1U << 6U);
+        effective[2] &= (uint8_t)~(1U << 3U);
+    }
     solar_os_input_composition_set_modifiers(
         dev->input_source,
         (alt ? SOLAR_OS_INPUT_MOD_LEFT_ALT : 0U) |
+        (ctrl ? SOLAR_OS_INPUT_MOD_LEFT_CTRL : 0U) |
         (shift ? SOLAR_OS_INPUT_MOD_LEFT_SHIFT : 0U));
     const uint8_t modifiers = solar_os_input_composition_modifiers();
+    if (microphone_pressed && dev->microphone_tab_pending)
+        dev->microphone_tab_modifiers = modifiers;
+    if (microphone_tab) {
+        (void)solar_os_input_write_key_tap(dev->input_source,
+            SOLAR_OS_INPUT_PHYSICAL_NONE, SOLAR_OS_INPUT_USAGE_NONE, '\t',
+            dev->microphone_tab_modifiers);
+    }
     for (size_t col = 0; col < TDECK_COLUMNS; col++) {
-        const uint8_t changed = state[col] ^ dev->previous[col];
+        const uint8_t changed = effective[col] ^ dev->previous[col];
         for (size_t row = 0; row < TDECK_ROWS; row++) {
             if ((changed & (1U << row)) == 0U) continue;
+            if (col == 0U && row == 6U && dev->microphone_tab_pending) continue;
             const uint16_t physical = (uint16_t)(col * TDECK_ROWS + row + 1U);
-            if ((state[col] & (1U << row)) == 0U) {
+            if ((effective[col] & (1U << row)) == 0U) {
                 /* The input service retains the press mapping, including its
                  * symbol/chord translation, until this physical release. */
                 (void)solar_os_input_write_key(dev->input_source, physical,
@@ -116,6 +156,7 @@ static void process_matrix(tdeck_device_t *dev,
                 continue;
             }
             uint16_t modifier_usage = 0U;
+            if (col == 0U && row == 6U && ctrl) modifier_usage = 0xe0U;
             if (col == 0U && row == 4U) modifier_usage = 0xe2U;
             if ((col == 1U && row == 6U) || (col == 2U && row == 3U)) modifier_usage = 0xe1U;
             if (modifier_usage != 0U) {
@@ -130,17 +171,19 @@ static void process_matrix(tdeck_device_t *dev,
             if (key == 0U) continue;
             if (shift && key >= 'a' && key <= 'z') key = (uint8_t)(key - 'a' + 'A');
             const uint8_t composed = solar_os_input_composition_apply_with_modifiers(key, modifiers);
+            const uint8_t output = composed == key ?
+                solar_os_input_translate_char_key(composed, modifiers) : composed;
             /* Ordinary keys expose canonical physical usages to guests. Sym
              * and board chords are logical replacements; a letter usage would
              * incorrectly turn Sym+E into E instead of the digit 2. */
             const uint16_t usage = !symbol && composed == key ?
                 key_usage(keymap[col][row].normal) : SOLAR_OS_INPUT_USAGE_NONE;
             if (composed != 0U) (void)solar_os_input_write_key(dev->input_source,
-                physical, usage, composed, composed == key ? modifiers : 0U,
+                physical, usage, output, composed == key ? modifiers : 0U,
                 SOLAR_OS_INPUT_KEY_PRESS);
         }
     }
-    memcpy(dev->previous, state, sizeof(dev->previous));
+    memcpy(dev->previous, effective, sizeof(dev->previous));
 }
 
 static void worker(void *arg)

@@ -283,9 +283,11 @@ void solar_os_buttons_poll(void)
             break;
         }
         if (!buttons_motion_pending) {
-            buttons_motion_modifiers = edge.modifiers;
             buttons_motion_pending = true;
         }
+        /* The keyboard scan may publish a held modifier after the first GPIO
+         * pulse. Use the latest movement sample, then preserve it while quiet. */
+        buttons_motion_modifiers = edge.modifiers;
         button_accumulate_motion(button_defs[edge.index].key);
         buttons_motion_last_ms = edge.time_ms;
         portENTER_CRITICAL(&buttons_edge_lock);

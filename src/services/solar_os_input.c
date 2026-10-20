@@ -2090,7 +2090,7 @@ static size_t input_read_chars_for_source(solar_os_input_source_t source,
             buffer[count++] = (char)SOLAR_OS_KEY_ALT_PREFIX;
         }
         if (emits_char) {
-            buffer[count++] = (char)event.key;
+            buffer[count++] = (char)solar_os_input_translate_char_key(event.key, event.modifiers);
         }
     }
     memcpy(input_queue, retained, kept * sizeof(retained[0]));
@@ -2424,6 +2424,29 @@ static uint8_t input_usage_to_nav_key(uint16_t usage, uint8_t modifiers)
             (shift ? SOLAR_OS_KEY_SHIFT_UP : SOLAR_OS_KEY_UP);
     default: return 0;
     }
+}
+
+uint8_t solar_os_input_translate_char_key(uint8_t key, uint8_t modifiers)
+{
+    uint16_t usage = 0;
+    switch (key) {
+    case SOLAR_OS_KEY_UP: usage = 0x52; break;
+    case SOLAR_OS_KEY_DOWN: usage = 0x51; break;
+    case SOLAR_OS_KEY_LEFT: usage = 0x50; break;
+    case SOLAR_OS_KEY_RIGHT: usage = 0x4f; break;
+    case SOLAR_OS_KEY_HOME: usage = 0x4a; break;
+    case SOLAR_OS_KEY_END: usage = 0x4d; break;
+    case SOLAR_OS_KEY_PAGE_UP: usage = 0x4b; break;
+    case SOLAR_OS_KEY_PAGE_DOWN: usage = 0x4e; break;
+    default: break;
+    }
+    if (usage) return input_usage_to_nav_key(usage, modifiers);
+    if ((modifiers & SOLAR_OS_INPUT_MOD_CTRL) != 0U) {
+        if (key >= 'a' && key <= 'z') return (uint8_t)(key - 'a' + 1U);
+        if (key >= '@' && key <= '_') return key & 0x1fU;
+        if (key == '?') return 0x7fU;
+    }
+    return key;
 }
 
 static uint8_t input_usage_to_control(uint16_t usage,

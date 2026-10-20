@@ -56,13 +56,17 @@ class ForegroundPresenterTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "foreground_focus_dispatch.inc").write_text(production_functions(
                 source, ("dispatch_input_key",)))
+            Path(tmp, "tdeck_matrix.inc").write_text(production_functions(
+                (ROOT / "src/services/solar_os_tdeck_keyboard.c").read_text(),
+                ("key_usage", "process_matrix")))
             defines = board["defines"]
             Path(tmp, "solar_os_board.h").write_text(
                 '#pragma once\n#include "solar_os_keys.h"\n'
                 '#define SOLAR_OS_BOARD_HAS_BUTTONS 1\n' +
                 ''.join(f'#define GPIO_NUM_{pin} {pin}\n' for pin in (1, 2, 3, 15)) +
                 ''.join(f'#define {name} {defines[name]}\n' for name in (
-                    "SOLAR_OS_BOARD_BUTTONS", "SOLAR_OS_BOARD_INPUT_CHORDS")))
+                    "SOLAR_OS_BOARD_BUTTONS", "SOLAR_OS_BOARD_INPUT_CHORDS",
+                    "SOLAR_OS_BOARD_TDECK_KEYMAP")))
             binary = Path(tmp, "trackball")
             subprocess.run([
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
