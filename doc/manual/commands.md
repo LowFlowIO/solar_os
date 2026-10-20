@@ -293,13 +293,13 @@ job for periodic polling.
 | `sleep` | `sleep` | Enter explicit light sleep. |
 | `deepsleep` | `deepsleep` | Turn off the ESP32 radios and enter deep sleep. KEY, an armed RTC or scheduled timer, or RESET starts a fresh boot. |
 | `shutdown` | `shutdown` | Stop apps and jobs, flush storage, and power down. Only the physical power/KEY button, RESET, or a power cycle starts a fresh boot. |
-| `suspend` | `suspend` | Turn off the primary display and temporarily use the `lowpower` profile while services and jobs continue. Press KEY to resume. |
+| `suspend` | `suspend` | Turn off the primary display and temporarily use the `lowpower` profile while services and jobs continue. Press KEY or a keyboard key to resume. |
 | `power` | `power [status]` | Show the selected and effective profiles, suspend state, sleep policy, and wake statistics. |
 | `power` | `power profile [performance\|balanced\|battery\|lowpower]` | Show or save the power profile. |
 | `power` | `power idle [off\|seconds]` | Show or configure the display-shell idle light-sleep timeout. |
 | `power` | `power key [off\|sleep\|suspend]` | Show or configure the dedicated KEY short-press action. |
 | `power` | `power sleep` | Enter explicit light sleep from the display shell. Press KEY to wake. |
-| `power` | `power suspend` | Turn off the primary display while services and jobs continue. Press KEY to resume. |
+| `power` | `power suspend` | Turn off the primary display while services and jobs continue. Press KEY or a keyboard key to resume. |
 | `rtc` | `rtc [status]` | Show the RTC provider, capabilities, interrupt wiring, and alarm/timer owners. Reports `unavailable` when no RTC is present. |
 | `rtc` | `rtc alarm set HH:MM[:SS] [day=N] [weekday=N]` | Program the RTC hardware alarm, optionally matching a day or weekday. |
 | `rtc` | `rtc alarm clear` | Clear the RTC hardware alarm owned by this command. |
@@ -452,8 +452,10 @@ Profiles:
 Suspend is different from explicit light sleep. It keeps the runtime, radios,
 background jobs, Inbox notifications, and audio active while the primary
 display is off. It temporarily uses the `lowpower` profile and prevents the
-idle policy from entering explicit light sleep. Another short press of KEY
-resumes the display and restores the selected profile. `power status` shows
+idle policy from entering explicit light sleep. Another short press of KEY,
+a new keypress from a built-in or attached keyboard, or a BLE keyboard reconnect
+resumes the display and restores the selected profile. Releasing a held key or
+automatic key repeat does not resume the display. `power status` shows
 the selected profile, effective profile, and suspend state.
 
 `power key` retains `off` for compatibility. `sleep` uses the existing light

@@ -711,9 +711,11 @@ class RuntimeBoundaryTest(unittest.TestCase):
         )[0]
 
         self.assertIn("suspend_ble_wake_generation =", suspend)
+        self.assertIn("suspend_input_key_press_generation =", suspend)
+        self.assertIn("solar_os_input_key_press_generation()", suspend)
         self.assertIn("solar_os_ble_keyboard_wake_generation()", suspend)
-        self.assertIn("maybe_exit_suspend_for_ble_keyboard();", dispatch)
-        self.assertIn("maybe_exit_suspend_for_ble_keyboard();", runtime)
+        self.assertIn("maybe_exit_suspend_for_input();", dispatch)
+        self.assertIn("maybe_exit_suspend_for_input();", runtime)
         self.assertIn("solar_os_hid_keyboard_report_has_new_press", report)
         self.assertIn("note_wake_activity();", report)
         self.assertIn("note_wake_activity();", opened)

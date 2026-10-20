@@ -100,6 +100,7 @@ static input_pressed_slot_t input_pressed[SOLAR_OS_INPUT_MAX_PRESSED_KEYS];
 static solar_os_input_key_event_t input_queue[INPUT_QUEUE_MAX];
 static size_t input_queue_head;
 static size_t input_queue_count;
+static uint32_t input_key_press_generation;
 static solar_os_input_pointer_event_t *input_pointer_queue;
 static size_t input_pointer_queue_head;
 static size_t input_pointer_queue_count;
@@ -477,6 +478,11 @@ static input_pressed_slot_t *input_alloc_pressed_locked(void)
 
 static bool input_queue_push_locked(const solar_os_input_key_event_t *event)
 {
+    /* Count before capture/queueing: a foreground owner may consume the key
+     * before the desktop polls, and a full queue must not hide wake activity. */
+    if (event != NULL && event->action == SOLAR_OS_INPUT_KEY_PRESS) {
+        input_key_press_generation++;
+    }
     if (event != NULL && input_capture_push_locked(event)) {
         return true;
     }
@@ -1950,6 +1956,14 @@ bool solar_os_input_read_captured_key(const void *owner,
     }
     portEXIT_CRITICAL(&input_lock);
     return found;
+}
+
+uint32_t solar_os_input_key_press_generation(void)
+{
+    portENTER_CRITICAL(&input_lock);
+    const uint32_t generation = input_key_press_generation;
+    portEXIT_CRITICAL(&input_lock);
+    return generation;
 }
 
 bool solar_os_input_take_captured_activity(void)

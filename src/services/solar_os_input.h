@@ -339,6 +339,9 @@ void solar_os_input_release_keyboard(const void *owner);
 bool solar_os_input_capture_key_event(const solar_os_input_key_event_t *event);
 /* Main-loop wake/idle accounting for events queued directly by drivers. */
 bool solar_os_input_take_captured_activity(void);
+/* Advances on new key presses, including captured keys and modifiers, even
+ * when the event queue is full. Releases and autorepeat do not advance it. */
+uint32_t solar_os_input_key_press_generation(void);
 /* reset is delivered before queued keys after overflow, release-all or detach. */
 bool solar_os_input_read_captured_key(const void *owner,
     solar_os_input_key_event_t *event, bool *reset);

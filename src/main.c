@@ -150,6 +150,7 @@ static solar_os_input_source_t key_input_source;
 static bool deferred_sleep_pending;
 static bool deferred_sleep_deep;
 static char deferred_sleep_reason[SLEEP_REASON_MAX];
+static uint32_t suspend_input_key_press_generation;
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
 static uint32_t suspend_ble_wake_generation;
 #endif
@@ -524,6 +525,7 @@ static void enter_suspend(const char *reason)
     update_status();
     draw_terminal_if_needed();
 
+    suspend_input_key_press_generation = solar_os_input_key_press_generation();
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
     if (board_has(SOLAR_OS_BOARD_CAP_BLE) &&
         solar_os_ble_keyboard_enabled_for_current_boot()) {
@@ -566,17 +568,22 @@ static void enter_suspend(const char *reason)
                   solar_os_power_profile_name(status.profile));
 }
 
-static void maybe_exit_suspend_for_ble_keyboard(void)
+static void maybe_exit_suspend_for_input(void)
 {
-#if SOLAR_OS_PACKAGE_SERVICE_BLE
-    if (!board_has(SOLAR_OS_BOARD_CAP_BLE) ||
-        !solar_os_ble_keyboard_enabled_for_current_boot()) {
-        return;
-    }
-
     solar_os_power_status_t status;
     solar_os_power_get_status(&status);
     if (!status.suspend_active) {
+        return;
+    }
+
+    if (solar_os_input_key_press_generation() != suspend_input_key_press_generation) {
+        exit_suspend("key press");
+        return;
+    }
+
+#if SOLAR_OS_PACKAGE_SERVICE_BLE
+    if (!board_has(SOLAR_OS_BOARD_CAP_BLE) ||
+        !solar_os_ble_keyboard_enabled_for_current_boot()) {
         return;
     }
 
@@ -1387,7 +1394,7 @@ static void dispatch_input_key(const solar_os_input_key_event_t *event)
         return;
     }
 
-    maybe_exit_suspend_for_ble_keyboard();
+    maybe_exit_suspend_for_input();
     solar_os_power_note_activity(millis_u32());
     if (solar_os_input_capture_key_event(event)) {
         return;
@@ -1651,8 +1658,9 @@ static void poll_local_input_sources(void)
 static void dispatch_input_sources(void)
 {
     poll_local_input_sources();
+    maybe_exit_suspend_for_input();
     if (solar_os_input_take_captured_activity()) {
-        maybe_exit_suspend_for_ble_keyboard();
+        maybe_exit_suspend_for_input();
         solar_os_power_note_activity(millis_u32());
     }
     solar_os_input_key_event_t events[16];
@@ -2120,7 +2128,7 @@ void app_main(void)
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
         if (board_has(SOLAR_OS_BOARD_CAP_BLE)) {
             solar_os_ble_keyboard_poll(millis_u32());
-            maybe_exit_suspend_for_ble_keyboard();
+            maybe_exit_suspend_for_input();
         }
 #endif
         poll_key_button();

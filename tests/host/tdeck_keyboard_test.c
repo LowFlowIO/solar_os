@@ -24,6 +24,19 @@ typedef struct {
 static tdeck_device_t device;
 static uint8_t matrix[TDECK_COLUMNS];
 
+/* Exercise desktop wake with the real matrix decoder and input service,
+ * including firmware built without BLE. */
+#define SOLAR_OS_PACKAGE_SERVICE_BLE 0
+typedef struct { bool suspend_active; } solar_os_power_status_t;
+static bool suspended;
+static unsigned resumes;
+static uint32_t suspend_input_key_press_generation;
+static void solar_os_power_get_status(solar_os_power_status_t *status)
+{ status->suspend_active = suspended; }
+static void exit_suspend(const char *reason)
+{ assert(reason != NULL && suspended); suspended = false; resumes++; }
+#include "suspend_wake.inc"
+
 static size_t logical_events(solar_os_input_key_event_t *out)
 {
     solar_os_input_key_event_t events[32];
@@ -50,6 +63,71 @@ static void expect_none(void)
 
 static void scan(void) { process_matrix(&device, matrix); }
 static void clear_matrix(void) { memset(matrix, 0, sizeof(matrix)); scan(); }
+
+static void suspend_for_test(void)
+{
+    suspend_input_key_press_generation = solar_os_input_key_press_generation();
+    suspended = true;
+    maybe_exit_suspend_for_input();
+    assert(suspended);
+}
+
+static void test_suspend_wake(void)
+{
+    suspend_for_test();
+    matrix[3] = 1U << 4; scan(); /* B */
+    maybe_exit_suspend_for_input();
+    assert(!suspended && resumes == 1);
+    expect_event('b', SOLAR_OS_INPUT_KEY_PRESS, 0, 0x05);
+
+    /* An existing hold, autorepeat, and release must not wake. */
+    suspend_for_test();
+    scan();
+    assert(solar_os_input_write_key(device.input_source, 26, 0x05, 'b', 0,
+        SOLAR_OS_INPUT_KEY_REPEAT) == ESP_OK);
+    maybe_exit_suspend_for_input();
+    assert(suspended);
+    expect_event('b', SOLAR_OS_INPUT_KEY_REPEAT, 0, 0x05);
+    clear_matrix();
+    maybe_exit_suspend_for_input();
+    assert(suspended);
+    expect_event('b', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0x05);
+
+    /* Modifiers wake even though they produce no character. */
+    matrix[1] = 1U << 6; scan(); /* Shift */
+    maybe_exit_suspend_for_input();
+    assert(!suspended && resumes == 2);
+    clear_matrix(); expect_none();
+
+    /* A native app may drain captured input before the desktop checks wake. */
+    static const int owner;
+    assert(solar_os_input_capture_keyboard("tdeck", &owner) == ESP_OK);
+    suspend_for_test();
+    matrix[3] = 1U << 4; scan();
+    solar_os_input_key_event_t event;
+    bool reset;
+    assert(solar_os_input_read_captured_key(&owner, &event, &reset));
+    assert(event.key == 'b' && event.action == SOLAR_OS_INPUT_KEY_PRESS && !reset);
+    maybe_exit_suspend_for_input();
+    assert(!suspended && resumes == 3);
+    clear_matrix();
+    solar_os_input_release_keyboard(&owner);
+    expect_none();
+
+    /* A saturated desktop queue must not prevent a physical press waking. */
+    size_t queued = 0;
+    while (solar_os_input_write_char(device.input_source, 'x') == ESP_OK) {
+        assert(++queued < 100);
+    }
+    suspend_for_test();
+    matrix[3] = 1U << 4; scan();
+    maybe_exit_suspend_for_input();
+    assert(!suspended && resumes == 4);
+    solar_os_input_key_event_t events[32];
+    while (solar_os_input_read_events(events, 32) != 0) {}
+    clear_matrix();
+    expect_event('b', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0x05);
+}
 
 static void test_holds_layers_and_shortcuts(void)
 {
@@ -290,6 +368,7 @@ int main(void)
     assert(solar_os_input_init() == ESP_OK);
     assert(solar_os_input_keyboard_source_open("tdeck", true, &device.input_source) == ESP_OK);
     assert(solar_os_input_set_repeat(0, 300) == ESP_OK);
+    test_suspend_wake();
     test_holds_layers_and_shortcuts();
     test_fullscreen_and_completion();
     test_native_capture();

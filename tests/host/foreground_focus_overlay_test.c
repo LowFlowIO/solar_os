@@ -14,7 +14,7 @@ static uint8_t probe_char;
 static unsigned app_exits;
 static unsigned next_sessions, previous_sessions;
 static unsigned display_moves[4];
-static void maybe_exit_suspend_for_ble_keyboard(void) {}
+static void maybe_exit_suspend_for_input(void) {}
 static uint32_t millis_u32(void) { return 0; }
 static void solar_os_power_note_activity(uint32_t now) { (void)now; }
 static bool input_focus_accepts_key_events(void) { return !char_input; }
