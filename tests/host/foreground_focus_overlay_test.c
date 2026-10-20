@@ -10,6 +10,7 @@ static unsigned guest_events, overlay_closes;
 static uint8_t guest_modifiers;
 static bool char_input;
 static unsigned app_exits;
+static unsigned next_sessions, previous_sessions;
 static void maybe_exit_suspend_for_ble_keyboard(void) {}
 static uint32_t millis_u32(void) { return 0; }
 static void solar_os_power_note_activity(uint32_t now) { (void)now; }
@@ -23,8 +24,8 @@ static bool solar_os_sessions_cycle_display_focus(void) { return true; }
 static bool solar_os_sessions_cycle_display_focus_previous(void) { return true; }
 static bool solar_os_sessions_cycle_display_focus_down(void) { return true; }
 static bool solar_os_sessions_cycle_display_focus_up(void) { return true; }
-static bool solar_os_sessions_cycle_input_focus(void) { return true; }
-static bool solar_os_sessions_cycle_input_focus_previous(void) { return true; }
+static bool solar_os_sessions_cycle_input_focus(void) { next_sessions++; return true; }
+static bool solar_os_sessions_cycle_input_focus_previous(void) { previous_sessions++; return true; }
 static void dispatch_input_chars(const char *chars, size_t count)
 {
     assert(char_input && count == 1 && (uint8_t)chars[0] == SOLAR_OS_KEY_APP_EXIT);
@@ -42,6 +43,92 @@ static void dispatch_desktop_queue(void)
     size_t count = solar_os_input_read_events(events, 8);
     for (size_t i = 0; i < count; ++i) dispatch_input_key(&events[i]);
 }
+
+#ifdef TDECK_TRACKBALL_TEST
+#include "solar_os_buttons.h"
+#include "solar_os_input_composition.h"
+#include "solar_os_log.h"
+
+static int trackball_levels[64];
+
+esp_err_t gpio_config(const gpio_config_t *config)
+{
+    assert(config->mode == GPIO_MODE_INPUT);
+    assert(config->intr_type == GPIO_INTR_DISABLE);
+    assert(config->pull_up_en == GPIO_PULLUP_ENABLE);
+    return ESP_OK;
+}
+
+int gpio_get_level(gpio_num_t pin) { return trackball_levels[pin]; }
+
+esp_err_t solar_os_log_write(solar_os_log_level_t level, const char *tag, const char *fmt, ...)
+{ (void)level; (void)tag; (void)fmt; return ESP_OK; }
+
+static void trackball_pulse(gpio_num_t pin)
+{
+    trackball_levels[pin] = 0;
+    solar_os_buttons_poll();
+    now_us += 30000;
+    solar_os_buttons_poll();
+    trackball_levels[pin] = 1;
+    solar_os_buttons_poll();
+    now_us += 30000;
+    solar_os_buttons_poll();
+}
+
+static void expect_trackball_tap(gpio_num_t pin, uint8_t key, uint8_t modifiers)
+{
+    trackball_pulse(pin);
+    solar_os_input_key_event_t events[3];
+    assert(solar_os_input_read_events(events, 3) == 2);
+    assert(events[0].key == key && events[0].modifiers == modifiers);
+    assert(events[0].action == SOLAR_OS_INPUT_KEY_PRESS);
+    assert(events[1].key == key && events[1].modifiers == 0);
+    assert(events[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    dispatch_input_key(&events[0]);
+    dispatch_input_key(&events[1]);
+    assert(!session_switch_alt_held && !overlay_active && session_switch_nav_held == 0);
+}
+
+static void test_trackball_session_switching(void)
+{
+    char_input = false;
+    now_us = 1000000;
+    for (size_t i = 0; i < 64; i++) trackball_levels[i] = 1;
+    assert(solar_os_buttons_init() == ESP_OK);
+    solar_os_input_source_t keyboard;
+    assert(solar_os_input_keyboard_source_open("tdeck", true, &keyboard) == ESP_OK);
+
+    expect_trackball_tap(1, SOLAR_OS_KEY_LEFT, 0);
+    expect_trackball_tap(2, SOLAR_OS_KEY_RIGHT, 0);
+    assert(next_sessions == 0 && previous_sessions == 0);
+
+    /* The I2C keyboard and the GPIO trackball are separate input sources. */
+    solar_os_input_composition_set_modifiers(keyboard, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    expect_trackball_tap(1, SOLAR_OS_KEY_LEFT, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    assert(previous_sessions == 1 && next_sessions == 0);
+    expect_trackball_tap(2, SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    expect_trackball_tap(2, SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    assert(previous_sessions == 1 && next_sessions == 2);
+
+    /* Board-translated chords remain plain Page Up/Down, without an Alt prefix. */
+    expect_trackball_tap(3, SOLAR_OS_KEY_PAGE_UP, 0);
+    expect_trackball_tap(15, SOLAR_OS_KEY_PAGE_DOWN, 0);
+    trackball_pulse(1); /* Existing horizontal guard still filters this pulse. */
+    solar_os_input_key_event_t event;
+    assert(solar_os_input_read_events(&event, 1) == 0);
+    now_us += 100000;
+    expect_trackball_tap(1, SOLAR_OS_KEY_LEFT, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    assert(previous_sessions == 2 && next_sessions == 2);
+
+    solar_os_input_composition_set_modifiers(keyboard, 0);
+    expect_trackball_tap(2, SOLAR_OS_KEY_RIGHT, 0);
+    now_us += 1000000;
+    assert(solar_os_input_read_events(&event, 1) == 0); /* No stuck key/repeat. */
+    assert(previous_sessions == 2 && next_sessions == 2);
+    solar_os_input_source_close(keyboard);
+}
+#endif
 
 int main(void)
 {
@@ -111,6 +198,9 @@ int main(void)
     }
     assert(app_exits == 2);
     solar_os_input_source_close(source);
+#ifdef TDECK_TRACKBALL_TEST
+    test_trackball_session_switching();
+#endif
     puts("Foreground capture releases modifiers; app-exit dismisses the Alt switcher before handback");
     return 0;
 }

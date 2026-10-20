@@ -170,8 +170,15 @@ void solar_os_buttons_poll(void)
                     state->suppressed_releases++;
                     continue;
                 }
-                (void)solar_os_input_write_char(buttons_input_source,
-                    (char)solar_os_input_composition_apply(def->key));
+                const uint8_t key = solar_os_input_composition_apply(def->key);
+                /* Keep modifiers from a separate keyboard for shortcuts such
+                 * as Alt+trackball Left/Right. A board chord's replacement key
+                 * already encodes its modifiers (for example, Page Up). */
+                const uint8_t modifiers = key == def->key ?
+                    solar_os_input_composition_modifiers() : 0U;
+                (void)solar_os_input_write_key_tap(buttons_input_source,
+                    (uint16_t)def->pin + 1U, SOLAR_OS_INPUT_USAGE_NONE,
+                    key, modifiers);
             }
             continue;
         }
