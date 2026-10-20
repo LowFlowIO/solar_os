@@ -271,7 +271,9 @@ esp_err_t solar_os_input_write_key(solar_os_input_source_t source,
                                    uint8_t key,
                                    uint8_t modifiers,
                                    solar_os_input_key_action_t action);
-/* Atomically enqueue a synthetic press and a fully released key event. */
+/* Atomically enqueue a synthetic press and a fully released key event.
+ * Character-tap sources use PHYSICAL_NONE and USAGE_NONE: assigning a physical
+ * identity would advertise held-key semantics to consumers such as emulators. */
 esp_err_t solar_os_input_write_key_tap(solar_os_input_source_t source,
                                        uint16_t physical_key,
                                        uint16_t usage,
@@ -354,6 +356,9 @@ bool solar_os_input_parse_key_chord(const char *text,
 uint8_t solar_os_input_translate_hid_usage(uint16_t usage,
                                            uint8_t modifiers,
                                            bool caps_lock);
+/* Encode Ctrl characters and modified navigation for text consumers.
+ * Already-translated keys remain unchanged. */
+uint8_t solar_os_input_translate_char_key(uint8_t key, uint8_t modifiers);
 
 void solar_os_input_get_repeat(uint16_t *rate_cps, uint16_t *delay_ms);
 esp_err_t solar_os_input_set_repeat(uint16_t rate_cps, uint16_t delay_ms);

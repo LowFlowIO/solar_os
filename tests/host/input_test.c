@@ -391,6 +391,42 @@ int main(void)
     assert(event.modifiers == 0U);
     assert(solar_os_input_get_pressed(pressed, 2) == 0U);
 
+    /* Character taps can preserve modifiers without claiming a held physical
+     * key. Their synthetic release clears modifiers and never starts repeat. */
+    assert(solar_os_input_write_key_tap(keyboard, SOLAR_OS_INPUT_PHYSICAL_NONE,
+        SOLAR_OS_INPUT_USAGE_NONE, SOLAR_OS_KEY_ENTER, SOLAR_OS_INPUT_MOD_LEFT_ALT) == ESP_OK);
+    event = read_one_event();
+    assert(event.action == SOLAR_OS_INPUT_KEY_PRESS && event.key == SOLAR_OS_KEY_ENTER);
+    assert(event.physical_key == SOLAR_OS_INPUT_PHYSICAL_NONE);
+    assert(event.usage == SOLAR_OS_INPUT_USAGE_NONE);
+    assert(event.modifiers == SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    event = read_one_event();
+    assert(event.action == SOLAR_OS_INPUT_KEY_RELEASE && event.key == SOLAR_OS_KEY_ENTER);
+    assert(event.physical_key == SOLAR_OS_INPUT_PHYSICAL_NONE && event.modifiers == 0U);
+    assert(solar_os_input_get_pressed(pressed, 2) == 0U);
+    assert(solar_os_input_write_key_tap(keyboard, SOLAR_OS_INPUT_PHYSICAL_NONE,
+        SOLAR_OS_INPUT_USAGE_NONE, 0, 0) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_input_write_key(keyboard, SOLAR_OS_INPUT_PHYSICAL_NONE,
+        SOLAR_OS_INPUT_USAGE_NONE, 'z', 0, SOLAR_OS_INPUT_KEY_PRESS) == ESP_ERR_INVALID_ARG);
+
+    const struct { uint8_t key, modifiers, text; } logical_controls[] = {
+        {'c', SOLAR_OS_INPUT_MOD_LEFT_CTRL, 3},
+        {'z', SOLAR_OS_INPUT_MOD_LEFT_CTRL, 26},
+        {'A', SOLAR_OS_INPUT_MOD_LEFT_CTRL | SOLAR_OS_INPUT_MOD_LEFT_SHIFT, 1},
+        {SOLAR_OS_KEY_LEFT, SOLAR_OS_INPUT_MOD_LEFT_CTRL, SOLAR_OS_KEY_CTRL_LEFT},
+        {SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_MOD_LEFT_CTRL | SOLAR_OS_INPUT_MOD_LEFT_SHIFT, SOLAR_OS_KEY_CTRL_SHIFT_RIGHT},
+        {SOLAR_OS_KEY_PAGE_UP, SOLAR_OS_INPUT_MOD_LEFT_SHIFT, SOLAR_OS_KEY_SHIFT_PAGE_UP},
+        {SOLAR_OS_KEY_CTRL_LEFT, SOLAR_OS_INPUT_MOD_LEFT_CTRL, SOLAR_OS_KEY_CTRL_LEFT},
+        {3, SOLAR_OS_INPUT_MOD_LEFT_CTRL, 3},
+    };
+    for (size_t i = 0; i < sizeof(logical_controls) / sizeof(logical_controls[0]); i++) {
+        assert(solar_os_input_write_key_tap(keyboard, SOLAR_OS_INPUT_PHYSICAL_NONE,
+            SOLAR_OS_INPUT_USAGE_NONE, logical_controls[i].key, logical_controls[i].modifiers) == ESP_OK);
+        char text[4];
+        assert(solar_os_input_read_chars(text, sizeof(text)) == 1);
+        assert((uint8_t)text[0] == logical_controls[i].text);
+    }
+
     now_us = 1100000;
     assert(solar_os_input_write_key(keyboard,
                                     0x2b,

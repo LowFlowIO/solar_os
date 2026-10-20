@@ -106,6 +106,24 @@ static esp_err_t sx1262_wait_busy(sx1262_t *dev)
     return ESP_OK;
 }
 
+static esp_err_t sx1262_prepare_command(sx1262_t *dev)
+{
+    if (dev->state == SOLAR_OS_RADIO_STATE_SLEEP) {
+        /* BUSY stays high in sleep. The NSS falling edge of this write-only
+         * GetStatus wakes the chip; its response is undefined and ignored.
+         * Use the bus service so CS and the shared SPI bus stay serialized. */
+        const uint8_t wake[] = {SX1262_OP_GET_STATUS, 0x00U};
+        esp_err_t err = solar_os_bus_spi_transfer(dev->spi_bus, dev->cs_pin,
+            0, dev->speed_hz, wake, NULL, sizeof(wake));
+        if (err != ESP_OK) return err;
+        err = sx1262_wait_busy(dev);
+        if (err != ESP_OK) return err;
+        dev->state = SOLAR_OS_RADIO_STATE_STANDBY;
+        return ESP_OK;
+    }
+    return sx1262_wait_busy(dev);
+}
+
 /* One full command transaction: opcode + params out, with `resp_len` extra
  * clock cycles appended to fetch a response (0 for pure "set" commands).
  * `resp` receives the response bytes, if any, with the always-present
@@ -124,7 +142,7 @@ static esp_err_t sx1262_transact(sx1262_t *dev,
     if (total > sizeof(tx) || (resp_len > 0 && resp == NULL)) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = sx1262_wait_busy(dev);
+    esp_err_t err = sx1262_prepare_command(dev);
     if (err != ESP_OK) {
         return err;
     }
@@ -139,6 +157,10 @@ static esp_err_t sx1262_transact(sx1262_t *dev,
     }
     if (resp_len > 0) {
         memcpy(resp, &rx[1 + param_len], resp_len);
+    }
+    if (opcode == SX1262_OP_SET_SLEEP) {
+        /* Complete the sleep entry before another NSS edge may wake it. */
+        esp_rom_delay_us(500);
     }
     return ESP_OK;
 }
@@ -178,7 +200,7 @@ static esp_err_t sx1262_read_buffer(sx1262_t *dev, uint8_t offset, uint8_t *data
     if (len > SX1262_MAX_PACKET_LEN || total > sizeof(tx)) {
         return ESP_ERR_INVALID_ARG;
     }
-    esp_err_t err = sx1262_wait_busy(dev);
+    esp_err_t err = sx1262_prepare_command(dev);
     if (err != ESP_OK) {
         return err;
     }
@@ -543,9 +565,14 @@ esp_err_t sx1262_set_state(sx1262_t *dev, solar_os_radio_state_t state)
         return err;
     }
 
+    if (state == SOLAR_OS_RADIO_STATE_SLEEP && dev->state == state) {
+        sx1262_unlock(dev);
+        return ESP_OK;
+    }
+
     switch (state) {
     case SOLAR_OS_RADIO_STATE_SLEEP: {
-        const uint8_t param = 0x00U; /* cold start, no RTC wakeup */
+        const uint8_t param = 0x04U; /* warm start, retain config, no RTC wakeup */
         err = sx1262_transact(dev, SX1262_OP_SET_SLEEP, &param, 1, NULL, 0);
         break;
     }

@@ -44,6 +44,7 @@ TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test irc_protocol_test gateway_config_test link_messaging_test chat_settings_test meshcore_instances_test
 TARGETS += nmea_test nmea_gnss_test
+TARGETS += sx1262_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
 TARGETS += rtc_ds3231_test
@@ -694,6 +695,11 @@ nmea_gnss_test: nmea_gnss_test.c $(ROOT)/src/drivers/nmea.c $(ROOT)/src/drivers/
 		-Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
 		nmea_gnss_test.c $(ROOT)/src/drivers/nmea.c $(ROOT)/src/services/solar_os_gnss.c -o $@
 
+sx1262_test: sx1262_test.c $(ROOT)/src/drivers/sx1262.c $(ROOT)/src/drivers/sx1262.h
+	$(CC) $(CFLAGS) -include compat.h \
+		-Igpio_controller_stubs -Iinputronic_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/src/services -I$(ROOT)/src/drivers sx1262_test.c -o $@
+
 gnss_service_test: gnss_service_test.c $(ROOT)/src/services/solar_os_gnss.c $(ROOT)/src/services/solar_os_gnss.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -I. -I$(ROOT)/src/services \
 		gnss_service_test.c $(ROOT)/src/services/solar_os_gnss.c -o $@
@@ -1148,6 +1154,7 @@ test: $(TARGETS)
 	./ubx_test
 	./nmea_test
 	./nmea_gnss_test
+	./sx1262_test
 	./gnss_service_test
 	./modem_service_test
 	./haptic_service_test

@@ -3,11 +3,49 @@ import subprocess
 import tempfile
 import unittest
 import re
-from test_foreground_presenter import production_functions
+from tests.test_foreground_presenter import production_functions
 
 ROOT = Path(__file__).resolve().parents[1]
 
+def native_key_pulse_includes(directory):
+    source = (ROOT / "src/services/solar_os_native_foreground.c").read_text()
+    constants = '\n'.join(re.findall(r'^#define FOREGROUND_KEY_PULSE_.*', source, re.M))
+    typedef = re.search(r'typedef struct \{\s*solar_os_native_foreground_key_v1_t release;.*?\} foreground_key_pulse_t;', source, re.S).group()
+    Path(directory, "native_key_pulse_type.inc").write_text(constants + '\n' + typedef)
+    Path(directory, "native_key_pulse_read.inc").write_text(production_functions(source, ("foreground_read_key",)))
+
 class NativeForegroundTest(unittest.TestCase):
+    def test_logical_taps_and_physical_key_streams(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            native_key_pulse_includes(tmp)
+            binary = Path(tmp, "keys")
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-I", tmp, "-I", str(ROOT / "include"),
+                            "-I", str(ROOT / "tests/host"),
+                            str(ROOT / "tests/host/native_foreground_keys_test.c"),
+                            "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_logical_arrows_through_doom_input_tics(self):
+        module = ROOT / "modules/doom/main"
+        with tempfile.TemporaryDirectory() as tmp:
+            native_key_pulse_includes(tmp)
+            defines = (module / "vendor/prboom/include/doomdef.h").read_text()
+            Path(tmp, "doom_keydefs.inc").write_text('\n'.join(
+                re.findall(r'^#define KEYD_.*', defines, re.M)))
+            Path(tmp, "doom_input.inc").write_text(production_functions(
+                (module / "video.c").read_text(),
+                ("post", "solar_os_doom_reset_keys", "translate", "I_StartTic")))
+            binary = Path(tmp, "doom-keys")
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                            "-Wno-sign-compare", "-DTEST_DOOM_INPUT",
+                            "-I", tmp, "-I", str(ROOT / "include"),
+                            "-I", str(ROOT / "tests/host"),
+                            "-I", str(module / "vendor/prboom/include"),
+                            str(ROOT / "tests/host/native_foreground_keys_test.c"),
+                            "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_cooperative_checkpoints_preserve_timed_waits(self):
         source = (ROOT / "src/services/solar_os_native_foreground.c").read_text()
         interval = re.search(r"^#define FOREGROUND_COOPERATE_INTERVAL_US .*", source, re.M).group()

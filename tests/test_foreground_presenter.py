@@ -2,6 +2,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -24,6 +25,66 @@ def production_functions(source, names):
 
 
 class ForegroundPresenterTest(unittest.TestCase):
+    def test_ordinary_buttons_keep_mechanical_debounce(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "solar_os_board.h").write_text(
+                '#pragma once\n#include "solar_os_keys.h"\n'
+                '#define SOLAR_OS_BOARD_HAS_BUTTONS 1\n'
+                '#define SOLAR_OS_BOARD_BUTTONS { '
+                '{.pin=4, .key=SOLAR_OS_KEY_UP, .active_low=true}, '
+                '{.pin=5, .key=SOLAR_OS_KEY_ENTER, .emit_on_release=true} }\n')
+            binary = Path(tmp, "buttons")
+            subprocess.run([
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-include", str(ROOT / "tests/host/compat.h"),
+                "-I", tmp, "-I", str(ROOT / "tests/host/gpio_controller_stubs"),
+                "-I", str(ROOT / "tests/host"),
+                "-I", str(ROOT / "src"), "-I", str(ROOT / "src/services"),
+                "-idirafter", str(ROOT / "include"),
+                str(ROOT / "tests/host/buttons_test.c"),
+                str(ROOT / "src/services/solar_os_input.c"),
+                str(ROOT / "src/services/solar_os_keys.c"),
+                str(ROOT / "src/services/solar_os_input_composition.c"),
+                str(ROOT / "src/services/solar_os_buttons.c"),
+                "-o", str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_tdeck_trackball_dominant_gestures_and_session_shortcuts(self):
+        source = (ROOT / "src/main.c").read_text()
+        board = tomllib.loads((ROOT / "boards/manifests/t_deck_plus.toml").read_text())
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "foreground_focus_dispatch.inc").write_text(production_functions(
+                source, ("dispatch_input_key",)))
+            Path(tmp, "tdeck_matrix.inc").write_text(production_functions(
+                (ROOT / "src/services/solar_os_tdeck_keyboard.c").read_text(),
+                ("key_usage", "process_matrix")))
+            defines = board["defines"]
+            Path(tmp, "solar_os_board.h").write_text(
+                '#pragma once\n#include "solar_os_keys.h"\n'
+                '#define SOLAR_OS_BOARD_HAS_BUTTONS 1\n' +
+                ''.join(f'#define GPIO_NUM_{pin} {pin}\n' for pin in (1, 2, 3, 15)) +
+                ''.join(f'#define {name} {defines[name]}\n' for name in (
+                    "SOLAR_OS_BOARD_BUTTONS", "SOLAR_OS_BOARD_INPUT_CHORDS",
+                    "SOLAR_OS_BOARD_TDECK_KEYMAP")))
+            binary = Path(tmp, "trackball")
+            subprocess.run([
+                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-DTDECK_TRACKBALL_TEST",
+                "-include", str(ROOT / "tests/host/compat.h"),
+                "-I", tmp, "-I", str(ROOT / "tests/host/gpio_controller_stubs"),
+                "-I", str(ROOT / "tests/host"),
+                "-I", str(ROOT / "src"), "-I", str(ROOT / "src/services"),
+                "-idirafter", str(ROOT / "include"),
+                str(ROOT / "tests/host/foreground_focus_overlay_test.c"),
+                str(ROOT / "src/services/solar_os_input.c"),
+                str(ROOT / "src/services/solar_os_keys.c"),
+                str(ROOT / "src/services/solar_os_input_composition.c"),
+                str(ROOT / "src/services/solar_os_buttons.c"),
+                "-o", str(binary),
+            ], check=True)
+            subprocess.run([str(binary)], check=True)
+
     def test_foreground_capture_closes_focus_overlay(self):
         source = (ROOT / "src/main.c").read_text()
         with tempfile.TemporaryDirectory() as tmp:

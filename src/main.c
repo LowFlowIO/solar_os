@@ -597,16 +597,18 @@ static void exit_suspend(const char *reason)
         return;
     }
 
-    const esp_err_t power_err = solar_os_power_end_suspend();
-    if (power_err != ESP_OK) {
-        SOLAR_OS_LOGW(TAG, "%s: profile restore failed: %s",
-                      reason, esp_err_to_name(power_err));
-    }
-
+    /* Restore shared peripheral rails before the power service restores
+     * auxiliary lights whose controllers may have lost their supply. */
     const esp_err_t display_err = solar_os_display_resume_primary();
     if (display_err != ESP_OK && display_err != ESP_ERR_NOT_SUPPORTED) {
         SOLAR_OS_LOGW(TAG, "%s: display resume failed: %s",
                       reason, esp_err_to_name(display_err));
+    }
+
+    const esp_err_t power_err = solar_os_power_end_suspend();
+    if (power_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "%s: profile restore failed: %s",
+                      reason, esp_err_to_name(power_err));
     }
 
     solar_os_display_clear_power_state();
@@ -1538,7 +1540,8 @@ static void dispatch_input_key(const solar_os_input_key_event_t *event)
         const char prefix = (char)SOLAR_OS_KEY_ALT_PREFIX;
         dispatch_input_chars(&prefix, 1);
     }
-    dispatch_input_chars(&ch, 1);
+    const char text_key = (char)solar_os_input_translate_char_key(event->key, event->modifiers);
+    dispatch_input_chars(&text_key, 1);
 }
 
 static void dispatch_input_pointer(const solar_os_input_pointer_event_t *pointer)

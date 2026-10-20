@@ -860,6 +860,7 @@ sources = [
   "services/solar_os_port.c",
   "services/solar_os_port_shell.c",
   "services/solar_os_parameters.c",
+  "services/solar_os_backlight.c",
   "services/solar_os_power.c",
   "services/solar_os_ramfs.c",
   "services/solar_os_sessions.c",

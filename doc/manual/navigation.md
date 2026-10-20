@@ -88,16 +88,34 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 
 | Control | Action |
 | --- | --- |
-| Roll trackball up / down / left / right | Corresponding arrow key. |
+| Roll trackball up / down / left / right | One arrow key in the dominant direction after movement stops. |
 | Press trackball | Enter — select/open. |
 | Keyboard Enter | Enter. |
+| Microphone-icon key | Tab — complete a shell command or argument; press twice to list matches. |
+| Shift + microphone-icon key | Ctrl — keep Mic held while pressing the other key. |
+| Sym + microphone-icon key | Type `0`. |
 | Alt+C | Escape — back/cancel where supported. |
 | Alt+Q | Close the foreground app. |
+| Alt+B | Toggle the keyboard backlight through the keyboard firmware; the shortcut does not type a character. |
 | Alt + trackball up / down | Page Up / Page Down. |
 | Alt + trackball left / right | Previous / next retained session on the focused display. |
 | Alt+Enter | Toggle full screen in shared text menus. |
 | Hold Sym + another key | Type the symbol from the keyboard's symbol layer. |
 | Hold Shift + another key | Type its shifted character. |
+
+Each continuous roll produces one arrow key after 80 ms without movement.
+The direction follows the greater net horizontal or vertical movement;
+opposite movements cancel. Equal diagonals use the most recently moved axis.
+Gestures retain the modifiers held at the last movement pulse, so they can be
+released while the ball settles. Shift+left/right selects text in the editor;
+Ctrl+left/right moves by words.
+Keyboard keys report their actual presses and releases, supporting held controls
+in foreground apps. `setterm keyrate` controls typing repeat; trackball rolls
+remain single navigation taps.
+For Ctrl, hold Shift and Mic in either order. Shift selects the chord and is
+consumed; it can then be released while Mic continues acting as Ctrl. Releasing
+Mic releases Ctrl. A plain Mic emits Tab on release, allowing Shift+Mic to be
+recognized without triggering completion. Sym+Mic retains its digit `0` mapping.
 
 ## CL-32
 
@@ -147,6 +165,7 @@ previous one. Ctrl+Z suspends a resumable port app; fg resumes it.
 T-Pager: wheel is Up/Down, press is Enter, Space+Enter is Escape, held Space
 selects symbols, and held Caps is Shift. Its default profile lacks Left,
 Right, Tab, and Ctrl. T-Deck Plus: trackball supplies arrows and Enter,
-Alt+C is Escape, and Alt+Q closes the app. CL-32: OK is Enter, Cancel is
+Mic is Tab, Shift+Mic is Ctrl, Alt+C is Escape, and Alt+Q closes the app.
+CL-32: OK is Enter, Cancel is
 Escape, File is Alt, and Menu is Ctrl. ODROID-GO: D-pad supplies arrows,
 A is Enter, B is Space, SELECT is Escape, and MENU closes the app.

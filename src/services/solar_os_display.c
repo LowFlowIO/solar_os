@@ -1,4 +1,5 @@
 #include "solar_os_display.h"
+#include "solar_os_backlight.h"
 #include "solar_os_splash.h"
 
 #include <string.h>
@@ -12,6 +13,7 @@
 #include "solar_os_board_caps.h"
 #include "solar_os_gfx_internal.h"
 #include "solar_os_memory.h"
+#include "solar_os_log.h"
 #include "solar_os_terminal_preferences.h"
 
 #if SOLAR_OS_BOARD_HAS_DISPLAY
@@ -534,6 +536,7 @@ esp_err_t solar_os_display_init(solar_os_board_display_t *display)
     if (err == ESP_ERR_NOT_SUPPORTED) {
         return ESP_OK;
     }
+    if (err == ESP_OK) (void)solar_os_backlight_display_changed(display_brightness);
     return err;
 #endif
 }
@@ -1056,6 +1059,9 @@ esp_err_t solar_os_display_set_brightness(uint8_t percent)
     }
 
     display_brightness = percent;
+    const esp_err_t backlight_err = solar_os_backlight_display_changed(percent);
+    if (backlight_err != ESP_OK)
+        SOLAR_OS_LOGW("display", "follow backlight failed: %s", esp_err_to_name(backlight_err));
     ret = display_save_brightness(percent);
     return ret;
 #endif
@@ -1192,6 +1198,8 @@ void solar_os_display_clear_power_state(void)
 
 esp_err_t solar_os_display_shutdown(void)
 {
+    const esp_err_t backlight_err = solar_os_backlight_set_suspended(true);
+    if (backlight_err != ESP_OK) return backlight_err;
     const esp_err_t err = solar_os_display_suspend_primary();
     if (err != ESP_OK && err != ESP_ERR_NOT_SUPPORTED &&
         err != ESP_ERR_INVALID_STATE) return err;
