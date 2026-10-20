@@ -1,4 +1,5 @@
 #include "solar_os_power.h"
+#include "solar_os_backlight.h"
 
 #include <string.h>
 
@@ -257,13 +258,19 @@ esp_err_t solar_os_power_apply_runtime_policy(void)
                   power_status.automatic_light_sleep_holdoff_ms > 0 ? "holdoff" :
                   power_status.explicit_sleep_active && profile_automatic_light_sleep ? "suppressed" :
                   "off");
-    return power_status.pm_last_error == ESP_ERR_NOT_SUPPORTED ? ESP_OK : power_status.pm_last_error;
+    return solar_os_backlight_set_suspended(
+        power_status.suspend_active || power_status.explicit_sleep_active);
 }
 
 esp_err_t solar_os_power_begin_explicit_sleep(void)
 {
     power_status.explicit_sleep_active = true;
-    return solar_os_power_apply_runtime_policy();
+    const esp_err_t err = solar_os_power_apply_runtime_policy();
+    if (err != ESP_OK) {
+        power_status.explicit_sleep_active = false;
+        (void)solar_os_power_apply_runtime_policy();
+    }
+    return err;
 }
 
 esp_err_t solar_os_power_end_explicit_sleep(void)

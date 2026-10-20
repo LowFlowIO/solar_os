@@ -597,16 +597,18 @@ static void exit_suspend(const char *reason)
         return;
     }
 
-    const esp_err_t power_err = solar_os_power_end_suspend();
-    if (power_err != ESP_OK) {
-        SOLAR_OS_LOGW(TAG, "%s: profile restore failed: %s",
-                      reason, esp_err_to_name(power_err));
-    }
-
+    /* Restore shared peripheral rails before the power service restores
+     * auxiliary lights whose controllers may have lost their supply. */
     const esp_err_t display_err = solar_os_display_resume_primary();
     if (display_err != ESP_OK && display_err != ESP_ERR_NOT_SUPPORTED) {
         SOLAR_OS_LOGW(TAG, "%s: display resume failed: %s",
                       reason, esp_err_to_name(display_err));
+    }
+
+    const esp_err_t power_err = solar_os_power_end_suspend();
+    if (power_err != ESP_OK) {
+        SOLAR_OS_LOGW(TAG, "%s: profile restore failed: %s",
+                      reason, esp_err_to_name(power_err));
     }
 
     solar_os_display_clear_power_state();

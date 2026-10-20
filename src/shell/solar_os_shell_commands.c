@@ -59,6 +59,7 @@ static const char * const sshkey_commands[] = {"status", "gen", "pub", "rm"};
 #endif
 #include "solar_os_config.h"
 #include "solar_os_display.h"
+#include "solar_os_backlight.h"
 #include "solar_os_display_layout.h"
 #include "solar_os_fonts.h"
 #include "solar_os_identity.h"
@@ -1976,6 +1977,7 @@ static void setterm_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  setterm background [#RRGGBB]");
     solar_os_shell_io_writeln(term, "  setterm statusbar [show|hide]");
     solar_os_shell_io_writeln(term, "  setterm brightness [0..100]");
+    solar_os_shell_io_writeln(term, "  setterm backlight [0..100|follow]");
     solar_os_shell_io_writeln(term, "  setterm profile [vt100|ansi|dumb]");
     solar_os_shell_io_writeln(term, "  setterm charset [utf8|ascii]");
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
@@ -2397,7 +2399,50 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv)
         return;
     }
 
-    if (strcmp(argv[1], "brightness") == 0 || strcmp(argv[1], "backlight") == 0) {
+    if (strcmp(argv[1], "backlight") == 0) {
+        if (argc > 3) {
+            solar_os_shell_diag_unexpected(term, "setterm backlight", argv[3],
+                                           "setterm backlight [0..100|follow]");
+            return;
+        }
+        esp_err_t err;
+        if (argc == 2) {
+            solar_os_backlight_status_t status;
+            err = solar_os_backlight_get_status(&status);
+            if (err == ESP_OK) {
+                if (status.follow_display)
+                    solar_os_shell_io_printf(term, "backlight: follow (brightness %u)\n", (unsigned)status.percent);
+                else
+                    solar_os_shell_io_printf(term, "backlight: %u\n", (unsigned)status.percent);
+                solar_os_shell_io_printf(term, "output: %u%s; providers: %u\n",
+                    (unsigned)status.effective_percent, status.suspended ? " (suspended)" : "",
+                    (unsigned)status.providers);
+                if (status.last_error != ESP_OK)
+                    solar_os_shell_io_printf(term, "last error: %s\n", solar_os_shell_error_text(status.last_error));
+                solar_os_shell_io_writeln(term, "values: 0..100|follow");
+                return;
+            }
+        } else if (strcmp(argv[2], "follow") == 0) {
+            err = solar_os_backlight_set_follow();
+        } else {
+            size_t percent;
+            if (!parse_size_arg(argv[2], 0, 100, &percent)) {
+                solar_os_shell_diag_invalid(term, "setterm backlight", "level", argv[2],
+                    "an integer from 0 to 100, or follow", "setterm backlight [0..100|follow]", false);
+                return;
+            }
+            err = solar_os_backlight_set_brightness((uint8_t)percent);
+        }
+        if (err == ESP_ERR_NOT_SUPPORTED)
+            solar_os_shell_io_writeln(term, "backlight: unsupported");
+        else if (err != ESP_OK)
+            solar_os_shell_io_printf(term, "backlight: failed: %s\n", solar_os_shell_error_text(err));
+        else
+            solar_os_shell_io_printf(term, "backlight: %s\n", argv[2]);
+        return;
+    }
+
+    if (strcmp(argv[1], "brightness") == 0) {
         if (argc == 2) {
             uint8_t percent = 0;
             const esp_err_t err = solar_os_display_get_brightness(&percent);

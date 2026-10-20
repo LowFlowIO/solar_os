@@ -10,6 +10,7 @@
 #include "freertos/task.h"
 #include "solar_os_board.h"
 #include "solar_os_buses.h"
+#include "solar_os_backlight.h"
 #include "solar_os_input.h"
 #include "solar_os_input_composition.h"
 #include "solar_os_keys.h"
@@ -50,6 +51,14 @@ typedef struct {
 
 static const char *TAG = "tdeck_keyboard";
 static tdeck_device_t device;
+
+static esp_err_t set_backlight(void *user, uint8_t percent)
+{
+    const tdeck_device_t *dev = user;
+    const uint8_t command[] = {0x01U, (uint8_t)((percent * 255U + 50U) / 100U)};
+    return solar_os_bus_i2c_transmit(dev->i2c_bus, SOLAR_OS_TDECK_KEYBOARD_ADDRESS,
+                                     command, sizeof(command));
+}
 
 static esp_err_t parse_bindings(const solar_os_expansion_binding_t *bindings,
                                 size_t count, char *bus)
@@ -131,9 +140,16 @@ esp_err_t solar_os_tdeck_keyboard_attach(
     if (err == ESP_OK) err = solar_os_input_keyboard_source_open(
         device.name, true, &device.input_source);
     if (err != ESP_OK) { memset(&device, 0, sizeof(device)); return err; }
+    err = solar_os_backlight_register(set_backlight, &device);
+    if (err != ESP_OK) {
+        solar_os_input_source_close(device.input_source);
+        memset(&device, 0, sizeof(device));
+        return err;
+    }
     if (solar_os_task_create_pinned_internal(worker, device.name, TDECK_TASK_STACK,
             &device, tskIDLE_PRIORITY + 1, &device.worker_task, tskNO_AFFINITY,
             SOLAR_OS_TASK_ROLE_BACKGROUND) != pdPASS) {
+        solar_os_backlight_unregister(&device);
         solar_os_input_source_close(device.input_source);
         memset(&device, 0, sizeof(device));
         return ESP_ERR_NO_MEM;
@@ -149,6 +165,7 @@ esp_err_t solar_os_tdeck_keyboard_detach(const char *name)
     (void)xTaskNotifyGive(device.worker_task);
     if (!solar_os_task_wait_done(device.worker_task, &device.worker_done,
                                  SOLAR_OS_TASK_STOP_WAIT_MS)) return ESP_ERR_TIMEOUT;
+    solar_os_backlight_unregister(&device);
     const uint8_t command = TDECK_MODE_KEY;
     (void)solar_os_bus_i2c_transmit(device.i2c_bus, SOLAR_OS_TDECK_KEYBOARD_ADDRESS,
                                    &command, 1);

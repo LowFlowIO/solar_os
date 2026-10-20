@@ -14,6 +14,7 @@
 #include "solar_os_ble_keyboard.h"
 #endif
 #include "solar_os_display.h"
+#include "solar_os_backlight.h"
 #include "solar_os_input.h"
 #include "solar_os_keys.h"
 #include "solar_os_power.h"
@@ -49,6 +50,7 @@ typedef enum {
     SETTERM_TUI_BACKGROUND,
     SETTERM_TUI_STATUSBAR,
     SETTERM_TUI_BRIGHTNESS,
+    SETTERM_TUI_BACKLIGHT,
     SETTERM_TUI_KEYBOARD,
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
     SETTERM_TUI_BLE,
@@ -92,6 +94,7 @@ static const setterm_tui_item_def_t setterm_tui_items[] = {
     [SETTERM_TUI_BACKGROUND] = {.label = "background"},
     [SETTERM_TUI_STATUSBAR] = {.label = "statusbar"},
     [SETTERM_TUI_BRIGHTNESS] = {.label = "brightness"},
+    [SETTERM_TUI_BACKLIGHT] = {.label = "backlight"},
     [SETTERM_TUI_KEYBOARD] = {.label = "keyboard"},
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
     [SETTERM_TUI_BLE] = {.label = "ble"},
@@ -167,6 +170,16 @@ static void setterm_tui_current_value(setterm_tui_item_t item, char *buffer, siz
         } else {
             strlcpy(buffer, "unavailable", buffer_len);
         }
+        break;
+    }
+    case SETTERM_TUI_BACKLIGHT: {
+        solar_os_backlight_status_t status;
+        const esp_err_t err = solar_os_backlight_get_status(&status);
+        if (err == ESP_OK && !status.follow_display)
+            snprintf(buffer, buffer_len, "%u", (unsigned)status.percent);
+        else
+            strlcpy(buffer, err == ESP_OK ? "follow" :
+                err == ESP_ERR_NOT_SUPPORTED ? "unsupported" : "unavailable", buffer_len);
         break;
     }
     case SETTERM_TUI_KEYBOARD:
@@ -359,6 +372,7 @@ static bool setterm_tui_cycle_selected(int direction)
     static const char * const palette_values[] = {"normal", "inverted"};
     static const char * const statusbar_values[] = {"show", "hide"};
     static const char * const brightness_values[] = {"0", "25", "50", "75", "100"};
+    static const char * const backlight_values[] = {"0", "25", "50", "75", "100", "follow"};
     static const char * const powerkey_values[] = {"sleep", "suspend"};
     static const char * const startup_values[] = {"auto", "flash", "sd"};
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
@@ -390,6 +404,10 @@ static bool setterm_tui_cycle_selected(int direction)
     case SETTERM_TUI_BRIGHTNESS:
         return setterm_tui_cycle_value(brightness_values,
                                        sizeof(brightness_values) / sizeof(brightness_values[0]),
+                                       direction);
+    case SETTERM_TUI_BACKLIGHT:
+        return setterm_tui_cycle_value(backlight_values,
+                                       sizeof(backlight_values) / sizeof(backlight_values[0]),
                                        direction);
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
     case SETTERM_TUI_KEYBOARD:
@@ -538,6 +556,13 @@ static bool setterm_tui_apply_selected(void)
         size_t percent = 0;
         return parse_size_arg(setterm_tui.edit_text, 0, 100, &percent) &&
             solar_os_display_set_brightness((uint8_t)percent) == ESP_OK;
+    }
+    case SETTERM_TUI_BACKLIGHT: {
+        if (strcmp(setterm_tui.edit_text, "follow") == 0)
+            return solar_os_backlight_set_follow() == ESP_OK;
+        size_t percent;
+        return parse_size_arg(setterm_tui.edit_text, 0, 100, &percent) &&
+            solar_os_backlight_set_brightness((uint8_t)percent) == ESP_OK;
     }
     case SETTERM_TUI_KEYBOARD: {
         solar_os_input_keyboard_layout_t layout;

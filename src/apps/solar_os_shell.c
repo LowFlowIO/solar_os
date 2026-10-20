@@ -812,6 +812,7 @@ static const char * const setterm_textsize_values[] = {"8", "10", "12", "14", "1
 static const char * const setterm_palette_values[] = {"normal", "inverted"};
 static const char * const setterm_statusbar_values[] = {"show", "hide"};
 static const char * const setterm_brightness_values[] = {"0", "25", "50", "75", "100"};
+static const char * const setterm_backlight_values[] = {"0", "25", "50", "75", "100", "follow"};
 static const char * const setterm_profile_values[] = {"vt100", "ansi", "dumb"};
 static const char * const setterm_charset_values[] = {"utf8", "ascii"};
 static const char * const setterm_keyboard_values[] = {"us", "de"};
@@ -3248,7 +3249,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_setterm_palette, setterm_palette_values),
     SHELL_COMPLETION_STATIC(path_setterm_statusbar, setterm_statusbar_values),
     SHELL_COMPLETION_STATIC(path_setterm_brightness, setterm_brightness_values),
-    SHELL_COMPLETION_STATIC(path_setterm_backlight, setterm_brightness_values),
+    SHELL_COMPLETION_STATIC(path_setterm_backlight, setterm_backlight_values),
     SHELL_COMPLETION_STATIC(path_setterm_profile, setterm_profile_values),
     SHELL_COMPLETION_STATIC(path_setterm_charset, setterm_charset_values),
     SHELL_COMPLETION_STATIC(path_setterm_keyboard, setterm_keyboard_values),

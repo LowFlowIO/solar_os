@@ -325,7 +325,8 @@ job for periodic polling.
 | `setterm` | `setterm palette [normal\|inverted]` | Show or set the logical terminal and shared-graphics palette. |
 | `setterm` | `setterm foreground [#RRGGBB]`; `setterm background [#RRGGBB]` | Show or set the persistent RGB terminal theme colors. |
 | `setterm` | `setterm statusbar [show\|hide]` | Show or hide the graphical shell status bar. |
-| `setterm` | `setterm brightness [0..100]`; `setterm backlight [0..100]` | Show or set display brightness or backlight level. |
+| `setterm` | `setterm brightness [0..100]` | Show or set display brightness. |
+| `setterm` | `setterm backlight [0..100\|follow]` | Show or set auxiliary lighting, such as the keyboard backlight, independently or following display brightness. |
 | `setterm` | `setterm profile [vt100\|ansi\|dumb]`; `setterm charset [utf8\|ascii]` | Configure escape sequences and TUI glyph output for the current port shell. |
 | `setterm` | `setterm keyboard [us\|de]`; `setterm powerkey [sleep\|suspend]` | Show or set the keyboard layout and dedicated KEY action. |
 | `setterm` | `setterm keyrate [off\|1..60 [delay-ms]]` | Show or set the shared keyboard and button repeat policy. |
@@ -555,7 +556,7 @@ setterm foreground [#RRGGBB]
 setterm background [#RRGGBB]
 setterm statusbar [show|hide]
 setterm brightness [0..100]
-setterm backlight [0..100]
+setterm backlight [0..100|follow]
 setterm profile [vt100|ansi|dumb]
 setterm charset [utf8|ascii]
 setterm keyboard [us|de]
@@ -566,6 +567,21 @@ setterm timezone [UTC|UTC+/-offset|Europe/Berlin|POSIX-TZ]
 setterm startup [auto|flash|sd]
 setterm otaurl [url]
 ```
+
+`setterm backlight` controls all registered auxiliary lights. It accepts a
+percentage from 0 to 100 (0 turns them off), or `follow` to track the primary
+display's configured brightness. Independent brightness defaults to 50%; both
+the numeric setting and follow mode are saved across reboots. Follow mode
+requires display brightness control. The keyboard backlights on T-Deck Plus,
+T-LoRa-Pager, ThinkNode M9, and CL-32 use this control. Unsupported hardware
+reports `unsupported`. Suspend and explicit sleep temporarily turn auxiliary
+lighting off; resume restores the selected setting. Shutdown also turns it off.
+The CL-32 companion controller retains its keyboard-activity timeout and fade.
+The T-Deck keyboard firmware's Alt+B toggle operates independently; the query
+shows the SolarOS setting, not changes made by that firmware shortcut.
+
+`backlight` is no longer an alias for display brightness. Scripts that used
+`setterm backlight` for the screen must use `setterm brightness` instead.
 
 `setterm keyrate` configures the shared repeat policy for BLE, PS/2, CardKB,
 and the CL-32 keyboard, fixed board buttons, `gpio-keys`, and ADC D-pads.
