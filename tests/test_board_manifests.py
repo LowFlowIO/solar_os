@@ -839,6 +839,10 @@ bindings = { gpio = 7 }
         buses = {bus["name"]: bus for bus in board["buses"]}
         self.assertNotIn("uart1", buses)
         self.assertEqual(buses["uart0"]["port"], "UART_NUM_1")
+        self.assertEqual(buses["uart0"]["baud_rate"], "9600")
+        gnss = next(device for device in board["devices"] if device["name"] == "gnss0")
+        self.assertEqual(gnss["driver"], "nmea")
+        self.assertEqual(gnss["bindings"], {"uart": "uart0", "alt_baud": 38400})
 
         defines = board["defines"]
         self.assertEqual(
@@ -858,12 +862,12 @@ bindings = { gpio = 7 }
         )
         self.assertIn(".config.uart = {.port = UART_NUM_1", header)
         self.assertIn(
-            '.driver = "ublox-mia-m10q", .name = "gnss0"',
+            '.driver = "nmea", .name = "gnss0"',
             header,
         )
 
         packages = required_packages(board, self.drivers)
-        self.assertIn("ublox_mia_m10q", packages)
+        self.assertIn("nmea_gnss", packages)
 
     def test_waveshare_sim7670_v2_claims_fixed_peripherals(self) -> None:
         board = load_board_manifest(

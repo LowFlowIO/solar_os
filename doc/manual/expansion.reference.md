@@ -261,7 +261,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `rfm69` | HopeRF RFM69W/CW packet radio | `spi=<bus> cs=<pin>`; optional `irq=<pin> reset=<pin>` | Registers a packet-radio target with PA0 power from -18 through 13 dBm. |
 | `rfm69h` | HopeRF RFM69HW/HCW high-power packet radio | `spi=<bus> cs=<pin>`; optional `irq=<pin> reset=<pin>` | Registers a packet-radio target with PA_BOOST power from -2 through 20 dBm. |
 | `rfm95` | HopeRF RFM95W multimode radio | `spi=<bus> cs=<pin>`; optional `irq=<pin> reset=<pin>` | Registers an FSK/GFSK/MSK/GMSK/OOK/LoRa target for the `radio` command. |
-| `sx1262` | Semtech SX1262 packet radio | `spi=<bus> cs=<pin> busy=<pin>`; optional `reset=<pin> irq=<pin>` | Registers a LoRa/(G)FSK packet-radio target for the `radio` command. |
+| `sx1262` | Semtech SX1262 packet radio | `spi=<bus> cs=<pin> busy=<pin>`; optional `reset=<pin> irq=<pin>` | Registers a LoRa/(G)FSK packet-radio target for the `radio` command. Sleep retains configuration; `radio state <name> standby` wakes the radio without receiving, and `radio state <name> rx` enables continuous reception. |
 | `pcd8544` | 84x48 SPI LCD | `spi=<bus> cs=<pin> dc=<pin> reset=<pin>` | Registers an auxiliary display target. |
 | `stream-dlp` | Display Link Protocol byte-stream endpoint | `stream=<id> [timeout-ms=<ms>] [compressed=0\|1]` | Claims an existing exclusive duplex byte stream. |
 | `spi-dlp` | Display Link Protocol SPI endpoint | `spi=<bus> cs=<pin> [ready=<pin>] [reset=<pin>] [compressed=0\|1]` | Discovers geometry and negotiates a wire pixel format. |

@@ -42,6 +42,13 @@ The current tree includes these board targets:
 | `waveshare_esp32_s3_sim7670g_4g` | `waveshare_esp32_s3_sim7670g_4g` | [Waveshare ESP32-S3-SIM7670G-4G V2.0](https://www.waveshare.com/esp32-s3-sim7670g-4g.htm) | Headless ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, CH343/UART console, SIM7670G AT, GNSS, and IPv4 PPP access over UART1, MAX17048 battery gauge, one-bit SDMMC, one WS2812B, Wi-Fi, BLE, and expansion GPIO/ADC/PWM/SPI/I2S. Set the DIP switches to CAM OFF, HUB ON, 4G OFF, USB OFF. With CAM off, the unused camera signal pins are available as expansion GPIOs and can form runtime SPI or I2S buses; GPIO15/GPIO16 remain the shared MAX17048 I2C bus and GPIO46 remains blocked as an input-only strapping pin. SolarOS drives GPIO21 active-high to control the modem VBAT rail; leave the 4G switch OFF to avoid contention and permit software power-off/reset. The modem UART belongs exclusively to PPP while connected; disconnect it before AT or GNSS use. Camera support is not included. |
 | `waveshare_esp32_s3_sim7670g_4g_epaper` | `waveshare_esp32_s3_sim7670g_4g` with `SOLAR_OS_BOARD=waveshare_esp32_s3_sim7670g_4g_epaper` | Waveshare ESP32-S3-SIM7670G-4G E-paper workbench | Expansion-export reference target with a fixed M5Stack TAB5 keyboard on the board-owned I2C bus at address `0x6d`, INT on GPIO41, and a fixed primary 400x300 SSD1683 display on SPI2 using GPIO3/GPIO7 through GPIO12. GPIO40 remains available for expansion. |
 
+T-Deck Plus registers its factory L76K or MIA-M10Q receiver as `gnss0` through
+the `nmea` driver, listening at 9600 baud and trying 38400 if needed. Use
+`gnss list` and `gnss fix gnss0` to inspect it. This NMEA path supplies position,
+UTC, and satellite information; position accuracy and PDOP are unavailable.
+The receiver has no independent power control. The standard T-Deck Plus has no
+onboard NFC reader.
+
 ## Define a custom board
 
 New board profiles use one versioned TOML manifest in
