@@ -91,14 +91,17 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Roll trackball up / down / left / right | One arrow key in the dominant direction after movement stops. |
 | Press trackball | Enter — select/open. |
 | Keyboard Enter | Enter. |
-| Microphone-icon key | Tab — complete a shell command or argument; press twice to list matches. |
+| Tap microphone-icon key (Mic) | Tab on release — complete a shell command or argument; tap twice to list matches. |
 | Shift + microphone-icon key | Ctrl — keep Mic held while pressing the other key. |
 | Sym + microphone-icon key | Type `0`. |
+| Shift + trackball arrows | Extend the text selection in the editor. |
+| Shift + Mic + trackball left / right | Move the cursor one word left / right. |
 | Alt+C | Escape — back/cancel where supported. |
 | Alt+Q | Close the foreground app. |
 | Alt+B | Toggle the keyboard backlight through the keyboard firmware; the shortcut does not type a character. |
 | Alt + trackball up / down | Page Up / Page Down. |
 | Alt + trackball left / right | Previous / next retained session on the focused display. |
+| Alt + Mic | Next retained session on the focused display. |
 | Alt+Enter | Toggle full screen in shared text menus. |
 | Hold Sym + another key | Type the symbol from the keyboard's symbol layer. |
 | Hold Shift + another key | Type its shifted character. |
@@ -107,15 +110,24 @@ Each continuous roll produces one arrow key after 80 ms without movement.
 The direction follows the greater net horizontal or vertical movement;
 opposite movements cancel. Equal diagonals use the most recently moved axis.
 Gestures retain the modifiers held at the last movement pulse, so they can be
-released while the ball settles. Shift+left/right selects text in the editor;
-Ctrl+left/right moves by words.
+released while the ball settles.
+
+For Ctrl, hold Shift and Mic in either order, then press another key or roll
+the trackball. Shift selects the Ctrl chord and is consumed, so this does not
+also select text. Shift can be released while Mic continues acting as Ctrl;
+releasing Mic releases Ctrl. A plain Mic emits Tab on release, allowing the
+Ctrl chord to be recognized without triggering completion. Sym+Mic retains
+its digit `0` mapping.
+
 Keyboard keys report their actual presses and releases, supporting held controls
 in foreground apps. `setterm keyrate` controls typing repeat; trackball rolls
 remain single navigation taps.
-For Ctrl, hold Shift and Mic in either order. Shift selects the chord and is
-consumed; it can then be released while Mic continues acting as Ctrl. Releasing
-Mic releases Ctrl. A plain Mic emits Tab on release, allowing Shift+Mic to be
-recognized without triggering completion. Sym+Mic retains its digit `0` mapping.
+
+Use `setterm backlight 0` to turn off the keyboard light, or
+`setterm backlight 100` for full brightness. Values from 0 to 100 set it
+independently of display brightness; `setterm backlight follow` makes it track
+the display. Alt+B is the keyboard firmware's own toggle; its changes are not
+reflected in the `setterm backlight` query.
 
 ## CL-32
 
