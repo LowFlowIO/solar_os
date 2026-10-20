@@ -50,6 +50,10 @@ static void dispatch_desktop_queue(void)
 #include "solar_os_log.h"
 
 static int trackball_levels[64];
+static void (*trackball_handlers[64])(void *);
+static void *trackball_args[64];
+static gpio_int_type_t trackball_intr[64];
+static int fail_trackball_pin = -1;
 
 esp_err_t gpio_config(const gpio_config_t *config)
 {
@@ -60,25 +64,35 @@ esp_err_t gpio_config(const gpio_config_t *config)
 }
 
 int gpio_get_level(gpio_num_t pin) { return trackball_levels[pin]; }
+esp_err_t gpio_install_isr_service(int flags)
+{ assert(flags == 0); return ESP_ERR_INVALID_STATE; /* Already shared with BOOT. */ }
+esp_err_t gpio_isr_handler_add(gpio_num_t pin, void (*handler)(void *), void *arg)
+{
+    if (pin == fail_trackball_pin) return ESP_FAIL;
+    assert(trackball_handlers[pin] == NULL);
+    trackball_handlers[pin] = handler;
+    trackball_args[pin] = arg;
+    return ESP_OK;
+}
+esp_err_t gpio_isr_handler_remove(gpio_num_t pin)
+{ trackball_handlers[pin] = NULL; return ESP_OK; }
+esp_err_t gpio_set_intr_type(gpio_num_t pin, gpio_int_type_t type)
+{ trackball_intr[pin] = type; return ESP_OK; }
 
 esp_err_t solar_os_log_write(solar_os_log_level_t level, const char *tag, const char *fmt, ...)
 { (void)level; (void)tag; (void)fmt; return ESP_OK; }
 
-static void trackball_pulse(gpio_num_t pin)
+static void trackball_edge(gpio_num_t pin)
 {
-    trackball_levels[pin] = 0;
-    solar_os_buttons_poll();
-    now_us += 30000;
-    solar_os_buttons_poll();
-    trackball_levels[pin] = 1;
-    solar_os_buttons_poll();
-    now_us += 30000;
-    solar_os_buttons_poll();
+    trackball_levels[pin] ^= 1;
+    now_us += 1000;
+    assert(trackball_intr[pin] == GPIO_INTR_ANYEDGE);
+    assert(trackball_handlers[pin] != NULL);
+    trackball_handlers[pin](trackball_args[pin]);
 }
 
-static void expect_trackball_tap(gpio_num_t pin, uint8_t key, uint8_t modifiers)
+static void expect_queued_motion_tap(uint8_t key, uint8_t modifiers)
 {
-    trackball_pulse(pin);
     solar_os_input_key_event_t events[3];
     assert(solar_os_input_read_events(events, 3) == 2);
     assert(events[0].key == key && events[0].modifiers == modifiers);
@@ -90,11 +104,38 @@ static void expect_trackball_tap(gpio_num_t pin, uint8_t key, uint8_t modifiers)
     assert(!session_switch_alt_held && !overlay_active && session_switch_nav_held == 0);
 }
 
+static void expect_motion_tap(uint8_t key, uint8_t modifiers)
+{
+    now_us += 80000;
+    solar_os_buttons_poll();
+    expect_queued_motion_tap(key, modifiers);
+}
+
+static void expect_no_trackball_events(void)
+{
+    solar_os_input_key_event_t event;
+    assert(solar_os_input_read_events(&event, 1) == 0);
+}
+
+static void expect_trackball_tap(gpio_num_t pin, uint8_t key, uint8_t modifiers)
+{
+    trackball_edge(pin);
+    solar_os_buttons_poll();
+    expect_no_trackball_events();
+    expect_motion_tap(key, modifiers);
+}
+
 static void test_trackball_session_switching(void)
 {
     char_input = false;
     now_us = 1000000;
     for (size_t i = 0; i < 64; i++) trackball_levels[i] = 1;
+    /* Partial initialization must release handlers and allow a clean retry. */
+    fail_trackball_pin = 1;
+    assert(solar_os_buttons_init() == ESP_FAIL);
+    for (size_t i = 0; i < 64; i++) assert(trackball_handlers[i] == NULL);
+    fail_trackball_pin = -1;
+    assert(solar_os_buttons_init() == ESP_OK);
     assert(solar_os_buttons_init() == ESP_OK);
     solar_os_input_source_t keyboard;
     assert(solar_os_input_keyboard_source_open("tdeck", true, &keyboard) == ESP_OK);
@@ -114,10 +155,8 @@ static void test_trackball_session_switching(void)
     /* Board-translated chords remain plain Page Up/Down, without an Alt prefix. */
     expect_trackball_tap(3, SOLAR_OS_KEY_PAGE_UP, 0);
     expect_trackball_tap(15, SOLAR_OS_KEY_PAGE_DOWN, 0);
-    trackball_pulse(1); /* Existing horizontal guard still filters this pulse. */
     solar_os_input_key_event_t event;
-    assert(solar_os_input_read_events(&event, 1) == 0);
-    now_us += 100000;
+    /* A new horizontal stroke works without the old vertical-axis blackout. */
     expect_trackball_tap(1, SOLAR_OS_KEY_LEFT, SOLAR_OS_INPUT_MOD_LEFT_ALT);
     assert(previous_sessions == 2 && next_sessions == 2);
 
@@ -127,6 +166,128 @@ static void test_trackball_session_switching(void)
     assert(solar_os_input_read_events(&event, 1) == 0); /* No stuck key/repeat. */
     assert(previous_sessions == 2 && next_sessions == 2);
     solar_os_input_source_close(keyboard);
+
+    /* Short edges, including complete pulses between polls, contribute to one
+     * vector. Minor horizontal movement cancels; the dominant axis wins. */
+    const gpio_num_t pins[] = {3, 3, 1, 3, 2};
+    for (size_t i = 0; i < sizeof(pins) / sizeof(pins[0]); i++) trackball_edge(pins[i]);
+    solar_os_buttons_poll();
+    expect_no_trackball_events();
+    now_us += 79000;
+    solar_os_buttons_poll();
+    expect_no_trackball_events();
+    now_us += 1000;
+    solar_os_buttons_poll();
+    expect_queued_motion_tap(SOLAR_OS_KEY_UP, 0);
+
+    /* A long continuous stroke still emits nothing until it actually stops. */
+    for (unsigned i = 0; i < 10; i++) {
+        now_us += 20000;
+        trackball_edge(2);
+        solar_os_buttons_poll();
+        expect_no_trackball_events();
+    }
+    trackball_edge(3); /* Small upward drift must not turn this into Up. */
+    solar_os_buttons_poll();
+    expect_motion_tap(SOLAR_OS_KEY_RIGHT, 0);
+
+    /* Reversals cancel as relative movement; a closed movement emits no key. */
+    trackball_edge(1);
+    trackball_edge(2);
+    trackball_edge(3);
+    trackball_edge(15);
+    solar_os_buttons_poll();
+    now_us += 80000;
+    solar_os_buttons_poll();
+    expect_no_trackball_events();
+
+    /* Equal diagonals prefer the most recently moved axis. */
+    trackball_edge(3);
+    trackball_edge(2);
+    solar_os_buttons_poll();
+    expect_motion_tap(SOLAR_OS_KEY_RIGHT, 0);
+
+    /* A delayed poll still separates strokes using edge timestamps. */
+    trackball_edge(3);
+    now_us += 80000;
+    trackball_edge(1);
+    now_us += 80000;
+    solar_os_buttons_poll();
+    solar_os_input_key_event_t strokes[5];
+    assert(solar_os_input_read_events(strokes, 5) == 4);
+    assert(strokes[0].key == SOLAR_OS_KEY_UP && strokes[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    assert(strokes[2].key == SOLAR_OS_KEY_LEFT && strokes[3].action == SOLAR_OS_INPUT_KEY_RELEASE);
+
+    /* Releasing Alt during the quiet interval must preserve the gesture's
+     * shortcut, including the board's Page Up/Down translation. */
+    assert(solar_os_input_keyboard_source_open("gesture", true, &keyboard) == ESP_OK);
+    solar_os_input_composition_set_modifiers(keyboard, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    trackball_edge(1);
+    solar_os_buttons_poll();
+    solar_os_input_composition_set_modifiers(keyboard, 0);
+    expect_motion_tap(SOLAR_OS_KEY_LEFT, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    solar_os_input_composition_set_modifiers(keyboard, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    trackball_edge(3);
+    solar_os_buttons_poll();
+    solar_os_input_composition_set_modifiers(keyboard, 0);
+    expect_motion_tap(SOLAR_OS_KEY_PAGE_UP, 0);
+    /* Also preserve Alt when the keyboard releases it before the first poll. */
+    solar_os_input_composition_set_modifiers(keyboard, SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    trackball_edge(15);
+    solar_os_input_composition_set_modifiers(keyboard, 0);
+    expect_motion_tap(SOLAR_OS_KEY_PAGE_DOWN, 0);
+    solar_os_input_source_close(keyboard);
+
+    /* A stalled main loop has a bounded backlog; overflow must never leave a
+     * held arrow or corrupt the ring, and fresh input must still work. */
+    for (size_t i = 0; i < 100; i++) trackball_edge(1);
+    solar_os_button_debug_info_t info;
+    assert(solar_os_buttons_debug_get(2, &info));
+    assert(info.dropped_edges > 0);
+    solar_os_buttons_poll();
+    expect_no_trackball_events();
+    now_us += 50000; /* Dropped tail edges still postpone the end of motion. */
+    solar_os_buttons_poll();
+    expect_no_trackball_events();
+    expect_motion_tap(SOLAR_OS_KEY_LEFT, 0);
+    solar_os_buttons_poll();
+    expect_no_trackball_events();
+    expect_trackball_tap(2, SOLAR_OS_KEY_RIGHT, 0);
+
+    /* Backpressure in the shared input queue must retain the pending motion
+     * and retry the complete press/release pair, without a duplicate press. */
+    solar_os_input_source_t filler;
+    assert(solar_os_input_keyboard_source_open("filler", true, &filler) == ESP_OK);
+    unsigned filled = 0;
+    while (solar_os_input_write_key_tap(filler, 1, SOLAR_OS_INPUT_USAGE_NONE, 'x', 0) == ESP_OK) {
+        filled++;
+        assert(filled < 100);
+    }
+    trackball_edge(3);
+    solar_os_buttons_poll();
+    now_us += 80000;
+    solar_os_buttons_poll();
+    unsigned drained = 0;
+    while (solar_os_input_read_events(&event, 1) != 0) {
+        assert(event.key == 'x');
+        drained++;
+    }
+    assert(drained == filled * 2);
+    solar_os_buttons_poll();
+    solar_os_input_key_event_t tap[2];
+    assert(solar_os_input_read_events(tap, 2) == 2);
+    assert(tap[0].key == SOLAR_OS_KEY_UP && tap[0].action == SOLAR_OS_INPUT_KEY_PRESS);
+    assert(tap[1].key == SOLAR_OS_KEY_UP && tap[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    solar_os_buttons_poll();
+    assert(solar_os_input_read_events(&event, 1) == 0);
+    solar_os_input_source_close(filler);
+
+    /* The millisecond counter may wrap while a gesture is settling. */
+    now_us = ((int64_t)UINT32_MAX - 40) * 1000;
+    trackball_edge(2);
+    solar_os_buttons_poll();
+    expect_no_trackball_events();
+    expect_motion_tap(SOLAR_OS_KEY_RIGHT, 0);
 }
 #endif
 

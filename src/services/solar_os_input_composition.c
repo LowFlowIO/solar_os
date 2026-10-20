@@ -27,14 +27,21 @@ uint8_t solar_os_input_composition_modifiers(void)
 
 uint8_t solar_os_input_composition_apply(uint8_t key)
 {
+    return solar_os_input_composition_apply_with_modifiers(
+        key, solar_os_input_composition_modifiers());
+}
+
+uint8_t solar_os_input_composition_apply_with_modifiers(uint8_t key, uint8_t modifiers)
+{
 #ifdef SOLAR_OS_BOARD_INPUT_CHORDS
-    const uint8_t modifiers = solar_os_input_composition_modifiers();
     for (size_t i = 0; i < sizeof(board_chords) / sizeof(board_chords[0]); i++) {
         if (board_chords[i].input_key == key &&
             (modifiers & board_chords[i].modifiers) == board_chords[i].modifiers) {
             return board_chords[i].output_key;
         }
     }
+#else
+    (void)modifiers;
 #endif
     return key;
 }

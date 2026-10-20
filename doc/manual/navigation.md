@@ -88,7 +88,7 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 
 | Control | Action |
 | --- | --- |
-| Roll trackball up / down / left / right | Corresponding arrow key. |
+| Roll trackball up / down / left / right | One arrow key in the dominant direction after movement stops. |
 | Press trackball | Enter — select/open. |
 | Keyboard Enter | Enter. |
 | Microphone-icon key | Tab — complete a shell command or argument; press twice to list matches. |
@@ -101,6 +101,12 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Alt+Enter | Toggle full screen in shared text menus. |
 | Hold Sym + another key | Type the symbol from the keyboard's symbol layer. |
 | Hold Shift + another key | Type its shifted character. |
+
+Each continuous roll produces one arrow key after 80 ms without movement.
+The direction follows the greater net horizontal or vertical movement;
+opposite movements cancel. Equal diagonals use the most recently moved axis.
+Alt shortcuts retain the modifier held when the gesture begins, so Alt can be
+released while the ball settles.
 
 ## CL-32
 
