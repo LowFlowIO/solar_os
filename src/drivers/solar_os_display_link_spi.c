@@ -156,6 +156,7 @@ esp_err_t solar_os_display_link_create(const solar_os_display_link_config_t *c,
     .protocol = {.ctx = d, .now_us = now_us, .sleep_us = sleep_us, .exchange = exchange},
     .prepare = prepare, .configured = configured, .destroy = destroy,
     .reset_available = c->reset >= 0, .clock_hz = c->clock_hz};
-  solar_os_display_link_options_t options = {.timeout_ms = c->boot_ms, .format = -1};
+  solar_os_display_link_options_t options = {.timeout_ms = c->boot_ms, .format = -1,
+      .compressed = c->compressed};
   return solar_os_display_link_open_transport(&io, &options, out);
 }

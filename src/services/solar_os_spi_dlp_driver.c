@@ -1,5 +1,7 @@
 #include "solar_os_spi_dlp.h"
 static const solar_os_expansion_binding_spec_t bindings[] = {
+  {.key = "compressed", .value_hint = "0|1", .kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER,
+    .role = "compressed", .has_value_range = true, .min_value = 0, .max_value = 1},
     {.key = "spi",
      .value_hint = "bus",
      .kind = SOLAR_OS_EXPANSION_BINDING_SPI_BUS,

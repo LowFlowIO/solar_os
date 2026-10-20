@@ -11,7 +11,7 @@ typedef struct {
   dlp_device_t device;
   dlp_stream_t parser;
   uint8_t image[IMAGE_SIZE], reply[DLP_CELL_SIZE];
-  size_t pending, sent, bytes, commands, writes, full, partial, presentations;
+  size_t pending, sent, bytes, commands, writes, full, partial, presentations, lz4;
   uint16_t x, y, width;
   uint64_t now;
   unsigned reads, attempts;
@@ -86,8 +86,9 @@ static int write_stream(void *ctx, const uint8_t *data, size_t n) {
       continue;
     assert(!p->pending);
     p->commands++;
+    if (cell[7] == DLP_RECT_LZ4) p->lz4++;
     assert(dlp_device_receive(&p->device, cell, reply, p->now));
-    if (p->old_peer && cell[7] == DLP_GET_EXTENSIONS) {
+    if (p->old_peer && (cell[7] == DLP_GET_EXTENSIONS || cell[7] == DLP_GET_CODECS)) {
       dlp_cell_t c;
       assert(dlp_decode(&c, reply));
       c.result = DLP_UNSUPPORTED;
@@ -121,7 +122,7 @@ static void setup(unsigned format, dlp_stream_host_t *stream, dlp_host_t *host,
                      .height = HEIGHT,
                      .formats = DLP_FORMAT_BIT(format),
                      .preferred_format = (uint16_t)format,
-                     .capabilities = DLP_PRESERVE_CONTENT | DLP_SYNC | DLP_RLE,
+                     .capabilities = DLP_PRESERVE_CONTENT | DLP_SYNC | DLP_RLE | DLP_LZ4,
                      /* No SPI clock: a genuine stream-only peripheral. */
                      .max_rect_bytes = dlp_row_bytes(WIDTH, format) * 7,
                      .command_ms = 1000,
@@ -277,7 +278,47 @@ static void bounds_and_deadlines(void) {
          DLP_LINK_ERROR);
   assert(f.now - start < 6000 && !host.configured);
 }
+static void compressed_uploads(void) {
+  for (unsigned legacy = 0; legacy < 2; legacy++)
+    for (unsigned peer = 0; peer < 3; peer++)
+      for (unsigned enabled = 0; enabled < 2; enabled++) {
+        dlp_stream_host_t stream;
+        dlp_host_t host;
+        setup(DLP_RGB565_BE, &stream, &host, legacy != 0, peer == 1);
+        if (peer == 2) f.device.info.capabilities &= ~(uint32_t)DLP_LZ4;
+        host.compressed = enabled != 0;
+        assert(!dlp_host_extensions(&host));
+        assert(!!(host.info.capabilities & DLP_LZ4) == (enabled && peer == 0));
+        uint8_t image[IMAGE_SIZE], retained[IMAGE_SIZE]; bool valid = false;
+        for (size_t k = 0; k < sizeof(image); k++) image[k] = k % 2 ? 0 : 248;
+        f.drop_present = true;
+        assert(!dlp_host_upload_frame(&host, 1, image, sizeof(image), retained, &valid));
+        assert(valid && !memcmp(image, f.image, sizeof(image)) && f.presentations == 1);
+        assert(!!f.lz4 == (enabled && peer == 0));
+        image[100] ^= 1;
+        assert(!dlp_host_upload_frame(&host, 2, image, sizeof(image), retained, &valid));
+        assert(valid && !memcmp(image, f.image, sizeof(image)) && f.presentations == 2);
+      }
+}
+static void malformed_lz4(void) {
+  dlp_stream_host_t stream; dlp_host_t host;
+  setup(DLP_RGB565_BE, &stream, &host, false, false);
+  assert(!dlp_host_begin_frame(&host, 1, true));
+  assert(!dlp_host_begin_rect(&host, 1, 1, 0, 0, WIDTH, 1));
+  uint8_t payload[18] = {0};
+  dlp_put_u32(payload, 1); dlp_put_u32(payload + 4, 1);
+  const uint8_t bad[][4] = {{0, 0, 0, 0}, {0, 1, 0, 0}, {255, 255, 255, 255}};
+  for (unsigned k = 0; k < 3; k++) {
+    dlp_put_u16(payload + 12, 100); memcpy(payload + 14, bad[k], 4);
+    assert(dlp_host_command(&host, DLP_RECT_LZ4, payload, sizeof(payload), NULL, 0) == DLP_BAD_ARGUMENT);
+    assert(!f.writes && !f.device.status.offset);
+  }
+  dlp_put_u16(payload + 12, 1025);
+  assert(dlp_host_command(&host, DLP_RECT_LZ4, payload, sizeof(payload), NULL, 0) == DLP_BAD_ARGUMENT);
+  assert(!f.writes && !f.device.status.offset);
+}
 int main(void) {
+  compressed_uploads(); malformed_lz4();
   codecs();
   bounds_and_deadlines();
   for (unsigned format = 0; format < 5; format++)

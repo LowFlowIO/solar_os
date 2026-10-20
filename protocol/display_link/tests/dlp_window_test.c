@@ -136,7 +136,7 @@ static void setup(dlp_host_t *h, dlp_stream_host_t *stream,
   memset(&m, 0, sizeof(m)); m.spi = spi; m.compact = compact;
   dlp_info_t info = {.width = WIDTH, .height = HEIGHT, .formats = 1,
     .max_clock_hz = 2000000, .max_rect_bytes = SIZE, .command_ms = 1000,
-    .present_ms = 100, .capabilities = DLP_PRESERVE_CONTENT | DLP_SYNC | DLP_RLE};
+    .present_ms = 100, .capabilities = DLP_PRESERVE_CONTENT | DLP_SYNC | DLP_RLE | DLP_LZ4};
   dlp_backend_t b = {.ctx = &m, .configure = configure, .begin_frame = begin_frame,
     .begin_rect = begin_rect, .write = write_data, .present = present,
     .poll_present = poll_present, .abort = abort_frame};
@@ -156,20 +156,23 @@ static void setup(dlp_host_t *h, dlp_stream_host_t *stream,
   assert(window->active == enabled);
   if (enabled) assert(window->size == size);
 }
-static void exercise(unsigned window, bool spi, bool compact, unsigned fault) {
+static void exercise(unsigned window, bool spi, bool compact, unsigned fault, bool compressed) {
   dlp_host_t host; dlp_stream_host_t stream; dlp_host_window_t storage;
   setup(&host, &stream, &storage, window, spi, compact, true);
+  host.compressed = compressed;
+  assert(!dlp_host_extensions(&host));
   m.drop = fault == 1; m.duplicate = fault == 2; m.reorder = fault == 3;
   m.corrupt = fault == 4; m.drop_ack = fault == 5;
   m.drop_completion = fault == 6;
   uint8_t image[SIZE], retained[SIZE]; bool valid = false;
-  for (size_t k = 0; k < SIZE; k++) image[k] = (uint8_t)(k * 47 + k / 17);
+  for (size_t k = 0; k < SIZE; k++) image[k] = compressed ? (uint8_t)(k % 16) : (uint8_t)(k * 47 + k / 17);
   assert(!dlp_host_upload_frame(&host, 1, image, SIZE, retained, &valid));
   assert(valid && m.presents == 1 && !memcmp(image, m.image, SIZE));
   /* Raw uploads have 20 backend writes, even after loss/duplication/reordering. */
-  assert(m.writes == (SIZE + DLP_DATA_SIZE - 1) / DLP_DATA_SIZE);
+  assert(m.writes == (compressed ? SIZE / DLP_RLE_MAX_DECODED :
+                      (SIZE + DLP_DATA_SIZE - 1) / DLP_DATA_SIZE));
   /* An evicted duplicate cannot repeat a frame or become a new operation. */
-  if (window == 16) {
+  if (window == 16 && !compressed) {
     dlp_cell_t old = {.kind = DLP_PUSH, .opcode = DLP_PRESENT,
       .boot = host.boot, .session = host.session, .sequence = 1, .length = 4};
     uint8_t cell[256], out[256];
@@ -273,8 +276,10 @@ int main(void) {
   for (unsigned spi = 0; spi < 2; spi++)
     for (unsigned compact = 0; compact < 2; compact++)
       for (unsigned fault = 0; fault < 7; fault++)
-        exercise(16, spi != 0, compact != 0, fault);
-  exercise(1, false, true, 1);
+        for (unsigned compressed = 0; compressed < 2; compressed++)
+          exercise(16, spi != 0, compact != 0, fault, compressed != 0);
+  exercise(1, false, true, 1, false);
+  exercise(1, false, true, 1, true);
   failures(); rules(); round_trips(); slow_transport_budget();
   puts("DLP windows: SPI/streams, backpressure, loss, corruption, duplicates, reordering, replay, completion and fencing PASS");
   return 0;

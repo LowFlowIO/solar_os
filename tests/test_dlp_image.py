@@ -26,8 +26,8 @@ class Clock:
 
 class TimedPeer(dlp.DisplayLink):
     """A configured peer with deterministic upload and completion delays."""
-    def __init__(self, port=None, compact=True):
-        super().__init__(port, compact=compact)
+    def __init__(self, port=None, compact=True, *, compressed=False):
+        super().__init__(port, compact=compact, compressed=compressed)
         self.width, self.height = 16, 8
         self.max_rect_bytes = 16
         self.capabilities = dlp.PRESERVE_CONTENT | dlp.RLE | dlp.SYNC

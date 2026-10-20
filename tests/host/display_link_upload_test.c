@@ -68,7 +68,7 @@ static int begin_rect(void *ctx, uint16_t x, uint16_t y, uint16_t w,
 }
 static int write_data(void *ctx, uint32_t offset, const uint8_t *p, size_t n) {
   fixture_t *f = ctx;
-  assert(n <= (f->cached ? SDLP_RLE_MAX_DECODED : 208));
+  assert(n <= SDLP_RLE_MAX_DECODED);
   static const unsigned bpp[] = {1, 2, 4, 8, 16};
   unsigned bits = bpp[f->device.format];
   uint32_t row = sdlp_row_bytes(f->width, f->device.format);
@@ -100,7 +100,7 @@ static int exchange(void *ctx, const uint8_t *tx, uint8_t *rx, uint32_t hz,
 }
 #include "display_link_upload.inc"
 static void run(unsigned format, uint16_t width, uint16_t height,
-                unsigned rows, bool cached) {
+                unsigned rows, bool cached, bool compressed) {
   fixture_t *f = &fixture;
   memset(f, 0, sizeof(*f));
   f->cached = cached;
@@ -111,7 +111,7 @@ static void run(unsigned format, uint16_t width, uint16_t height,
                       .height = height,
                       .formats = SDLP_FORMAT_BIT(format),
                       .preferred_format = format,
-                      .capabilities = cached ? SDLP_PRESERVE_CONTENT | SDLP_RLE | SDLP_SYNC : 0,
+                      .capabilities = (cached ? SDLP_PRESERVE_CONTENT | SDLP_RLE | SDLP_SYNC : 0) | SDLP_LZ4,
                       .max_clock_hz = 1000000,
                       .min_gap_us = 5000,
                       .max_rect_bytes = f->row_bytes * rows,
@@ -131,6 +131,7 @@ static void run(unsigned format, uint16_t width, uint16_t height,
       .ctx = f, .exchange = exchange, .now_us = now_us, .sleep_us = sleep_us};
   solar_os_display_link_t d = {0};
   sdlp_host_init(&d.host, &t);
+  d.host.compressed = compressed;
   assert(!sdlp_host_discover(&d.host, 5000000));
   assert(!sdlp_host_configure(&d.host, 123, format, 1000000));
   assert(!sdlp_host_extensions(&d.host));
@@ -191,20 +192,22 @@ static void run(unsigned format, uint16_t width, uint16_t height,
     assert(!memcmp(d.wire, f->image, d.wire_size));
   }
   if (width == 640 && height == 200)
-    assert(f->writes == 77);
+    assert(compressed ? f->writes < 77 : f->writes == 77);
   free(d.wire); free(d.retained);
   free(d.pixels);
   free(d.row);
   free(f->image);
 }
 int main(void) {
-  for (unsigned f = 0; f < 5; f++) {
-    run(f, 13, 3, 1, false);
-    run(f, 13, 3, 2, false);
-    run(f, 241, 19, 7, true);
+  for (unsigned compressed = 0; compressed < 2; compressed++) {
+    for (unsigned f = 0; f < 5; f++) {
+      run(f, 13, 3, 1, false, compressed != 0);
+      run(f, 13, 3, 2, false, compressed != 0);
+      run(f, 241, 19, 7, true, compressed != 0);
+    }
+    run(SDLP_MONO1, 640, 200, 200, false, compressed != 0);
+    run(SDLP_MONO1, 240, 64, 64, true, compressed != 0);
   }
-  run(SDLP_MONO1, 640, 200, 200, false);
-  run(SDLP_MONO1, 240, 64, 64, true);
   uint8_t mono[] = {0x15}, rgb[] = {0xf8, 0, 0, 0x1f};
   assert(
       raster_valid(mono, 1, 5, 1, 1, SOLAR_OS_DISPLAY_FORMAT_MONO1, NULL, 0));

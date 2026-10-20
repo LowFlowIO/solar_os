@@ -91,7 +91,7 @@ bool sdlp_info_valid(const sdlp_info_t *i) {
       (i->formats & ~SDLP_FORMATS) || i->preferred_format >= 5 ||
       !(i->formats & SDLP_FORMAT_BIT(i->preferred_format)) ||
       (i->max_clock_hz && i->max_clock_hz < 100000) || i->min_gap_us > 10000 || !i->command_ms ||
-      !i->present_ms || (i->capabilities & ~UINT32_C(127)) ||
+      !i->present_ms || (i->capabilities & ~UINT32_C(255)) ||
       !memchr(i->model, 0, 32) || !memchr(i->firmware, 0, 32))
     return false;
   for (unsigned f = 0; f < 5; f++)
@@ -316,6 +316,12 @@ static int execute(sdlp_device_t *d, const sdlp_cell_t *q, sdlp_cell_t *a,
     a->length = 24;
     return SDLP_OK;
   }
+  if (q->opcode == SDLP_GET_CODECS) {
+    if (q->length) return SDLP_BAD_ARGUMENT;
+    sdlp_put_u32(a->payload, d->info.capabilities & SDLP_LZ4);
+    a->length = 4;
+    return SDLP_OK;
+  }
   if (q->opcode == SDLP_GET_EXTENSIONS || q->opcode == SDLP_GET_SYNC) {
     if (q->length) return SDLP_BAD_ARGUMENT;
     if (q->opcode == SDLP_GET_SYNC && !(d->info.capabilities & SDLP_SYNC))
@@ -359,7 +365,8 @@ static int execute(sdlp_device_t *d, const sdlp_cell_t *q, sdlp_cell_t *a,
   if (d->window && d->window->active && d->window->error)
     return SDLP_BAD_STATE;
   if (q->opcode != SDLP_BEGIN_FRAME && q->opcode != SDLP_BEGIN_RECT &&
-      q->opcode != SDLP_RECT_DATA && q->opcode != SDLP_RECT_RLE && q->opcode != SDLP_PRESENT &&
+      q->opcode != SDLP_RECT_DATA && q->opcode != SDLP_RECT_RLE &&
+      q->opcode != SDLP_RECT_LZ4 && q->opcode != SDLP_PRESENT &&
       q->opcode != SDLP_ABORT_FRAME && q->opcode != SDLP_SET_BRIGHTNESS &&
       q->opcode != SDLP_SET_POWER)
     return SDLP_UNSUPPORTED;
@@ -456,18 +463,21 @@ static int execute(sdlp_device_t *d, const sdlp_cell_t *q, sdlp_cell_t *a,
       static const unsigned bits[] = {1, 2, 4, 8, 16};
       d->row_used_bits = (uint16_t)((w * bits[d->format]) % 8);
     }
-  } else if (q->opcode == SDLP_RECT_DATA || q->opcode == SDLP_RECT_RLE) {
+  } else if (q->opcode == SDLP_RECT_DATA || q->opcode == SDLP_RECT_RLE ||
+             q->opcode == SDLP_RECT_LZ4) {
     if (q->length < 13 || !s->rectangle ||
         sdlp_get_u32(p + 4) != s->rectangle || sdlp_get_u32(p + 8) != s->offset)
       return SDLP_BAD_ARGUMENT;
     uint32_t n = q->length - 12;
     const uint8_t *bytes = p + 12;
-    if (q->opcode == SDLP_RECT_RLE) {
-      if (!(d->info.capabilities & SDLP_RLE)) return SDLP_UNSUPPORTED;
+    if (q->opcode != SDLP_RECT_DATA) {
+      bool lz4 = q->opcode == SDLP_RECT_LZ4;
+      if (!(d->info.capabilities & (lz4 ? SDLP_LZ4 : SDLP_RLE))) return SDLP_UNSUPPORTED;
       if (q->length < 16) return SDLP_BAD_ARGUMENT;
       n = sdlp_get_u16(p + 12);
       if (!n || n > sizeof(d->decoded) ||
-          !sdlp_rle_decode(d->decoded, n, p + 14, q->length - 14))
+          !(lz4 ? sdlp_lz4_decode(d->decoded, n, p + 14, q->length - 14) :
+                   sdlp_rle_decode(d->decoded, n, p + 14, q->length - 14)))
         return SDLP_BAD_ARGUMENT;
       bytes = d->decoded;
     }
@@ -539,6 +549,7 @@ bool sdlp_device_receive(sdlp_device_t *d, const uint8_t in[256],
     else if (q.sequence != w->applied + 1) return false;
     else if (q.opcode != SDLP_BEGIN_FRAME && q.opcode != SDLP_BEGIN_RECT &&
              q.opcode != SDLP_RECT_DATA && q.opcode != SDLP_RECT_RLE &&
+             q.opcode != SDLP_RECT_LZ4 &&
              q.opcode != SDLP_PRESENT) error = SDLP_UNSUPPORTED;
     else error = execute(d, &q, &a, now);
     if (error) {
@@ -757,12 +768,21 @@ int sdlp_host_extensions(sdlp_host_t *h) {
   h->info.capabilities &= UINT32_C(31);
   sdlp_cell_t extensions;
   int r = sdlp_host_command(h, SDLP_GET_EXTENSIONS, NULL, 0, &extensions, 0);
-  if (r == SDLP_UNSUPPORTED) return SDLP_OK;
-  if (r) return r;
-  if (extensions.length != 4 ||
-      (sdlp_get_u32(extensions.payload) & ~(uint32_t)(SDLP_RLE | SDLP_SYNC)))
-    return SDLP_INVALID_CELL;
-  h->info.capabilities |= sdlp_get_u32(extensions.payload);
+  if (r != SDLP_UNSUPPORTED) {
+    if (r) return r;
+    if (extensions.length != 4 ||
+        (sdlp_get_u32(extensions.payload) & ~(uint32_t)(SDLP_RLE | SDLP_SYNC)))
+      return SDLP_INVALID_CELL;
+    h->info.capabilities |= sdlp_get_u32(extensions.payload);
+  }
+  if (h->compressed) {
+    r = sdlp_host_command(h, SDLP_GET_CODECS, NULL, 0, &extensions, 0);
+    if (r == SDLP_UNSUPPORTED) return SDLP_OK;
+    if (r) return r;
+    if (extensions.length != 4 || (sdlp_get_u32(extensions.payload) & ~(uint32_t)SDLP_LZ4))
+      return SDLP_INVALID_CELL;
+    h->info.capabilities |= sdlp_get_u32(extensions.payload);
+  }
   return SDLP_OK;
 }
 int sdlp_host_negotiate_window(sdlp_host_t *h, sdlp_host_window_t *w, unsigned size) {
@@ -935,6 +955,8 @@ int sdlp_host_wait_frame(sdlp_host_t *h, uint32_t frame, uint64_t deadline) {
   return SDLP_DEADLINE;
 }
 
+#include "lz4.inc"
+
 size_t sdlp_rle_encode(uint8_t *out, size_t cap, const uint8_t *in, size_t size,
                        size_t *consumed) {
   size_t at = 0, used = 0;
@@ -1039,29 +1061,38 @@ bool sdlp_delta_next(sdlp_delta_t *d, sdlp_rect_t *r) {
 int sdlp_host_write_some(sdlp_host_t *h, uint32_t frame, uint32_t rect,
                          uint32_t offset, const uint8_t *data, size_t size,
                          size_t *consumed) {
-  if (!h || !data || !size || !consumed)
-    return SDLP_BAD_ARGUMENT;
+  if (!h || !data || !size || !consumed) return SDLP_BAD_ARGUMENT;
   *consumed = 0;
   size_t raw = size < SDLP_DATA_SIZE ? size : SDLP_DATA_SIZE;
+  size_t used = raw, encoded = raw;
+  unsigned opcode = SDLP_RECT_DATA;
+  uint8_t p[SDLP_PAYLOAD_SIZE], candidate[SDLP_PAYLOAD_SIZE - 14];
+  memcpy(p + 12, data, raw);
   if (h->info.capabilities & SDLP_RLE) {
-    uint8_t p[SDLP_PAYLOAD_SIZE];
-    size_t decoded,
-        limit = size < SDLP_RLE_MAX_DECODED ? size : SDLP_RLE_MAX_DECODED;
-    size_t n = sdlp_rle_encode(p + 14, sizeof(p) - 14, data, limit, &decoded);
-    if (decoded > raw || (decoded == raw && n + 2 < raw)) {
-      sdlp_put_u32(p, frame);
-      sdlp_put_u32(p + 4, rect);
-      sdlp_put_u32(p + 8, offset);
-      sdlp_put_u16(p + 12, (uint16_t)decoded);
-      int r = upload_command(h, SDLP_RECT_RLE, p, n + 14);
-      if (!r)
-        *consumed = decoded;
-      return r;
+    size_t decoded, limit = size < SDLP_RLE_MAX_DECODED ? size : SDLP_RLE_MAX_DECODED;
+    size_t n = sdlp_rle_encode(candidate, sizeof(candidate), data, limit, &decoded);
+    if (decoded > used || (decoded == used && n + 2 < encoded)) {
+      opcode = SDLP_RECT_RLE; used = decoded; encoded = n + 2;
+      memcpy(p + 14, candidate, n);
     }
   }
-  int r = sdlp_host_write(h, frame, rect, offset, data, raw);
-  if (!r)
-    *consumed = raw;
+  if (h->compressed && (h->info.capabilities & SDLP_LZ4)) {
+    size_t limit = size < SDLP_RLE_MAX_DECODED ? size : SDLP_RLE_MAX_DECODED;
+    for (;;) {
+      size_t n = sdlp_lz4_encode(candidate, sizeof(candidate), data, limit);
+      if (n && (limit > used || (limit == used && n + 2 < encoded))) {
+        opcode = SDLP_RECT_LZ4; used = limit; encoded = n + 2;
+        memcpy(p + 14, candidate, n);
+      }
+      if (limit <= used) break;
+      limit /= 2;
+      if (limit < used) limit = used;
+    }
+  }
+  sdlp_put_u32(p, frame); sdlp_put_u32(p + 4, rect); sdlp_put_u32(p + 8, offset);
+  if (opcode != SDLP_RECT_DATA) sdlp_put_u16(p + 12, (uint16_t)used);
+  int r = upload_command(h, opcode, p, encoded + 12);
+  if (!r) *consumed = used;
   return r;
 }
 static uint64_t rect_cost(const sdlp_host_t *h, const sdlp_rect_t *r) {

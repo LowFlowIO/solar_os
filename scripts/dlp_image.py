@@ -23,6 +23,7 @@ CELL_SIZE = 256
 OK, BUSY, BAD_SESSION, STALE_BOOT = 0, 4, 5, 6
 GET_INFO, CONFIGURE, GET_STATUS = 1, 2, 3
 GET_EXTENSIONS, GET_SYNC, RECT_RLE = 4, 5, 0x15
+GET_CODECS, RECT_LZ4, LZ4 = 8, 0x16, 128
 NEGOTIATE_WINDOW, WINDOW_SYNC, PUSH = 6, 7, 3
 WINDOW_VERSION, MAX_WINDOW = 2, 16
 PRESERVE_CONTENT, RLE, SYNC = 1, 32, 64
@@ -170,7 +171,9 @@ class DisplayLink:
     Serial ports, USB CDC, socket/file adapters and in-process pipes all use
     the same client. Serialize calls; retained image state is per session.
     """
-    def __init__(self, port, timeout=2.0, compact=True):
+    def __init__(self, port, timeout=2.0, compact=True, *, compressed=False):
+        self.compressed = compressed
+        self._lz4 = None
         self.port = port
         self.timeout = timeout
         self.buffer = bytearray()
@@ -314,6 +317,21 @@ class DisplayLink:
         except ProtocolError as error:
             if error.result != 1:
                 raise
+        if self.compressed:
+            try:
+                codecs = self.command(GET_CODECS).payload
+                if len(codecs) != 4 or struct.unpack("<I", codecs)[0] & ~LZ4:
+                    raise ValueError("Invalid DLP codecs")
+                self.capabilities |= struct.unpack("<I", codecs)[0]
+            except ProtocolError as error:
+                if error.result != 1:
+                    raise
+            if self.capabilities & LZ4:
+                try:
+                    from lz4.block import compress
+                except ImportError as error:
+                    raise RuntimeError("LZ4 compression requires the Python lz4 package") from error
+                self._lz4 = compress
         if self.requested_window:
             try:
                 p = self.command(NEGOTIATE_WINDOW, struct.pack(
@@ -467,6 +485,17 @@ class DisplayLink:
                         if consumed > raw or (consumed == raw and len(encoded) + 2 < raw):
                             op, used = RECT_RLE, consumed
                             payload = struct.pack("<H", consumed) + encoded
+                    if self.compressed and self.capabilities & LZ4:
+                        limit = min(1024, len(data) - offset)
+                        while True:
+                            encoded = self._lz4(data[offset:offset + limit], store_size=False)
+                            if len(encoded) <= 206 and (limit > used or (
+                                    limit == used and len(encoded) + 2 < len(payload))):
+                                op, used = RECT_LZ4, limit
+                                payload = struct.pack("<H", limit) + encoded
+                            if limit <= used:
+                                break
+                            limit = max(used, limit // 2)
                     self._upload_command(op, struct.pack("<III", f, rect, offset) + payload)
                     offset += used
             uploaded = time.monotonic()
@@ -564,6 +593,8 @@ def main():
     transport.add_argument("--tcp", type=tcp_endpoint, metavar="HOST:PORT", help="Raw TCP stream")
     parser.add_argument("--baud", type=int, default=115200, help="Serial baud rate")
     parser.add_argument("--legacy-cells", action="store_true", help="Use fixed 256-byte framing")
+    parser.add_argument("--compressed", action="store_true",
+                        help="Enable negotiated lossless LZ4; install python lz4")
     parser.add_argument("--no-window", action="store_true", help="Force legacy stop-and-wait uploads")
     parser.add_argument("--stats", action="store_true",
                         help="Print preparation/upload/presentation-wait timings, bytes and completed FPS")
@@ -597,7 +628,7 @@ def main():
             args.port, args.baud, timeout=0.05, write_timeout=2)
         with connection as port:
             print("Connected; discovering display...", file=sys.stderr, flush=True)
-            link = DisplayLink(port, compact=not args.legacy_cells)
+            link = DisplayLink(port, compact=not args.legacy_cells, compressed=args.compressed)
             if args.no_window:
                 link.requested_window = 0
             width, height = link.connect()
