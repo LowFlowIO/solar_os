@@ -216,7 +216,7 @@ static unsigned count(uint8_t cmd) {
     return n;
 }
 /* Clock-only enable and analog power-down also use 0x20. Count and time
- * optical updates separately so they alone consume the physical scan budget. */
+ * optical updates separately from those non-display activations. */
 static capture_t *display_update(unsigned occurrence, bool activation) {
     capture_t *mode = NULL;
     for (size_t i = 0; i < capture_count; ++i) {
@@ -588,9 +588,9 @@ static void test_hold_power_and_fast_ramp(void) {
     free_budget(&d);
 }
 static void test_dual_pulse_rate_limit(void) {
-    /* The mock panel finishes in 20 ms: both synchronous settling and
-     * untimed worker ticks must still space physical activations by 67 ms.
-     * No additional submissions are needed to complete the pixel budget.
+    /* The mock panel finishes in 20 ms. Redrives follow BUSY without the
+     * new-image delay. Worker timing is covered by epd_scan_worker_test;
+     * synchronous mode must pace changed targets here in the adapter.
      */
     for (unsigned async = 0; async < 2; ++async) {
         for (unsigned hold = 0; hold < 2; ++hold) {
@@ -605,6 +605,7 @@ static void test_dual_pulse_rate_limit(void) {
             assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
             if (async) assert(worker_tick(&d.scan_worker) == ESP_OK);
             int64_t previous_activation = 0;
+            int64_t previous_frame = 0;
             for (unsigned burst = 0; burst < 2; ++burst) {
                 capture_count = 0;
                 pixel(0, 0, burst != 0);
@@ -615,16 +616,20 @@ static void test_dual_pulse_rate_limit(void) {
                     assert(!worker_pending);
                 }
                 assert(d.pixel_budget.pending == 0);
+                if (!async && previous_frame)
+                    assert(d.pulse_last_frame_start - previous_frame >= 67000);
+                previous_frame = d.pulse_last_frame_start;
                 assert(display_update_count() == 3);
                 for (unsigned scan = 0; scan < 3; ++scan) {
                     const uint8_t expected = hold ? (scan == 0 ? 0xcc : 0x0c) : 0xcf;
                     assert(display_update(scan, false)->data[0] == expected);
                     const int64_t activated = display_update(scan, true)->at_us;
-                    if (previous_activation != 0)
-                        assert(activated - previous_activation >= 67000);
+                    if (scan != 0)
+                        assert(activated - previous_activation >= 20000 &&
+                               activated - previous_activation < 67000);
                     previous_activation = activated;
                 }
-                assert(d.pulse_drive_interval >= 67000);
+                assert(d.pulse_drive_interval >= 20000 && d.pulse_drive_interval < 67000);
                 assert(!d.pulse_analog_on);
             }
             assert(strstr(epd_ssd1683_controller_mode_values(&d), "pulse-period=<67..1000>"));
@@ -926,6 +931,7 @@ static void test_green_fastwave_rate_limit(void) {
             assert(ssd1683_u8x8_display_cb(&d.u8g2.u8x8, U8X8_MSG_DISPLAY_REFRESH, 0, NULL) == 1);
             if (async) assert(worker_tick(&d.scan_worker) == ESP_OK);
             int64_t previous = 0;
+            int64_t previous_frame = 0;
             for (unsigned burst = 0; burst < 2; ++burst) {
                 capture_count = 0;
                 single_pixel(0, 0, burst != 0);
@@ -934,10 +940,13 @@ static void test_green_fastwave_rate_limit(void) {
                     for (unsigned scan = 0; scan < 3; ++scan)
                         assert(worker_tick(&d.scan_worker) == ESP_OK);
                 assert(d.pixel_budget.pending == 0 && !d.pulse_analog_on);
+                if (!async && previous_frame)
+                    assert(d.pulse_last_frame_start - previous_frame >= 67000);
+                previous_frame = d.pulse_last_frame_start;
                 assert(count(hold ? 0x12 : 0x17) == 3);
                 for (unsigned scan = 0; scan < 3; ++scan) {
                     const int64_t now = find(hold ? 0x12 : 0x17, scan)->at_us;
-                    if (previous) assert(now - previous >= 67000);
+                    if (scan != 0) assert(now - previous >= 20000 && now - previous < 67000);
                     previous = now;
                 }
             }

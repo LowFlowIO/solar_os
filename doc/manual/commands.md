@@ -1443,15 +1443,20 @@ These runtime settings apply only to pulse mode and are listed by
 `display mode <target>`. `pulse-scan=sync` completes a presentation's pending
 cycles before returning. `pulse-scan=async` runs one cycle per scan in a
 persistent worker and accepts new targets while earlier pixels settle.
-`pulse-period=<10..1000>` requests the minimum scan interval in milliseconds;
+`pulse-period=<10..1000>` requests the minimum new-image interval in milliseconds;
 the dual-SSD1683 and Elecrow green-sticker profiles instead accept 67–1000 ms.
-They enforce at least 67 ms between physical pulse activations in synchronous
-and asynchronous operation.
-Actual timing and submitted/coalesced image counts appear in the mode output.
+Settling drives run as BUSY permits without consuming new-image slots. A new
+target can replace the current target between drives when its image slot is due;
+unchanged pixels keep their remaining budgets. Identical submissions do not
+consume image slots. Synchronous operation still completes all pending drives
+before returning and applies the requested interval between changed targets.
+Mode output separates `frame-count` and `frame-interval-us` for distinct target
+snapshots from `scan-count` and `scan-interval-us` for physical drives. The frame
+count includes native baseline snapshots; submitted/coalesced counts also appear.
 `pulse-power=<cycle,hold>` selects supply cycling or retention during settling,
 `pulse-ramp=<normal,fast>` selects booster duration, and
 `pulse-spi-khz=<100..20000>` overrides the SPI clock only for pulse operation.
-Elecrow 5.79-inch defaults are asynchronous, 67 ms requested interval, retained supplies, fast
+Elecrow 5.79-inch defaults are asynchronous, 67 ms new-image interval, retained supplies, fast
 booster ramp, 20000 kHz pulse SPI, 6 drive cycles, 8 scan frames, FR code 4,
 and adaptive cleanup with a baseline of 64. This profile uses the Fastwave
 waveform builder on both controllers, reported as `waveform=fastwave`, with
@@ -1459,8 +1464,8 @@ no reset kick and one VSS settle frame after the configured drive phase.
 Grayscale images use the existing dithering path.
 CrowPanel 5.79-inch and SolarWriter
 start in pulse mode, with native auto as the fallback if the worker cannot start. Requested
-scan cadence is not a guarantee of achieved cadence or optical settling.
-Waveshare 4.2-inch defaults are asynchronous, 100 ms requested interval,
+image cadence is not a guarantee of achieved cadence or optical settling.
+Waveshare 4.2-inch defaults are asynchronous, 100 ms new-image interval,
 supply cycling, normal ramp, the configured SPI clock, 3 drive cycles,
 8 scan frames, FR code 4, and adaptive cleanup with baseline 64. Native and
 pulse timing logs support comparison on that panel.
@@ -1468,7 +1473,7 @@ The Elecrow green-sticker profile adapts the Fastwave phase builder to its
 UC8276 OLD/NEW RAM and programmable waveform registers, reported as
 `waveform=fastwave-uc8276`. It retains the controller's voltage and PLL setup,
 uploads both full RAM masks, and leaves unbudgeted pixels undriven. Its defaults
-are asynchronous, 67 ms requested interval, supply cycling, fast ramp,
+are asynchronous, 67 ms new-image interval, supply cycling, fast ramp,
 20000 kHz pulse SPI, 8 drive cycles,
 8 scan frames, raw PLL code 12, and fixed cleanup every 8 changed images.
 The Elecrow 4.2-inch board starts this revision in pulse mode. For this profile,

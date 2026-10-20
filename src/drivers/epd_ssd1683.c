@@ -44,10 +44,8 @@
 #define SSD1683_WAVESHARE_RESET_LOW_MS 2U
 #define SSD1683_RESET_RECOVERY_LOW_MS 1000U
 #define SSD1683_AUTO_FULL_INTERVAL 20U
-/* ceil(1000 / 15): limit physical Fastwave pulse activations, including
- * synchronous settling and continued scans without new image submissions.
- */
-#define SSD1683_FASTWAVE_MIN_PULSE_PERIOD_MS 67U
+/* ceil(1000 / 15): limit new Fastwave images, independently of redrives. */
+#define SSD1683_FASTWAVE_MIN_FRAME_PERIOD_MS 67U
 
 _Static_assert(SSD1683_DUAL_WIDTH + SSD1683_DUAL_SEAM_WIDTH ==
                    SSD1683_DUAL_PADDED_WIDTH,
@@ -184,7 +182,7 @@ static void ssd1683_pulse_defaults(epd_ssd1683_t *display,
     display->pulse_tuning = ssd1683_default_pulse_tuning(config->panel_variant);
     display->scan_async = dual || config->panel_variant == EPD_SSD1683_PANEL_WAVESHARE_V2 ||
         config->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER;
-    display->scan_period_ms = dual || green ? SSD1683_FASTWAVE_MIN_PULSE_PERIOD_MS : 100;
+    display->scan_period_ms = dual || green ? SSD1683_FASTWAVE_MIN_FRAME_PERIOD_MS : 100;
     display->pulse_power_hold = dual;
     display->pulse_ramp_fast = dual || green;
     display->pulse_spi_clock_hz = dual || green ? 20000000 : config->spi_clock_hz;
@@ -601,6 +599,7 @@ static esp_err_t ssd1683_controller_init(epd_ssd1683_t *display)
         display->pulse_mask_pending = 0;
         display->pulse_analog_on = false;
         display->pulse_last_drive_start = 0;
+        display->pulse_last_frame_start = 0;
         display->pulse_drive_interval = 0;
         display->pulse_needs_cleanup = false;
         display->controller_ready = true;
@@ -653,6 +652,7 @@ static esp_err_t ssd1683_controller_init(epd_ssd1683_t *display)
     display->pulse_mask_pending = 0;
     display->pulse_analog_on = false;
     display->pulse_last_drive_start = 0;
+    display->pulse_last_frame_start = 0;
     display->pulse_drive_interval = 0;
     display->pulse_needs_cleanup = false;
     return ESP_OK;
@@ -1382,11 +1382,26 @@ static esp_err_t ssd1683_pulse_prepare(epd_ssd1683_t *display,
         *baseline = true;
         return ESP_OK;
     }
-    if (new_target && ssd1683_pulse_retarget(display, source) && display->scan_async) {
-        /* Continuous retargeting can keep some pixels pending forever.
-         * Age cleanup by changed targets, independently of budget completion.
+    if (new_target && ssd1683_pulse_retarget(display, source)) {
+        /* The worker paces new snapshots. Synchronous presentations need the
+         * same image interval here; redrives never wait for an image slot.
          */
-        ++display->pulse_updates;
+        if (!display->scan_async && display->pulse_last_frame_start != 0) {
+            const int64_t due = display->pulse_last_frame_start +
+                (int64_t)display->scan_period_ms * 1000;
+            int64_t remaining;
+            while ((remaining = due - esp_timer_get_time()) > 0) {
+                TickType_t ticks = pdMS_TO_TICKS((remaining + 999) / 1000);
+                vTaskDelay(ticks != 0 ? ticks : 1);
+            }
+        }
+        display->pulse_last_frame_start = esp_timer_get_time();
+        if (display->scan_async) {
+            /* Continuous retargeting can keep some pixels pending forever.
+             * Age cleanup by changed targets, independently of completion.
+             */
+            ++display->pulse_updates;
+        }
     }
     return ESP_OK;
 }
@@ -1425,18 +1440,6 @@ static esp_err_t ssd1683_pulse_activate(epd_ssd1683_t *display)
     return ESP_OK;
 }
 
-static void ssd1683_pulse_wait_interval(epd_ssd1683_t *display)
-{
-    if (!ssd1683_uses_fastwave(display) || display->pulse_last_drive_start == 0) return;
-    const int64_t due = display->pulse_last_drive_start +
-        (int64_t)SSD1683_FASTWAVE_MIN_PULSE_PERIOD_MS * 1000;
-    int64_t remaining;
-    while ((remaining = due - esp_timer_get_time()) > 0) {
-        TickType_t ticks = pdMS_TO_TICKS((remaining + 999) / 1000);
-        vTaskDelay(ticks != 0 ? ticks : 1);
-    }
-}
-
 static esp_err_t ssd1683_pulse_cycle(epd_ssd1683_t *display,
                                          int64_t *transfer_us, int64_t *drive_us)
 {
@@ -1452,13 +1455,10 @@ static esp_err_t ssd1683_pulse_cycle(epd_ssd1683_t *display,
         display->pulse_mask_pending = display->pixel_budget.pending;
         display->pulse_mask_dirty = false;
     }
-    ssd1683_pulse_wait_interval(display);
     const int64_t drive_started = esp_timer_get_time();
     const int busy_idle = gpio_get_level((gpio_num_t)display->busy_pin);
     ESP_RETURN_ON_ERROR(profile->activate(display), TAG, "pulse activation failed");
-    /* Reference the completed activation write, so command/transfer jitter
-     * cannot make a subsequent physical activation exceed the rate ceiling.
-     */
+    /* Measure physical drives separately from the new-image cadence. */
     const int64_t activated = esp_timer_get_time();
     display->pulse_drive_interval = display->pulse_last_drive_start == 0 ? 0 :
         activated - display->pulse_last_drive_start;
@@ -2528,6 +2528,7 @@ const char *epd_ssd1683_controller_mode(const epd_ssd1683_t *display)
             "cleanup-policy=%s cleanup-peak-cycles=%u cleanup-limit-cycles=%u cleanup-age=%u "
             "pulse-scan=%s pulse-period=%u pulse-power=%s pulse-ramp=%s pulse-spi-khz=%u "
             "scan-last-us=%lld scan-interval-us=%lld scan-count=%u "
+            "frame-count=%u frame-interval-us=%lld "
             "scan-submitted=%u scan-coalesced=%u pending=%u",
             refresh, ssd1683_is_dual(d) ? " waveform=fastwave" :
                 (d->panel_variant == EPD_SSD1683_PANEL_GREEN_STICKER ? " waveform=fastwave-uc8276" : ""),
@@ -2541,7 +2542,8 @@ const char *epd_ssd1683_controller_mode(const epd_ssd1683_t *display)
             d->pulse_power_hold ? "hold" : "cycle", d->pulse_ramp_fast ? "fast" : "normal",
             (unsigned)(d->pulse_spi_clock_hz / 1000U),
             (long long)stats.last_scan_us, (long long)stats.last_interval_us,
-            (unsigned)stats.scans, (unsigned)stats.submitted, (unsigned)stats.coalesced,
+            (unsigned)stats.scans, (unsigned)stats.frames, (long long)stats.last_frame_interval_us,
+            (unsigned)stats.submitted, (unsigned)stats.coalesced,
             (unsigned)d->pixel_budget.pending);
         if (d->lock != NULL)
             xSemaphoreGive(d->lock);
@@ -2644,7 +2646,7 @@ esp_err_t epd_ssd1683_set_controller_mode(epd_ssd1683_t *display, const char *mo
                 value = value * 10U + (unsigned)(*p - '0');
             }
             const unsigned minimum = spi_option ? 100U :
-                (ssd1683_uses_fastwave(display) ? SSD1683_FASTWAVE_MIN_PULSE_PERIOD_MS : 10U);
+                (ssd1683_uses_fastwave(display) ? SSD1683_FASTWAVE_MIN_FRAME_PERIOD_MS : 10U);
             if (value < minimum || value > maximum) err = ESP_ERR_INVALID_ARG;
             if (err == ESP_OK && !spi_option && display->scan_worker.task != NULL)
                 err = epd_scan_worker_set_period(&display->scan_worker, value);

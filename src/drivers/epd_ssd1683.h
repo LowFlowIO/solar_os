@@ -93,6 +93,7 @@ typedef struct {
     uint16_t scan_period_ms;
     uint32_t spi_clock_hz, pulse_spi_clock_hz, spi_applied_hz;
     int64_t pulse_last_drive_start, pulse_drive_interval;
+    int64_t pulse_last_frame_start;
     epd_scan_worker_t scan_worker;
     uint32_t pulse_updates;
     bool pulse_lut_loaded;

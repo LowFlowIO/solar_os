@@ -12,40 +12,67 @@
 static void scan_task(void *arg)
 {
     epd_scan_worker_t *w = arg;
-    bool pending = false;
-    int64_t next_at = 0, previous_scan = 0;
+    bool pending = false, snapshot_valid = false;
+    int64_t previous_frame = 0, previous_scan = 0;
+    uint32_t active_generation = 0;
     for (;;) {
         xSemaphoreTake(w->lock, portMAX_DELAY);
         if (w->stopping) {
             xSemaphoreGive(w->lock);
             break;
         }
-        if (!w->enabled) pending = false;
-        bool ready = w->enabled && (pending || w->has_target);
+        if (!w->enabled || active_generation != w->generation) {
+            pending = false;
+            snapshot_valid = false;
+            previous_frame = 0;
+            active_generation = w->generation;
+        }
+        /* Repeated presentations neither refill pixel budgets nor consume a
+         * new-image slot. Leave a changed target queued until its slot is due,
+         * while continuing to settle the current snapshot between slots.
+         */
+        const bool duplicate = w->has_target && snapshot_valid &&
+            memcmp(w->latest, w->snapshot, w->frame_size) == 0;
         const int64_t now = esp_timer_get_time();
-        if (!ready || now < next_at) {
+        const int64_t next_at = previous_frame + (int64_t)w->period_ms * 1000;
+        const bool new_target = w->has_target && !duplicate && (!snapshot_valid || now >= next_at);
+        /* An identical submission still lets the adapter apply tuning or a
+         * requested native cleanup, without counting/pacing it as a new image.
+         */
+        const bool ready = w->enabled && (pending || new_target || duplicate);
+        if (!ready) {
+            const bool waiting_target = w->enabled && w->has_target;
             xSemaphoreGive(w->lock);
             TickType_t wait = portMAX_DELAY;
-            if (ready) {
+            if (waiting_target) {
                 wait = pdMS_TO_TICKS((next_at - now + 999) / 1000);
                 if (wait == 0) wait = 1;
             }
             ulTaskNotifyTake(pdTRUE, wait);
             continue;
         }
-        const bool new_target = w->has_target;
-        if (new_target) memcpy(w->snapshot, w->latest, w->frame_size);
-        w->has_target = false;
-        const unsigned period = w->period_ms;
+        if (new_target) {
+            memcpy(w->snapshot, w->latest, w->frame_size);
+        }
+        if (new_target || duplicate) w->has_target = false;
         const uint32_t generation = w->generation;
         xSemaphoreGive(w->lock);
         bool scanned = false;
         const int64_t started = esp_timer_get_time();
         const esp_err_t err = w->process(w->context, w->snapshot, new_target, &pending, &scanned);
         const int64_t ended = esp_timer_get_time();
-        next_at = started + (int64_t)period * 1000;
         xSemaphoreTake(w->lock, portMAX_DELAY);
-        if (generation != w->generation) pending = false;
+        if (new_target && err == ESP_OK) {
+            ++w->stats.frames;
+            w->stats.last_frame_interval_us = previous_frame == 0 ? 0 : started - previous_frame;
+            previous_frame = started;
+            snapshot_valid = true;
+        }
+        if (generation != w->generation) {
+            pending = false;
+            snapshot_valid = false;
+            previous_frame = 0;
+        }
         if (scanned) {
             ++w->stats.scans;
             w->stats.last_scan_us = ended - started;

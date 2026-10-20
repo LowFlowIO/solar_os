@@ -858,14 +858,15 @@ The green-sticker revision starts in `refresh=pulse` with the Fastwave phase
 builder adapted to its UC8276 controller. `display mode display0` reports
 `waveform=fastwave-uc8276`. Its preset is
 8 drive cycles, 8 scan frames, raw PLL code 12, asynchronous scanning with a
-67 ms requested interval, supply cycling, fast ramp, and 20000 kHz pulse SPI.
+67 ms new-image interval, supply cycling, fast ramp, and 20000 kHz pulse SPI.
 Fixed cleanup runs every 8 changed targets consumed by the worker.
 It shares per-pixel drive budgets and the scan worker with the other
 pulse-capable panels. The builder drives only changing pixels, with no reset
 kick and one neutral settle frame. The adapter keeps the UC8276's own voltage,
-PLL, RAM, and power commands. `pulse-period` accepts 67–1000 ms; physical pulse
-activations are spaced by at least 67 ms in synchronous and asynchronous modes,
-including settling scans. This ceiling does not guarantee an achieved rate.
+PLL, RAM, and power commands. `pulse-period` accepts 67–1000 ms between new
+images. Settling drives run as BUSY permits, independently of this interval.
+New targets can interrupt settling between drives; identical targets retain
+their remaining budgets. The requested interval does not guarantee an achieved rate.
 Runtime tuning remains available through `display mode display0`; internal scan frequency is
 separate from image update rate.
 Use `display mode display0 refresh=auto` to restore the native waveform.
@@ -926,7 +927,7 @@ one contiguous 792x272 graphics surface.
 The panel uses GPIO12 SCK, GPIO11 MOSI, GPIO47 reset, GPIO46 D/C, GPIO45 chip
 select, GPIO48 BUSY, and GPIO7 display-power enable. The driver follows
 Elecrow's master/slave RAM addressing and temperature-load sequence. The board
-starts in asynchronous monochrome pulse mode with a 67 ms minimum activation
+starts in asynchronous monochrome pulse mode with a 67 ms minimum new-image
 interval, held supplies, and automatic cleanup, as described under
 [SolarWriter](#solarwriter). To select the native waveform, use
 `display mode display0 refresh=auto`. Auto mode
@@ -1080,17 +1081,20 @@ display mode display0 pulse-scan=async
 display mode display0 pulse-period=67
 ```
 
-On this dual-controller panel, `pulse-period` requests a minimum scan interval
-of 67–1000 ms; the default is 67 ms. The driver also enforces at least 67 ms
-between physical pulse activations in synchronous and asynchronous operation,
-including continued settling without new images. This limits pulse activations
-to less than 15 per second. Hardware work and pixel settling can require longer;
-the limit is not a promise of 15 fully settled images per second. The six-cycle,
-eight-frame preset retains its settling budget when the rate limit applies.
+On this dual-controller panel, `pulse-period` requests a minimum new-image
+interval of 67–1000 ms; the default is 67 ms. Settling drives continue as BUSY
+permits without waiting for another image slot. When its slot is due, a queued
+target replaces the current target between drives, even with older pixels still
+settling. Pixels whose target is unchanged retain their remaining budgets.
+Hardware work and pixel settling can require longer than the requested interval;
+it does not promise 15 fully settled images per second. The six-cycle,
+eight-frame preset retains its settling budget.
 `display mode display0` reports `scan-last-us`, `scan-interval-us`, completed
-`scan-count`, submitted/coalesced image counts, and pending pixel count. These
-measure actual completed scan work; image submission rate is separate from
-scan rate and optical settling.
+`scan-count`, submitted/coalesced image counts, and pending pixel count.
+`frame-count` counts distinct target snapshots processed successfully, including
+native baselines; `frame-interval-us` measures their start-to-start interval.
+Repeated identical submissions do not count as new frames. Drive count,
+new-image count, and optical settling are separate quantities.
 
 Additional panel-specific controls are `pulse-power=<cycle,hold>`,
 `pulse-ramp=<normal,fast>`, and `pulse-spi-khz=<100..20000>`. The default power
@@ -1185,7 +1189,7 @@ display mode display0
 ```
 
 Initial pulse defaults are 3 drive cycles, 8 scan frames, FR code 4,
-asynchronous operation, a 100 ms requested minimum scan interval, supply
+asynchronous operation, a 100 ms requested minimum new-image interval, supply
 cycling, normal booster ramp, the configured board SPI clock, and adaptive
 cleanup with a baseline of 64. These values are a calibration starting point;
 optical contrast, erasure, ghosting, and achieved cadence require inspection
