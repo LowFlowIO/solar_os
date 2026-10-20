@@ -93,6 +93,7 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Keyboard Enter | Enter. |
 | Alt+C | Escape — back/cancel where supported. |
 | Alt+Q | Close the foreground app. |
+| Alt+B | Toggle the keyboard backlight through the keyboard firmware; the shortcut does not type a character. |
 | Alt + trackball up / down | Page Up / Page Down. |
 | Alt + trackball left / right | Previous / next retained session on the focused display. |
 | Alt+Enter | Toggle full screen in shared text menus. |

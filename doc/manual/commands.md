@@ -577,8 +577,9 @@ T-LoRa-Pager, ThinkNode M9, and CL-32 use this control. Unsupported hardware
 reports `unsupported`. Suspend and explicit sleep temporarily turn auxiliary
 lighting off; resume restores the selected setting. Shutdown also turns it off.
 The CL-32 companion controller retains its keyboard-activity timeout and fade.
-The T-Deck keyboard firmware's Alt+B toggle operates independently; the query
-shows the SolarOS setting, not changes made by that firmware shortcut.
+The T-Deck keyboard firmware's Alt+B toggle operates independently. SolarOS
+consumes that shortcut so it does not type a character. The query shows the
+SolarOS setting, not changes made by that firmware shortcut.
 
 `backlight` is no longer an alias for display brightness. Scripts that used
 `setterm backlight` for the screen must use `setterm brightness` instead.

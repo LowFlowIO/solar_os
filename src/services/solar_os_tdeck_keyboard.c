@@ -93,6 +93,9 @@ static void process_matrix(tdeck_device_t *dev,
         const uint8_t pressed = state[col] & (uint8_t)~dev->previous[col];
         for (size_t row = 0; row < TDECK_ROWS; row++) {
             if ((pressed & (1U << row)) == 0U) continue;
+            /* The keyboard firmware toggles its backlight on physical Alt+B,
+             * including with Shift/Sym held. Raw mode still exposes that key. */
+            if (alt && col == 3U && row == 4U) continue;
             uint8_t key = symbol ? keymap[col][row].symbol : keymap[col][row].normal;
             if (key == 0U) continue;
             if (shift && key >= 'a' && key <= 'z') key = (uint8_t)(key - 'a' + 'A');
