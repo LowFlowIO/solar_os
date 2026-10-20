@@ -97,6 +97,8 @@ static void expect_queued_motion_tap(uint8_t key, uint8_t modifiers)
     assert(solar_os_input_read_events(events, 3) == 2);
     assert(events[0].key == key && events[0].modifiers == modifiers);
     assert(events[0].action == SOLAR_OS_INPUT_KEY_PRESS);
+    assert(events[0].physical_key == SOLAR_OS_INPUT_PHYSICAL_NONE);
+    assert(events[0].usage == SOLAR_OS_INPUT_USAGE_NONE);
     assert(events[1].key == key && events[1].modifiers == 0);
     assert(events[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
     dispatch_input_key(&events[0]);

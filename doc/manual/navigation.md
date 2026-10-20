@@ -107,6 +107,9 @@ The direction follows the greater net horizontal or vertical movement;
 opposite movements cancel. Equal diagonals use the most recently moved axis.
 Alt shortcuts retain the modifier held when the gesture begins, so Alt can be
 released while the ball settles.
+Keyboard keys report their actual presses and releases, supporting held controls
+in foreground apps. `setterm keyrate` controls typing repeat; trackball rolls
+remain single navigation taps.
 
 ## CL-32
 

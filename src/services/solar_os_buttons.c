@@ -107,7 +107,7 @@ static esp_err_t button_write_tap(const solar_os_button_def_t *def, uint8_t modi
         modifiers = 0U;
     }
     return solar_os_input_write_key_tap(buttons_input_source,
-        (uint16_t)def->pin + 1U, SOLAR_OS_INPUT_USAGE_NONE, key, modifiers);
+        SOLAR_OS_INPUT_PHYSICAL_NONE, SOLAR_OS_INPUT_USAGE_NONE, key, modifiers);
 }
 
 static bool button_finish_motion(void)

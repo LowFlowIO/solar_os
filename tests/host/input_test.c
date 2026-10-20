@@ -391,6 +391,24 @@ int main(void)
     assert(event.modifiers == 0U);
     assert(solar_os_input_get_pressed(pressed, 2) == 0U);
 
+    /* Character taps can preserve modifiers without claiming a held physical
+     * key. Their synthetic release clears modifiers and never starts repeat. */
+    assert(solar_os_input_write_key_tap(keyboard, SOLAR_OS_INPUT_PHYSICAL_NONE,
+        SOLAR_OS_INPUT_USAGE_NONE, SOLAR_OS_KEY_ENTER, SOLAR_OS_INPUT_MOD_LEFT_ALT) == ESP_OK);
+    event = read_one_event();
+    assert(event.action == SOLAR_OS_INPUT_KEY_PRESS && event.key == SOLAR_OS_KEY_ENTER);
+    assert(event.physical_key == SOLAR_OS_INPUT_PHYSICAL_NONE);
+    assert(event.usage == SOLAR_OS_INPUT_USAGE_NONE);
+    assert(event.modifiers == SOLAR_OS_INPUT_MOD_LEFT_ALT);
+    event = read_one_event();
+    assert(event.action == SOLAR_OS_INPUT_KEY_RELEASE && event.key == SOLAR_OS_KEY_ENTER);
+    assert(event.physical_key == SOLAR_OS_INPUT_PHYSICAL_NONE && event.modifiers == 0U);
+    assert(solar_os_input_get_pressed(pressed, 2) == 0U);
+    assert(solar_os_input_write_key_tap(keyboard, SOLAR_OS_INPUT_PHYSICAL_NONE,
+        SOLAR_OS_INPUT_USAGE_NONE, 0, 0) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_input_write_key(keyboard, SOLAR_OS_INPUT_PHYSICAL_NONE,
+        SOLAR_OS_INPUT_USAGE_NONE, 'z', 0, SOLAR_OS_INPUT_KEY_PRESS) == ESP_ERR_INVALID_ARG);
+
     now_us = 1100000;
     assert(solar_os_input_write_key(keyboard,
                                     0x2b,

@@ -111,6 +111,14 @@ presenter, audio ownership and retained state. OS session shortcuts pass through
 captured keyboards. Modules must not leave callbacks or tasks running after
 `main` returns.
 
+Physical keyboards and buttons retain their actual press/release timing.
+Logical taps, such as trackball navigation and character-only input, have zero
+physical identity and HID usage. `read_key` delivers their press immediately
+and a synthetic release after 140 ms, measured from consumption by the worker.
+This keeps taps visible to frame-based guests even when the producer queues
+both halves together. Repeated taps of the same key extend its pulse. Input
+reset clears pending pulses; modules must clear held controls on reset.
+
 The appended `video_dimensions(&width, &height)` method reports the calling
 app's rotated foreground graphics dimensions before video is opened. Modules
 that render text or other display-sized content can allocate a matching frame

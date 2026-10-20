@@ -34,6 +34,13 @@
 #define FOREGROUND_FILE_MAX (4U * 1024U * 1024U)
 #define FOREGROUND_STOP_WAIT_US (5000000ULL)
 #define FOREGROUND_COOPERATE_INTERVAL_US (50000ULL)
+#define FOREGROUND_KEY_PULSE_US (140000ULL)
+#define FOREGROUND_KEY_PULSE_MAX 24U
+
+typedef struct {
+    solar_os_native_foreground_key_v1_t release;
+    uint64_t release_at_us;
+} foreground_key_pulse_t;
 
 typedef struct foreground_slot foreground_slot_t;
 
@@ -46,6 +53,8 @@ typedef struct {
     QueueHandle_t pointers;
     atomic_bool pointer_reset;
     atomic_bool done, input_reset, stop_requested, redraw_requested;
+    /* Owned by the guest worker; reset is requested through input_reset. */
+    foreground_key_pulse_t key_pulses[FOREGROUND_KEY_PULSE_MAX];
     atomic_bool resumable, suspend_requested, suspended;
     uint64_t stop_deadline_us;
     uint64_t last_cooperate_us;
@@ -474,11 +483,61 @@ static int foreground_read_key(solar_os_native_foreground_key_v1_t *key, bool *a
     if (!key || !available) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     memset(key, 0, sizeof(*key));
     if (atomic_exchange(&state->input_reset, false)) {
+        memset(state->key_pulses, 0, sizeof(state->key_pulses));
         key->reset = true;
         *available = true;
-    } else {
-        *available = xQueueReceive(state->keys, key, 0) == pdTRUE;
+        return SOLAR_OS_NATIVE_OK;
     }
+    const uint64_t now = foreground_time_us();
+    for (size_t i = 0; i < FOREGROUND_KEY_PULSE_MAX; i++) {
+        foreground_key_pulse_t *pulse = &state->key_pulses[i];
+        if (pulse->release_at_us != 0U && now >= pulse->release_at_us) {
+            *key = pulse->release;
+            pulse->release_at_us = 0U;
+            *available = true;
+            return SOLAR_OS_NATIVE_OK;
+        }
+    }
+    *available = false;
+    /* Logical taps have no held identity. Their immediately queued release
+     * would cancel the press before guests advance a frame. Expand the pair at
+     * consumption time, including taps delivered after a stalled display loop.
+     * Physical key streams retain their original press/release timing. */
+    for (unsigned n = 0; n < 64U; n++) {
+        if (xQueueReceive(state->keys, key, 0) != pdTRUE) break;
+        if (key->physical_key || key->usage || key->reset || !key->key) {
+            if (key->reset) memset(state->key_pulses, 0, sizeof(state->key_pulses));
+            *available = true;
+            return SOLAR_OS_NATIVE_OK;
+        }
+        if (key->action == SOLAR_OS_NATIVE_FOREGROUND_KEY_RELEASE) continue;
+        foreground_key_pulse_t *slot = NULL;
+        for (size_t i = 0; i < FOREGROUND_KEY_PULSE_MAX; i++) {
+            foreground_key_pulse_t *pulse = &state->key_pulses[i];
+            if (pulse->release_at_us != 0U && pulse->release.source == key->source &&
+                pulse->release.key == key->key) {
+                slot = pulse;
+                break;
+            }
+            if (pulse->release_at_us == 0U && slot == NULL) slot = pulse;
+        }
+        if (slot == NULL) {
+            /* Bounded overflow uses the same reset contract as queue overflow,
+             * so no guest can retain a key whose release we cannot deliver. */
+            memset(state->key_pulses, 0, sizeof(state->key_pulses));
+            xQueueReset(state->keys);
+            memset(key, 0, sizeof(*key));
+            key->reset = true;
+        } else {
+            slot->release = *key;
+            slot->release.action = SOLAR_OS_NATIVE_FOREGROUND_KEY_RELEASE;
+            slot->release.modifiers = 0U;
+            slot->release_at_us = now + FOREGROUND_KEY_PULSE_US;
+        }
+        *available = true;
+        return SOLAR_OS_NATIVE_OK;
+    }
+    memset(key, 0, sizeof(*key));
     return SOLAR_OS_NATIVE_OK;
 }
 

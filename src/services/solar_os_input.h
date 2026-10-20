@@ -271,7 +271,9 @@ esp_err_t solar_os_input_write_key(solar_os_input_source_t source,
                                    uint8_t key,
                                    uint8_t modifiers,
                                    solar_os_input_key_action_t action);
-/* Atomically enqueue a synthetic press and a fully released key event. */
+/* Atomically enqueue a synthetic press and a fully released key event.
+ * Character-tap sources use PHYSICAL_NONE and USAGE_NONE: assigning a physical
+ * identity would advertise held-key semantics to consumers such as emulators. */
 esp_err_t solar_os_input_write_key_tap(solar_os_input_source_t source,
                                        uint16_t physical_key,
                                        uint16_t usage,

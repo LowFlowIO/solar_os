@@ -1414,7 +1414,7 @@ esp_err_t solar_os_input_write_key_tap(solar_os_input_source_t source,
                                        uint8_t key,
                                        uint8_t modifiers)
 {
-    if (physical_key == SOLAR_OS_INPUT_PHYSICAL_NONE || key == 0U) {
+    if (key == 0U) {
         return ESP_ERR_INVALID_ARG;
     }
 

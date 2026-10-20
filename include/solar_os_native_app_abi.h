@@ -54,6 +54,10 @@ typedef struct {
     bool reset;
 } solar_os_native_foreground_key_v1_t;
 
+/* Logical taps (usage == physical_key == 0) receive a synthetic release after
+ * a 140 ms pulse measured from read_key consumption. Physical key streams keep
+ * their actual release timing. A reset clears all held and pending inputs. */
+
 #define SOLAR_OS_NATIVE_POINTER_ABSOLUTE 0U
 #define SOLAR_OS_NATIVE_POINTER_RELATIVE 1U
 #define SOLAR_OS_NATIVE_POINTER_MOVE 0U

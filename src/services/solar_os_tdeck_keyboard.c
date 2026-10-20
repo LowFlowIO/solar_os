@@ -79,6 +79,18 @@ static esp_err_t parse_bindings(const solar_os_expansion_binding_t *bindings,
         solar_os_expansion_find_i2c_bus(bus, NULL, NULL) ? ESP_OK : ESP_ERR_INVALID_ARG;
 }
 
+static uint16_t key_usage(uint8_t key)
+{
+    if (key >= 'a' && key <= 'z') return 0x04U + key - 'a';
+    switch (key) {
+    case SOLAR_OS_KEY_ENTER: return 0x28U;
+    case '\b': return 0x2aU;
+    case '\t': return 0x2bU;
+    case ' ': return 0x2cU;
+    default: return SOLAR_OS_INPUT_USAGE_NONE;
+    }
+}
+
 static void process_matrix(tdeck_device_t *dev,
                            const uint8_t state[TDECK_COLUMNS])
 {
@@ -92,9 +104,25 @@ static void process_matrix(tdeck_device_t *dev,
         (shift ? SOLAR_OS_INPUT_MOD_LEFT_SHIFT : 0U));
     const uint8_t modifiers = solar_os_input_composition_modifiers();
     for (size_t col = 0; col < TDECK_COLUMNS; col++) {
-        const uint8_t pressed = state[col] & (uint8_t)~dev->previous[col];
+        const uint8_t changed = state[col] ^ dev->previous[col];
         for (size_t row = 0; row < TDECK_ROWS; row++) {
-            if ((pressed & (1U << row)) == 0U) continue;
+            if ((changed & (1U << row)) == 0U) continue;
+            const uint16_t physical = (uint16_t)(col * TDECK_ROWS + row + 1U);
+            if ((state[col] & (1U << row)) == 0U) {
+                /* The input service retains the press mapping, including its
+                 * symbol/chord translation, until this physical release. */
+                (void)solar_os_input_write_key(dev->input_source, physical,
+                    SOLAR_OS_INPUT_USAGE_NONE, 0U, modifiers, SOLAR_OS_INPUT_KEY_RELEASE);
+                continue;
+            }
+            uint16_t modifier_usage = 0U;
+            if (col == 0U && row == 4U) modifier_usage = 0xe2U;
+            if ((col == 1U && row == 6U) || (col == 2U && row == 3U)) modifier_usage = 0xe1U;
+            if (modifier_usage != 0U) {
+                (void)solar_os_input_write_key(dev->input_source, physical,
+                    modifier_usage, 0U, modifiers, SOLAR_OS_INPUT_KEY_PRESS);
+                continue;
+            }
             /* The keyboard firmware toggles its backlight on physical Alt+B,
              * including with Shift/Sym held. Raw mode still exposes that key. */
             if (alt && col == 3U && row == 4U) continue;
@@ -102,11 +130,14 @@ static void process_matrix(tdeck_device_t *dev,
             if (key == 0U) continue;
             if (shift && key >= 'a' && key <= 'z') key = (uint8_t)(key - 'a' + 'A');
             const uint8_t composed = solar_os_input_composition_apply_with_modifiers(key, modifiers);
-            /* Keep Alt+Enter/Tab for the shared shortcut handlers. Board chord
-             * replacements such as Alt+C -> Escape already encode the action. */
-            if (composed != 0U) (void)solar_os_input_write_key_tap(dev->input_source,
-                (uint16_t)(col * TDECK_ROWS + row + 1U), SOLAR_OS_INPUT_USAGE_NONE,
-                composed, composed == key ? modifiers : 0U);
+            /* Ordinary keys expose canonical physical usages to guests. Sym
+             * and board chords are logical replacements; a letter usage would
+             * incorrectly turn Sym+E into E instead of the digit 2. */
+            const uint16_t usage = !symbol && composed == key ?
+                key_usage(keymap[col][row].normal) : SOLAR_OS_INPUT_USAGE_NONE;
+            if (composed != 0U) (void)solar_os_input_write_key(dev->input_source,
+                physical, usage, composed, composed == key ? modifiers : 0U,
+                SOLAR_OS_INPUT_KEY_PRESS);
         }
     }
     memcpy(dev->previous, state, sizeof(dev->previous));
