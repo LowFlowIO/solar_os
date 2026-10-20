@@ -3,6 +3,11 @@
 #define DLP_H
 /* Transport-neutral API names. Existing SDLP API names remain available. */
 #include "sdlp.h"
+#define DLP_GET_CODECS SDLP_GET_CODECS
+#define DLP_RECT_LZ4 SDLP_RECT_LZ4
+#define DLP_LZ4 SDLP_LZ4
+#define dlp_lz4_encode sdlp_lz4_encode
+#define dlp_lz4_decode sdlp_lz4_decode
 #define DLP_MAX_WINDOW SDLP_MAX_WINDOW
 #define DLP_WINDOW_VERSION SDLP_WINDOW_VERSION
 #define DLP_PUSH SDLP_PUSH

@@ -450,6 +450,21 @@ compression, retained-state checks, and changed-region uploads. Private
 [Lua](lua.gfx.md#direct-dlp-connections) connections use that core without
 registering a named display.
 
+Add `compressed=1` to either DLP attachment to enable negotiated lossless LZ4
+compression. For example:
+
+```text
+expansion attach stream-dlp lcd1 stream=pico0 compressed=1
+expansion attach spi-dlp lcd2 spi=<bus> cs=<allowed-cs-gpio> compressed=1
+```
+
+The setting belongs to that attachment and is preserved when you save it for
+startup. Omitted or `compressed=0` retains the existing raw/RLE behavior.
+With the option enabled, the sender chooses raw, RLE, or LZ4 per block;
+unsupported endpoints fall back to raw/RLE. Compression preserves every pixel
+and works with all negotiated pixel formats. The receiver needs no separate
+compression switch.
+
 ## Display Link Protocol over SPI
 
 `spi-dlp` attaches a Display Link Protocol (DLP) peripheral under the supplied display name.

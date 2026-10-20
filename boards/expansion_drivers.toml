@@ -860,6 +860,14 @@ capabilities = ["gfx", "expansion_spi", "expansion_gpio"]
 default_name = "display0"
 
 [[drivers.spi-dlp.bindings]]
+key = "compressed"
+hint = "0|1"
+kind = "parameter"
+role = "compressed"
+min = 0
+max = 1
+
+[[drivers.spi-dlp.bindings]]
 key = "spi"
 kind = "spi_bus"
 hint = "bus"
@@ -2366,6 +2374,14 @@ summary = "DLP display on an existing duplex byte stream"
 package = "expansion_stream_dlp"
 targets = ["esp32", "esp32s3"]
 default_name = "display0"
+[[drivers.stream-dlp.bindings]]
+key = "compressed"
+hint = "0|1"
+kind = "parameter"
+role = "compressed"
+min = 0
+max = 1
+
 [[drivers.stream-dlp.bindings]]
 key = "stream"
 kind = "byte_stream"

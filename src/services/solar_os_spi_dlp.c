@@ -37,6 +37,8 @@ esp_err_t solar_os_spi_dlp_attach(const char *name,
         c.reset_ms = (uint32_t)b[i].value;
       else if (!strcmp(b[i].role, "boot-ms"))
         c.boot_ms = (uint32_t)b[i].value;
+      else if (!strcmp(b[i].role, "compressed") && (b[i].value == 0 || b[i].value == 1))
+        c.compressed = b[i].value != 0;
       else if (!strcmp(b[i].role, "reset-active"))
         c.reset_active_high = b[i].value != 0;
       else

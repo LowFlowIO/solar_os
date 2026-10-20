@@ -38,12 +38,14 @@ enum {
   SDLP_GET_SYNC = 5,
   SDLP_NEGOTIATE_WINDOW = 6,
   SDLP_WINDOW_SYNC = 7,
+  SDLP_GET_CODECS = 8,
   SDLP_BEGIN_FRAME = 0x10,
   SDLP_BEGIN_RECT,
   SDLP_RECT_DATA,
   SDLP_PRESENT,
   SDLP_ABORT_FRAME,
   SDLP_RECT_RLE,
+  SDLP_RECT_LZ4,
   SDLP_SET_BRIGHTNESS = 0x20,
   SDLP_SET_POWER
 };
@@ -54,7 +56,8 @@ enum {
   SDLP_POWER_SAVE = 8,
   SDLP_READY = 16,
   SDLP_RLE = 32,
-  SDLP_SYNC = 64
+  SDLP_SYNC = 64,
+  SDLP_LZ4 = 128
 };
 enum {
   SDLP_STATE_IDLE,
@@ -103,6 +106,10 @@ size_t sdlp_rle_encode(uint8_t *out, size_t capacity, const uint8_t *data,
                        size_t size, size_t *consumed);
 bool sdlp_rle_decode(uint8_t *out, size_t expected, const uint8_t *data,
                       size_t size);
+/* Independent LZ4 block, no size prefix or dictionary. Encoder returns zero
+ * when capacity is insufficient. Both directions are bounded to 1024 bytes. */
+size_t sdlp_lz4_encode(uint8_t *out, size_t capacity, const uint8_t *data, size_t size);
+bool sdlp_lz4_decode(uint8_t *out, size_t expected, const uint8_t *data, size_t size);
 typedef struct { uint16_t x, y, width, height; } sdlp_rect_t;
 typedef struct {
   const uint8_t *before, *after;
@@ -211,6 +218,7 @@ typedef struct {
   uint32_t command_limit_ms;
   unsigned format;
   bool configured;
+  bool compressed; /* Opt in to GET_CODECS/LZ4; legacy raw/RLE remains default. */
   sdlp_host_window_t *window;
 } sdlp_host_t;
 void sdlp_host_init(sdlp_host_t *, const sdlp_transport_t *);

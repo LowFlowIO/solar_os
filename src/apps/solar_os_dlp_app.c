@@ -235,7 +235,7 @@ static esp_err_t start(solar_os_context_t *ctx)
     }
     dlp_info_t info = {.width = width, .height = height, .preferred_format = DLP_MONO1,
         .formats = DLP_FORMAT_BIT(DLP_MONO1) | (rgb ? DLP_FORMAT_BIT(DLP_RGB565_BE) : 0),
-        .capabilities = DLP_PRESERVE_CONTENT | DLP_STAGED_FRAME | DLP_RLE | DLP_SYNC,
+        .capabilities = DLP_PRESERVE_CONTENT | DLP_STAGED_FRAME | DLP_RLE | DLP_SYNC | DLP_LZ4,
         .max_rect_bytes = capacity, .command_ms = 1000, .present_ms = 60000,
         .nominal_refresh_ms = 1000};
     snprintf(info.model, sizeof(info.model), "SolarOS %s", state.display);

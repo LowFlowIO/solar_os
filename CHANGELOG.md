@@ -2,6 +2,15 @@
 
 ## 4.x
 
+- **4.16.22** — 2026-10-20 — Added optional lossless LZ4 compression for DLP
+  display connections. Set `compressed=1` when attaching `spi-dlp` or
+  `stream-dlp` displays; saved startup attachments and board manifests retain
+  the setting. Senders negotiate support and choose raw, RLE, or LZ4 per block,
+  with raw/RLE fallback for older endpoints. DLP display servers accept LZ4
+  updates without a separate setting. Compression preserves pixel values and
+  works across supported pixel formats over SPI and ordered byte streams.
+  Fastwave e-paper updates now pace new images independently of settling
+  cycles, allowing pending pixel transitions to continue between frames.
 - **4.16.21** — 2026-10-19 — Added Fastwave waveforms for SolarWriter and
   supported CrowPanel e-paper panels, with automatic cleanup and recovery.
   The cancellable `display relax` command runs repeated black/white recovery

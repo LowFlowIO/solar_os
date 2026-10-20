@@ -109,10 +109,10 @@ class WindowInteropTest(unittest.TestCase):
             patcher.start()
             self.addCleanup(patcher.stop)
 
-    def client(self, compact=True, window=16, fault=None):
+    def client(self, compact=True, window=16, fault=None, compressed=False):
         self.bridge.bridge_init(window)
         port = Port(self.bridge, self.clock, fault)
-        link = dlp.DisplayLink(port, timeout=.5, compact=compact)
+        link = dlp.DisplayLink(port, timeout=.5, compact=compact, compressed=compressed)
         self.assertEqual(link.connect(), (64, 32))
         self.assertEqual(link.window_size, window)
         return link, port
@@ -122,6 +122,26 @@ class WindowInteropTest(unittest.TestCase):
         shown = ctypes.create_string_buffer(256)
         self.bridge.bridge_image(shown)
         self.assertEqual(shown.raw, image)
+
+    def test_compression_faults_and_framing(self):
+        for compact in (False, True):
+            for window in (0, 1, 16):
+                for fault in (None, "loss", "duplicate", "corrupt", "reorder", "ack", "completion") if window else (None,):
+                    if window == 1 and fault == "reorder":
+                        continue  # Only one packet can be in flight.
+                    with self.subTest(compact=compact, window=window, fault=fault):
+                        link, port = self.client(compact, window, fault, compressed=True)
+                        self.assertTrue(link.capabilities & dlp.LZ4)
+                        image = bytes(range(16)) * 16
+                        link.send_frame(image)
+                        self.check_image(image, 1)
+                        self.assertIn(dlp.RECT_LZ4, [cell.opcode for cell in port.requests])
+                        changed = bytes([image[0] ^ 1]) + image[1:]
+                        link.send_frame(changed)
+                        self.check_image(changed, 2)
+                        link.connect()
+                        link.send_frame(changed)
+                        self.check_image(changed, 3)
 
     def test_faults_and_framing(self):
         for compact in (False, True):

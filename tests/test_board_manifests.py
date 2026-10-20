@@ -50,12 +50,19 @@ class BoardManifestTest(unittest.TestCase):
             self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
         board.setdefault("devices", []).append({
             "driver": "stream-dlp", "name": "remote0",
-            "bindings": {"stream": "uart0", "timeout-ms": 3000}})
+            "bindings": {"stream": "uart0", "timeout-ms": 3000, "compressed": 1}})
         validate_board(board, self.drivers)
         header = generate_header(board, self.drivers)
         self.assertIn("SOLAR_OS_EXPANSION_BINDING_BYTE_STREAM", header)
         self.assertIn('.target = "uart0"', header)
         self.assertIn('"timeout-ms"', header)
+        self.assertIn('.role = "compressed"', header)
+        self.assertIn('.value = 1', header)
+        for value in (-1, 2):
+            board["devices"][-1]["bindings"]["compressed"] = value
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+        board["devices"][-1]["bindings"]["compressed"] = 1
         self.assertIn("expansion_stream_dlp", required_packages(board, self.drivers))
         for invalid in ("", 17):
             with self.subTest(value=invalid):

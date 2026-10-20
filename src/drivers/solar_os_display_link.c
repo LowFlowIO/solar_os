@@ -150,7 +150,9 @@ static esp_err_t upload(solar_os_display_link_t *d) {
   if (rows_per_rect > h)
     rows_per_rect = h;
   uint32_t rectangle = 0, offset = 0, band_end = 0;
-  uint8_t chunk[SDLP_DATA_SIZE];
+  uint8_t chunk[SDLP_RLE_MAX_DECODED];
+  size_t capacity = d->host.compressed && (d->host.info.capabilities & SDLP_LZ4)
+      ? sizeof(chunk) : SDLP_DATA_SIZE;
   size_t used = 0;
   for (uint16_t y = 0; !r && y < h; y++) {
     if (y == band_end) {
@@ -169,19 +171,28 @@ static esp_err_t upload(solar_os_display_link_t *d) {
     pack_row(d, y);
     for (uint32_t pos = 0; !r && pos < row_bytes;) {
       size_t n = row_bytes - pos;
-      if (n > sizeof(chunk) - used)
-        n = sizeof(chunk) - used;
+      if (n > capacity - used)
+        n = capacity - used;
       memcpy(chunk + used, d->row + pos, n);
       used += n;
       pos += (uint32_t)n;
-      if (used == sizeof(chunk)) {
-        r = sdlp_host_write(&d->host, frame, rectangle, offset, chunk, used);
-        offset += (uint32_t)used;
+      if (used == capacity) {
+        for (size_t at = 0; !r && at < used;) {
+          size_t consumed;
+          r = sdlp_host_write_some(&d->host, frame, rectangle, offset,
+                                   chunk + at, used - at, &consumed);
+          if (!r) { at += consumed; offset += (uint32_t)consumed; }
+        }
         used = 0;
       }
     }
     if (!r && (uint32_t)y + 1 == band_end && used) {
-      r = sdlp_host_write(&d->host, frame, rectangle, offset, chunk, used);
+      for (size_t at = 0; !r && at < used;) {
+        size_t consumed;
+        r = sdlp_host_write_some(&d->host, frame, rectangle, offset,
+                                 chunk + at, used - at, &consumed);
+        if (!r) { at += consumed; offset += (uint32_t)consumed; }
+      }
       used = 0;
     }
     if ((uint32_t)w * h > 65536 && (y & 31) == 31)
@@ -255,6 +266,7 @@ esp_err_t solar_os_display_link_open_transport(
   esp_err_t e = ESP_ERR_NO_MEM;
   if (!d->mutex) goto fail;
   sdlp_host_init(&d->host, &io->protocol);
+  d->host.compressed = d->config.compressed;
   d->window = solar_os_memory_calloc(1, sizeof(*d->window),
       SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "display.link.window");
   d->host.discovery_sequence = esp_random() & 0x7fffffff;

@@ -95,6 +95,9 @@ minimum-size encoding.
 to 208 bytes; RLE packets expand to at most 1,024 bytes. Each packet is
 independent. Incompressible input stays raw.
 
+Optional negotiated LZ4 blocks are described in [Lossless block compression](COMPRESSION.md).
+Set `host.compressed = true` before extension negotiation to opt in.
+
 The retained cache is committed only after PRESENT completes. Errors invalidate
 it. An unchanged image is skipped only after GET_SYNC confirms that this
 session's retained content is still valid. If another source replaced it,

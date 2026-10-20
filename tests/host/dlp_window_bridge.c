@@ -41,7 +41,7 @@ void bridge_init(unsigned window) {
   now = busy_until = 0; presentations = writes = 0; present_error = 0;
   memset(shown, 0xff, sizeof(shown));
   dlp_info_t info = {.width = 64, .height = 32, .formats = 1,
-    .capabilities = DLP_STAGED_FRAME | DLP_PRESERVE_CONTENT | DLP_RLE | DLP_SYNC,
+    .capabilities = DLP_STAGED_FRAME | DLP_PRESERVE_CONTENT | DLP_RLE | DLP_SYNC | DLP_LZ4,
     .max_rect_bytes = CAPACITY, .command_ms = 1000, .present_ms = 100};
   solar_os_dlp_receiver_io_t io = {.read = read_bytes, .write = write_bytes, .present = present};
   assert(solar_os_dlp_receiver_init(&receiver, &info, 42, storage, CAPACITY, &io));

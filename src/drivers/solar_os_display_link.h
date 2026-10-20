@@ -6,6 +6,7 @@
 typedef struct solar_os_display_link solar_os_display_link_t;
 typedef struct {
   uint32_t timeout_ms; /* Connection and minimum stream command budget; 0 = 5 s. */
+  bool compressed; /* Opt in to negotiated lossless LZ4; default is raw/RLE. */
   int format; /* -1 = peripheral preference; otherwise a DLP pixel format. */
   bool (*cancelled)(void *);
   void *cancel_user;
@@ -13,7 +14,7 @@ typedef struct {
 typedef struct {
   const char *bus;
   int cs, ready, reset;
-  bool reset_active_high;
+  bool reset_active_high, compressed;
   uint32_t reset_ms, boot_ms, clock_hz;
 } solar_os_display_link_config_t;
 esp_err_t solar_os_display_link_create(const solar_os_display_link_config_t *,
