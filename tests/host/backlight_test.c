@@ -65,11 +65,32 @@ int main(int argc, char **argv)
     light_t first = {.fail_at = -1}, second = {.fail_at = -1};
     assert(solar_os_backlight_register(set_light, &first) == ESP_OK);
     assert(solar_os_backlight_register(set_light, &first) == ESP_ERR_INVALID_STATE);
-    const unsigned initial = stored == 101 ? 0U : stored >= 0 && stored <= 100 ? (unsigned)stored : 50U;
+    const bool boot_enabled = argc <= 2 || atoi(argv[2]) != 0;
+    const int original_stored = stored;
+    const unsigned configured = stored == 101 ? 0U : stored >= 0 && stored <= 100 ? (unsigned)stored : 50U;
+    const unsigned initial = boot_enabled ? configured : 0U;
     assert(first.level == initial);
+    assert(solar_os_backlight_get_status(&status) == ESP_OK);
+    assert(status.percent == configured && status.effective_percent == initial);
+    assert(stored == original_stored && commits == 0);
     assert(solar_os_backlight_set_follow() == ESP_ERR_NOT_SUPPORTED);
     assert(solar_os_backlight_display_changed(80) == ESP_OK);
-    assert(first.level == (stored == 101 ? 80 : initial));
+    const unsigned after_display = boot_enabled && stored == 101 ? 80U : initial;
+    assert(first.level == after_display);
+    assert(solar_os_backlight_set_suspended(true) == ESP_OK && first.level == 0);
+    assert(solar_os_backlight_set_suspended(false) == ESP_OK && first.level == after_display);
+    assert(stored == original_stored && commits == 0);
+    if (!boot_enabled) {
+        /* A failed explicit command must leave the boot-disabled output and
+         * the saved brightness intact. */
+        fail_save = true;
+        assert(solar_os_backlight_set_brightness(45) == ESP_FAIL);
+        assert(first.level == 0 && stored == original_stored);
+        fail_save = false;
+        assert(solar_os_backlight_display_changed(80) == ESP_OK && first.level == 0);
+        assert(solar_os_backlight_get_status(&status) == ESP_OK);
+        assert(status.percent == (stored == 101 ? 80U : configured));
+    }
     assert(solar_os_backlight_set_brightness(25) == ESP_OK && stored == 25);
     assert(solar_os_backlight_register(set_light, &second) == ESP_OK && second.level == 25);
     assert(solar_os_backlight_get_status(&status) == ESP_OK && status.providers == 2);

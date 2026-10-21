@@ -40,6 +40,7 @@ psram_bytes = 8388608
 includes = ["solar_os_buttons.h", "solar_os_input.h", "solar_os_input_composition.h", "solar_os_keys.h"]
 
 [defines]
+SOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT = "0"
 SOLAR_OS_BOARD_DISPLAY_CONTROLLER = '"ST7789"'
 SOLAR_OS_BOARD_DISPLAY_CONTROLLER_ST7789 = "1"
 SOLAR_OS_BOARD_DISPLAY_DRIVER_NAME = '"st7789"'

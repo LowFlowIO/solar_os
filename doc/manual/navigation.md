@@ -130,6 +130,9 @@ Keyboard keys report their actual presses and releases, supporting held controls
 in foreground apps. `setterm keyrate` controls typing repeat; trackball rolls
 remain single navigation taps.
 
+The keyboard light starts disabled on every boot, retaining its saved brightness.
+Alt+B toggles the light through the keyboard firmware. An explicit
+`setterm backlight` level or `follow` applies that setting for the current boot.
 Use `setterm backlight 0` to turn off the keyboard light, or
 `setterm backlight 100` for full brightness. Values from 0 to 100 set it
 independently of display brightness; `setterm backlight follow` makes it track

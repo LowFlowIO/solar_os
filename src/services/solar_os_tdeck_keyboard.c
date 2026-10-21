@@ -224,7 +224,20 @@ esp_err_t solar_os_tdeck_keyboard_attach(
         device.name, true, &device.input_source);
     if (err != ESP_OK) { memset(&device, 0, sizeof(device)); return err; }
     err = solar_os_backlight_register(set_backlight, &device);
+    if (err == ESP_OK) {
+        /* Keep Alt+B's native toggle level separate from the initial output.
+         * Registering while boot-disabled sends zero without changing NVS. */
+        solar_os_backlight_status_t light;
+        err = solar_os_backlight_get_status(&light);
+        if (err == ESP_OK) {
+            const uint8_t preset[] = {0x02U,
+                (uint8_t)((light.percent * 255U + 50U) / 100U)};
+            err = solar_os_bus_i2c_transmit(bus, SOLAR_OS_TDECK_KEYBOARD_ADDRESS,
+                                           preset, sizeof(preset));
+        }
+    }
     if (err != ESP_OK) {
+        solar_os_backlight_unregister(&device);
         solar_os_input_source_close(device.input_source);
         memset(&device, 0, sizeof(device));
         return err;
