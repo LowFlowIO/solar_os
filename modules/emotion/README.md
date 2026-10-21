@@ -35,3 +35,7 @@ cmake --build ../../.pio/emotion-module --target typed_elf
 The artifact is `solaros_emotion.library.elf`. The top-level `module.toml` is
 consumed by the normal signed module catalog build. Installing a library does
 not start an expression or claim a display.
+
+Python and Lua consumers use the firmware adapter described in the
+[emotion manual](../../doc/manual/emotion.md). The runnable pose tours are
+[Python](../../examples/python/emotion.py) and [Lua](../../examples/lua/emotion.lua).
