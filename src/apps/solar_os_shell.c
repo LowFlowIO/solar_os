@@ -3980,8 +3980,8 @@ static void cmd_commands(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     for (size_t i = 0; i < shell_builtin_command_count; i++) {
-        solar_os_shell_io_write_bold(io, shell_builtin_commands[i].name);
-        solar_os_shell_io_printf(io, " - %s\n", shell_builtin_commands[i].summary);
+        solar_os_shell_io_table_write_bold(io, shell_builtin_commands[i].name);
+        solar_os_shell_io_table_printf(io, " - %s\n", shell_builtin_commands[i].summary);
     }
 }
 
@@ -5270,7 +5270,7 @@ static void shell_log_follow_print_entry(solar_os_shell_io_t *term,
 
     const uint32_t seconds = entry->timestamp_ms / 1000U;
     const uint32_t ms = entry->timestamp_ms % 1000U;
-    solar_os_shell_io_printf(term,
+    solar_os_shell_io_table_printf(term,
                              "%06" PRIu32 " %5" PRIu32 ".%03" PRIu32 " %c %-16s %s%s\n",
                              entry->sequence,
                              seconds,

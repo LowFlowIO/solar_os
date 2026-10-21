@@ -626,7 +626,7 @@ static void radio_cmd_profile_list(solar_os_shell_io_t *term)
     }
 
     for (size_t i = 0; i < count; i++) {
-        solar_os_shell_io_printf(term,
+        solar_os_shell_io_table_printf(term,
                                  "%s type=%s modulation=%s frequency=%" PRIu32 "\n",
                                  profiles[i].name,
                                  profiles[i].builtin ? "built-in" : "user",

@@ -16,6 +16,10 @@ the running image.
 
 ## Shell Conventions
 
+Tables fit the current shell width on display and port shells. Long rows are
+clipped at the right edge; trailing values or columns can be omitted. Widen the
+terminal to see more columns. One cell is reserved to prevent automatic wrapping.
+
 Paths are resolved relative to the current shell directory. The default storage
 volume is presented as `/`. On SD-backed boards, the primary SD card volume also
 has the internal mount path `/sdcard`, and the internal flash volume is mounted

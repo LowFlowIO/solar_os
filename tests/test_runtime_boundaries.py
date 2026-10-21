@@ -203,7 +203,7 @@ class RuntimeBoundaryTest(unittest.TestCase):
             encoding="utf-8"
         )
         self.assertNotIn('"CATEGORY"', shell)
-        self.assertIn("solar_os_shell_io_printf_bold(", shell)
+        self.assertIn("solar_os_shell_io_table_printf_bold(", shell)
         self.assertIn('"  %-*s %-5s %-6s %s\\n"', shell)
         self.assertIn("expansion_next_driver_in_category", shell)
         self.assertIn("strcmp(driver.name, next->name) < 0", shell)
