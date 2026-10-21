@@ -31,6 +31,12 @@ tests/host/cw2017_test
 tests/host/rtc_pcf8563_test
 tests/host/nmea_test
 tests/host/nmea_gnss_test
+tests/host/shell_table_test
+tests/host/io_layout_test
+tests/host/power_key_test
+tests/host/power_key_wired_test
+tests/host/power_key_input_test
+tests/host/power_key_custom_test
 
 /tests/host/epd_uc8179_test
 /tests/host/uc8179_expansion_test

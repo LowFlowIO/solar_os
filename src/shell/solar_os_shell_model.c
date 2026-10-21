@@ -36,13 +36,13 @@ static void print_ports(solar_os_shell_io_t *io, const char *side,
 {
     for (size_t i = 0; i < count; ++i) {
         const solar_os_inference_tensor_t *port = &ports[i];
-        solar_os_shell_io_printf(io, "%s %s %s shape=[", side, port->name, solar_os_tensor_dtype_name(port->dtype));
+        solar_os_shell_io_table_printf(io, "%s %s %s shape=[", side, port->name, solar_os_tensor_dtype_name(port->dtype));
         for (size_t j = 0; j < port->rank; ++j)
-            solar_os_shell_io_printf(io, "%s%lu", j ? "," : "", (unsigned long)port->shape[j]);
-        solar_os_shell_io_printf(io, "] bytes=%u exponents=[", (unsigned)port->bytes);
+            solar_os_shell_io_table_printf(io, "%s%lu", j ? "," : "", (unsigned long)port->shape[j]);
+        solar_os_shell_io_table_printf(io, "] bytes=%u exponents=[", (unsigned)port->bytes);
         for (size_t j = 0; j < port->exponent_count; ++j)
-            solar_os_shell_io_printf(io, "%s%ld", j ? "," : "", (long)port->exponents[j]);
-        solar_os_shell_io_writeln(io, "]");
+            solar_os_shell_io_table_printf(io, "%s%ld", j ? "," : "", (long)port->exponents[j]);
+        solar_os_shell_io_table_writeln(io, "]");
     }
 }
 void solar_os_shell_cmd_model(solar_os_context_t *ctx, int argc, char **argv)
@@ -77,7 +77,7 @@ void solar_os_shell_cmd_model(solar_os_context_t *ctx, int argc, char **argv)
         for (size_t i = 0; i < count; ++i) {
             const solar_os_inference_model_info_t *info;
             error = solar_os_inference_info(client, handles[i], &info); if (error) break;
-            solar_os_shell_io_printf(io, "%lu %s %s refs=%lu\n", (unsigned long)handles[i],
+            solar_os_shell_io_table_printf(io, "%lu %s %s refs=%lu\n", (unsigned long)handles[i],
                 info->bundle ? info->bundle_id : "espdl", solar_os_inference_mode_name(info->mode),
                 (unsigned long)info->references);
             solar_os_shell_io_write(io, "  "); solar_os_shell_io_writeln(io, info->path);

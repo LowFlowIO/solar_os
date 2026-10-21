@@ -131,6 +131,7 @@ typedef struct {
 typedef struct {
     const char *driver;
     const char *name;
+    bool detachable;
     size_t binding_count;
     solar_os_expansion_binding_t bindings[SOLAR_OS_EXPANSION_DEVICE_BINDING_MAX];
 } solar_os_expansion_default_device_t;
@@ -181,6 +182,8 @@ esp_err_t solar_os_expansion_attach(const char *driver,
                                     const char *name,
                                     const solar_os_expansion_binding_t *bindings,
                                     size_t binding_count);
+/* Restore a board device with its manifest bindings and board provenance. */
+esp_err_t solar_os_expansion_attach_board_device(const char *name);
 esp_err_t solar_os_expansion_detach(const char *name);
 esp_err_t solar_os_expansion_device_set_ready(const char *name, bool ready);
 size_t solar_os_expansion_device_count(void);

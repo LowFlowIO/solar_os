@@ -43,7 +43,7 @@ TARGETS += tensor_image_lua_test
 TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test irc_protocol_test gateway_config_test link_messaging_test chat_settings_test meshcore_instances_test
-TARGETS += nmea_test nmea_gnss_test
+TARGETS += nmea_test nmea_gnss_test gnss_output_test
 TARGETS += sx1262_test
 TARGETS += cw2017_test
 TARGETS += rtc_pcf8563_test
@@ -54,6 +54,30 @@ TARGETS += inmp441_test
 TARGETS += epd_pixel_budget_test
 TARGETS += epd_scan_worker_test
 TARGETS += epd_ssd1683_test epd_ssd1683_waveform_test
+TARGETS += shell_table_test
+TARGETS += io_layout_test
+TARGETS += power_key_test power_key_wired_test power_key_input_test power_key_custom_test
+
+shell_table_test: shell_table_test.c $(ROOT)/src/shell/solar_os_shell_io.c $(ROOT)/src/shell/solar_os_shell_io.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -ffunction-sections -fdata-sections \
+		-include compat.h -I. -I$(ROOT)/src -I$(ROOT)/src/services \
+		-I$(ROOT)/src/shell -I$(ROOT)/components/u8g2/src/clib \
+		shell_table_test.c $(ROOT)/src/shell/solar_os_shell_io.c -Wl,--gc-sections -o $@
+
+io_layout_test: io_layout_test.c $(ROOT)/src/apps/solar_os_io.c $(ROOT)/src/services/solar_os_tui_widgets.c
+	$(CC) $(CFLAGS) -Wno-unused-variable -Wno-format-truncation \
+		-D_GNU_SOURCE -DSPI2_HOST=1 -DSPI3_HOST=2 \
+		-ffunction-sections -fdata-sections -include compat.h -Iexpansion_stubs -I. \
+		-I$(ROOT)/src -I$(ROOT)/src/apps -I$(ROOT)/src/shell -I$(ROOT)/src/services \
+		-I$(ROOT)/components/u8g2/src/clib io_layout_test.c \
+		$(ROOT)/src/services/solar_os_tui_widgets.c -Wl,--gc-sections -o $@
+
+power_key_wired_test: override CFLAGS += -DSOLAR_OS_BOARD_HAS_WIRED_KEYBOARD=1 -DSOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY=SOLAR_OS_KEY_ENTER
+power_key_input_test: override CFLAGS += -DSOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY=SOLAR_OS_KEY_APP_EXIT
+power_key_custom_test: override CFLAGS += -DSOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY=0x09
+power_key_test power_key_wired_test power_key_input_test power_key_custom_test: power_key_test.c $(ROOT)/src/services/solar_os_power.c $(ROOT)/src/services/solar_os_power.h $(wildcard power_stubs/*.h)
+	$(CC) $(CFLAGS) -ffunction-sections -fdata-sections -Ipower_stubs -I. \
+		-I$(ROOT)/src/services power_key_test.c -Wl,--gc-sections -o $@
 
 epd_ssd1683_waveform_test: epd_ssd1683_waveform_test.c $(ROOT)/src/drivers/epd_ssd1683_waveform.c $(ROOT)/src/drivers/epd_ssd1683_waveform.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/drivers epd_ssd1683_waveform_test.c $(ROOT)/src/drivers/epd_ssd1683_waveform.c -o $@
@@ -684,16 +708,22 @@ ubx_test: ubx_test.c $(ROOT)/src/drivers/ubx.c $(ROOT)/src/drivers/ubx.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/drivers \
 		ubx_test.c $(ROOT)/src/drivers/ubx.c -o $@
 
+gnss_output_test: gnss_output_test.c gnss_output_fixture.h $(ROOT)/src/drivers/gnss_output.c $(ROOT)/src/drivers/gnss_output.h
+	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
+		gnss_output_test.c $(ROOT)/src/drivers/gnss_output.c -o $@
+
 nmea_test: nmea_test.c $(ROOT)/src/drivers/nmea.c $(ROOT)/src/drivers/nmea.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/drivers \
 		nmea_test.c $(ROOT)/src/drivers/nmea.c -o $@
 
-nmea_gnss_test: nmea_gnss_test.c $(ROOT)/src/drivers/nmea.c $(ROOT)/src/drivers/nmea.h \
+nmea_gnss_test: nmea_gnss_test.c gnss_output_fixture.h $(ROOT)/src/drivers/nmea.c $(ROOT)/src/drivers/nmea.h \
+        $(ROOT)/src/drivers/gnss_output.c $(ROOT)/src/drivers/gnss_output.h \
         $(ROOT)/src/services/solar_os_nmea_gnss.c $(ROOT)/src/services/solar_os_nmea_gnss.h \
         $(ROOT)/src/services/solar_os_gnss.c $(ROOT)/src/services/solar_os_gnss.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h \
 		-Iexpansion_stubs -I. -I$(ROOT)/include -I$(ROOT)/src/services -I$(ROOT)/src/drivers \
-		nmea_gnss_test.c $(ROOT)/src/drivers/nmea.c $(ROOT)/src/services/solar_os_gnss.c -o $@
+		nmea_gnss_test.c $(ROOT)/src/drivers/nmea.c $(ROOT)/src/drivers/gnss_output.c \
+		$(ROOT)/src/services/solar_os_gnss.c -o $@
 
 sx1262_test: sx1262_test.c $(ROOT)/src/drivers/sx1262.c $(ROOT)/src/drivers/sx1262.h
 	$(CC) $(CFLAGS) -include compat.h \
@@ -1141,6 +1171,12 @@ test: $(TARGETS)
 	./manual_external_metadata_test
 	./terminal_geometry_test
 	./app_exit_result_test
+	./shell_table_test
+	./io_layout_test
+	./power_key_test
+	./power_key_wired_test
+	./power_key_input_test
+	./power_key_custom_test
 	./terminal_preferences_test
 	./tui_widgets_test
 	./wireguard_crypto_test
@@ -1153,6 +1189,7 @@ test: $(TARGETS)
 	./rtc_pcf85063_test
 	./ubx_test
 	./nmea_test
+	./gnss_output_test
 	./nmea_gnss_test
 	./sx1262_test
 	./gnss_service_test

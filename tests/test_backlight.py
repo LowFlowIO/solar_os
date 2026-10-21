@@ -1,6 +1,7 @@
 from pathlib import Path
 import subprocess
 import tempfile
+import tomllib
 import unittest
 
 from tests.test_foreground_presenter import production_functions
@@ -137,16 +138,25 @@ int main(void) {
             subprocess.run([str(binary)], check=True)
 
     def test_settings_follow_suspend_and_failures(self):
+        board = tomllib.loads((ROOT / "boards/manifests/t_deck_plus.toml").read_text())
+        tdeck_enabled = int(board["defines"]["SOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT"])
+        self.assertEqual(tdeck_enabled, 0)
+        self.assertNotIn("SOLAR_OS_BOARD_BACKLIGHT_DEFAULT_PERCENT", board["defines"])
         with tempfile.TemporaryDirectory() as tmp:
             binary = Path(tmp, "backlight")
-            subprocess.run([
-                "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                "-I", str(ROOT / "tests/host"), "-I", str(ROOT / "src/services"),
-                str(ROOT / "tests/host/backlight_test.c"),
-                str(ROOT / "src/services/solar_os_backlight.c"), "-o", str(binary),
-            ], check=True)
-            for stored in (-1, 0, 32, 100, 101, 255):
-                subprocess.run([str(binary), str(stored)], check=True)
+            for enabled in (None, tdeck_enabled):
+                with self.subTest(boot_enabled=enabled):
+                    flags = [] if enabled is None else [
+                        f"-DSOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT={enabled}"]
+                    subprocess.run([
+                        "cc", "-std=c11", "-Wall", "-Wextra", "-Werror", *flags,
+                        "-I", str(ROOT / "tests/host"), "-I", str(ROOT / "src/services"),
+                        str(ROOT / "tests/host/backlight_test.c"),
+                        str(ROOT / "src/services/solar_os_backlight.c"), "-o", str(binary),
+                    ], check=True)
+                    for stored in (-1, 0, 32, 100, 101, 255):
+                        subprocess.run([str(binary), str(stored),
+                                        str(1 if enabled is None else enabled)], check=True)
 
     def test_board_transactions(self):
         source = r'''

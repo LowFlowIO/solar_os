@@ -50,7 +50,7 @@ class ForegroundPresenterTest(unittest.TestCase):
             ], check=True)
             subprocess.run([str(binary)], check=True)
 
-    def test_tdeck_trackball_dominant_gestures_and_session_shortcuts(self):
+    def test_legacy_motion_buttons_and_session_shortcuts(self):
         source = (ROOT / "src/main.c").read_text()
         board = tomllib.loads((ROOT / "boards/manifests/t_deck_plus.toml").read_text())
         with tempfile.TemporaryDirectory() as tmp:
@@ -60,6 +60,12 @@ class ForegroundPresenterTest(unittest.TestCase):
                 (ROOT / "src/services/solar_os_tdeck_keyboard.c").read_text(),
                 ("key_usage", "process_matrix")))
             defines = board["defines"]
+            # The reusable board-button implementation still supports legacy
+            # motion mappings; T-Deck now uses the separate pointer driver/job.
+            defines["SOLAR_OS_BOARD_BUTTONS"] = "{{.pin=GPIO_NUM_3,.key=SOLAR_OS_KEY_UP,.track_motion=true,.pull=SOLAR_OS_BUTTON_PULL_UP}," \
+                "{.pin=GPIO_NUM_15,.key=SOLAR_OS_KEY_DOWN,.track_motion=true,.pull=SOLAR_OS_BUTTON_PULL_UP}," \
+                "{.pin=GPIO_NUM_1,.key=SOLAR_OS_KEY_LEFT,.track_motion=true,.pull=SOLAR_OS_BUTTON_PULL_UP}," \
+                "{.pin=GPIO_NUM_2,.key=SOLAR_OS_KEY_RIGHT,.track_motion=true,.pull=SOLAR_OS_BUTTON_PULL_UP}}"
             Path(tmp, "solar_os_board.h").write_text(
                 '#pragma once\n#include "solar_os_keys.h"\n'
                 '#define SOLAR_OS_BOARD_HAS_BUTTONS 1\n' +

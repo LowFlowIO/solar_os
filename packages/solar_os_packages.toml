@@ -647,6 +647,16 @@ label = "PS/2 mouse"
 category = "Expansion hardware"
 members = ["expansion_ps2_mouse"]
 
+[groups.trackball]
+label = "GPIO trackball"
+category = "Expansion hardware"
+members = ["expansion_trackball"]
+
+[groups.pointer_arrows]
+label = "Pointer arrow navigation"
+category = "Input"
+members = ["job_pointer_arrows"]
+
 [groups.sdspi]
 label = "SPI SD card"
 category = "Expansion hardware"
@@ -1837,6 +1847,7 @@ expansion_drivers = ["solar_os_nmea_gnss_expansion_driver"]
 depends = ["service_expansion", "service_gnss", "service_uart"]
 sources = [
   "drivers/nmea.c",
+  "drivers/gnss_output.c",
   "services/solar_os_nmea_gnss.c",
   "services/solar_os_nmea_gnss_driver.c",
 ]
@@ -2101,6 +2112,14 @@ sources = [
   "services/solar_os_gpio_keys.c",
   "services/solar_os_gpio_keys_driver.c",
 ]
+capabilities = ["expansion_gpio"]
+
+[packages.expansion_trackball]
+label = "expansion.trackball"
+expansion_drivers = ["solar_os_trackball_expansion_driver"]
+depends = ["service_expansion", "service_gpio"]
+sources = ["services/solar_os_trackball.c", "services/solar_os_trackball_driver.c"]
+requires = ["esp_driver_gpio", "esp_timer"]
 capabilities = ["expansion_gpio"]
 
 [packages.expansion_ps2_keyboard]
@@ -2982,6 +3001,10 @@ sources = ["jobs/solar_os_controls_job.c"]
 [packages.job_gesture_listener]
 label = "job.gesture-listener"
 sources = ["jobs/solar_os_gesture_listener_job.c"]
+
+[packages.job_pointer_arrows]
+label = "job.pointer-arrows"
+sources = ["jobs/solar_os_pointer_arrows_job.c"]
 
 [packages.service_unistroke]
 label = "service.unistroke"

@@ -16,6 +16,10 @@ the running image.
 
 ## Shell Conventions
 
+Tables fit the current shell width on display and port shells. Long rows are
+clipped at the right edge; trailing values or columns can be omitted. Widen the
+terminal to see more columns. One cell is reserved to prevent automatic wrapping.
+
 Paths are resolved relative to the current shell directory. The default storage
 volume is presented as `/`. On SD-backed boards, the primary SD card volume also
 has the internal mount path `/sdcard`, and the internal flash volume is mounted
@@ -297,7 +301,7 @@ job for periodic polling.
 | `power` | `power [status]` | Show the selected and effective profiles, suspend state, sleep policy, and wake statistics. |
 | `power` | `power profile [performance\|balanced\|battery\|lowpower]` | Show or save the power profile. |
 | `power` | `power idle [off\|seconds]` | Show or configure the display-shell idle light-sleep timeout. |
-| `power` | `power key [off\|sleep\|suspend]` | Show or configure the dedicated KEY short-press action. |
+| `power` | `power key [short\|long] [action]` | Show or configure the dedicated KEY short- and long-press actions. |
 | `power` | `power sleep` | Enter explicit light sleep from the display shell. Press KEY to wake. |
 | `power` | `power suspend` | Turn off the primary display while services and jobs continue. Press KEY or a keyboard key to resume. |
 | `rtc` | `rtc [status]` | Show the RTC provider, capabilities, interrupt wiring, and alarm/timer owners. Reports `unavailable` when no RTC is present. |
@@ -328,7 +332,7 @@ job for periodic polling.
 | `setterm` | `setterm brightness [0..100]` | Show or set display brightness. |
 | `setterm` | `setterm backlight [0..100\|follow]` | Show or set auxiliary lighting, such as the keyboard backlight, independently or following display brightness. |
 | `setterm` | `setterm profile [vt100\|ansi\|dumb]`; `setterm charset [utf8\|ascii]` | Configure escape sequences and TUI glyph output for the current port shell. |
-| `setterm` | `setterm keyboard [us\|de]`; `setterm powerkey [sleep\|suspend]` | Show or set the keyboard layout and dedicated KEY action. |
+| `setterm` | `setterm keyboard [us\|de]`; `setterm powerkey [short\|long] [action]` | Show or set the keyboard layout and dedicated KEY action. |
 | `setterm` | `setterm keyrate [off\|1..60 [delay-ms]]` | Show or set the shared keyboard and button repeat policy. |
 | `setterm` | `setterm ble [default\|on\|off]` | Show or set the BLE preference for the next boot. |
 | `setterm` | `setterm timezone [UTC\|UTC+/-offset\|Europe/Berlin\|POSIX-TZ]` | Show or set the timezone used for local time. |
@@ -435,7 +439,7 @@ pkg remove hello
 power status
 power profile [performance|balanced|battery|lowpower]
 power idle [off|seconds]
-power key [off|sleep|suspend]
+power key [short|long] [action]
 power sleep
 power suspend
 ```
@@ -452,16 +456,14 @@ Profiles:
 Suspend is different from explicit light sleep. It keeps the runtime, radios,
 background jobs, Inbox notifications, and audio active while the primary
 display is off. It temporarily uses the `lowpower` profile and prevents the
-idle policy from entering explicit light sleep. Another short press of KEY,
+idle policy from entering explicit light sleep. Another press of KEY,
 a new keypress from a built-in or attached keyboard, or a BLE keyboard reconnect
 resumes the display and restores the selected profile. Releasing a held key or
 automatic key repeat does not resume the display. `power status` shows
 the selected profile, effective profile, and suspend state.
 
-`power key` retains `off` for compatibility. `sleep` uses the existing light
-sleep path, and `suspend` toggles the runtime suspend state. The default for a
-new or cleared NVS configuration is `suspend`; an existing saved value remains
-unchanged.
+`power key` is an alias for the KEY settings exposed by `setterm powerkey`.
+Without `short` or `long`, an action changes the short press for compatibility.
 
 `deepsleep` is a standalone command. It turns off the ESP32 radios and enters
 ESP32 deep sleep after configuring the same KEY, compatible RTC interrupt, and
@@ -562,7 +564,7 @@ setterm backlight [0..100|follow]
 setterm profile [vt100|ansi|dumb]
 setterm charset [utf8|ascii]
 setterm keyboard [us|de]
-setterm powerkey [sleep|suspend]
+setterm powerkey [short|long] [default|off|enter|app-exit|sleep|suspend|deepsleep|ble-pair]
 setterm keyrate [off|1..60 [delay-ms]]
 setterm ble [default|on|off]
 setterm timezone [UTC|UTC+/-offset|Europe/Berlin|POSIX-TZ]
@@ -602,9 +604,38 @@ timezone expressions use POSIX TZ syntax and its POSIX sign convention.
 SolarOS does not include the IANA timezone database; `Europe/Berlin` is a
 built-in daylight-saving alias.
 
-`setterm powerkey` selects the dedicated KEY short-press action. `sleep`
-enters explicit light sleep; `suspend` turns off the display while jobs and
-services continue. `setterm key` is accepted as a shorter alias.
+`setterm powerkey` shows both effective KEY actions. Configure the gestures
+independently, or use the `powerkey short` and `powerkey long` rows in the
+`setterm` TUI:
+
+```text
+setterm powerkey short enter
+setterm powerkey long suspend
+setterm powerkey long sleep
+setterm powerkey long deepsleep
+setterm powerkey long ble-pair
+setterm powerkey long default
+```
+
+The action choices are `default`, `off`, `enter`, `app-exit`, `sleep`, `suspend`,
+`deepsleep`, and `ble-pair`. `off` disables the awake action; it does not cut
+power or disable KEY wake. `sleep` enters explicit light sleep. `suspend`
+turns off the display while jobs and services continue. `deepsleep` enters deep
+sleep and starts a fresh boot on wake. `ble-pair` forgets the remembered BLE
+keyboard and starts pairing when BLE is enabled for the current boot.
+
+A hold is recognized after 1.2 seconds; light and deep sleep begin after KEY is
+released. Any KEY press resumes suspend or wakes sleep,
+regardless of its duration. The wake press is consumed until release, so it
+cannot also type Enter, start pairing, or put the device back to sleep.
+
+`default` restores the board's mapping. T-Deck defaults to Enter for a tap and
+suspend for a hold. Other boards retain their normal short-press mapping; holds
+default to suspend on targets with a board-owned wired keyboard and BLE pairing
+on targets without one. Connecting a BLE keyboard does not change these defaults.
+Valid saved choices take precedence over defaults, including older short-press
+settings. Changes persist and apply immediately. `setterm powerkey sleep` remains
+shorthand for `setterm powerkey short sleep`; `setterm key` is also accepted.
 
 `setterm startup` selects the volume used for `.shell/startup` on the next boot.
 The default `auto` setting prefers a mounted board-owned SD card and falls back
@@ -1214,6 +1245,7 @@ available for the compiled board.
 | `expansion` | `expansion bus remove <name>` | Remove an idle runtime bus and release its signal pins. |
 | `expansion` | `expansion attach <driver> <name> <resource...>` | Attach a registered expansion driver or manual resource profile. |
 | `expansion` | `expansion detach <name>` | Detach an active expansion device and release its resource claims. |
+| `expansion` | `expansion attach <board-device-name>` | Restore a detached board device with its manifest bindings and board origin. |
 | `expansion` | `expansion export <path>` | Atomically export runtime buses and catalog-backed device attachments as a portable expansion manifest for custom-board generation. |
 | `neopixel` | `neopixel [status\|list] [name]` | List attached WS2812/NeoPixel strips. |
 | `neopixel` | `neopixel set <name> <index> <red> <green> <blue>` | Set one zero-based pixel and immediately refresh the strip. |
@@ -1263,6 +1295,7 @@ available for the compiled board.
 | `radio` | `radio recv <name> [timeout-ms]` | Receive one packet and print metadata plus payload. |
 | `gnss` | `gnss [list]` | List registered GNSS receivers and their concrete drivers. |
 | `gnss` | `gnss status [name]` | Show power, fix, fix type, and satellite state for one logical receiver. |
+| `gnss` | `gnss enable [name]` / `gnss disable [name]` | Enable or silence NMEA output on a receiver with recognized software configuration support. Power and UART ownership remain unchanged. |
 | `gnss` | `gnss power <on\|off> [name]` | Enable or disable one logical receiver using its driver-specific power control. |
 | `gnss` | `gnss fix [name] [timeout-ms]` | Poll one receiver for a position, UTC time, fix type, satellite count, and accuracy. A timeout can be supplied without a receiver name. |
 | `modem` | `modem` | Open the modem status and settings TUI. |
@@ -1516,10 +1549,35 @@ radio send radio0 hello
 radio recv radio0 5000
 ```
 
+`rx-gain` controls receiver gain policy. `radio status <name>` lists the modes
+supported by that radio; the radio TUI's `rx gain` row cycles through those
+choices with Left/Right. Changes leave the radio in standby, like other radio
+configuration changes.
+
+| Driver | RX gain modes | Default |
+| --- | --- | --- |
+| SX1262 | `power-saving`, `boosted` | `power-saving` |
+| RFM95W | `power-saving`, `boosted` | `boosted` |
+| RFM69 / RFM69H | `auto`, `g1` through `g6` | `auto` |
+
+```text
+radio config radio0 rx-gain boosted
+radio state radio0 rx
+```
+
+On SX1262 and RFM95W, `boosted` enables the higher-current RX/LNA mode;
+`power-saving` disables that boost. Automatic gain control remains active.
+On RFM69, `auto` enables AGC; `g1` selects maximum LNA gain and `g2` through
+`g6` reduce it by 6, 12, 24, 36, and 48 dB respectively. Fixed gain can reduce
+the receiver's ability to handle strong signals. These settings are not
+transmit power or a common numeric gain scale across radio families.
+`default` restores the driver's default policy. Unsupported modes are rejected.
+
 Profiles avoid partially reconfiguring one end while copying a list of fields.
 `lora-eu868`, `gfsk-eu868`, and `ook-eu868` are built in. Up to eight user
-profiles are stored as one versioned NVS record and consume no idle profile
-cache:
+profiles, including RX gain, are saved in mounted-storage settings and consume
+no idle profile cache. Existing profiles without RX gain use the driver's
+default:
 
 ```text
 radio profile list

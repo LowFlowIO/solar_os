@@ -89,7 +89,8 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Control | Action |
 | --- | --- |
 | Roll trackball up / down / left / right | One arrow key in the dominant direction after movement stops. |
-| Press trackball | Enter — select/open. |
+| Tap trackball | Enter — select/open by default. |
+| Hold trackball | Suspend by default. |
 | Keyboard Enter | Enter. |
 | Tap microphone-icon key (Mic) | Tab on release — complete a shell command or argument; tap twice to list matches. |
 | Shift + microphone-icon key | Ctrl — keep Mic held while pressing the other key. |
@@ -106,11 +107,46 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Hold Sym + another key | Type the symbol from the keyboard's symbol layer. |
 | Hold Shift + another key | Type its shifted character. |
 
-Each continuous roll produces one arrow key after 80 ms without movement.
-The direction follows the greater net horizontal or vertical movement;
-opposite movements cancel. Equal diagonals use the most recently moved axis.
-Gestures retain the modifiers held at the last movement pulse, so they can be
-released while the ball settles.
+The trackball press uses the system KEY settings. Change a tap with
+`setterm powerkey short <action>` and a hold with
+`setterm powerkey long <action>`, or edit the two rows in `setterm`.
+Saved choices override these defaults. Any KEY press wakes suspend or sleep;
+the wake press is consumed until release. Deep-sleep wake starts a fresh boot.
+
+Trackball movement is evaluated in fixed 80 ms windows. The first evaluation
+presses an arrow; continued rolling keeps it held, using `setterm keyrate` for
+repeat. Changing direction releases the old arrow before pressing the new one.
+The key is released after 80 ms without movement events. Short rolls that meet
+the minimum vector length produce a press and release.
+The direction follows the greater net horizontal or vertical movement within
+each window; opposite movements cancel. Equal diagonals use the most recently
+moved axis. Each evaluation uses the modifiers from its last movement pulse.
+
+The board attaches the `trackball` expansion driver as `trackball0` and starts
+the `pointer-arrows` job. The driver owns the four direction pins and publishes
+relative pointer movement. The job consumes that source and converts movement
+to the arrow gestures described above. To use relative pointer input directly:
+
+```sh
+job stop pointer-arrows
+```
+
+Restore arrow navigation with:
+
+```sh
+job start pointer-arrows source=trackball0
+```
+
+To reduce sensitivity, stop the job and restart it with, for example,
+`job start pointer-arrows source=trackball0 min-vector=4`. `min-vector` accepts
+`1..65535` and defaults to `2`. Higher values require a longer net movement
+vector within each 80 ms window. Movement below the minimum releases the arrow
+and does not accumulate into the next window.
+
+The push switch continues using the system KEY settings in either case. The
+board starts arrow navigation again at boot; a startup script can stop the job
+to select relative pointer input, or stop and restart it with a tuned
+`min-vector`, on every boot.
 
 For Ctrl, hold Shift and Mic in either order, then press another key or roll
 the trackball. Shift selects the Ctrl chord and is consumed, so this does not
@@ -120,9 +156,12 @@ Ctrl chord to be recognized without triggering completion. Sym+Mic retains
 its digit `0` mapping.
 
 Keyboard keys report their actual presses and releases, supporting held controls
-in foreground apps. `setterm keyrate` controls typing repeat; trackball rolls
-remain single navigation taps.
+in foreground apps. Trackball arrows also report presses and releases;
+`setterm keyrate` controls repeat for typing and held trackball arrows.
 
+The keyboard light starts disabled on every boot, retaining its saved brightness.
+Alt+B toggles the light through the keyboard firmware. An explicit
+`setterm backlight` level or `follow` applies that setting for the current boot.
 Use `setterm backlight 0` to turn off the keyboard light, or
 `setterm backlight 100` for full brightness. Values from 0 to 100 set it
 independently of display brightness; `setterm backlight follow` makes it track

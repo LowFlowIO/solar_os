@@ -819,7 +819,12 @@ static const char * const setterm_keyboard_values[] = {"us", "de"};
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
 static const char * const setterm_ble_values[] = {"default", "on", "off"};
 #endif
-static const char * const setterm_powerkey_values[] = {"sleep", "suspend"};
+static const char * const powerkey_action_values[] = {
+    "default", "off", "enter", "app-exit", "sleep", "suspend", "deepsleep", "ble-pair",
+};
+static const char * const setterm_powerkey_values[] = {
+    "short", "long", "default", "off", "enter", "app-exit", "sleep", "suspend", "deepsleep", "ble-pair",
+};
 static const char * const setterm_keyrate_values[] = {"off"};
 static const char * const setterm_timezone_values[] = {"UTC", "Europe/Berlin"};
 static const char * const setterm_startup_values[] = {"auto", "flash", "sd"};
@@ -1139,7 +1144,7 @@ static const char * const expansion_bus_protocols[] = {
 };
 #if SOLAR_OS_PACKAGE_SERVICE_GNSS
 static const char * const gnss_subcommands[] = {
-    "list", "status", "power", "fix",
+    "list", "status", "power", "enable", "disable", "fix",
 };
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_MODEM
@@ -1271,6 +1276,7 @@ static const char * const radio_config_fields[] = {
     "bandwidth",
     "sf",
     "coding-rate",
+    "rx-gain",
     "power",
     "crc",
     "variable",
@@ -1293,6 +1299,9 @@ static const char * const radio_spreading_factor_values[] = {
 };
 static const char * const radio_coding_rate_values[] = {
     "4/5", "4/6", "4/7", "4/8",
+};
+static const char * const radio_rx_gain_values[] = {
+    "default", "power-saving", "boosted", "auto", "g1", "g2", "g3", "g4", "g5", "g6",
 };
 static const char * const radio_state_values[] = {
     "sleep",
@@ -1549,7 +1558,7 @@ static const char * const power_profile_values[] = {
     "lowpower",
 };
 static const char * const power_idle_values[] = {"off"};
-static const char * const power_key_values[] = {"off", "sleep", "suspend"};
+
 
 static const char * const battery_subcommands[] = {
     "status",
@@ -1918,7 +1927,11 @@ static const char * const path_setterm_keymap[] = {"setterm", "keymap"};
 static const char * const path_setterm_ble[] = {"setterm", "ble"};
 #endif
 static const char * const path_setterm_powerkey[] = {"setterm", "powerkey"};
+static const char * const path_setterm_powerkey_short[] = {"setterm", "powerkey", "short"};
+static const char * const path_setterm_powerkey_long[] = {"setterm", "powerkey", "long"};
 static const char * const path_setterm_key[] = {"setterm", "key"};
+static const char * const path_setterm_key_short[] = {"setterm", "key", "short"};
+static const char * const path_setterm_key_long[] = {"setterm", "key", "long"};
 static const char * const path_setterm_keyrate[] = {"setterm", "keyrate"};
 static const char * const path_setterm_typerate[] = {"setterm", "typerate"};
 static const char * const path_setterm_repeat[] = {"setterm", "repeat"};
@@ -2079,6 +2092,13 @@ static const char * const path_job_start_log_port[] = {"job", "start", "log", SH
 static const char * const path_job_start_log_file[] = {"job", "start", "log", "file"};
 static const char * const path_job_start_bridge[] = {"job", "start", "bridge"};
 static const char * const path_job_start_bridge_port[] = {"job", "start", "bridge", SHELL_COMPLETION_ANY};
+#if SOLAR_OS_PACKAGE_JOB_POINTER_ARROWS
+static const char * const pointer_arrows_options[] = {"source=", "min-vector="};
+static const char * const path_job_start_pointer_arrows[] = {"job", "start", "pointer-arrows"};
+static const char * const path_job_start_pointer_arrows_option[] = {
+    "job", "start", "pointer-arrows", SHELL_COMPLETION_ANY
+};
+#endif
 #if SOLAR_OS_PACKAGE_JOB_GPIO_KEYS
 static const char * const gpio_keys_options[] = {"--config"};
 static const char * const path_job_start_gpio_keys[] = {"job", "start", "gpio-keys"};
@@ -2675,6 +2695,7 @@ static const char * const path_radio_config_crc[] = {"radio", "config", SHELL_CO
 static const char * const path_radio_config_variable[] = {"radio", "config", SHELL_COMPLETION_ANY, "variable"};
 static const char * const path_radio_config_sf[] = {"radio", "config", SHELL_COMPLETION_ANY, "sf"};
 static const char * const path_radio_config_coding_rate[] = {"radio", "config", SHELL_COMPLETION_ANY, "coding-rate"};
+static const char * const path_radio_config_rx_gain[] = {"radio", "config", SHELL_COMPLETION_ANY, "rx-gain"};
 static const char * const path_radio_profile[] = {"radio", "profile"};
 static const char * const path_radio_profile_show[] = {"radio", "profile", "show"};
 static const char * const path_radio_profile_apply[] = {"radio", "profile", "apply"};
@@ -2716,6 +2737,8 @@ static const char * const path_power[] = {"power"};
 static const char * const path_power_profile[] = {"power", "profile"};
 static const char * const path_power_idle[] = {"power", "idle"};
 static const char * const path_power_key[] = {"power", "key"};
+static const char * const path_power_key_short[] = {"power", "key", "short"};
+static const char * const path_power_key_long[] = {"power", "key", "long"};
 static const char * const path_rtc[] = {"rtc"};
 static const char * const path_rtc_alarm[] = {"rtc", "alarm"};
 static const char * const path_rtc_timer[] = {"rtc", "timer"};
@@ -3258,7 +3281,11 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_setterm_ble, setterm_ble_values),
 #endif
     SHELL_COMPLETION_STATIC(path_setterm_powerkey, setterm_powerkey_values),
+    SHELL_COMPLETION_STATIC(path_setterm_powerkey_short, powerkey_action_values),
+    SHELL_COMPLETION_STATIC(path_setterm_powerkey_long, powerkey_action_values),
     SHELL_COMPLETION_STATIC(path_setterm_key, setterm_powerkey_values),
+    SHELL_COMPLETION_STATIC(path_setterm_key_short, powerkey_action_values),
+    SHELL_COMPLETION_STATIC(path_setterm_key_long, powerkey_action_values),
     SHELL_COMPLETION_STATIC(path_setterm_keyrate, setterm_keyrate_values),
     SHELL_COMPLETION_STATIC(path_setterm_typerate, setterm_keyrate_values),
     SHELL_COMPLETION_STATIC(path_setterm_repeat, setterm_keyrate_values),
@@ -3344,6 +3371,10 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_PATH(path_job_start_log_file, false),
     SHELL_COMPLETION_PORTS(path_job_start_bridge),
     SHELL_COMPLETION_PORTS(path_job_start_bridge_port),
+#if SOLAR_OS_PACKAGE_JOB_POINTER_ARROWS
+    SHELL_COMPLETION_STATIC(path_job_start_pointer_arrows, pointer_arrows_options),
+    SHELL_COMPLETION_STATIC(path_job_start_pointer_arrows_option, pointer_arrows_options),
+#endif
 #if SOLAR_OS_PACKAGE_JOB_GPIO_KEYS
     SHELL_COMPLETION_STATIC(path_job_start_gpio_keys, gpio_keys_options),
     SHELL_COMPLETION_PATH(path_job_start_gpio_keys_config, false),
@@ -3754,6 +3785,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_radio_config_variable, on_off_values),
     SHELL_COMPLETION_STATIC(path_radio_config_sf, radio_spreading_factor_values),
     SHELL_COMPLETION_STATIC(path_radio_config_coding_rate, radio_coding_rate_values),
+    SHELL_COMPLETION_STATIC(path_radio_config_rx_gain, radio_rx_gain_values),
     SHELL_COMPLETION_STATIC(path_radio_profile, radio_profile_subcommands),
     SHELL_COMPLETION_RADIO_PROFILES(path_radio_profile_show),
     SHELL_COMPLETION_RADIOS(path_radio_profile_apply),
@@ -3788,7 +3820,9 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_power, power_subcommands),
     SHELL_COMPLETION_STATIC(path_power_profile, power_profile_values),
     SHELL_COMPLETION_STATIC(path_power_idle, power_idle_values),
-    SHELL_COMPLETION_STATIC(path_power_key, power_key_values),
+    SHELL_COMPLETION_STATIC(path_power_key, setterm_powerkey_values),
+    SHELL_COMPLETION_STATIC(path_power_key_short, powerkey_action_values),
+    SHELL_COMPLETION_STATIC(path_power_key_long, powerkey_action_values),
     SHELL_COMPLETION_STATIC(path_rtc, rtc_subcommands),
     SHELL_COMPLETION_STATIC(path_rtc_alarm, rtc_alarm_subcommands),
     SHELL_COMPLETION_STATIC(path_rtc_timer, rtc_timer_subcommands),
@@ -3980,8 +4014,8 @@ static void cmd_commands(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     for (size_t i = 0; i < shell_builtin_command_count; i++) {
-        solar_os_shell_io_write_bold(io, shell_builtin_commands[i].name);
-        solar_os_shell_io_printf(io, " - %s\n", shell_builtin_commands[i].summary);
+        solar_os_shell_io_table_write_bold(io, shell_builtin_commands[i].name);
+        solar_os_shell_io_table_printf(io, " - %s\n", shell_builtin_commands[i].summary);
     }
 }
 
@@ -5270,7 +5304,7 @@ static void shell_log_follow_print_entry(solar_os_shell_io_t *term,
 
     const uint32_t seconds = entry->timestamp_ms / 1000U;
     const uint32_t ms = entry->timestamp_ms % 1000U;
-    solar_os_shell_io_printf(term,
+    solar_os_shell_io_table_printf(term,
                              "%06" PRIu32 " %5" PRIu32 ".%03" PRIu32 " %c %-16s %s%s\n",
                              entry->sequence,
                              seconds,

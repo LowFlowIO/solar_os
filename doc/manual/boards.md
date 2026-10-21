@@ -49,6 +49,38 @@ UTC, and satellite information; position accuracy and PDOP are unavailable.
 The receiver has no independent power control. The standard T-Deck Plus has no
 onboard NFC reader.
 
+The Grove connector is the T-Deck's only expansion connector. Its UART signals
+(ESP32 TX GPIO43, RX GPIO44) are shared with the onboard GNSS receiver. The I/O
+map shows this connector, not the internal display, radio, or audio wiring.
+`gnss0` attaches automatically with `origin=board`, but can be detached to
+release `uart0`:
+
+```text
+expansion detach gnss0
+com uart0
+```
+
+Exit COM with the app-exit key before restoring the board receiver:
+
+```text
+expansion attach gnss0
+```
+
+Restoring it uses the board's original bindings and retains `origin=board`.
+If an external device changed the bus rate, run `uart baud uart0 9600` before
+restoring GNSS so detection starts at the factory rate and can try 38400.
+Detachment lasts until restoration or reboot, including while other board
+devices retry attachment. Detaching stops the GNSS reader and releases the
+software UART claim; the receiver remains powered and electrically connected.
+`gnss disable gnss0` first silences NMEA output on recognized L76K/CASIC and
+MIA-M10Q/UBX receivers. `gnss enable gnss0` restores output. These commands do
+not release `uart0`; detach afterward when another consumer needs it.
+Reattaching the GNSS driver restores muted NMEA output automatically. Settings
+are changed in receiver RAM only, without changing sentence rates or baud.
+Software silencing does not guarantee that the receiver's TX pin becomes high
+impedance. An external transmitter on the same signal still needs electrical
+isolation unless the receiver's hardware specifies a suitable disconnected state.
+
 ## Define a custom board
 
 New board profiles use one versioned TOML manifest in
@@ -205,8 +237,12 @@ python3 scripts/generate_board_profile.py \
   --validate-only
 ```
 
-Fixed devices attach automatically and report `origin=board`. They cannot be
-detached at runtime. Use the established names when the device provides a
+Board devices attach automatically and report `origin=board`. By default they
+are fixed and cannot be detached at runtime. A manifest can set
+`detachable = true` on an individual `[[devices]]` entry to permit
+`expansion detach <name>` and restoration with `expansion attach <name>`.
+Restoration retains the board origin and manifest bindings. Use the established
+names when the device provides a
 primary board service:
 
 | Hardware role | Fixed device name |
@@ -564,9 +600,11 @@ bridge, and the rear microSD slot. It uses `uart0` on GPIO1/GPIO3 as the boot
 shell and a fixed `storage0` one-bit SDMMC attachment on GPIO14 clock, GPIO15
 command, and GPIO2 data.
 The active-low BOOT button on GPIO0 is also the SolarOS KEY. A short press uses
-the configured sleep or suspend action; another short press resumes from
-suspend. A long press forgets the remembered BLE
-keyboard and starts pairing. Do not hold the button during reset or power-up,
+the configured short-press action, which defaults to suspend. Any KEY press
+resumes from suspend. A long press defaults to forgetting the remembered BLE
+keyboard and starting pairing. Configure the two gestures independently with
+`setterm powerkey short <action>` and `setterm powerkey long <action>`.
+Do not hold the button during reset or power-up,
 because GPIO0 low selects the ESP32 serial download boot mode.
 
 The target deliberately leaves the OV2640 camera unsupported. Remove or
@@ -1310,8 +1348,10 @@ The shared 400 kHz `i2c0` bus uses SDA39/SCL38 and carries GT911 touch
 and CW2017 battery gauge (`battery0`, 0x63). Touch uses reset GPIO4, interrupt
 GPIO10, active-low power GPIO2, and a portrait-to-landscape coordinate transform.
 The capacitive Home pad sends app exit on release. The left/right buttons
-(GPIO0/GPIO7) send Up/Down. GPIO3 is the system key: a short press sends app exit
-and a long press uses the configured power-key action. Holding GPIO0 during
+(GPIO0/GPIO7) send Up/Down. GPIO3 is the system key: a short press defaults to app
+exit. Its short and long actions are independently configurable with
+`setterm powerkey short <action>` and `setterm powerkey long <action>`.
+Holding GPIO0 during
 reset selects the ESP32 bootloader.
 
 The one-bit SDMMC slot (`storage0`) uses CLK41/CMD42/DAT0=40. Its active-low
@@ -1356,9 +1396,11 @@ and also enables expansion GPIO, ADC, PWM, I2C, and SPI. The default I2C bus is
 GPIO8 SDA and GPIO9 SCL. The default SPI bus is FSPI on GPIO12 SCK, GPIO13
 MISO, and GPIO11 MOSI, with chip-select slots on GPIO4, GPIO10, GPIO5, GPIO6,
 and GPIO7.
-Its active-low BOOT button on GPIO0 is also the SolarOS KEY for the configured
-short-press sleep/suspend action, light-sleep wake, and long-press BLE keyboard
-replacement. GPIO0 remains reserved from runtime routing. Do not hold the
+Its active-low BOOT button on GPIO0 is also the SolarOS KEY. The short press
+defaults to suspend and the long press to BLE keyboard replacement. Configure
+either with `setterm powerkey short <action>` or `setterm powerkey long <action>`.
+A press of any duration wakes suspend or sleep. GPIO0 remains reserved from
+runtime routing. Do not hold the
 button during reset or power-up, because that selects download boot mode.
 The N16R8 target defaults to the common 16 MiB OTA `partitions.csv` layout. Its
 serial alternative uses `partitions_16mb_single.csv`. Both retain the same

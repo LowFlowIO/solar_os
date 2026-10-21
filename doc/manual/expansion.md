@@ -13,8 +13,12 @@ Expansion drivers let you add displays, keyboards, sensors, audio devices,
 and other hardware while SolarOS is running. A driver can serve both built-in
 and added hardware. Its availability depends on the board and firmware.
 
-Built-in devices attach at boot and appear in `expansion devices` as fixed
-attachments. They cannot be detached. Runtime attachments use named buses and
+Built-in devices attach at boot and appear in `expansion devices` with board
+origin. Most are fixed; a board manifest can explicitly make an individual
+device detachable. Use `expansion detach <name>` to release it and
+`expansion attach <name>` to restore its board bindings. Detachment lasts until
+restoration or reboot and does not imply that the hardware is powered off.
+Runtime attachments use named buses and
 available pins; detach them when finished to release those resources.
 
 Digital control lines, such as a device's power switch, may use an ESP32 GPIO
@@ -32,7 +36,7 @@ display list
 ```
 
 `expansion` opens the device manager. Its Devices view lists current
-attachments and opens their details; detachable runtime devices can be removed
+attachments and opens their details; detachable devices can be removed
 after confirmation. Its Drivers view groups drivers by category and opens an
 attachment form for drivers supported by the running board. Binding forms use
 existing named buses; create, attach, detach, or remove buses in the `io` app.

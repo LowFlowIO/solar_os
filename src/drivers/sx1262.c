@@ -67,6 +67,7 @@
 
 #define SX1262_REG_LORA_SYNC_WORD_MSB 0x0740U
 #define SX1262_REG_LORA_SYNC_WORD_LSB 0x0741U
+#define SX1262_REG_RX_GAIN 0x08ACU
 
 #define SX1262_BUSY_TIMEOUT_US 1000000ULL
 #define SX1262_POLL_INTERVAL_MS 4U
@@ -219,6 +220,23 @@ static esp_err_t sx1262_set_standby(sx1262_t *dev)
 {
     const uint8_t param = SX1262_STANDBY_RC;
     return sx1262_transact(dev, SX1262_OP_SET_STANDBY, &param, 1, NULL, 0);
+}
+
+static esp_err_t sx1262_start_rx(sx1262_t *dev)
+{
+    /* RxGain is outside the default warm-sleep retention list. Restore it once
+     * when arming RX, without interrupting subsequent nonblocking RX polls. */
+    esp_err_t err = sx1262_set_standby(dev);
+    if (err == ESP_OK) {
+        dev->state = SOLAR_OS_RADIO_STATE_STANDBY;
+        const uint8_t gain = dev->config.rx_gain == SOLAR_OS_RADIO_RX_GAIN_BOOSTED ? 0x96U : 0x94U;
+        err = sx1262_write_register(dev, SX1262_REG_RX_GAIN, &gain, 1);
+    }
+    if (err == ESP_OK) {
+        const uint8_t params[3] = {0xFFU, 0xFFU, 0xFFU};
+        err = sx1262_transact(dev, SX1262_OP_SET_RX, params, sizeof(params), NULL, 0);
+    }
+    return err;
 }
 
 static esp_err_t sx1262_get_irq_status(sx1262_t *dev, uint16_t *irq)
@@ -406,6 +424,11 @@ esp_err_t sx1262_configure(sx1262_t *dev, const solar_os_radio_config_t *config)
     if (dev == NULL || config == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
+    if (config->rx_gain != SOLAR_OS_RADIO_RX_GAIN_DEFAULT &&
+        config->rx_gain != SOLAR_OS_RADIO_RX_GAIN_POWER_SAVING &&
+        config->rx_gain != SOLAR_OS_RADIO_RX_GAIN_BOOSTED) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
     esp_err_t err = sx1262_lock(dev);
     if (err != ESP_OK) {
         return err;
@@ -414,6 +437,11 @@ esp_err_t sx1262_configure(sx1262_t *dev, const solar_os_radio_config_t *config)
     const bool lora = sx1262_is_lora(config);
 
     err = sx1262_set_standby(dev);
+    if (err == ESP_OK) {
+        dev->state = SOLAR_OS_RADIO_STATE_STANDBY;
+        const uint8_t gain = config->rx_gain == SOLAR_OS_RADIO_RX_GAIN_BOOSTED ? 0x96U : 0x94U;
+        err = sx1262_write_register(dev, SX1262_REG_RX_GAIN, &gain, 1);
+    }
     if (err == ESP_OK) {
         const uint8_t regulator = SX1262_REGULATOR_DC_DC;
         err = sx1262_transact(dev, SX1262_OP_SET_REGULATOR_MODE, &regulator, 1, NULL, 0);
@@ -548,6 +576,9 @@ esp_err_t sx1262_configure(sx1262_t *dev, const solar_os_radio_config_t *config)
     }
     if (err == ESP_OK) {
         dev->config = *config;
+        if (dev->config.rx_gain == SOLAR_OS_RADIO_RX_GAIN_DEFAULT) {
+            dev->config.rx_gain = SOLAR_OS_RADIO_RX_GAIN_POWER_SAVING;
+        }
         dev->state = SOLAR_OS_RADIO_STATE_STANDBY;
     }
 
@@ -580,8 +611,7 @@ esp_err_t sx1262_set_state(sx1262_t *dev, solar_os_radio_state_t state)
         err = sx1262_set_standby(dev);
         break;
     case SOLAR_OS_RADIO_STATE_RX: {
-        const uint8_t params[3] = {0xFFU, 0xFFU, 0xFFU}; /* continuous */
-        err = sx1262_transact(dev, SX1262_OP_SET_RX, params, sizeof(params), NULL, 0);
+        err = sx1262_start_rx(dev);
         break;
     }
     case SOLAR_OS_RADIO_STATE_TX: {
@@ -741,8 +771,7 @@ esp_err_t sx1262_receive(sx1262_t *dev, solar_os_radio_packet_t *packet, uint32_
     if (dev->state != SOLAR_OS_RADIO_STATE_RX) {
         err = sx1262_clear_irq_status(dev, SX1262_IRQ_ALL);
         if (err == ESP_OK) {
-            const uint8_t params[3] = {0xFFU, 0xFFU, 0xFFU}; /* continuous */
-            err = sx1262_transact(dev, SX1262_OP_SET_RX, params, sizeof(params), NULL, 0);
+            err = sx1262_start_rx(dev);
         }
         if (err != ESP_OK) {
             sx1262_unlock(dev);

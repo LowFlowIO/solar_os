@@ -4761,6 +4761,8 @@ static mp_obj_t solaros_gnss_list(void)
         python_dict_store_cstr(item, "driver", info.driver);
         python_dict_store_bool(item, "power_control", info.power_control);
         python_dict_store_bool(item, "powered", info.powered);
+        python_dict_store_bool(item, "enable_control", info.enable_control);
+        python_dict_store_bool(item, "enabled", info.enabled);
         mp_obj_list_append(list, item);
     }
     return list;
@@ -4784,6 +4786,34 @@ static mp_obj_t solaros_gnss_power(size_t n_args, const mp_obj_t *args)
     return mp_obj_new_bool(enabled);
 }
 MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_gnss_power_obj, 1, 2, solaros_gnss_power);
+
+static mp_obj_t python_gnss_enabled(size_t n_args, const mp_obj_t *args, bool enabled)
+{
+    solar_os_gnss_info_t info;
+    const char *name = NULL;
+    if (n_args >= 1U && args[0] != mp_const_none) {
+        name = mp_obj_str_get_str(args[0]);
+    } else if (solar_os_gnss_get(0U, &info)) {
+        name = info.name;
+    }
+    if (name == NULL) {
+        python_check_esp(ESP_ERR_NOT_FOUND);
+    }
+    python_check_esp(solar_os_gnss_set_enabled(name, enabled));
+    return mp_obj_new_bool(enabled);
+}
+
+static mp_obj_t solaros_gnss_enable(size_t n_args, const mp_obj_t *args)
+{
+    return python_gnss_enabled(n_args, args, true);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_gnss_enable_obj, 0, 1, solaros_gnss_enable);
+
+static mp_obj_t solaros_gnss_disable(size_t n_args, const mp_obj_t *args)
+{
+    return python_gnss_enabled(n_args, args, false);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_gnss_disable_obj, 0, 1, solaros_gnss_disable);
 
 static mp_obj_t solaros_gnss_fix(size_t n_args, const mp_obj_t *args)
 {

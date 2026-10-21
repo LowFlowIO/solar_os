@@ -4,11 +4,15 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/semphr.h"
 #include "nvs.h"
+#include "solar_os_board.h"
 #include "solar_os_log.h"
 
 #define BACKLIGHT_PROVIDER_MAX 8U
 #define BACKLIGHT_FOLLOW 101U
 #define BACKLIGHT_DEFAULT 50U
+#ifndef SOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT
+#define SOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT 1
+#endif
 
 typedef struct {
     solar_os_backlight_set_fn_t set;
@@ -21,6 +25,7 @@ static StaticSemaphore_t mutex_storage;
 static SemaphoreHandle_t mutex;
 static portMUX_TYPE init_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool initialized, suspended, display_available;
+static bool boot_disabled = !SOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT;
 static uint8_t setting = BACKLIGHT_DEFAULT, display_percent;
 static esp_err_t last_error;
 
@@ -49,7 +54,7 @@ static uint8_t requested_percent(uint8_t value)
 
 static uint8_t effective_percent(uint8_t value, bool off)
 {
-    return off ? 0U : requested_percent(value);
+    return off || boot_disabled ? 0U : requested_percent(value);
 }
 
 static void restore_locked(size_t count)
@@ -147,7 +152,9 @@ static esp_err_t set_setting(uint8_t value)
     for (size_t i = 0; i < BACKLIGHT_PROVIDER_MAX; i++) supported |= providers[i].set != NULL;
     esp_err_t err = !supported || (value == BACKLIGHT_FOLLOW && !display_available) ?
         ESP_ERR_NOT_SUPPORTED : ESP_OK;
-    const uint8_t percent = effective_percent(value, suspended);
+    /* An explicit lighting command enables output for this boot. Loading a
+     * saved brightness, display changes and resume leave the boot gate alone. */
+    const uint8_t percent = suspended ? 0U : requested_percent(value);
     if (err == ESP_OK) err = apply_locked(percent);
     if (err == ESP_OK) {
         nvs_handle_t nvs;
@@ -159,6 +166,7 @@ static esp_err_t set_setting(uint8_t value)
         }
         if (err == ESP_OK) {
             setting = value;
+            boot_disabled = false;
             record_applied(percent);
         } else {
             restore_locked(BACKLIGHT_PROVIDER_MAX);

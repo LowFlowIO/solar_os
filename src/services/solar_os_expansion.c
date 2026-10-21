@@ -70,6 +70,8 @@ static uint32_t default_retry_delay_ms;
 #if SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT > 0
 static const solar_os_expansion_default_device_t board_default_devices[] =
     SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICES;
+/* An explicit detach must survive retries for other board peripherals. */
+static bool board_device_detached[SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT];
 
 _Static_assert(sizeof(board_default_devices) / sizeof(board_default_devices[0]) ==
                    SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT,
@@ -82,7 +84,8 @@ static esp_err_t expansion_attach(const char *driver,
                                   size_t binding_count,
                                   solar_os_expansion_origin_t origin,
                                   bool autostart,
-                                  bool detachable);
+                                  bool detachable,
+                                  bool automatic);
 
 static bool mask_contains(uint64_t mask, int pin)
 {
@@ -697,8 +700,13 @@ static esp_err_t expansion_init_board_defaults(bool early)
 #if SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT > 0
     for (size_t i = 0; i < SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT; i++) {
         const solar_os_expansion_default_device_t *device = &board_default_devices[i];
+        if (!devices_lock_take()) {
+            return ESP_ERR_NO_MEM;
+        }
+        const bool detached = board_device_detached[i];
+        devices_lock_give();
         const solar_os_expansion_driver_t *driver = find_driver(device->driver);
-        if (driver == NULL || driver->early != early || expansion_device_exists(device->name)) {
+        if (detached || driver == NULL || driver->early != early || expansion_device_exists(device->name)) {
             continue;
         }
         const esp_err_t err = expansion_attach(device->driver,
@@ -707,7 +715,8 @@ static esp_err_t expansion_init_board_defaults(bool early)
                                                device->binding_count,
                                                SOLAR_OS_EXPANSION_ORIGIN_BOARD,
                                                true,
-                                               false);
+                                               device->detachable,
+                                               true);
         if (err != ESP_OK) {
             ESP_LOGW("expansion",
                      "Board device %s (%s) unavailable: %s",
@@ -1319,7 +1328,8 @@ static esp_err_t expansion_attach(const char *driver,
                                   size_t binding_count,
                                   solar_os_expansion_origin_t origin,
                                   bool autostart,
-                                  bool detachable)
+                                  bool detachable,
+                                  bool automatic)
 {
     if (driver == NULL || driver[0] == '\0' ||
         !device_name_valid(name) ||
@@ -1354,6 +1364,21 @@ static esp_err_t expansion_attach(const char *driver,
         solar_os_memory_free(node);
         return ESP_ERR_NO_MEM;
     }
+#if SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT > 0
+    /* Recheck under the reservation lock: a user may have detached after
+     * the startup retry inspected the defaults. */
+    if (automatic) {
+        for (size_t i = 0; i < SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT; i++) {
+            if (board_device_detached[i] && strcmp(board_default_devices[i].name, name) == 0) {
+                devices_lock_give();
+                solar_os_memory_free(node);
+                return ESP_OK;
+            }
+        }
+    }
+#else
+    (void)automatic;
+#endif
     if (find_device_locked(name) != NULL) {
         devices_lock_give();
         solar_os_memory_free(node);
@@ -1438,6 +1463,16 @@ static esp_err_t expansion_attach(const char *driver,
     node->device.active = true;
     node->device.ready = true;
     node->state = EXPANSION_SLOT_ACTIVE;
+#if SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT > 0
+    if (origin == SOLAR_OS_EXPANSION_ORIGIN_BOARD) {
+        for (size_t i = 0; i < SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT; i++) {
+            if (strcmp(board_default_devices[i].name, name) == 0) {
+                board_device_detached[i] = false;
+                break;
+            }
+        }
+    }
+#endif
     devices_lock_give();
     return ESP_OK;
 }
@@ -1453,7 +1488,33 @@ esp_err_t solar_os_expansion_attach(const char *driver,
                             binding_count,
                             SOLAR_OS_EXPANSION_ORIGIN_RUNTIME,
                             false,
-                            true);
+                            true,
+                            false);
+}
+
+esp_err_t solar_os_expansion_attach_board_device(const char *name)
+{
+    if (!device_name_valid(name)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+#if SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT > 0
+    for (size_t i = 0; i < SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT; i++) {
+        const solar_os_expansion_default_device_t *device = &board_default_devices[i];
+        if (strcmp(device->name, name) != 0) {
+            continue;
+        }
+        const esp_err_t ret = expansion_attach(device->driver,
+                                               device->name,
+                                               device->bindings,
+                                               device->binding_count,
+                                               SOLAR_OS_EXPANSION_ORIGIN_BOARD,
+                                               true,
+                                               device->detachable,
+                                               false);
+        return ret;
+    }
+#endif
+    return ESP_ERR_NOT_FOUND;
 }
 
 esp_err_t solar_os_expansion_detach(const char *name)
@@ -1504,6 +1565,16 @@ esp_err_t solar_os_expansion_detach(const char *name)
     if (devices_lock_take()) {
         if (node->state == EXPANSION_SLOT_DETACHING) {
             removed = remove_device_locked(node);
+#if SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT > 0
+            if (removed && device.origin == SOLAR_OS_EXPANSION_ORIGIN_BOARD) {
+                for (size_t i = 0; i < SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT; i++) {
+                    if (strcmp(board_default_devices[i].name, name) == 0) {
+                        board_device_detached[i] = true;
+                        break;
+                    }
+                }
+            }
+#endif
         }
         devices_lock_give();
     }

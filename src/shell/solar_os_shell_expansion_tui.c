@@ -433,6 +433,8 @@ static void expansion_tui_render_device_detail(void)
     expansion_tui_draw_help(
         expansion_tui.device.origin == SOLAR_OS_EXPANSION_ORIGIN_RUNTIME ?
             "arrows scroll  S startup  D detach  P pin map  esc back" :
+        expansion_tui.device.detachable ?
+            "arrows scroll  D detach  P pin map  esc back" :
             "arrows scroll  fixed device  P pin map  esc back");
     expansion_tui_finish_render(false);
 }
