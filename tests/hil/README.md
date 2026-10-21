@@ -258,3 +258,20 @@ python3 tests/hil/media_rtsp_timing.py rtsp://192.168.1.238/media \
 Checks complete-frame throughput, RTP sequence gaps, frame timestamps, initial
 backlog, clock drift and RTCP reports across explicit teardown/reconnect cycles.
 It does not measure decoded presentation latency or implement a video viewer.
+
+## T-Deck GNSS output control
+
+Requires a T-Deck Plus running firmware with detachable board `gnss0` and
+software GNSS output controls. The receiver must initially be attached and
+enabled. A valid position fix is not required.
+
+```sh
+python3 tests/hil/gnss_output.py --telnet 192.168.1.247 --output /tmp/gnss-output-hil --bindings
+```
+
+Captures NMEA before and after, verifies output disable and unavailable fixes,
+checks that GNSS keeps the UART claim until detach, observes a quiet UART,
+and checks automatic recovery on reattachment. Restores attachment and output
+on exit. Does not test GNSS supply current or electrical TX isolation.
+`--bindings` also checks Python and Lua controls through local inline scripts;
+omit it for firmware without those runtimes.

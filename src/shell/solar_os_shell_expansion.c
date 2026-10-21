@@ -61,6 +61,7 @@ static void expansion_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  expansion bus detach <name>");
     solar_os_shell_io_writeln(term, "  expansion bus remove <name>");
     solar_os_shell_io_writeln(term, "  expansion attach <driver> <name> <resource...>");
+    solar_os_shell_io_writeln(term, "  expansion attach <board-device-name>");
     solar_os_shell_io_writeln(term, "  expansion detach <name>");
     solar_os_shell_io_writeln(term, "  expansion export <path>");
 }
@@ -1407,6 +1408,17 @@ static void expansion_cmd_attach_with_bindings(solar_os_shell_io_t *term, int ar
         solar_os_shell_diag_missing(term, "expansion attach", "driver",
                                     "expansion attach <driver> <name> <resource...>");
         return;
+    }
+    if (argc == 3) {
+        const esp_err_t ret = solar_os_expansion_attach_board_device(argv[2]);
+        if (ret == ESP_OK) {
+            solar_os_shell_io_printf(term, "attached %s (board)\n", argv[2]);
+            return;
+        }
+        if (ret != ESP_ERR_NOT_FOUND) {
+            expansion_print_attach_error(term, argv[2], ret);
+            return;
+        }
     }
     if (!expansion_find_driver(argv[2], &driver)) {
         solar_os_shell_io_printf(term, "expansion attach: unknown driver '%s'\n", argv[2]);

@@ -166,6 +166,7 @@ bindings = { spi = "spi0", cs = 9, busy = 13, reset = 17, irq = 45 }
 # Both factory GNSS variants stream NMEA: L76K at 9600, MIA-M10Q at 38400.
 driver = "nmea"
 name = "gnss0"
+detachable = true
 bindings = { uart = "uart0", alt_baud = 38400 }
 
 [[pins]]
@@ -279,11 +280,11 @@ role = "LCD backlight"
 [[pins]]
 gpio = 43
 policy = "fixed"
-role = "GPS TX"
+role = "Grove UART TX / GNSS"
 [[pins]]
 gpio = 44
 policy = "fixed"
-role = "GPS RX"
+role = "Grove UART RX / GNSS"
 [[pins]]
 gpio = 45
 policy = "fixed"
@@ -294,144 +295,38 @@ policy = "fixed"
 role = "keyboard interrupt"
 
 [connector]
-title = "Internal peripheral wiring"
-view = "logical pin inventory; T-Deck Plus has no general-purpose Grove connector"
-rows = 5
+title = "Grove connector"
+view = "logical signal order; UART shared with always-on GNSS"
+rows = 1
 columns = 4
 
 [[connectors]]
-connector = "INTERNAL"
+connector = "GROVE"
 position = 1
 row = 0
 column = 0
-gpio = 40
-kind = "gpio"
-label = "SPI SCK"
+kind = "power"
+label = "3V3"
 [[connectors]]
-connector = "INTERNAL"
+connector = "GROVE"
 position = 2
 row = 0
 column = 1
-gpio = 38
-kind = "gpio"
-label = "SPI MISO"
+kind = "ground"
+label = "GND"
 [[connectors]]
-connector = "INTERNAL"
+connector = "GROVE"
 position = 3
 row = 0
 column = 2
-gpio = 41
+gpio = 43
 kind = "gpio"
-label = "SPI MOSI"
+label = "UART TX / GNSS"
 [[connectors]]
-connector = "INTERNAL"
+connector = "GROVE"
 position = 4
 row = 0
 column = 3
-gpio = 12
-kind = "gpio"
-label = "LCD CS"
-[[connectors]]
-connector = "INTERNAL"
-position = 5
-row = 1
-column = 0
-gpio = 39
-kind = "gpio"
-label = "SD CS"
-[[connectors]]
-connector = "INTERNAL"
-position = 6
-row = 1
-column = 1
-gpio = 9
-kind = "gpio"
-label = "LoRa CS"
-[[connectors]]
-connector = "INTERNAL"
-position = 7
-row = 1
-column = 2
-gpio = 18
-kind = "gpio"
-label = "I2C SDA"
-[[connectors]]
-connector = "INTERNAL"
-position = 8
-row = 1
-column = 3
-gpio = 8
-kind = "gpio"
-label = "I2C SCL"
-[[connectors]]
-connector = "INTERNAL"
-position = 9
-row = 2
-column = 0
-gpio = 43
-kind = "gpio"
-label = "GPS TX"
-[[connectors]]
-connector = "INTERNAL"
-position = 10
-row = 2
-column = 1
 gpio = 44
 kind = "gpio"
-label = "GPS RX"
-[[connectors]]
-connector = "INTERNAL"
-position = 11
-row = 2
-column = 2
-gpio = 11
-kind = "gpio"
-label = "LCD DC"
-[[connectors]]
-connector = "INTERNAL"
-position = 12
-row = 2
-column = 3
-gpio = 42
-kind = "gpio"
-label = "LCD backlight"
-[[connectors]]
-connector = "INTERNAL"
-position = 13
-row = 3
-column = 0
-gpio = 10
-kind = "gpio"
-label = "Peripheral power enable"
-[[connectors]]
-connector = "INTERNAL"
-position = 14
-row = 3
-column = 1
-gpio = 4
-kind = "gpio"
-label = "Battery ADC"
-[[connectors]]
-connector = "INTERNAL"
-position = 15
-row = 3
-column = 2
-gpio = 13
-kind = "gpio"
-label = "LoRa busy"
-[[connectors]]
-connector = "INTERNAL"
-position = 16
-row = 3
-column = 3
-gpio = 17
-kind = "gpio"
-label = "LoRa reset"
-[[connectors]]
-connector = "INTERNAL"
-position = 17
-row = 4
-column = 0
-gpio = 45
-kind = "gpio"
-label = "LoRa DIO1"
+label = "UART RX / GNSS"

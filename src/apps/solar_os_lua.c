@@ -4445,6 +4445,8 @@ static int solua_gnss_list(lua_State *L)
         solua_set_str(L, -1, "driver", info.driver);
         solua_set_bool(L, -1, "power_control", info.power_control);
         solua_set_bool(L, -1, "powered", info.powered);
+        solua_set_bool(L, -1, "enable_control", info.enable_control);
+        solua_set_bool(L, -1, "enabled", info.enabled);
         lua_rawseti(L, -2, (lua_Integer)i + 1);
     }
     return 1;
@@ -4466,6 +4468,33 @@ static int solua_gnss_power(lua_State *L)
     (void)solua_check_esp(L, solar_os_gnss_set_power(name, enabled));
     lua_pushboolean(L, enabled);
     return 1;
+}
+
+static int solua_gnss_enabled(lua_State *L, bool enabled)
+{
+    solar_os_gnss_info_t info;
+    const char *name = NULL;
+    if (!lua_isnoneornil(L, 1)) {
+        name = luaL_checkstring(L, 1);
+    } else if (solar_os_gnss_get(0U, &info)) {
+        name = info.name;
+    }
+    if (name == NULL) {
+        return solua_check_esp(L, ESP_ERR_NOT_FOUND);
+    }
+    (void)solua_check_esp(L, solar_os_gnss_set_enabled(name, enabled));
+    lua_pushboolean(L, enabled);
+    return 1;
+}
+
+static int solua_gnss_enable(lua_State *L)
+{
+    return solua_gnss_enabled(L, true);
+}
+
+static int solua_gnss_disable(lua_State *L)
+{
+    return solua_gnss_enabled(L, false);
 }
 
 static int solua_gnss_fix(lua_State *L)

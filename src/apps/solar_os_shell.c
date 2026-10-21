@@ -1139,7 +1139,7 @@ static const char * const expansion_bus_protocols[] = {
 };
 #if SOLAR_OS_PACKAGE_SERVICE_GNSS
 static const char * const gnss_subcommands[] = {
-    "list", "status", "power", "fix",
+    "list", "status", "power", "enable", "disable", "fix",
 };
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_MODEM

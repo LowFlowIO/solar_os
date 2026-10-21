@@ -843,6 +843,16 @@ bindings = { gpio = 7 }
         gnss = next(device for device in board["devices"] if device["name"] == "gnss0")
         self.assertEqual(gnss["driver"], "nmea")
         self.assertEqual(gnss["bindings"], {"uart": "uart0", "alt_baud": 38400})
+        self.assertTrue(gnss["detachable"])
+        self.assertEqual({pin["connector"] for pin in board["connectors"]}, {"GROVE"})
+        self.assertEqual(
+            {pin["gpio"] for pin in board["connectors"] if pin["kind"] == "gpio"},
+            {43, 44},
+        )
+        self.assertEqual({pin["kind"] for pin in board["connectors"]},
+                         {"gpio", "power", "ground"})
+        self.assertFalse(any(device.get("detachable", False)
+                             for device in board["devices"] if device["name"] != "gnss0"))
 
         defines = board["defines"]
         self.assertEqual(
@@ -868,6 +878,11 @@ bindings = { gpio = 7 }
 
         packages = required_packages(board, self.drivers)
         self.assertIn("nmea_gnss", packages)
+
+        self.assertIn('.name = "gnss0", .detachable = true', header)
+        gnss["detachable"] = "true"
+        with self.assertRaisesRegex(ManifestError, "detachable must be a boolean"):
+            validate_board(board, self.drivers)
 
     def test_waveshare_sim7670_v2_claims_fixed_peripherals(self) -> None:
         board = load_board_manifest(

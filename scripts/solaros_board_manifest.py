@@ -463,6 +463,8 @@ def validate_board(board: dict[str, Any], drivers: dict[str, DriverDef]) -> None
         if name in device_names:
             raise ManifestError(f"device {name} is declared more than once")
         device_names.add(name)
+        if not isinstance(device.get("detachable", False), bool):
+            raise ManifestError(f"device {name}.detachable must be a boolean")
         driver = drivers.get(driver_name)
         if driver is None:
             raise ManifestError(f"device {name} uses unknown driver {driver_name!r}")
@@ -712,6 +714,7 @@ def _device_initializer(device: dict[str, Any],
     ]
     return (
         "{.driver = " + _c_string(driver.name) + ", .name = " + _c_string(device["name"]) +
+        (", .detachable = true" if device.get("detachable", False) else "") +
         f", .binding_count = {len(entries)}, .bindings = {{" + ", ".join(entries) + "}}"
     )
 

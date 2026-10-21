@@ -1837,6 +1837,7 @@ expansion_drivers = ["solar_os_nmea_gnss_expansion_driver"]
 depends = ["service_expansion", "service_gnss", "service_uart"]
 sources = [
   "drivers/nmea.c",
+  "drivers/gnss_output.c",
   "services/solar_os_nmea_gnss.c",
   "services/solar_os_nmea_gnss_driver.c",
 ]

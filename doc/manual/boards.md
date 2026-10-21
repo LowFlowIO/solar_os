@@ -49,6 +49,38 @@ UTC, and satellite information; position accuracy and PDOP are unavailable.
 The receiver has no independent power control. The standard T-Deck Plus has no
 onboard NFC reader.
 
+The Grove connector is the T-Deck's only expansion connector. Its UART signals
+(ESP32 TX GPIO43, RX GPIO44) are shared with the onboard GNSS receiver. The I/O
+map shows this connector, not the internal display, radio, or audio wiring.
+`gnss0` attaches automatically with `origin=board`, but can be detached to
+release `uart0`:
+
+```text
+expansion detach gnss0
+com uart0
+```
+
+Exit COM with the app-exit key before restoring the board receiver:
+
+```text
+expansion attach gnss0
+```
+
+Restoring it uses the board's original bindings and retains `origin=board`.
+If an external device changed the bus rate, run `uart baud uart0 9600` before
+restoring GNSS so detection starts at the factory rate and can try 38400.
+Detachment lasts until restoration or reboot, including while other board
+devices retry attachment. Detaching stops the GNSS reader and releases the
+software UART claim; the receiver remains powered and electrically connected.
+`gnss disable gnss0` first silences NMEA output on recognized L76K/CASIC and
+MIA-M10Q/UBX receivers. `gnss enable gnss0` restores output. These commands do
+not release `uart0`; detach afterward when another consumer needs it.
+Reattaching the GNSS driver restores muted NMEA output automatically. Settings
+are changed in receiver RAM only, without changing sentence rates or baud.
+Software silencing does not guarantee that the receiver's TX pin becomes high
+impedance. An external transmitter on the same signal still needs electrical
+isolation unless the receiver's hardware specifies a suitable disconnected state.
+
 ## Define a custom board
 
 New board profiles use one versioned TOML manifest in
@@ -205,8 +237,12 @@ python3 scripts/generate_board_profile.py \
   --validate-only
 ```
 
-Fixed devices attach automatically and report `origin=board`. They cannot be
-detached at runtime. Use the established names when the device provides a
+Board devices attach automatically and report `origin=board`. By default they
+are fixed and cannot be detached at runtime. A manifest can set
+`detachable = true` on an individual `[[devices]]` entry to permit
+`expansion detach <name>` and restoration with `expansion attach <name>`.
+Restoration retains the board origin and manifest bindings. Use the established
+names when the device provides a
 primary board service:
 
 | Hardware role | Fixed device name |

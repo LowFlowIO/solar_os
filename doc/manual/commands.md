@@ -1214,6 +1214,7 @@ available for the compiled board.
 | `expansion` | `expansion bus remove <name>` | Remove an idle runtime bus and release its signal pins. |
 | `expansion` | `expansion attach <driver> <name> <resource...>` | Attach a registered expansion driver or manual resource profile. |
 | `expansion` | `expansion detach <name>` | Detach an active expansion device and release its resource claims. |
+| `expansion` | `expansion attach <board-device-name>` | Restore a detached board device with its manifest bindings and board origin. |
 | `expansion` | `expansion export <path>` | Atomically export runtime buses and catalog-backed device attachments as a portable expansion manifest for custom-board generation. |
 | `neopixel` | `neopixel [status\|list] [name]` | List attached WS2812/NeoPixel strips. |
 | `neopixel` | `neopixel set <name> <index> <red> <green> <blue>` | Set one zero-based pixel and immediately refresh the strip. |
@@ -1263,6 +1264,7 @@ available for the compiled board.
 | `radio` | `radio recv <name> [timeout-ms]` | Receive one packet and print metadata plus payload. |
 | `gnss` | `gnss [list]` | List registered GNSS receivers and their concrete drivers. |
 | `gnss` | `gnss status [name]` | Show power, fix, fix type, and satellite state for one logical receiver. |
+| `gnss` | `gnss enable [name]` / `gnss disable [name]` | Enable or silence NMEA output on a receiver with recognized software configuration support. Power and UART ownership remain unchanged. |
 | `gnss` | `gnss power <on\|off> [name]` | Enable or disable one logical receiver using its driver-specific power control. |
 | `gnss` | `gnss fix [name] [timeout-ms]` | Poll one receiver for a position, UTC time, fix type, satellite count, and accuracy. A timeout can be supplied without a receiver name. |
 | `modem` | `modem` | Open the modem status and settings TUI. |
