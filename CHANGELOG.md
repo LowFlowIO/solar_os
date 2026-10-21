@@ -2,6 +2,12 @@
 
 ## 4.x
 
+- **4.16.25** — 2026-10-21 — Added an optional emotion engine for
+  ESP32-S3 devices with executable PSRAM. Python and Lua scripts can animate
+  21 Cozmo-style expressions on supported display targets, control gaze and
+  blinking, and play four reaction sounds. Faces animate independently of
+  script work and pause with foreground sessions. Added examples and API
+  documentation, and fixed a reboot during face cleanup.
 - **4.16.24** — 2026-10-21 — Added GNSS output controls for recognized
   receivers and software release of T-Deck's shared Grove UART. Shell tables
   and the I/O TUI now fit terminal width. KEY short and long presses support
