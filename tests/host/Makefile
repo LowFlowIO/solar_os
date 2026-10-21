@@ -55,12 +55,21 @@ TARGETS += epd_pixel_budget_test
 TARGETS += epd_scan_worker_test
 TARGETS += epd_ssd1683_test epd_ssd1683_waveform_test
 TARGETS += shell_table_test
+TARGETS += io_layout_test
 
 shell_table_test: shell_table_test.c $(ROOT)/src/shell/solar_os_shell_io.c $(ROOT)/src/shell/solar_os_shell_io.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -ffunction-sections -fdata-sections \
 		-include compat.h -I. -I$(ROOT)/src -I$(ROOT)/src/services \
 		-I$(ROOT)/src/shell -I$(ROOT)/components/u8g2/src/clib \
 		shell_table_test.c $(ROOT)/src/shell/solar_os_shell_io.c -Wl,--gc-sections -o $@
+
+io_layout_test: io_layout_test.c $(ROOT)/src/apps/solar_os_io.c $(ROOT)/src/services/solar_os_tui_widgets.c
+	$(CC) $(CFLAGS) -Wno-unused-variable -Wno-format-truncation \
+		-D_GNU_SOURCE -DSPI2_HOST=1 -DSPI3_HOST=2 \
+		-ffunction-sections -fdata-sections -include compat.h -Iexpansion_stubs -I. \
+		-I$(ROOT)/src -I$(ROOT)/src/apps -I$(ROOT)/src/shell -I$(ROOT)/src/services \
+		-I$(ROOT)/components/u8g2/src/clib io_layout_test.c \
+		$(ROOT)/src/services/solar_os_tui_widgets.c -Wl,--gc-sections -o $@
 
 epd_ssd1683_waveform_test: epd_ssd1683_waveform_test.c $(ROOT)/src/drivers/epd_ssd1683_waveform.c $(ROOT)/src/drivers/epd_ssd1683_waveform.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/drivers epd_ssd1683_waveform_test.c $(ROOT)/src/drivers/epd_ssd1683_waveform.c -o $@
@@ -1155,6 +1164,7 @@ test: $(TARGETS)
 	./terminal_geometry_test
 	./app_exit_result_test
 	./shell_table_test
+	./io_layout_test
 	./terminal_preferences_test
 	./tui_widgets_test
 	./wireguard_crypto_test

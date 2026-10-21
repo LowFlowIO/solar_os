@@ -1237,7 +1237,10 @@ Controls:
   in the other views. Page Up/Page Down, Home, and End make larger moves.
 - Layout adapts to the terminal: compact headers show several pins across,
   while long headers such as the DevKitC J1/J3 pair scroll vertically with one
-  physical pin pair per row.
+  physical pin pair per row. Narrow screens show fewer columns and keep the
+  selected pin visible.
+- Pins, Buses, and Claims fit their columns to the screen width. Bus state stays
+  ahead of routing details; trailing columns are omitted when space is limited.
 - Layout markers are `*` free, `~` releasable, `@` claimed, `!` fixed/control,
   `+` power, `-` ground, and `x` not connected.
 - `Enter` opens context-sensitive actions for a pin or bus.
