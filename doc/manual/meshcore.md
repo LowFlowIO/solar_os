@@ -135,7 +135,11 @@ These changes stop the affected local runtime while applying settings; its job
 restarts it when enabled. Other instances continue running. `messages configure
 NAME radio RADIO PROFILE` or `messages configure NAME ble ADDRESS TYPE [PIN]`
 changes a binding within its backend type. Chat accepts the same settings after
-`/add` and `/configure`. Legacy `meshcore` commands address the default instance.
+`/add` and `/configure`. Legacy `meshcore` commands address the default instance
+when it is unbound or uses a local radio. If that default is absent or uses BLE,
+they use the sole local-radio instance. With several local-radio instances and
+no local default, use `messages instances` to list them and the named Messaging
+commands to manage each one.
 
 `messages remove NAME` or `/remove NAME` closes that instance, cancels its sends,
 and deletes its profile credentials and local message history. Default instances

@@ -395,13 +395,27 @@ esp_err_t solar_os_meshcore_instances_init(void)
     atomic_flag_clear(&init_lock); return error;
 }
 
-esp_err_t solar_os_meshcore_legacy_begin(void **lease)
+esp_err_t solar_os_meshcore_legacy_begin(unsigned kind, void **lease)
 {
-    *lease = NULL; if (selected_instance) return ESP_OK;
+    if (!lease) return ESP_ERR_INVALID_ARG;
+    *lease = NULL;
+    if (kind < SOLAR_OS_MESHCORE_BACKEND_RADIO || kind > SOLAR_OS_MESHCORE_BACKEND_BLE) return ESP_ERR_INVALID_ARG;
+    if (selected_instance) return ESP_OK;
     esp_err_t error = solar_os_meshcore_instances_init(); if (error != ESP_OK) return error;
     xSemaphoreTake(meshcore_instances.edit, portMAX_DELAY); workers_lock();
     meshcore_instance_t *node = meshcore_instances.instances;
     while (node && node->id != SOLAR_OS_MESSAGING_PROVIDER_MESHCORE) node = node->next;
+    if (!node || (node->config.backend && node->config.backend != kind)) {
+        node = NULL;
+        for (meshcore_instance_t *candidate = meshcore_instances.instances; candidate; candidate = candidate->next) {
+            if (candidate->config.backend != kind) continue;
+            if (node) {
+                workers_unlock(); xSemaphoreGive(meshcore_instances.edit);
+                return ESP_ERR_INVALID_STATE;
+            }
+            node = candidate;
+        }
+    }
     if (!node) { workers_unlock(); xSemaphoreGive(meshcore_instances.edit); return ESP_ERR_NOT_FOUND; }
     selected_instance = node; *lease = node; return ESP_OK;
 }

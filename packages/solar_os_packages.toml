@@ -500,12 +500,12 @@ members = ["app_invaders"]
 [groups.python]
 label = "Python"
 category = "Scripting"
-members = ["app_python"]
+members = ["app_python", "service_emotion"]
 
 [groups.lua]
 label = "Lua"
 category = "Scripting"
-members = ["app_lua"]
+members = ["app_lua", "service_emotion"]
 
 [groups.playground]
 label = "Playground package manager"
@@ -1080,6 +1080,14 @@ label = "service.script-media"
 depends = ["service_streams"]
 sources = ["services/solar_os_script_media.c"]
 requires = ["esp_timer"]
+
+[packages.service_emotion]
+label = "service.emotion"
+depends = ["service_native_modules"]
+sources = ["services/solar_os_emotion.c"]
+requires = ["esp_timer"]
+targets = ["esp32s3"]
+capabilities = ["psram"]
 
 [packages.service_ftp]
 label = "network.ftp"

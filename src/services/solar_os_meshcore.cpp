@@ -39,7 +39,7 @@ class MeshcoreCall {
     void *lease_ = nullptr;
     esp_err_t error_;
 public:
-    MeshcoreCall() : error_(solar_os_meshcore_legacy_begin(&lease_)) {}
+    MeshcoreCall() : error_(solar_os_meshcore_legacy_begin(SOLAR_OS_MESHCORE_BACKEND_RADIO, &lease_)) {}
     ~MeshcoreCall() { solar_os_meshcore_legacy_end(lease_); }
     esp_err_t error() const { return error_; }
 };
