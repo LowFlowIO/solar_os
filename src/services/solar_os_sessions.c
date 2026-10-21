@@ -851,7 +851,8 @@ static void session_discard_graphics_snapshot(solar_os_session_entry_t *session)
 static void session_capture_graphics_snapshot(solar_os_session_entry_t *session)
 {
     if (session == NULL || !session->graphics_active || session->app == NULL ||
-        session->app->resume != NULL) {
+        (session->app->resume != NULL &&
+         !(session->app->flags & SOLAR_OS_APP_FLAG_RESUME_SNAPSHOT))) {
         session_discard_graphics_snapshot(session);
         return;
     }
@@ -1371,6 +1372,8 @@ static bool start_or_resume_session(solar_os_session_entry_t *session)
             return false;
         }
     } else if (session->app->resume != NULL) {
+        if (session->app->flags & SOLAR_OS_APP_FLAG_RESUME_SNAPSHOT)
+            session_restore_graphics_snapshot(session);
         session->app->resume(session_state.ctx);
     } else {
         session_restore_graphics_snapshot(session);
@@ -1443,6 +1446,8 @@ static bool start_or_resume_detached_session(solar_os_session_entry_t *session)
             return false;
         }
     } else if (session->app->resume != NULL) {
+        if (session->app->flags & SOLAR_OS_APP_FLAG_RESUME_SNAPSHOT)
+            session_restore_graphics_snapshot(session);
         session->app->resume(session_state.ctx);
     } else {
         session_restore_graphics_snapshot(session);
@@ -2075,6 +2080,8 @@ static void dispatch_session_event(solar_os_session_entry_t *session,
         session->terminal_redraw_requested = false;
         session_prepare_context(session);
         if (session->app->resume != NULL) {
+            if (session->app->flags & SOLAR_OS_APP_FLAG_RESUME_SNAPSHOT)
+                session_restore_graphics_snapshot(session);
             session->app->resume(session_state.ctx);
         } else if (session->app->event != NULL) {
             const solar_os_event_t resume_event = {

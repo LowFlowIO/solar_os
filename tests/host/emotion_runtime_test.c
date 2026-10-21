@@ -16,7 +16,9 @@ typedef int esp_err_t;
 #define ESP_ERR_NOT_SUPPORTED 5
 #define ESP_ERR_TIMEOUT 6
 #define SOLAR_OS_DISPLAY_TARGET_NAME_MAX 16
+#define SOLAR_OS_DISPLAY_TARGET_OWNER_MAX 32
 #define SOLAR_OS_DISPLAY_FORMAT_INDEX2 2
+#define SOLAR_OS_DISPLAY_FORMAT_MONO1 0
 #define SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT 8
 #define SOLAR_OS_DISPLAY_FORMAT_INDEX8_BIT 2
 #define SOLAR_OS_MEMORY_INTERNAL_CRITICAL 0
@@ -33,7 +35,8 @@ typedef int portMUX_TYPE;
 #define portEXIT_CRITICAL(p) ((void)(p))
 typedef void *TaskHandle_t;
 typedef struct { const char *name; } solar_os_gfx_t;
-typedef struct { uint16_t preferred_stream_fps; uint32_t frame_formats; } solar_os_display_target_t;
+typedef uint32_t solar_os_gfx_color_t;
+typedef struct { uint16_t preferred_stream_fps, presentation_stack_bytes; uint32_t frame_formats; char owner[32]; } solar_os_display_target_t;
 typedef struct { bool alive; } solar_os_frame_presenter_t;
 typedef struct {
     solar_os_gfx_t *gfx;
@@ -41,7 +44,7 @@ typedef struct {
     uint16_t width, height, stride, preferred_fps;
     const uint16_t *palette_rgb565;
     size_t palette_size;
-    bool allow_mono_fallback, literal_direct_palette, clear_background_on_resume;
+    bool allow_mono_fallback, literal_direct_palette, literal_mono_palette, clear_background_on_resume;
     unsigned background_index;
 } solar_os_frame_presenter_config_t;
 typedef struct { esp_err_t last_error; } solar_os_frame_presenter_stats_t;
@@ -50,7 +53,8 @@ typedef queue_t *QueueHandle_t;
 #include "emotion_runtime_header.inc"
 static unsigned allocations, claims, leases, submitted, audio_opened, audio_closed;
 static bool join_ok = true, present_stop_ok = true, acquire_ok = true;
-static bool presenter_start_ok = true, output_busy;
+static bool presenter_start_ok = true, output_busy, software_target;
+static unsigned canvas_rows;
 static uint64_t clock_ms = 1000;
 static unsigned delay_count;
 static solar_os_gfx_t gfx = {"oled0"};
@@ -78,12 +82,24 @@ static bool solar_os_gfx_display_target_name(solar_os_gfx_t *g,char *out,size_t 
 { strlcpy(out,g->name,n);return true; }
 static unsigned solar_os_gfx_width(solar_os_gfx_t *g) {(void)g;return 128;}
 static unsigned solar_os_gfx_height(solar_os_gfx_t *g) {(void)g;return 64;}
+static unsigned solar_os_gfx_format(solar_os_gfx_t *g) {(void)g;return SOLAR_OS_DISPLAY_FORMAT_MONO1;}
+static bool solar_os_gfx_palette_inverted(solar_os_gfx_t *g) {(void)g;return true;}
 static bool solar_os_display_find_target(const char *name,solar_os_display_target_t *t)
-{ if(strcmp(name,"oled0"))return false;*t=(solar_os_display_target_t){25,8};return true; }
+{ if(strcmp(name,"oled0"))return false;*t=(solar_os_display_target_t){.preferred_stream_fps=25,.frame_formats=software_target?0:8};return true; }
+static solar_os_gfx_color_t solar_os_gfx_rgb(unsigned r,unsigned g,unsigned b)
+{return (r<<16)|(g<<8)|b;}
+static void solar_os_gfx_prepare_surface(solar_os_gfx_t *g) {assert(g);}
+static void solar_os_gfx_bitmap_2bpp(solar_os_gfx_t *g,int x,int y,int w,int h,const uint8_t *pixels,size_t bytes,const solar_os_gfx_color_t *palette)
+{assert(g&&x==0&&y>=0&&y<64&&w==128&&h==1&&pixels&&bytes==32&&palette);
+ assert(palette[0]==0 && palette[3]==0xffffff); /* literal mono theme on an inverted canvas */
+ canvas_rows++;}
+static void solar_os_gfx_present(solar_os_gfx_t *g) {assert(g);submitted++;}
 static int solar_os_display_open_gfx(const char *name,const char *owner,solar_os_gfx_t **out,char *detail,size_t n)
 {(void)name;(void)owner;(void)detail;(void)n;if(claims)return ESP_ERR_INVALID_STATE;claims++;*out=&gfx;return 0;}
 static int solar_os_display_release(const char *name,const char *owner)
 {(void)name;(void)owner;assert(claims);claims--;return 0;}
+static int solar_os_display_claim(const char *name,const char *owner,char *detail,size_t n)
+{solar_os_gfx_t *g=NULL;return solar_os_display_open_gfx(name,owner,&g,detail,n);}
 const solar_os_emotion_api_v1_t *solar_os_emotion_engine_api_v1(void);
 static int solar_os_native_library_acquire(const char *name,unsigned abi,size_t n,uint32_t *lease,const void **out)
 {assert(!strcmp(name,"emotion")&&abi==1&&n==sizeof(solar_os_emotion_api_v1_t));if(!acquire_ok)return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;leases++;*lease=42;*out=solar_os_emotion_engine_api_v1();return 0;}
@@ -97,6 +113,8 @@ static int solar_os_frame_presenter_deinit(solar_os_frame_presenter_t *p)
 {assert(!p||present_stop_ok);free(p);return 0;}
 static int solar_os_frame_presenter_resume(solar_os_frame_presenter_t *p)
 {(void)p;return 0;}
+static bool solar_os_frame_presenter_redraw(solar_os_frame_presenter_t *p)
+{(void)p;return true;}
 static bool solar_os_frame_presenter_submit(solar_os_frame_presenter_t *p,const uint8_t *bytes,size_t size)
 {assert(p&&bytes&&size==2048);submitted++;return true;}
 static void solar_os_frame_presenter_take_stats(solar_os_frame_presenter_t *p,solar_os_frame_presenter_stats_t *stats)
@@ -152,10 +170,12 @@ int main(void)
     present_stop_ok=true;
     assert(!solar_os_emotion_close(&s)&&!s&&!claims&&!leases&&!allocations);
     presenter_start_ok=true;
-    /* Borrowed foreground surfaces are never released as private claims. */
+    /* Foreground borrowers also retain the display until their workers stop. */
     o.display=NULL;
-    assert(!solar_os_emotion_open(&o,&gfx,&s,detail,sizeof(detail))&&!claims);
+    assert(!solar_os_emotion_open(&o,&gfx,&s,detail,sizeof(detail))&&claims==1);
     assert(!solar_os_emotion_suspend(s));
+    assert(!claims);
+    assert(!solar_os_emotion_set(s,"happy",200)); /* bounded commands survive suspension */
     uint64_t paused=clock_ms;clock_ms+=5000;
     assert(!solar_os_emotion_resume(s)&&s->clock_offset==clock_ms-paused);
     assert(!solar_os_emotion_react(s,"surprised",700,120,"chirp"));
@@ -173,5 +193,11 @@ int main(void)
 #else
     (void)audio_opened;(void)audio_closed;(void)output_busy;
 #endif
+    software_target=true;o.display="oled0";
+    assert(!solar_os_emotion_open(&o,NULL,&s,detail,sizeof(detail))&&!s->presenter);
+    delay_count=0;saved_worker(saved_arg);
+    assert(canvas_rows==64);
+    assert(!solar_os_emotion_close(&s)&&!claims&&!leases&&!allocations);
     puts("emotion runtime passed");
+    return 0;
 }

@@ -22,6 +22,9 @@
 #include "lualib.h"
 #include "solar_os_app_registry.h"
 #include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+#include "solar_os_emotion.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
 #include "solar_os_input_keymap.h"
 #endif
@@ -224,6 +227,7 @@ typedef enum {
     SOLUA_EVENT_TUI_HELP,
     SOLUA_EVENT_TUI_TAB,
     SOLUA_EVENT_TUI_INPUT,
+    SOLUA_EVENT_EMOTION_MODE,
     SOLUA_EVENT_GFX_BEGIN,
     SOLUA_EVENT_GFX_END,
     SOLUA_EVENT_GFX_CLEAR,
@@ -313,6 +317,7 @@ typedef struct {
 } solua_state_t;
 
 static const char *TAG = "solar_os_lua";
+static bool solua_emotion_drawing(void);
 
 typedef enum {
     SOLUA_RUNTIME_OWNER_NONE,
@@ -329,6 +334,12 @@ typedef struct {
 #if SOLAR_OS_PACKAGE_SERVICE_DLP_CLIENT
     solar_os_display_link_t *dlp_links[4];
     uint32_t dlp_generation[4];
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+    solar_os_emotion_t *emotions[4];
+    uint32_t emotion_generation[4];
+    bool emotion_busy, emotion_ack, emotion_suspended;
+    uint32_t emotion_count;
 #endif
 } solua_cold_state_t;
 
@@ -7208,6 +7219,7 @@ static void solua_gfx_release_target_name(const char *target)
 
 static void solua_ui_send_event(lua_State *L, const solua_event_t *event)
 {
+    if (solua_emotion_drawing()) luaL_error(L, "close emotion faces before drawing graphics or TUI");
     if (!solua_send_event(event)) {
         luaL_error(L, "ui event queue stopped");
     }
@@ -7586,6 +7598,7 @@ static void solua_gfx_send_simple(lua_State *L, solua_event_type_t type)
 
 static int solua_gfx_begin(lua_State *L)
 {
+    if (solua_emotion_drawing()) return luaL_error(L, "close emotion faces before drawing graphics");
     const char *target = NULL;
     if (!lua_isnoneornil(L, 1)) {
         target = luaL_checkstring(L, 1);
@@ -7996,6 +8009,7 @@ static int solua_gfx_text(lua_State *L)
 #include "solar_os_lua_inference.inc"
 #include "solar_os_lua_pipeline.inc"
 #include "solar_os_lua_dlp.inc"
+#include "solar_os_lua_emotion.inc"
 
 #if SOLAR_OS_PACKAGE_SERVICE_MESSAGING
 static void solua_push_contact(lua_State *L,
@@ -8689,6 +8703,7 @@ esp_err_t solar_os_lua_run(const solar_os_script_run_request_t *request,
     solua_inference_destroy();
     solua_media_destroy();
     solua_dlp_destroy();
+    solua_emotion_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     solua_http_stream_destroy();
     solua_http_session_destroy();
@@ -8802,6 +8817,7 @@ done:
         solua_inference_destroy();
         solua_media_destroy();
         solua_dlp_destroy();
+        solua_emotion_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
         solua_http_stream_destroy();
         solua_http_session_destroy();
@@ -9098,7 +9114,7 @@ static void solua_stop(solar_os_context_t *ctx)
              * worker. Never delete that owner task mid-call.
              * Interpreter cancellation remains active while we wait. */
             while ((__atomic_load_n(&solua_media_session, __ATOMIC_ACQUIRE) != NULL ||
-                    solua_inference_active() || solua_imlib_active()) &&
+                    solua_inference_active() || solua_imlib_active() || solua_emotion_active()) &&
                    !solua_task_stopped(NULL)) {
                 (void)solar_os_script_wait_for_stop(solua_task_stopped, NULL,
                     SOLUA_STOP_WAIT_MS, 20U);
@@ -9137,6 +9153,7 @@ static void solua_stop(solar_os_context_t *ctx)
         solar_os_queue_delete(solua.device_input);
         solua.device_input = NULL;
     }
+    solua_emotion_destroy();
     solua_gfx_release_target();
 #if SOLAR_OS_PACKAGE_SERVICE_SYNTH
     (void)solar_os_synth_voice_stop(SOLUA_SYNTH_OWNER);
@@ -9282,6 +9299,7 @@ static void solua_repl_submit(solar_os_context_t *ctx)
 
 static void solua_apply_tui_event(solar_os_context_t *ctx, const solua_event_t *event)
 {
+    if (solua_emotion_drawing()) return;
     if (event == NULL) {
         return;
     }
@@ -9369,6 +9387,15 @@ static void solua_apply_gfx_event(solar_os_context_t *ctx, const solua_event_t *
         return;
     }
 
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+    if (event->type == SOLUA_EVENT_EMOTION_MODE) {
+        solar_os_context_set_streaming_graphics_active(ctx, event->attr != 0);
+        if (!event->attr && solua.session_terminal) solar_os_terminal_draw(solua.session_terminal);
+        __atomic_store_n(&solua_runtime_state->emotion_ack, true, __ATOMIC_RELEASE);
+        return;
+    }
+#endif
+    if (solua_emotion_drawing()) return;
     switch (event->type) {
     case SOLUA_EVENT_GFX_BEGIN:
         solar_os_context_set_graphics_active(ctx, true);
@@ -9530,6 +9557,7 @@ static void solua_drain_events(solar_os_context_t *ctx)
         case SOLUA_EVENT_TUI_INPUT:
             solua_apply_tui_event(ctx, &event);
             break;
+        case SOLUA_EVENT_EMOTION_MODE:
         case SOLUA_EVENT_GFX_BEGIN:
         case SOLUA_EVENT_GFX_END:
         case SOLUA_EVENT_GFX_CLEAR:
@@ -9722,13 +9750,47 @@ static bool solua_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     return true;
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+static void solua_emotion_visibility(solar_os_context_t *ctx, bool visible)
+{
+    /* An in-flight open can be waiting for a graphics-mode acknowledgement.
+     * Drain it before waiting for exclusive access to the face handles. */
+    while (__atomic_exchange_n(&solua_runtime_state->emotion_busy, true, __ATOMIC_ACQ_REL)) {
+        solua_drain_events(ctx);
+        vTaskDelay(1);
+    }
+    solua_runtime_state->emotion_suspended = !visible;
+    for (unsigned i = 0; i < 4; ++i) {
+        solar_os_emotion_t *face = solua_runtime_state->emotions[i];
+        if (!solar_os_emotion_uses_gfx(face, solua.session_gfx)) continue;
+        esp_err_t err;
+        do {
+            err = visible ? solar_os_emotion_resume(face) : solar_os_emotion_suspend(face);
+            if (err != ESP_OK) {
+                SOLAR_OS_LOGW(TAG, "emotion visibility: %s", esp_err_to_name(err));
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+        } while (err != ESP_OK && !visible);
+    }
+    __atomic_store_n(&solua_runtime_state->emotion_busy, false, __ATOMIC_RELEASE);
+}
+static void solua_emotion_suspend(solar_os_context_t *ctx)
+{ solua_emotion_visibility(ctx, false); }
+static void solua_emotion_resume(solar_os_context_t *ctx)
+{ solua_emotion_visibility(ctx, true); }
+#endif
+
 const solar_os_app_t solar_os_lua_app = {
     .name = "lua",
     .summary = "Lua runtime",
     .app_class = SOLAR_OS_APP_CLASS_TUI,
     .flags = SOLAR_OS_APP_FLAG_POINTER_EVENTS | SOLAR_OS_APP_FLAG_AXIS_EVENTS |
-        SOLAR_OS_APP_FLAG_GESTURE_EVENTS,
+        SOLAR_OS_APP_FLAG_GESTURE_EVENTS | SOLAR_OS_APP_FLAG_RESUME_SNAPSHOT,
     .start = solua_start,
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+    .suspend = solua_emotion_suspend,
+    .resume = solua_emotion_resume,
+#endif
     .stop = solua_stop,
     .event = solua_event,
     .state_slot = &solua_app_state,

@@ -8,6 +8,7 @@
 #include "solar_os_config.h"
 #include "solar_os_display.h"
 #include "solar_os_frame_presenter.h"
+#include "solar_os_gfx_internal.h"
 #include "solar_os_memory.h"
 #include "solar_os_native.h"
 #include "solar_os_queue.h"
@@ -30,15 +31,18 @@ struct solar_os_emotion {
     solar_os_gfx_t *gfx;
     solar_os_frame_presenter_t *presenter;
     char target[SOLAR_OS_DISPLAY_TARGET_NAME_MAX], owner[24];
-    bool claimed, registered, sound, motion, paused;
+    char display_owner[SOLAR_OS_DISPLAY_TARGET_OWNER_MAX];
+    bool claimed, registered, sound, motion, foreground, software;
+    atomic_bool paused;
     uint16_t width, height, stride, fps, palette[4];
+    solar_os_gfx_color_t canvas_palette[4];
     uint8_t *pixels, *previous;
     bool have_frame;
     size_t bytes;
     QueueHandle_t commands;
     TaskHandle_t worker;
     volatile bool done;
-    atomic_bool stop;
+    atomic_bool stop, redraw;
     atomic_uint frames, dropped, audio_skipped;
     atomic_int error, audio_error;
     uint64_t clock_offset, pause_started;
@@ -131,18 +135,41 @@ static void worker(void *arg)
 #endif
         }
         if (now >= next_frame) {
+            if (atomic_exchange(&s->redraw, false)) s->have_frame = false;
             int value = s->api->render(s->state, now, s->pixels, s->bytes,
                 s->width, s->height, s->stride, s->motion);
             if (value) atomic_store(&s->error, result(value));
             else if (!s->have_frame || memcmp(s->pixels, s->previous, s->bytes)) {
-                if (solar_os_frame_presenter_submit(s->presenter, s->pixels, s->bytes)) {
+                bool accepted = false;
+                if (s->software) {
+                    solar_os_gfx_color_t palette[4];
+                    bool inverted = solar_os_gfx_format(s->gfx) == SOLAR_OS_DISPLAY_FORMAT_MONO1 &&
+                        solar_os_gfx_palette_inverted(s->gfx);
+                    for (unsigned i = 0; i < 4; ++i) {
+                        uint16_t c = s->palette[i];
+                        palette[i] = inverted ? solar_os_gfx_rgb(255 - ((c >> 11) & 31) * 255 / 31,
+                            255 - ((c >> 5) & 63) * 255 / 63, 255 - (c & 31) * 255 / 31) :
+                            s->canvas_palette[i];
+                    }
+                    /* Row calls preserve INDEX2's padded stride on odd widths. */
+                    for (unsigned y = 0; y < s->height; ++y)
+                        solar_os_gfx_bitmap_2bpp(s->gfx, 0, y, s->width, 1,
+                            s->pixels + (size_t)y * s->stride, s->stride, palette);
+                    solar_os_gfx_present(s->gfx);
+                    accepted = true;
+                } else accepted = solar_os_frame_presenter_submit(s->presenter, s->pixels, s->bytes);
+                if (accepted) {
                     memcpy(s->previous, s->pixels, s->bytes); s->have_frame = true;
                     atomic_fetch_add(&s->frames, 1);
                 } else atomic_fetch_add(&s->dropped, 1);
             }
-            solar_os_frame_presenter_stats_t stats;
-            solar_os_frame_presenter_take_stats(s->presenter, &stats);
-            if (stats.last_error != ESP_OK) atomic_store(&s->error, stats.last_error);
+            if (s->presenter) {
+                solar_os_frame_presenter_stats_t stats;
+                solar_os_frame_presenter_take_stats(s->presenter, &stats);
+                if (stats.last_error != ESP_OK) {
+                    atomic_store(&s->error, stats.last_error); s->have_frame = false;
+                }
+            }
             next_frame = now + 1000U / s->fps;
         }
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
@@ -180,7 +207,11 @@ static void worker(void *arg)
 static esp_err_t start_worker(solar_os_emotion_t *s)
 {
     atomic_store(&s->stop, false); s->done = false;
-    if (solar_os_task_create_pinned_internal(worker, "emotion", 4096, s,
+    uint32_t stack = 6144;
+    solar_os_display_target_t target;
+    if (s->software && solar_os_display_find_target(s->target, &target) &&
+        target.presentation_stack_bytes > stack) stack = target.presentation_stack_bytes;
+    if (solar_os_task_create_pinned_internal(worker, "emotion", stack, s,
         tskIDLE_PRIORITY + 1, &s->worker, tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_BACKGROUND) != pdPASS) {
         s->worker = NULL; return ESP_ERR_NO_MEM;
     }
@@ -208,7 +239,7 @@ esp_err_t solar_os_emotion_close(solar_os_emotion_t **instance)
     if (err != ESP_OK) return err;
     s->presenter = NULL;
     if (s->claimed) {
-        err = solar_os_display_release(s->target, s->owner);
+        err = solar_os_display_release(s->target, s->display_owner);
         if (err != ESP_OK) return err;
         s->claimed = false;
     }
@@ -238,15 +269,24 @@ esp_err_t solar_os_emotion_open(const solar_os_emotion_options_t *o,
     if (foreground) solar_os_gfx_display_target_name(foreground, current, sizeof(current));
     const char *name = o->display ? o->display : current;
     solar_os_display_target_t target;
-    if (!*name || strlen(name) >= sizeof(s->target) || !solar_os_display_find_target(name, &target)) goto fail;
+    if (!*name || strlen(name) >= sizeof(s->target) || !solar_os_display_find_target(name, &target)) {
+        if (detail && detail_size) snprintf(detail, detail_size, "no display; select a ready target from display list");
+        goto fail;
+    }
+    s->software = target.frame_formats == 0;
     strlcpy(s->target, name, sizeof(s->target));
     err = register_instance(s);
     if (err != ESP_OK) {
         if (detail && detail_size) snprintf(detail, detail_size, "display already has an emotion instance or instance limit reached");
         goto fail;
     }
-    if (foreground && !strcmp(name, current)) s->gfx = foreground;
-    else {
+    if (foreground && !strcmp(name, current)) {
+        strlcpy(s->display_owner, target.owner[0] ? target.owner : s->owner, sizeof(s->display_owner));
+        err = solar_os_display_claim(name, s->display_owner, detail, detail_size);
+        if (err != ESP_OK) goto fail;
+        s->claimed = true; s->foreground = true; s->gfx = foreground;
+    } else {
+        strlcpy(s->display_owner, s->owner, sizeof(s->display_owner));
         err = solar_os_display_open_gfx(name, s->owner, &s->gfx, detail, detail_size);
         if (err != ESP_OK) goto fail;
         s->claimed = true;
@@ -284,6 +324,12 @@ esp_err_t solar_os_emotion_open(const solar_os_emotion_options_t *o,
     s->palette[1] = color ? 0x02aa : 0xaaaa;
     s->palette[2] = color ? 0x0555 : 0x5555;
     s->palette[3] = color ? 0x07ff : 0;
+    for (unsigned i = 0; i < 4; ++i) {
+        uint16_t c = s->palette[i];
+        s->canvas_palette[i] = solar_os_gfx_rgb(((c >> 11) & 31) * 255 / 31,
+            ((c >> 5) & 63) * 255 / 63, (c & 31) * 255 / 31);
+    }
+    if (s->software) solar_os_gfx_prepare_surface(s->gfx);
     s->state = solar_os_memory_calloc(1, s->api->state_bytes, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "emotion.state");
     s->pixels = solar_os_memory_alloc(s->bytes, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "emotion.frame");
     s->previous = solar_os_memory_alloc(s->bytes, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "emotion.previous");
@@ -295,10 +341,10 @@ esp_err_t solar_os_emotion_open(const solar_os_emotion_options_t *o,
         .gfx = s->gfx, .format = SOLAR_OS_DISPLAY_FORMAT_INDEX2,
         .width = s->width, .height = s->height, .stride = s->stride,
         .palette_rgb565 = s->palette, .palette_size = 4, .preferred_fps = s->fps,
-        .allow_mono_fallback = true, .literal_direct_palette = true,
+        .allow_mono_fallback = true, .literal_direct_palette = true, .literal_mono_palette = true,
         .clear_background_on_resume = true, .background_index = 0,
     };
-    err = solar_os_frame_presenter_init(&s->presenter, &config);
+    err = s->software ? ESP_OK : solar_os_frame_presenter_init(&s->presenter, &config);
     if (err != ESP_OK) goto fail;
     err = start_worker(s);
     if (err != ESP_OK) goto fail;
@@ -314,22 +360,40 @@ esp_err_t solar_os_emotion_suspend(solar_os_emotion_t *s)
     if (!s) return ESP_ERR_INVALID_ARG;
     if (!s->paused) { s->pause_started = now_ms(); s->paused = true; }
     esp_err_t err = stop_worker(s);
-    return err == ESP_OK ? solar_os_frame_presenter_suspend_checked(s->presenter) : err;
+    if (err == ESP_OK) err = solar_os_frame_presenter_suspend_checked(s->presenter);
+    if (err == ESP_OK && s->foreground && s->claimed) {
+        err = solar_os_display_release(s->target, s->display_owner);
+        if (err == ESP_OK) s->claimed = false;
+    }
+    return err;
 }
 esp_err_t solar_os_emotion_resume(solar_os_emotion_t *s)
 {
-    if (!s || !s->paused) return ESP_ERR_INVALID_STATE;
-    esp_err_t err = solar_os_frame_presenter_resume(s->presenter);
-    if (err != ESP_OK) return err;
+    if (!s) return ESP_ERR_INVALID_ARG;
+    if (!s->paused) {
+        if (s->presenter) (void)solar_os_frame_presenter_redraw(s->presenter);
+        else atomic_store(&s->redraw, true);
+        return ESP_OK;
+    }
+    if (s->worker) return ESP_ERR_INVALID_STATE;
+    if (!s->claimed) {
+        esp_err_t err = solar_os_display_claim(s->target, s->display_owner, NULL, 0);
+        if (err != ESP_OK) { atomic_store(&s->error, err); return err; }
+        s->claimed = true;
+    }
+    if (s->software) solar_os_gfx_prepare_surface(s->gfx);
+    esp_err_t err = s->software ? ESP_OK : solar_os_frame_presenter_resume(s->presenter);
+    if (err != ESP_OK) { atomic_store(&s->error, err); return err; }
     uint64_t elapsed = now_ms() - s->pause_started;
     s->clock_offset += elapsed;
+    s->have_frame = false;
     err = start_worker(s);
-    if (err != ESP_OK) { s->clock_offset -= elapsed; return err; }
+    if (err != ESP_OK) { s->clock_offset -= elapsed; atomic_store(&s->error, err); return err; }
     s->paused = false; return ESP_OK;
 }
 static esp_err_t send(solar_os_emotion_t *s, const emotion_command_t *command)
 {
-    if (!s || atomic_load(&s->stop)) return ESP_ERR_INVALID_STATE;
+    if (!s || (atomic_load(&s->stop) && !atomic_load(&s->paused))) return ESP_ERR_INVALID_STATE;
     return xQueueSend(s->commands, command, 0) == pdPASS ? ESP_OK : ESP_ERR_TIMEOUT;
 }
 esp_err_t solar_os_emotion_set(solar_os_emotion_t *s, const char *name, uint32_t transition)

@@ -33,6 +33,9 @@
 #include "py/smallint.h"
 #include "solar_os_app_registry.h"
 #include "solar_os_config.h"
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+#include "solar_os_emotion.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_INPUT_KEYMAP
 #include "solar_os_input_keymap.h"
 #endif
@@ -237,6 +240,7 @@ typedef enum {
     PYTHON_EVENT_TUI_HELP,
     PYTHON_EVENT_TUI_TAB,
     PYTHON_EVENT_TUI_INPUT,
+    PYTHON_EVENT_EMOTION_MODE,
     PYTHON_EVENT_GFX_BEGIN,
     PYTHON_EVENT_GFX_END,
     PYTHON_EVENT_GFX_CLEAR,
@@ -324,6 +328,7 @@ typedef struct {
 } python_app_state_t;
 
 static const char *TAG = "solar_os_python";
+static bool python_emotion_drawing(void);
 
 typedef enum {
     PYTHON_RUNTIME_OWNER_NONE,
@@ -341,6 +346,12 @@ typedef struct {
 #if SOLAR_OS_PACKAGE_SERVICE_DLP_CLIENT
     solar_os_display_link_t *dlp_links[4];
     uint32_t dlp_generation[4];
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+    solar_os_emotion_t *emotions[4];
+    uint32_t emotion_generation[4];
+    bool emotion_busy, emotion_ack, emotion_suspended;
+    uint32_t emotion_count;
 #endif
 } python_cold_state_t;
 
@@ -8129,6 +8140,7 @@ static void python_gfx_release_target_name(const char *target)
 
 static void python_ui_send_event(const python_event_t *event)
 {
+    if (python_emotion_drawing()) mp_raise_ValueError(MP_ERROR_TEXT("close emotion faces before drawing graphics or TUI"));
     if (!python_send_event(event)) {
         mp_raise_msg(&mp_type_RuntimeError, MP_ERROR_TEXT("ui event queue stopped"));
     }
@@ -8581,6 +8593,7 @@ static void python_gfx_send_text(int32_t x, int32_t y, const char *text, size_t 
 
 static mp_obj_t solaros_gfx_begin(size_t n_args, const mp_obj_t *args)
 {
+    if (python_emotion_drawing()) mp_raise_ValueError(MP_ERROR_TEXT("close emotion faces before drawing graphics"));
     const char *target = NULL;
     if (n_args >= 1 && args[0] != mp_const_none) {
         target = mp_obj_str_get_str(args[0]);
@@ -9020,6 +9033,7 @@ MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_gfx_text_obj, 3, 3, solaros_gfx_text
 #include "solar_os_python_inference.inc"
 #include "solar_os_python_pipeline.inc"
 #include "solar_os_python_dlp.inc"
+#include "solar_os_python_emotion.inc"
 
 static void python_module_store(mp_obj_t module, const char *name, mp_obj_t value)
 {
@@ -9363,6 +9377,7 @@ esp_err_t solar_os_python_run(const solar_os_script_run_request_t *request,
     python_inference_destroy();
     python_media_destroy();
     python_dlp_destroy();
+    python_emotion_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
     python_http_stream_destroy();
     python_http_session_destroy();
@@ -9585,6 +9600,7 @@ static void python_task(void *arg)
         python_inference_destroy();
         python_media_destroy();
         python_dlp_destroy();
+        python_emotion_destroy();
 #if SOLAR_OS_PACKAGE_SERVICE_HTTP_CLIENT
         python_http_stream_destroy();
         python_http_session_destroy();
@@ -10041,7 +10057,7 @@ static void python_stop(solar_os_context_t *ctx)
              * worker. Never delete that owner task mid-call.
              * Interpreter cancellation remains active while we wait. */
             while ((__atomic_load_n(&python_media_session, __ATOMIC_ACQUIRE) != NULL ||
-                    python_inference_active() || python_imlib_active()) &&
+                    python_inference_active() || python_imlib_active() || python_emotion_active()) &&
                    !python_task_stopped(NULL)) {
                 (void)solar_os_script_wait_for_stop(python_task_stopped, NULL,
                     PYTHON_STOP_WAIT_MS, 20U);
@@ -10086,6 +10102,7 @@ static void python_stop(solar_os_context_t *ctx)
         solar_os_queue_delete(python_app.device_input);
         python_app.device_input = NULL;
     }
+    python_emotion_destroy();
     python_gfx_release_target();
 #if SOLAR_OS_PACKAGE_SERVICE_SYNTH
     (void)solar_os_synth_voice_stop(PYTHON_SYNTH_OWNER);
@@ -10117,6 +10134,7 @@ static void python_stop(solar_os_context_t *ctx)
 
 static void python_apply_tui_event(solar_os_context_t *ctx, const python_event_t *event)
 {
+    if (python_emotion_drawing()) return;
     if (event == NULL) {
         return;
     }
@@ -10204,6 +10222,15 @@ static void python_apply_gfx_event(solar_os_context_t *ctx, const python_event_t
         return;
     }
 
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+    if (event->type == PYTHON_EVENT_EMOTION_MODE) {
+        solar_os_context_set_streaming_graphics_active(ctx, event->attr != 0);
+        if (!event->attr && python_current_terminal()) solar_os_terminal_draw(python_current_terminal());
+        __atomic_store_n(&python_runtime_state->emotion_ack, true, __ATOMIC_RELEASE);
+        return;
+    }
+#endif
+    if (python_emotion_drawing()) return;
     switch (event->type) {
     case PYTHON_EVENT_GFX_BEGIN:
         solar_os_context_set_graphics_active(ctx, true);
@@ -10369,6 +10396,7 @@ static void python_drain_events(solar_os_context_t *ctx)
         case PYTHON_EVENT_TUI_INPUT:
             python_apply_tui_event(ctx, &event);
             break;
+        case PYTHON_EVENT_EMOTION_MODE:
         case PYTHON_EVENT_GFX_BEGIN:
         case PYTHON_EVENT_GFX_END:
         case PYTHON_EVENT_GFX_CLEAR:
@@ -10577,13 +10605,47 @@ static bool python_event(solar_os_context_t *ctx, const solar_os_event_t *event)
     return true;
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+static void python_emotion_visibility(solar_os_context_t *ctx, bool visible)
+{
+    /* An in-flight open can be waiting for a graphics-mode acknowledgement.
+     * Drain it before waiting for exclusive access to the face handles. */
+    while (__atomic_exchange_n(&python_runtime_state->emotion_busy, true, __ATOMIC_ACQ_REL)) {
+        python_drain_events(ctx);
+        vTaskDelay(1);
+    }
+    python_runtime_state->emotion_suspended = !visible;
+    for (unsigned i = 0; i < 4; ++i) {
+        solar_os_emotion_t *face = python_runtime_state->emotions[i];
+        if (!solar_os_emotion_uses_gfx(face, python_app.session_gfx)) continue;
+        esp_err_t err;
+        do {
+            err = visible ? solar_os_emotion_resume(face) : solar_os_emotion_suspend(face);
+            if (err != ESP_OK) {
+                SOLAR_OS_LOGW(TAG, "emotion visibility: %s", esp_err_to_name(err));
+                vTaskDelay(pdMS_TO_TICKS(20));
+            }
+        } while (err != ESP_OK && !visible);
+    }
+    __atomic_store_n(&python_runtime_state->emotion_busy, false, __ATOMIC_RELEASE);
+}
+static void python_emotion_suspend(solar_os_context_t *ctx)
+{ python_emotion_visibility(ctx, false); }
+static void python_emotion_resume(solar_os_context_t *ctx)
+{ python_emotion_visibility(ctx, true); }
+#endif
+
 const solar_os_app_t solar_os_python_app = {
     .name = "python",
     .summary = "MicroPython runtime",
     .app_class = SOLAR_OS_APP_CLASS_TUI,
     .flags = SOLAR_OS_APP_FLAG_POINTER_EVENTS | SOLAR_OS_APP_FLAG_AXIS_EVENTS |
-        SOLAR_OS_APP_FLAG_GESTURE_EVENTS,
+        SOLAR_OS_APP_FLAG_GESTURE_EVENTS | SOLAR_OS_APP_FLAG_RESUME_SNAPSHOT,
     .start = python_start,
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+    .suspend = python_emotion_suspend,
+    .resume = python_emotion_resume,
+#endif
     .stop = python_stop,
     .event = python_event,
     .state_slot = &python_app_state,

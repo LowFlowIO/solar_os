@@ -19,10 +19,13 @@ typedef struct {
 } solar_os_emotion_status_t;
 
 /* Each instance has an independent worker and an eight-command queue.
- * Foreground surfaces are borrowed until close succeeds. Other targets are
- * exclusively claimed. Calls on a live instance may enqueue concurrently;
+ * Foreground surfaces retain a display claim while running; suspension joins
+ * their workers before releasing it. Other targets are exclusively claimed
+ * until close. Calls on a live instance may enqueue concurrently;
  * callers must serialize close/suspend/resume with all other API operations.
- * Failed close retains the pointer, claims and library lease for retry. */
+ * Failed close retains the pointer, claims and library lease for retry.
+ * Failed open may return a non-NULL instance if admission cleanup times out;
+ * callers must retain it and retry close. */
 esp_err_t solar_os_emotion_open(const solar_os_emotion_options_t *options,
     solar_os_gfx_t *foreground, solar_os_emotion_t **out, char *detail, size_t detail_size);
 esp_err_t solar_os_emotion_close(solar_os_emotion_t **instance);

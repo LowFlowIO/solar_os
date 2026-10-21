@@ -78,6 +78,12 @@ SOLAR_OS_SCRIPT_API_FUNCTION(storage, mount_volume, mount_volume);
 SOLAR_OS_SCRIPT_API_FUNCTION(storage, unmount_volume, unmount_volume);
 SOLAR_OS_SCRIPT_API_MODULE_END(storage);
 
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION
+SOLAR_OS_SCRIPT_API_MODULE_BEGIN(emotion);
+SOLAR_OS_SCRIPT_API_FUNCTION(emotion, open, open);
+SOLAR_OS_SCRIPT_API_MODULE_END(emotion);
+#endif
+
 SOLAR_OS_SCRIPT_API_MODULE_BEGIN(time);
 SOLAR_OS_SCRIPT_API_FUNCTION(time, uptime_ms, uptime_ms);
 SOLAR_OS_SCRIPT_API_FUNCTION(time, sleep_ms, sleep_ms);
