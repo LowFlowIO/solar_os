@@ -8,6 +8,10 @@
 #include <solar_os_board.h>
 #include "solar_os_input_composition.h"
 
+static unsigned backlight_toggles;
+static esp_err_t solar_os_backlight_toggle(void)
+{ backlight_toggles++; return ESP_OK; }
+
 #define TDECK_COLUMNS 5U
 #define TDECK_ROWS 7U
 typedef struct { uint8_t normal, symbol; } tdeck_key_t;
@@ -149,21 +153,28 @@ static void test_holds_layers_and_shortcuts(void)
     matrix[4] = 1U << 4; scan(); expect_event('$', SOLAR_OS_INPUT_KEY_PRESS, 0, 0);
     clear_matrix(); expect_event('$', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0);
 
-    /* Native Alt+B is consumed under Shift/Sym too, in either release order. */
+    /* Alt+B toggles once per press, including under Shift/Sym. */
+    const unsigned before = backlight_toggles;
     for (unsigned layer = 0; layer < 3; layer++) {
         matrix[0] = (1U << 4) | (layer == 2 ? 1U << 2 : 0);
         matrix[1] = layer == 1 ? 1U << 6 : 0;
         matrix[3] = 1U << 4; scan(); expect_none();
+        assert(backlight_toggles == before + layer * 2 + 1);
+        scan(); expect_none();
+        assert(backlight_toggles == before + layer * 2 + 1);
         matrix[0] = 0; matrix[1] = 0; scan(); expect_none();
         clear_matrix(); expect_none();
+        assert(backlight_toggles == before + layer * 2 + 1);
         matrix[0] = 1U << 4; matrix[3] = 1U << 4; scan(); expect_none();
         matrix[3] = 0; scan(); expect_none();
         clear_matrix(); expect_none();
+        assert(backlight_toggles == before + layer * 2 + 2);
     }
     /* B already down before Alt remains an ordinary held B. */
     matrix[3] = 1U << 4; scan(); expect_event('b', SOLAR_OS_INPUT_KEY_PRESS, 0, 0x05);
     matrix[0] = 1U << 4; scan(); expect_none();
     clear_matrix(); expect_event('b', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0x05);
+    assert(backlight_toggles == before + 6);
 
     matrix[0] = 1U << 4; matrix[2] = 1U << 5; scan();
     expect_event(SOLAR_OS_KEY_ESCAPE, SOLAR_OS_INPUT_KEY_PRESS, 0, 0);

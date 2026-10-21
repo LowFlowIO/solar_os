@@ -58,7 +58,7 @@ int main(void) {
 }
 ''')
 
-    def test_shortcuts_preserve_modifiers_and_native_backlight_is_consumed(self):
+    def test_shortcuts_preserve_modifiers_and_toggle_backlight(self):
         source = (ROOT / "src/services/solar_os_tdeck_keyboard.c").read_text()
         defines = tomllib.loads((ROOT / "boards/manifests/t_deck_plus.toml").read_text())["defines"]
         with tempfile.TemporaryDirectory() as tmp:

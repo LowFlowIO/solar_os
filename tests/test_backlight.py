@@ -33,7 +33,41 @@ const char *solar_os_power_profile_name(solar_os_power_profile_t profile) { (voi
         source += r'''
 int main(void) {
     light_t light = {.fail_at = -1};
+    assert(solar_os_backlight_toggle() == ESP_ERR_NOT_SUPPORTED);
     assert(solar_os_backlight_register(set_light, &light) == ESP_OK);
+    /* T-Deck starts dark; its shortcut enables only the current boot. */
+    if (!SOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT) {
+        assert(light.level == 0);
+        assert(solar_os_backlight_toggle() == ESP_OK && light.level == 50);
+    }
+    for (unsigned cycle = 0; cycle < 2; cycle++) {
+        assert(solar_os_power_begin_suspend() == ESP_OK && light.level == 0);
+        assert(solar_os_power_end_suspend() == ESP_OK && light.level == 50);
+        assert(solar_os_power_begin_explicit_sleep() == ESP_OK && light.level == 0);
+        assert(solar_os_power_end_explicit_sleep() == ESP_OK && light.level == 50);
+    }
+    assert(solar_os_backlight_toggle() == ESP_OK && light.level == 0);
+    assert(solar_os_backlight_display_changed(90) == ESP_OK && light.level == 0);
+    assert(solar_os_power_begin_suspend() == ESP_OK && light.level == 0);
+    assert(solar_os_power_end_suspend() == ESP_OK && light.level == 0);
+    assert(solar_os_power_begin_explicit_sleep() == ESP_OK && light.level == 0);
+    assert(solar_os_power_end_explicit_sleep() == ESP_OK && light.level == 0);
+    /* Failed toggles keep the previous awake choice. */
+    light.fail_at = 50;
+    assert(solar_os_backlight_toggle() == ESP_FAIL && light.level == 0);
+    assert(solar_os_power_begin_suspend() == ESP_OK);
+    assert(solar_os_power_end_suspend() == ESP_OK && light.level == 0);
+    /* A shortcut received during suspend updates only the eventual wake state. */
+    assert(solar_os_power_begin_suspend() == ESP_OK);
+    assert(solar_os_backlight_toggle() == ESP_OK && light.level == 0);
+    assert(solar_os_power_end_suspend() == ESP_OK && light.level == 50);
+    assert(stored == -1 && commits == 0);
+    assert(solar_os_backlight_set_brightness(0) == ESP_OK && stored == 0);
+    const unsigned saved_commits = commits;
+    assert(solar_os_backlight_toggle() == ESP_OK && light.level == 50);
+    assert(solar_os_power_begin_explicit_sleep() == ESP_OK && light.level == 0);
+    assert(solar_os_power_end_explicit_sleep() == ESP_OK && light.level == 50);
+    assert(stored == 0 && commits == saved_commits);
     assert(solar_os_backlight_set_brightness(80) == ESP_OK);
     assert(solar_os_power_begin_suspend() == ESP_OK && light.level == 0);
     assert(solar_os_power_begin_suspend() == ESP_ERR_INVALID_STATE);
@@ -55,11 +89,13 @@ int main(void) {
             path = Path(tmp, "power.c")
             path.write_text(source)
             binary = Path(tmp, "power")
-            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
-                            "-I", str(ROOT / "tests/host"), "-I", str(ROOT / "src/services"),
-                            str(path), str(ROOT / "src/services/solar_os_backlight.c"),
-                            "-o", str(binary)], check=True)
-            subprocess.run([str(binary)], check=True)
+            for enabled in (0, 1):
+                subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                                f"-DSOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT={enabled}",
+                                "-I", str(ROOT / "tests/host"), "-I", str(ROOT / "src/services"),
+                                str(path), str(ROOT / "src/services/solar_os_backlight.c"),
+                                "-o", str(binary)], check=True)
+                subprocess.run([str(binary)], check=True)
 
     def test_command_query_validation_and_follow(self):
         commands = (ROOT / "src/shell/solar_os_shell_commands.c").read_text()

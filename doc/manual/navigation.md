@@ -99,7 +99,7 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Shift + Mic + trackball left / right | Move the cursor one word left / right. |
 | Alt+C | Escape — back/cancel where supported. |
 | Alt+Q | Close the foreground app. |
-| Alt+B | Toggle the keyboard backlight through the keyboard firmware; the shortcut does not type a character. |
+| Alt+B | Toggle the keyboard backlight for the current boot; the shortcut does not type a character. |
 | Alt + trackball up / down | Page Up / Page Down. |
 | Alt + trackball left / right | Previous / next retained session on the focused display. |
 | Alt + Mic | Next retained session on the focused display. |
@@ -160,13 +160,15 @@ in foreground apps. Trackball arrows also report presses and releases;
 `setterm keyrate` controls repeat for typing and held trackball arrows.
 
 The keyboard light starts disabled on every boot, retaining its saved brightness.
-Alt+B toggles the light through the keyboard firmware. An explicit
+Alt+B toggles the light for the current boot. Suspend and light sleep turn it
+off temporarily, then restore the user's on/off choice on wake. An explicit
 `setterm backlight` level or `follow` applies that setting for the current boot.
 Use `setterm backlight 0` to turn off the keyboard light, or
 `setterm backlight 100` for full brightness. Values from 0 to 100 set it
 independently of display brightness; `setterm backlight follow` makes it track
-the display. Alt+B is the keyboard firmware's own toggle; its changes are not
-reflected in the `setterm backlight` query.
+the display. Alt+B does not save changes across reboots. When the configured
+brightness is zero, toggling on uses 50%. The `setterm backlight` query shows
+the configured brightness, including while the light is toggled off.
 
 ## CL-32
 

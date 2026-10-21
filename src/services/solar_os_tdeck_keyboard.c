@@ -164,9 +164,12 @@ static void process_matrix(tdeck_device_t *dev,
                     modifier_usage, 0U, modifiers, SOLAR_OS_INPUT_KEY_PRESS);
                 continue;
             }
-            /* The keyboard firmware toggles its backlight on physical Alt+B,
-             * including with Shift/Sym held. Raw mode still exposes that key. */
-            if (alt && col == 3U && row == 4U) continue;
+            /* Override the firmware's native Alt+B toggle with the service's
+             * boot-local choice, so sleep can blank and restore it correctly. */
+            if (alt && col == 3U && row == 4U) {
+                (void)solar_os_backlight_toggle();
+                continue;
+            }
             uint8_t key = symbol ? keymap[col][row].symbol : keymap[col][row].normal;
             if (key == 0U) continue;
             if (shift && key >= 'a' && key <= 'z') key = (uint8_t)(key - 'a' + 'A');

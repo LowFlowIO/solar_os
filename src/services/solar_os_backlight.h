@@ -23,5 +23,8 @@ void solar_os_backlight_unregister(void *user);
 esp_err_t solar_os_backlight_get_status(solar_os_backlight_status_t *status);
 esp_err_t solar_os_backlight_set_brightness(uint8_t percent);
 esp_err_t solar_os_backlight_set_follow(void);
+/* Toggle illumination for this boot without saving to NVS. A zero configured
+ * level uses the default brightness when toggled on. Sleep preserves the choice. */
+esp_err_t solar_os_backlight_toggle(void);
 esp_err_t solar_os_backlight_display_changed(uint8_t percent);
 esp_err_t solar_os_backlight_set_suspended(bool suspended);

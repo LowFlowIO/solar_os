@@ -25,7 +25,7 @@ static StaticSemaphore_t mutex_storage;
 static SemaphoreHandle_t mutex;
 static portMUX_TYPE init_lock = portMUX_INITIALIZER_UNLOCKED;
 static bool initialized, suspended, display_available;
-static bool boot_disabled = !SOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT;
+static bool output_disabled = !SOLAR_OS_BOARD_BACKLIGHT_ENABLED_ON_BOOT;
 static uint8_t setting = BACKLIGHT_DEFAULT, display_percent;
 static esp_err_t last_error;
 
@@ -54,7 +54,7 @@ static uint8_t requested_percent(uint8_t value)
 
 static uint8_t effective_percent(uint8_t value, bool off)
 {
-    return off || boot_disabled ? 0U : requested_percent(value);
+    return off || output_disabled ? 0U : requested_percent(value);
 }
 
 static void restore_locked(size_t count)
@@ -166,7 +166,7 @@ static esp_err_t set_setting(uint8_t value)
         }
         if (err == ESP_OK) {
             setting = value;
-            boot_disabled = false;
+            output_disabled = false;
             record_applied(percent);
         } else {
             restore_locked(BACKLIGHT_PROVIDER_MAX);
@@ -183,6 +183,27 @@ esp_err_t solar_os_backlight_set_brightness(uint8_t percent)
 }
 
 esp_err_t solar_os_backlight_set_follow(void) { return set_setting(BACKLIGHT_FOLLOW); }
+
+esp_err_t solar_os_backlight_toggle(void)
+{
+    take_mutex();
+    bool supported = false;
+    for (size_t i = 0; i < BACKLIGHT_PROVIDER_MAX; i++) supported |= providers[i].set != NULL;
+    /* Toggle the user's awake state even while sleep temporarily blanks it.
+     * Keep this choice in RAM so a shortcut never changes the saved level. */
+    const bool disable = !output_disabled && requested_percent(setting) != 0U;
+    const uint8_t value = !disable && requested_percent(setting) == 0U ?
+        BACKLIGHT_DEFAULT : setting;
+    const uint8_t percent = suspended || disable ? 0U : requested_percent(value);
+    const esp_err_t err = supported ? apply_locked(percent) : ESP_ERR_NOT_SUPPORTED;
+    if (err == ESP_OK) {
+        setting = value;
+        output_disabled = disable;
+        record_applied(percent);
+    }
+    xSemaphoreGive(mutex);
+    return err;
+}
 
 esp_err_t solar_os_backlight_display_changed(uint8_t percent)
 {
