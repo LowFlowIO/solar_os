@@ -48,7 +48,7 @@ typedef struct {
     uint64_t started, reaction_end, next_blink, blink_started;
     uint32_t duration, persistent, random;
     int32_t gaze_x, gaze_y;
-    int blinking;
+    int blinking, reacting;
 } emotion_t;
 
 static float mix(float a, float b, float t) { return a + (b - a) * t; }
@@ -76,12 +76,12 @@ static pose_t evaluate(emotion_t *s, uint64_t now)
 }
 static void advance(emotion_t *s, uint64_t now)
 {
-    if (s->reaction_end && now >= s->reaction_end) {
+    if (s->reacting && now >= s->reaction_end) {
         s->from = evaluate(s, s->reaction_end);
         s->to = poses[s->persistent];
         s->started = s->reaction_end;
         s->duration = 200;
-        s->reaction_end = 0;
+        s->reacting = 0;
     }
 }
 static const char *pose_name(uint32_t pose)
@@ -117,7 +117,7 @@ static int set(void *state, uint32_t pose, uint32_t duration, uint64_t now)
     int result = change(state, pose, duration, now);
     if (!result) {
         emotion_t *s = state;
-        s->persistent = pose; s->reaction_end = 0;
+        s->persistent = pose; s->reacting = 0;
     }
     return result;
 }
@@ -125,7 +125,10 @@ static int react(void *state, uint32_t pose, uint32_t hold, uint32_t duration, u
 {
     if (hold > 60000) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     int result = change(state, pose, duration, now);
-    if (!result) ((emotion_t *)state)->reaction_end = now + duration + hold;
+    if (!result) {
+        emotion_t *s = state;
+        s->reaction_end = now + duration + hold; s->reacting = 1;
+    }
     return result;
 }
 static int look(void *state, int32_t x, int32_t y)

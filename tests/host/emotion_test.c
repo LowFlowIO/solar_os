@@ -12,6 +12,10 @@ int main(int argc, char **argv)
     memset(image, 0x55, sizeof(image));
     assert(!a->init(s, 0, 1) && !a->init(other, 0, 2));
     assert(!a->render(s, 0, neutral, sizeof(neutral), 256, 64, 64, 0));
+    assert(!a->react(s, SOLAR_OS_EMOTION_FURIOUS, 0, 0, 0));
+    assert(!a->render(s, 250, image + 1, sizeof(image) - 2, 256, 64, 64, 0));
+    assert(!memcmp(neutral, image + 1, 4096)); /* zero is a valid reaction deadline */
+    assert(!a->init(s, 0, 1));
     for (unsigned p = 0; p < SOLAR_OS_EMOTION_POSE_COUNT; ++p) {
         assert(a->pose_find(a->pose_name(p)) == (int)p);
         assert(!a->set(s, p, 0, 100));
