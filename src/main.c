@@ -42,6 +42,9 @@
 #include "solar_os_fonts.h"
 #include "solar_os_input.h"
 #include "solar_os_input_actions.h"
+#if SOLAR_OS_PACKAGE_EXPANSION_TRACKBALL
+#include "solar_os_trackball.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_INBOX
 #include "solar_os_inbox.h"
 #endif
@@ -1618,7 +1621,8 @@ static void dispatch_input_pointer(const solar_os_input_pointer_event_t *pointer
         }
     }
 
-    if (solar_os_input_pointer_filter_event(&oriented_pointer)) {
+    if (solar_os_input_pointer_is_captured(pointer->source) ||
+        solar_os_input_pointer_filter_event(&oriented_pointer)) {
         solar_os_power_note_activity(millis_u32());
         return;
     }
@@ -1689,6 +1693,9 @@ static void dispatch_input_gesture(const solar_os_input_gesture_event_t *gesture
 
 static void poll_local_input_sources(void)
 {
+#if SOLAR_OS_PACKAGE_EXPANSION_TRACKBALL
+    solar_os_trackball_poll();
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_BUTTONS
     if (board_has(SOLAR_OS_BOARD_CAP_BUTTONS)) {
         solar_os_buttons_poll();
@@ -1751,6 +1758,9 @@ static uint32_t requested_tick_interval_ms(void)
     if (jobs_interval_ms < interval_ms) {
         interval_ms = jobs_interval_ms;
     }
+#if SOLAR_OS_PACKAGE_EXPANSION_TRACKBALL
+    if (solar_os_trackball_active() && interval_ms > 10U) interval_ms = 10U;
+#endif
     return interval_ms;
 }
 

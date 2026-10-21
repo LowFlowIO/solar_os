@@ -863,14 +863,19 @@ bindings = { gpio = 7 }
         self.assertEqual({pin["kind"] for pin in board["connectors"]},
                          {"gpio", "power", "ground"})
         self.assertFalse(any(device.get("detachable", False)
-                             for device in board["devices"] if device["name"] != "gnss0"))
+                             for device in board["devices"] if device["name"] not in ("gnss0", "trackball0")))
 
         defines = board["defines"]
         self.assertEqual(
             defines["SOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY"],
             "SOLAR_OS_KEY_ENTER",
         )
-        self.assertNotIn("GPIO_NUM_0", defines["SOLAR_OS_BOARD_BUTTONS"])
+        self.assertNotIn("SOLAR_OS_BOARD_BUTTONS", defines)
+        self.assertNotIn("buttons", board["build"]["capabilities"])
+        trackball = next(device for device in board["devices"] if device["name"] == "trackball0")
+        self.assertEqual(trackball["driver"], "trackball")
+        self.assertEqual(trackball["bindings"], {"up": 3, "down": 15, "left": 1, "right": 2, "pull": 1})
+        self.assertTrue(trackball["detachable"])
 
         header = generate_header(board, self.drivers)
         self.assertIn(
@@ -889,6 +894,8 @@ bindings = { gpio = 7 }
 
         packages = required_packages(board, self.drivers)
         self.assertIn("nmea_gnss", packages)
+        self.assertIn("expansion_trackball", packages)
+        self.assertIn("job_pointer_arrows", packages)
 
         self.assertIn('.name = "gnss0", .detachable = true', header)
         gnss["detachable"] = "true"

@@ -24,6 +24,7 @@ static uint8_t nvs_blob[64];
 static size_t nvs_blob_length;
 static unsigned pointer_filter_calls;
 static unsigned gesture_observer_calls[2];
+static bool fail_pointer_capture_allocation;
 
 static bool consume_pointer(const solar_os_input_pointer_event_t *event,
                             void *context)
@@ -49,6 +50,11 @@ void *solar_os_memory_calloc(size_t count,
                              solar_os_memory_class_t memory_class,
                              const char *tag)
 {
+    if (!strcmp(tag, "input.pointer.capture") && fail_pointer_capture_allocation) return NULL;
+    if (!strcmp(tag, "trackball.irq")) {
+        assert(count == 1 && memory_class == SOLAR_OS_MEMORY_INTERNAL_CRITICAL);
+        return calloc(count, size);
+    }
     assert(count == 32);
     assert(memory_class == SOLAR_OS_MEMORY_EXTERNAL_PREFERRED);
     void *allocation = calloc(count, size);
@@ -63,6 +69,8 @@ void *solar_os_memory_calloc(size_t count,
         assert(axis_queue_allocation == NULL);
         axis_queue_allocation = allocation;
         axis_queue_allocations++;
+    } else if (!strcmp(tag, "input.pointer.capture")) {
+        assert(size == sizeof(solar_os_input_pointer_sample_t));
     } else {
         assert(strcmp(tag, "input-gesture") == 0);
         assert(size == sizeof(solar_os_input_gesture_event_t));
@@ -82,8 +90,7 @@ void solar_os_memory_free(void *ptr)
         } else if (ptr == axis_queue_allocation) {
             axis_queue_allocation = NULL;
             axis_queue_frees++;
-        } else {
-            assert(ptr == gesture_queue_allocation);
+        } else if (ptr == gesture_queue_allocation) {
             gesture_queue_allocation = NULL;
             gesture_queue_frees++;
         }

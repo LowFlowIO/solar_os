@@ -1897,6 +1897,38 @@ kind = "ps2_bus"
 hint = "bus"
 required = true
 
+[drivers.trackball]
+summary = "Four-channel GPIO trackball"
+package = "expansion_trackball"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_gpio"]
+default_name = "trackball0"
+[[drivers.trackball.bindings]]
+key = "up"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.trackball.bindings]]
+key = "down"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.trackball.bindings]]
+key = "left"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.trackball.bindings]]
+key = "right"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.trackball.bindings]]
+key = "pull"
+kind = "parameter"
+hint = "0=none|1=up|2=down"
+allowed = [0, 1, 2]
+
 [drivers.ps2-mouse]
 summary = "PS/2 mouse"
 package = "expansion_ps2_mouse"

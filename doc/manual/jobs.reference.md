@@ -1244,6 +1244,38 @@ source named `graffiti` and therefore go to the current input focus. `job
 status graffiti` reports recognized, rejected, and dropped stroke counts plus
 the current case state.
 
+## pointer-arrows
+
+Consume one named pointer source and convert movement into arrow-key taps:
+
+```sh
+job start pointer-arrows source=trackball0
+job status pointer-arrows
+job stop pointer-arrows
+```
+
+The job exclusively captures that source's pointer events, including contact
+and button boundaries. They are withheld from foreground pointer consumers and
+the pointer filter while the job runs. Other pointer sources remain available.
+Pointer buttons do not produce keyboard keys. Release any held button or touch
+before starting the job.
+
+Each stroke ends after 80 ms without movement and emits one arrow in the
+dominant net direction. Opposite movement cancels; equal diagonals use the most
+recently moved axis. Trackball gestures retain the modifiers from the last
+interrupt edge. Other pointer sources use the current keyboard modifiers when
+their samples are processed.
+
+Relative pointers supply deltas directly. Absolute pointers are measured from
+each contact's initial position; a new contact starts a new baseline. Only one
+contact is tracked at a time. Job status reports the captured source, emitted
+arrows and capture resets after queue overflow.
+
+Stopping releases capture and discards unfinished movement. If stopped during a
+held button or contact, pointer delivery resumes after its release. Source
+closure or loss of readiness stops the job and releases its resources. T-Deck
+starts this job for `trackball0` before the shell and startup script run.
+
 ## gpio-keys
 
 Maps runtime-safe GPIO inputs to SolarOS keyboard presses. The job configures

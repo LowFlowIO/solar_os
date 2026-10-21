@@ -290,6 +290,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `gpio-keys` | Active-low pull-up buttons | One or more `key:<name>=<gpio>` bindings | Publishes press/release keyboard events and releases all GPIO claims on detach. |
 | `ps2-keyboard` | PS/2 scan-code set 2 keyboard | `ps2=<bus>` | Publishes canonical keyboard press/release events from an exclusive PS/2 bus. |
 | `ps2-mouse` | Standard three-button PS/2 mouse | `ps2=<bus>` | Enables reporting and publishes relative pointer motion and button events. |
+| `trackball` | Four-channel GPIO trackball | `up=<gpio> down=<gpio> left=<gpio> right=<gpio> [pull=0\|1\|2]` | Counts both interrupt edges on each direction input and publishes relative pointer deltas. Pull defaults to `1` (up); `0` is none and `2` is down. Pins must be distinct. The push switch is independent. |
 | `analog-joystick` | Two-axis analog joystick | `x=<scalar-stream> y=<scalar-stream> min=<value> center=<value> max=<value>`; optional `deadzone=<value>` | Normalizes two scalar streams into X/Y axis events without generating keys. |
 | `rotary-encoder` | Quadrature rotary encoder | `a=<pin> b=<pin>` | Publishes Up or Down input for each decoded detent. |
 | `ft6336` | Board-integrated FT6336 touch controller | Board-defined I2C, address, reset, and IRQ bindings | Publishes absolute pointer events as a default board attachment. |

@@ -119,6 +119,25 @@ opposite movements cancel. Equal diagonals use the most recently moved axis.
 Gestures retain the modifiers held at the last movement pulse, so they can be
 released while the ball settles.
 
+The board attaches the `trackball` expansion driver as `trackball0` and starts
+the `pointer-arrows` job. The driver owns the four direction pins and publishes
+relative pointer movement. The job consumes that source and converts movement
+to the arrow gestures described above. To use relative pointer input directly:
+
+```sh
+job stop pointer-arrows
+```
+
+Restore arrow navigation with:
+
+```sh
+job start pointer-arrows source=trackball0
+```
+
+The push switch continues using the system KEY settings in either case. The
+board starts arrow navigation again at boot; a startup script can stop the job
+to select relative pointer input on every boot.
+
 For Ctrl, hold Shift and Mic in either order, then press another key or roll
 the trackball. Shift selects the Ctrl chord and is consumed, so this does not
 also select text. Shift can be released while Mic continues acting as Ctrl;

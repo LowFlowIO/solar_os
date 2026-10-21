@@ -121,6 +121,15 @@ static input_gesture_observer_slot_t
     input_gesture_observers[INPUT_GESTURE_OBSERVER_MAX];
 static portMUX_TYPE input_lock = portMUX_INITIALIZER_UNLOCKED;
 
+typedef struct {
+    const void *owner;
+    solar_os_input_pointer_sample_t *queue;
+    size_t head, count;
+    bool reset, wait_neutral, boundary;
+    uint32_t boundary_ms;
+} input_pointer_capture_t;
+static input_pointer_capture_t pointer_captures[INPUT_SOURCE_MAX];
+
 #define INPUT_CAPTURE_QUEUE_MAX 32U
 static const void *input_capture_owner;
 static solar_os_input_source_t input_capture_source;
@@ -1200,6 +1209,7 @@ void solar_os_input_source_close(solar_os_input_source_t source)
     }
 
     solar_os_input_pointer_event_t *pointer_queue_to_free = NULL;
+    solar_os_input_pointer_sample_t *capture_queue_to_free = NULL;
     solar_os_input_axis_event_t *axis_queue_to_free = NULL;
     solar_os_input_gesture_event_t *gesture_queue_to_free = NULL;
     portENTER_CRITICAL(&input_lock);
@@ -1211,6 +1221,9 @@ void solar_os_input_source_close(solar_os_input_source_t source)
         portEXIT_CRITICAL(&input_lock);
         return;
     }
+
+    capture_queue_to_free = pointer_captures[source - 1U].queue;
+    memset(&pointer_captures[source - 1U], 0, sizeof(pointer_captures[0]));
 
     solar_os_input_key_event_t retained[INPUT_QUEUE_MAX];
     size_t kept = 0;
@@ -1335,6 +1348,7 @@ void solar_os_input_source_close(solar_os_input_source_t source)
     }
     portEXIT_CRITICAL(&input_lock);
     solar_os_memory_free(pointer_queue_to_free);
+    solar_os_memory_free(capture_queue_to_free);
     solar_os_memory_free(axis_queue_to_free);
     solar_os_memory_free(gesture_queue_to_free);
 }
@@ -1490,6 +1504,18 @@ esp_err_t solar_os_input_write_char(solar_os_input_source_t source, char ch)
 esp_err_t solar_os_input_write_pointer(solar_os_input_source_t source,
                                        const solar_os_input_pointer_event_t *event)
 {
+    if (event == NULL) return ESP_ERR_INVALID_ARG;
+    const solar_os_input_pointer_sample_t sample = {
+        .event = *event, .time_ms = input_now_ms(),
+    };
+    return solar_os_input_write_pointer_sample(source, &sample);
+}
+
+esp_err_t solar_os_input_write_pointer_sample(solar_os_input_source_t source,
+    const solar_os_input_pointer_sample_t *sample)
+{
+    if (sample == NULL) return ESP_ERR_INVALID_ARG;
+    const solar_os_input_pointer_event_t *event = &sample->event;
     if (event == NULL || event->mode > SOLAR_OS_INPUT_POINTER_RELATIVE ||
         event->action > SOLAR_OS_INPUT_POINTER_RELEASE ||
         event->target[SOLAR_OS_INPUT_POINTER_TARGET_MAX - 1U] != '\0') {
@@ -1508,6 +1534,14 @@ esp_err_t solar_os_input_write_pointer(solar_os_input_source_t source,
         input_pointer_queue == NULL) {
         result = ESP_ERR_INVALID_STATE;
     } else {
+        input_pointer_capture_t *capture = &pointer_captures[source - 1U];
+        if (capture->boundary && (int32_t)(sample->time_ms - capture->boundary_ms) <= 0) {
+            /* A producer may still have interrupt samples from before the
+             * claim/release boundary. They belong to the discarded gesture. */
+            portEXIT_CRITICAL(&input_lock);
+            return ESP_OK;
+        }
+        capture->boundary = false;
         input_source_diagnostics_state_t *diagnostics =
             &input_diagnostics[source - 1U];
         solar_os_input_pointer_event_t raw = *event;
@@ -1515,7 +1549,23 @@ esp_err_t solar_os_input_write_pointer(solar_os_input_source_t source,
         solar_os_input_pointer_event_t queued = raw;
         input_apply_calibration_locked(diagnostics, &queued);
         queued.source = source;
-        if (!input_pointer_queue_push_locked(&queued)) {
+        bool accepted = true;
+        if (capture->owner != NULL) {
+            input_capture_activity = true;
+            if (capture->count == INPUT_POINTER_QUEUE_MAX) {
+                capture->head = capture->count = 0;
+                capture->reset = true;
+            }
+            const size_t index = (capture->head + capture->count++) % INPUT_POINTER_QUEUE_MAX;
+            capture->queue[index] = *sample;
+            capture->queue[index].event = queued;
+        } else if (capture->wait_neutral) {
+            capture->wait_neutral = queued.buttons != 0 ||
+                queued.action == SOLAR_OS_INPUT_POINTER_PRESS;
+        } else {
+            accepted = input_pointer_queue_push_locked(&queued);
+        }
+        if (!accepted) {
             result = ESP_ERR_NO_MEM;
         } else {
             input_increment_counter(&diagnostics->pointer_events);
@@ -1529,6 +1579,101 @@ esp_err_t solar_os_input_write_pointer(solar_os_input_source_t source,
     }
     portEXIT_CRITICAL(&input_lock);
     return result;
+}
+
+static void input_pointer_discard_queued_locked(solar_os_input_source_t source)
+{
+    const size_t count = input_pointer_queue_count;
+    for (size_t i = 0; i < count; i++) {
+        const solar_os_input_pointer_event_t event = input_pointer_queue[input_pointer_queue_head];
+        input_pointer_queue_head = (input_pointer_queue_head + 1U) % INPUT_POINTER_QUEUE_MAX;
+        input_pointer_queue_count--;
+        if (event.source != source) (void)input_pointer_queue_push_locked(&event);
+    }
+}
+
+esp_err_t solar_os_input_capture_pointer(const char *name, const void *owner,
+                                         solar_os_input_source_t *source)
+{
+    if (name == NULL || owner == NULL || source == NULL) return ESP_ERR_INVALID_ARG;
+    *source = SOLAR_OS_INPUT_SOURCE_INVALID;
+    solar_os_input_pointer_sample_t *queue = solar_os_memory_calloc(
+        INPUT_POINTER_QUEUE_MAX, sizeof(*queue), SOLAR_OS_MEMORY_EXTERNAL_PREFERRED,
+        "input.pointer.capture");
+    if (!queue) return ESP_ERR_NO_MEM;
+    esp_err_t err = ESP_ERR_NOT_FOUND;
+    portENTER_CRITICAL(&input_lock);
+    for (size_t i = 0; i < INPUT_SOURCE_MAX; i++) {
+        if (!input_sources[i].active || strcmp(input_sources[i].name, name)) continue;
+        input_pointer_capture_t *capture = &pointer_captures[i];
+        const solar_os_input_pointer_event_t *last = &input_diagnostics[i].last_pointer.event;
+        if (!(input_sources[i].capabilities & INPUT_POINTER_CAPABILITIES) || !input_sources[i].ready) {
+            err = ESP_ERR_NOT_SUPPORTED;
+        } else if (capture->owner || last->buttons || last->action == SOLAR_OS_INPUT_POINTER_PRESS ||
+                   capture->wait_neutral) {
+            err = ESP_ERR_INVALID_STATE;
+        } else {
+            *capture = (input_pointer_capture_t){.owner = owner, .queue = queue,
+                .boundary = true, .boundary_ms = input_now_ms()};
+            *source = (solar_os_input_source_t)(i + 1U);
+            input_pointer_discard_queued_locked(*source);
+            queue = NULL;
+            err = ESP_OK;
+        }
+        break;
+    }
+    portEXIT_CRITICAL(&input_lock);
+    solar_os_memory_free(queue);
+    return err;
+}
+
+void solar_os_input_release_pointer(solar_os_input_source_t source, const void *owner)
+{
+    solar_os_input_pointer_sample_t *queue = NULL;
+    portENTER_CRITICAL(&input_lock);
+    if (input_source_valid_locked(source) && owner && pointer_captures[source - 1U].owner == owner) {
+        input_pointer_capture_t *capture = &pointer_captures[source - 1U];
+        const solar_os_input_pointer_event_t *last = &input_diagnostics[source - 1U].last_pointer.event;
+        queue = capture->queue;
+        *capture = (input_pointer_capture_t){.wait_neutral = last->buttons != 0 ||
+            last->action == SOLAR_OS_INPUT_POINTER_PRESS, .boundary = true,
+            .boundary_ms = input_now_ms()};
+        input_pointer_discard_queued_locked(source);
+    }
+    portEXIT_CRITICAL(&input_lock);
+    solar_os_memory_free(queue);
+}
+
+esp_err_t solar_os_input_read_captured_pointer(solar_os_input_source_t source,
+    const void *owner, solar_os_input_pointer_sample_t *sample, bool *reset)
+{
+    if (!owner || !sample || !reset) return ESP_ERR_INVALID_ARG;
+    *reset = false;
+    esp_err_t err = ESP_ERR_INVALID_STATE;
+    portENTER_CRITICAL(&input_lock);
+    if (input_source_valid_locked(source) && input_sources[source - 1U].ready &&
+        pointer_captures[source - 1U].owner == owner) {
+        input_pointer_capture_t *capture = &pointer_captures[source - 1U];
+        *reset = capture->reset;
+        capture->reset = false;
+        err = ESP_ERR_NOT_FOUND;
+        if (capture->count) {
+            *sample = capture->queue[capture->head];
+            capture->head = (capture->head + 1U) % INPUT_POINTER_QUEUE_MAX;
+            capture->count--;
+            err = ESP_OK;
+        }
+    }
+    portEXIT_CRITICAL(&input_lock);
+    return err;
+}
+
+bool solar_os_input_pointer_is_captured(solar_os_input_source_t source)
+{
+    portENTER_CRITICAL(&input_lock);
+    const bool captured = input_source_valid_locked(source) && pointer_captures[source - 1U].owner != NULL;
+    portEXIT_CRITICAL(&input_lock);
+    return captured;
 }
 
 esp_err_t solar_os_input_pointer_apply_orientation(

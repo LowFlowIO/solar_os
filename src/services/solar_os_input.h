@@ -123,6 +123,14 @@ typedef struct {
     char target[SOLAR_OS_INPUT_POINTER_TARGET_MAX];
 } solar_os_input_pointer_event_t;
 
+/* Producer metadata for input transformations; keeps the app event ABI intact. */
+typedef struct {
+    solar_os_input_pointer_event_t event;
+    uint32_t time_ms;
+    uint8_t modifiers;
+    bool modifiers_valid;
+} solar_os_input_pointer_sample_t;
+
 /* A single exclusive filter may consume display-oriented pointer events. */
 typedef bool (*solar_os_input_pointer_filter_t)(
     const solar_os_input_pointer_event_t *event,
@@ -283,6 +291,18 @@ esp_err_t solar_os_input_write_key_tap(solar_os_input_source_t source,
 esp_err_t solar_os_input_write_char(solar_os_input_source_t source, char ch);
 esp_err_t solar_os_input_write_pointer(solar_os_input_source_t source,
                                        const solar_os_input_pointer_event_t *event);
+esp_err_t solar_os_input_write_pointer_sample(solar_os_input_source_t source,
+    const solar_os_input_pointer_sample_t *sample);
+/* Exclusive, source-specific capture before foreground/filter delivery. Claim
+ * only at a neutral button/contact boundary. Release discards pending samples.
+ * Read returns NOT_FOUND when empty, INVALID_STATE after source closure, and
+ * reset=true after overflow. No application callbacks run under the input lock. */
+esp_err_t solar_os_input_capture_pointer(const char *name, const void *owner,
+                                         solar_os_input_source_t *source);
+void solar_os_input_release_pointer(solar_os_input_source_t source, const void *owner);
+bool solar_os_input_pointer_is_captured(solar_os_input_source_t source);
+esp_err_t solar_os_input_read_captured_pointer(solar_os_input_source_t source,
+    const void *owner, solar_os_input_pointer_sample_t *sample, bool *reset);
 esp_err_t solar_os_input_pointer_apply_orientation(
     solar_os_input_pointer_event_t *event,
     uint16_t width,
@@ -338,6 +358,7 @@ esp_err_t solar_os_input_capture_keyboard_with_shortcuts(const char *name, const
 void solar_os_input_release_keyboard(const void *owner);
 bool solar_os_input_capture_key_event(const solar_os_input_key_event_t *event);
 /* Main-loop wake/idle accounting for events queued directly by drivers. */
+/* Captured keyboard presses and pointer samples still count as user activity. */
 bool solar_os_input_take_captured_activity(void);
 /* Advances on new key presses, including captured keys and modifiers, even
  * when the event queue is full. Releases and autorepeat do not advance it. */
