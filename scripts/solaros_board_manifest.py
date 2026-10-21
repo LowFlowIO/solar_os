@@ -87,6 +87,7 @@ class DriverDef:
     early: bool
     default_name: str
     bindings: tuple[DriverBinding, ...]
+    keyboard: bool = False
 
 
 def _string_list(value: Any, path: str) -> list[str]:
@@ -125,6 +126,8 @@ def load_driver_catalog(path: Path) -> dict[str, DriverDef]:
         if not DEVICE_NAME_RE.fullmatch(name):
             raise ManifestError(f"{prefix} has an invalid driver name")
         package = raw.get("package")
+        if not isinstance(raw.get("keyboard", False), bool):
+            raise ManifestError(f"{prefix}.keyboard must be a boolean")
         if not isinstance(package, str) or not package:
             raise ManifestError(f"{prefix}.package is required")
         targets = tuple(_string_list(raw.get("targets"), f"{prefix}.targets"))
@@ -175,6 +178,7 @@ def load_driver_catalog(path: Path) -> dict[str, DriverDef]:
                for key in raw_board_defines):
             raise ManifestError(f"{prefix}.board_defines contains an invalid macro name")
         result[name] = DriverDef(
+            keyboard=raw.get("keyboard", False),
             name=name,
             summary=str(raw.get("summary") or name),
             package=package,
@@ -772,6 +776,8 @@ def generate_header(board: dict[str, Any], drivers: dict[str, DriverDef]) -> str
 
     devices = board.get("devices", [])
     buses_by_name = {str(bus["name"]): bus for bus in buses}
+    wired_keyboard = any(drivers[device["driver"]].keyboard for device in devices)
+    lines.append(f"#define SOLAR_OS_BOARD_HAS_WIRED_KEYBOARD {int(wired_keyboard)}")
     lines.append(f"#define SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICE_COUNT {len(devices)}")
     lines.extend(_macro_lines(
         "SOLAR_OS_BOARD_DEFAULT_EXPANSION_DEVICES",

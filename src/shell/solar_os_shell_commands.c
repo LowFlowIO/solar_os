@@ -1984,7 +1984,7 @@ static void setterm_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  setterm keyboard [us|de]");
     solar_os_shell_io_writeln(term, "  setterm ble [default|on|off]");
 #endif
-    solar_os_shell_io_writeln(term, "  setterm powerkey [sleep|suspend]");
+    solar_os_shell_io_writeln(term, "  setterm powerkey [short|long] [default|off|enter|app-exit|sleep|suspend|deepsleep|ble-pair]");
     solar_os_shell_io_writeln(term, "  setterm keyrate [off|1..60 [delay-ms]]");
     solar_os_shell_io_writeln(term, "  setterm timezone [UTC|UTC+/-offset|Europe/Berlin|POSIX-TZ]");
     solar_os_shell_io_writeln(term, "  setterm startup [auto|flash|sd]");
@@ -2637,37 +2637,39 @@ void solar_os_shell_cmd_setterm(solar_os_context_t *ctx, int argc, char **argv)
 #endif
 
     if (strcmp(argv[1], "powerkey") == 0 || strcmp(argv[1], "key") == 0) {
-        if (argc == 2) {
+        const char *usage = "setterm powerkey [short|long] [default|off|enter|app-exit|sleep|suspend|deepsleep|ble-pair]";
+        const char *values = "default off enter app-exit sleep suspend deepsleep ble-pair";
+        const bool long_press = argc >= 3 && strcmp(argv[2], "long") == 0;
+        const bool qualified = long_press || (argc >= 3 && strcmp(argv[2], "short") == 0);
+        const int value_index = qualified ? 3 : 2;
+        if (argc == 2 || (qualified && argc == 3)) {
             solar_os_power_status_t status;
             solar_os_power_get_status(&status);
-            solar_os_shell_io_printf(term,
-                                     "powerkey: %s\n",
-                                     solar_os_power_key_action_name(status.key_action));
-            solar_os_shell_io_writeln(term, "values: sleep suspend");
+            if (argc == 2 || !long_press) {
+                solar_os_shell_io_printf(term, "KEY short press: %s\n",
+                    solar_os_power_key_action_name(status.key_action));
+            }
+            if (argc == 2 || long_press) {
+                solar_os_shell_io_printf(term, "KEY long press: %s\n",
+                    solar_os_power_key_action_name(status.key_long_action));
+            }
+            solar_os_shell_io_printf(term, "values: %s\n", values);
             return;
         }
-        if (argc != 3) {
-            solar_os_shell_diag_unexpected(term, "setterm powerkey", argv[3],
-                                           "setterm powerkey [sleep|suspend]");
+        if (argc > value_index + 1) {
+            solar_os_shell_diag_unexpected(term, "setterm powerkey", argv[value_index + 1], usage);
             return;
         }
-
         solar_os_power_key_action_t action;
-        if (!solar_os_power_parse_key_action(argv[2], &action) ||
-            (action != SOLAR_OS_POWER_KEY_ACTION_SLEEP &&
-             action != SOLAR_OS_POWER_KEY_ACTION_SUSPEND)) {
-            solar_os_shell_diag_invalid(term,
-                                        "setterm powerkey",
-                                        "action",
-                                        argv[2],
-                                        "sleep or suspend",
-                                        "setterm powerkey [sleep|suspend]",
-                                        false);
+        if (!solar_os_power_parse_key_action(argv[value_index], &action)) {
+            solar_os_shell_diag_invalid(term, "setterm powerkey", "action",
+                argv[value_index], values, usage, false);
             return;
         }
-
-        const esp_err_t err = solar_os_power_set_key_action(action);
-        setterm_print_save_result(term, "powerkey", argv[2], err);
+        const esp_err_t err = long_press ? solar_os_power_set_key_long_action(action) :
+            solar_os_power_set_key_action(action);
+        setterm_print_save_result(term, long_press ? "powerkey long" : "powerkey short",
+                                  argv[value_index], err);
         return;
     }
 

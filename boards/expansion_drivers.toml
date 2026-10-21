@@ -1,6 +1,7 @@
 schema = 1
 
 [drivers.cardkb]
+keyboard = true
 summary = "I2C keyboard"
 package = "expansion_cardkb"
 targets = ["esp32", "esp32s3"]
@@ -21,6 +22,7 @@ required = true
 allowed = [0x5f]
 
 [drivers.inputronic-keyboard]
+keyboard = true
 summary = "Soldered Inputronic 8x10 keyboard"
 package = "expansion_inputronic_keyboard"
 targets = ["esp32", "esp32s3"]
@@ -53,6 +55,7 @@ hint = "gpio"
 role = "irq"
 
 [drivers.tdeck-keyboard]
+keyboard = true
 summary = "LilyGO T-Deck raw-matrix keyboard"
 package = "expansion_tdeck_keyboard"
 targets = ["esp32s3"]
@@ -73,6 +76,7 @@ required = true
 allowed = [0x55]
 
 [drivers.stc8h-keyboard]
+keyboard = true
 summary = "Elecrow STC8H companion-MCU keypad"
 package = "expansion_stc8h_keyboard"
 targets = ["esp32s3"]
@@ -105,6 +109,7 @@ kind = "pwm"
 hint = "gpio"
 
 [drivers.tab5-keyboard]
+keyboard = true
 summary = "M5Stack Tab5 70-key keyboard"
 package = "expansion_tab5_keyboard"
 targets = ["esp32", "esp32s3"]
@@ -172,6 +177,7 @@ min = 1
 max = 10
 
 [drivers.lilygo-pager-keyboard]
+keyboard = true
 summary = "LilyGO T-LoRa-Pager 4x10 keyboard"
 package = "expansion_lilygo_pager_keyboard"
 targets = ["esp32", "esp32s3"]
@@ -205,6 +211,7 @@ hint = "gpio"
 role = "backlight"
 
 [drivers.cl32-core]
+keyboard = true
 summary = "CL-32 board controller"
 package = "board_cl32_core"
 targets = ["esp32s3"]
@@ -1878,6 +1885,7 @@ min = 0
 max = 1000000
 
 [drivers.ps2-keyboard]
+keyboard = true
 summary = "PS/2 keyboard"
 package = "expansion_ps2_keyboard"
 targets = ["esp32", "esp32s3"]

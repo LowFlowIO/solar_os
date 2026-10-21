@@ -8,12 +8,14 @@
 #include "esp_pm.h"
 #include "nvs.h"
 #include "solar_os_board.h"
+#include "solar_os_keys.h"
 #include "solar_os_log.h"
 
 #define POWER_NVS_NAMESPACE "power"
 #define POWER_NVS_PROFILE_KEY "profile"
 #define POWER_NVS_IDLE_KEY "idle_ms"
 #define POWER_NVS_KEY_ACTION_KEY "key"
+#define POWER_NVS_KEY_LONG_ACTION_KEY "key_long"
 #define POWER_CPU_PERFORMANCE_MHZ 240U
 #define POWER_CPU_BALANCED_MHZ 160U
 #define POWER_CPU_BATTERY_MHZ 160U
@@ -60,7 +62,8 @@ esp_err_t solar_os_power_off(void)
 static solar_os_power_status_t power_status = {
     .profile = SOLAR_OS_POWER_PROFILE_PERFORMANCE,
     .effective_profile = SOLAR_OS_POWER_PROFILE_PERFORMANCE,
-    .key_action = SOLAR_OS_POWER_KEY_ACTION_SUSPEND,
+    .key_action = SOLAR_OS_POWER_KEY_ACTION_DEFAULT,
+    .key_long_action = SOLAR_OS_POWER_KEY_ACTION_DEFAULT,
 };
 static uint32_t sleep_enter_ms;
 static uint32_t automatic_light_sleep_holdoff_until_ms;
@@ -167,7 +170,29 @@ static bool profile_valid(solar_os_power_profile_t profile)
 static bool key_action_valid(solar_os_power_key_action_t action)
 {
     return action >= SOLAR_OS_POWER_KEY_ACTION_OFF &&
-        action <= SOLAR_OS_POWER_KEY_ACTION_SUSPEND;
+        action <= SOLAR_OS_POWER_KEY_ACTION_DEFAULT;
+}
+
+static solar_os_power_key_action_t default_key_action(bool long_press)
+{
+    if (long_press) {
+#if SOLAR_OS_BOARD_HAS_WIRED_KEYBOARD
+        return SOLAR_OS_POWER_KEY_ACTION_SUSPEND;
+#else
+        return SOLAR_OS_POWER_KEY_ACTION_BLE_PAIR;
+#endif
+    }
+#ifdef SOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY
+    if (SOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY == SOLAR_OS_KEY_ENTER) {
+        return SOLAR_OS_POWER_KEY_ACTION_ENTER;
+    }
+    if (SOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY == SOLAR_OS_KEY_APP_EXIT) {
+        return SOLAR_OS_POWER_KEY_ACTION_APP_EXIT;
+    }
+    return SOLAR_OS_POWER_KEY_ACTION_DEFAULT;
+#else
+    return SOLAR_OS_POWER_KEY_ACTION_SUSPEND;
+#endif
 }
 
 static esp_err_t apply_bt_sleep_policy(bool automatic_light_sleep)
@@ -342,6 +367,9 @@ static esp_err_t power_save(void)
         ret = nvs_set_u8(nvs, POWER_NVS_KEY_ACTION_KEY, (uint8_t)power_status.key_action);
     }
     if (ret == ESP_OK) {
+        ret = nvs_set_u8(nvs, POWER_NVS_KEY_LONG_ACTION_KEY, (uint8_t)power_status.key_long_action);
+    }
+    if (ret == ESP_OK) {
         ret = nvs_commit(nvs);
     }
     nvs_close(nvs);
@@ -356,7 +384,8 @@ esp_err_t solar_os_power_init(void)
 
     power_status.profile = SOLAR_OS_POWER_PROFILE_PERFORMANCE;
     power_status.effective_profile = SOLAR_OS_POWER_PROFILE_PERFORMANCE;
-    power_status.key_action = SOLAR_OS_POWER_KEY_ACTION_SUSPEND;
+    power_status.key_action = SOLAR_OS_POWER_KEY_ACTION_DEFAULT;
+    power_status.key_long_action = SOLAR_OS_POWER_KEY_ACTION_DEFAULT;
     power_status.idle_sleep_ms = profile_default_idle_ms(power_status.profile);
     power_status.initialized = true;
 
@@ -383,6 +412,11 @@ esp_err_t solar_os_power_init(void)
         key_action_valid((solar_os_power_key_action_t)key_action)) {
         power_status.key_action = (solar_os_power_key_action_t)key_action;
     }
+    uint8_t key_long_action = (uint8_t)power_status.key_long_action;
+    if (nvs_get_u8(nvs, POWER_NVS_KEY_LONG_ACTION_KEY, &key_long_action) == ESP_OK &&
+        key_action_valid((solar_os_power_key_action_t)key_long_action)) {
+        power_status.key_long_action = (solar_os_power_key_action_t)key_long_action;
+    }
     nvs_close(nvs);
 
     SOLAR_OS_LOGI(TAG,
@@ -398,6 +432,12 @@ void solar_os_power_get_status(solar_os_power_status_t *status)
     if (status != NULL) {
         update_automatic_light_sleep_holdoff_status(power_millis());
         *status = power_status;
+        if (status->key_action == SOLAR_OS_POWER_KEY_ACTION_DEFAULT) {
+            status->key_action = default_key_action(false);
+        }
+        if (status->key_long_action == SOLAR_OS_POWER_KEY_ACTION_DEFAULT) {
+            status->key_long_action = default_key_action(true);
+        }
     }
 }
 
@@ -438,10 +478,27 @@ esp_err_t solar_os_power_set_key_action(solar_os_power_key_action_t action)
         return ESP_ERR_INVALID_ARG;
     }
 
+    const solar_os_power_key_action_t previous = power_status.key_action;
     power_status.key_action = action;
     const esp_err_t ret = power_save();
     if (ret == ESP_OK) {
         SOLAR_OS_LOGI(TAG, "KEY action=%s", solar_os_power_key_action_name(action));
+    } else {
+        power_status.key_action = previous;
+    }
+    return ret;
+}
+
+esp_err_t solar_os_power_set_key_long_action(solar_os_power_key_action_t action)
+{
+    if (!key_action_valid(action)) {
+        return ESP_ERR_INVALID_ARG;
+    }
+    const solar_os_power_key_action_t previous = power_status.key_long_action;
+    power_status.key_long_action = action;
+    const esp_err_t ret = power_save();
+    if (ret != ESP_OK) {
+        power_status.key_long_action = previous;
     }
     return ret;
 }
@@ -533,6 +590,16 @@ const char *solar_os_power_key_action_name(solar_os_power_key_action_t action)
         return "sleep";
     case SOLAR_OS_POWER_KEY_ACTION_SUSPEND:
         return "suspend";
+    case SOLAR_OS_POWER_KEY_ACTION_DEEPSLEEP:
+        return "deepsleep";
+    case SOLAR_OS_POWER_KEY_ACTION_BLE_PAIR:
+        return "ble-pair";
+    case SOLAR_OS_POWER_KEY_ACTION_ENTER:
+        return "enter";
+    case SOLAR_OS_POWER_KEY_ACTION_APP_EXIT:
+        return "app-exit";
+    case SOLAR_OS_POWER_KEY_ACTION_DEFAULT:
+        return "default";
     default:
         return "unknown";
     }
@@ -544,6 +611,11 @@ bool solar_os_power_parse_key_action(const char *name, solar_os_power_key_action
         SOLAR_OS_POWER_KEY_ACTION_OFF,
         SOLAR_OS_POWER_KEY_ACTION_SLEEP,
         SOLAR_OS_POWER_KEY_ACTION_SUSPEND,
+        SOLAR_OS_POWER_KEY_ACTION_DEEPSLEEP,
+        SOLAR_OS_POWER_KEY_ACTION_BLE_PAIR,
+        SOLAR_OS_POWER_KEY_ACTION_ENTER,
+        SOLAR_OS_POWER_KEY_ACTION_APP_EXIT,
+        SOLAR_OS_POWER_KEY_ACTION_DEFAULT,
     };
 
     if (name == NULL) {

@@ -89,7 +89,8 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Control | Action |
 | --- | --- |
 | Roll trackball up / down / left / right | One arrow key in the dominant direction after movement stops. |
-| Press trackball | Enter — select/open. |
+| Tap trackball | Enter — select/open by default. |
+| Hold trackball | Suspend by default. |
 | Keyboard Enter | Enter. |
 | Tap microphone-icon key (Mic) | Tab on release — complete a shell command or argument; tap twice to list matches. |
 | Shift + microphone-icon key | Ctrl — keep Mic held while pressing the other key. |
@@ -105,6 +106,12 @@ names. Space+Enter remains Escape rather than the universal app-close key.
 | Alt+Enter | Toggle full screen in shared text menus. |
 | Hold Sym + another key | Type the symbol from the keyboard's symbol layer. |
 | Hold Shift + another key | Type its shifted character. |
+
+The trackball press uses the system KEY settings. Change a tap with
+`setterm powerkey short <action>` and a hold with
+`setterm powerkey long <action>`, or edit the two rows in `setterm`.
+Saved choices override these defaults. Any KEY press wakes suspend or sleep;
+the wake press is consumed until release. Deep-sleep wake starts a fresh boot.
 
 Each continuous roll produces one arrow key after 80 ms without movement.
 The direction follows the greater net horizontal or vertical movement;

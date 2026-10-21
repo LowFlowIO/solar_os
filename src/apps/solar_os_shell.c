@@ -819,7 +819,12 @@ static const char * const setterm_keyboard_values[] = {"us", "de"};
 #if SOLAR_OS_PACKAGE_SERVICE_BLE
 static const char * const setterm_ble_values[] = {"default", "on", "off"};
 #endif
-static const char * const setterm_powerkey_values[] = {"sleep", "suspend"};
+static const char * const powerkey_action_values[] = {
+    "default", "off", "enter", "app-exit", "sleep", "suspend", "deepsleep", "ble-pair",
+};
+static const char * const setterm_powerkey_values[] = {
+    "short", "long", "default", "off", "enter", "app-exit", "sleep", "suspend", "deepsleep", "ble-pair",
+};
 static const char * const setterm_keyrate_values[] = {"off"};
 static const char * const setterm_timezone_values[] = {"UTC", "Europe/Berlin"};
 static const char * const setterm_startup_values[] = {"auto", "flash", "sd"};
@@ -1549,7 +1554,7 @@ static const char * const power_profile_values[] = {
     "lowpower",
 };
 static const char * const power_idle_values[] = {"off"};
-static const char * const power_key_values[] = {"off", "sleep", "suspend"};
+
 
 static const char * const battery_subcommands[] = {
     "status",
@@ -1918,7 +1923,11 @@ static const char * const path_setterm_keymap[] = {"setterm", "keymap"};
 static const char * const path_setterm_ble[] = {"setterm", "ble"};
 #endif
 static const char * const path_setterm_powerkey[] = {"setterm", "powerkey"};
+static const char * const path_setterm_powerkey_short[] = {"setterm", "powerkey", "short"};
+static const char * const path_setterm_powerkey_long[] = {"setterm", "powerkey", "long"};
 static const char * const path_setterm_key[] = {"setterm", "key"};
+static const char * const path_setterm_key_short[] = {"setterm", "key", "short"};
+static const char * const path_setterm_key_long[] = {"setterm", "key", "long"};
 static const char * const path_setterm_keyrate[] = {"setterm", "keyrate"};
 static const char * const path_setterm_typerate[] = {"setterm", "typerate"};
 static const char * const path_setterm_repeat[] = {"setterm", "repeat"};
@@ -2716,6 +2725,8 @@ static const char * const path_power[] = {"power"};
 static const char * const path_power_profile[] = {"power", "profile"};
 static const char * const path_power_idle[] = {"power", "idle"};
 static const char * const path_power_key[] = {"power", "key"};
+static const char * const path_power_key_short[] = {"power", "key", "short"};
+static const char * const path_power_key_long[] = {"power", "key", "long"};
 static const char * const path_rtc[] = {"rtc"};
 static const char * const path_rtc_alarm[] = {"rtc", "alarm"};
 static const char * const path_rtc_timer[] = {"rtc", "timer"};
@@ -3258,7 +3269,11 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_setterm_ble, setterm_ble_values),
 #endif
     SHELL_COMPLETION_STATIC(path_setterm_powerkey, setterm_powerkey_values),
+    SHELL_COMPLETION_STATIC(path_setterm_powerkey_short, powerkey_action_values),
+    SHELL_COMPLETION_STATIC(path_setterm_powerkey_long, powerkey_action_values),
     SHELL_COMPLETION_STATIC(path_setterm_key, setterm_powerkey_values),
+    SHELL_COMPLETION_STATIC(path_setterm_key_short, powerkey_action_values),
+    SHELL_COMPLETION_STATIC(path_setterm_key_long, powerkey_action_values),
     SHELL_COMPLETION_STATIC(path_setterm_keyrate, setterm_keyrate_values),
     SHELL_COMPLETION_STATIC(path_setterm_typerate, setterm_keyrate_values),
     SHELL_COMPLETION_STATIC(path_setterm_repeat, setterm_keyrate_values),
@@ -3788,7 +3803,9 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_power, power_subcommands),
     SHELL_COMPLETION_STATIC(path_power_profile, power_profile_values),
     SHELL_COMPLETION_STATIC(path_power_idle, power_idle_values),
-    SHELL_COMPLETION_STATIC(path_power_key, power_key_values),
+    SHELL_COMPLETION_STATIC(path_power_key, setterm_powerkey_values),
+    SHELL_COMPLETION_STATIC(path_power_key_short, powerkey_action_values),
+    SHELL_COMPLETION_STATIC(path_power_key_long, powerkey_action_values),
     SHELL_COMPLETION_STATIC(path_rtc, rtc_subcommands),
     SHELL_COMPLETION_STATIC(path_rtc_alarm, rtc_alarm_subcommands),
     SHELL_COMPLETION_STATIC(path_rtc_timer, rtc_timer_subcommands),

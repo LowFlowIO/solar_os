@@ -829,7 +829,7 @@ static void power_print_usage(solar_os_shell_io_t *term)
     solar_os_shell_io_writeln(term, "  power status");
     solar_os_shell_io_writeln(term, "  power profile [performance|balanced|battery|lowpower]");
     solar_os_shell_io_writeln(term, "  power idle [off|seconds]");
-    solar_os_shell_io_writeln(term, "  power key [off|sleep|suspend]");
+    solar_os_shell_io_writeln(term, "  power key [short|long] [default|off|enter|app-exit|sleep|suspend|deepsleep|ble-pair]");
     solar_os_shell_io_writeln(term, "  power sleep");
     solar_os_shell_io_writeln(term, "  power suspend");
 }
@@ -888,6 +888,8 @@ static void power_print_status(solar_os_shell_io_t *term)
     solar_os_shell_io_printf(term,
                              "KEY short press: %s\n",
                              solar_os_power_key_action_name(status.key_action));
+    solar_os_shell_io_printf(term, "KEY long press: %s\n",
+                             solar_os_power_key_action_name(status.key_long_action));
     solar_os_shell_io_printf(term, "Idle sleep: %s\n", idle_text);
     solar_os_shell_io_printf(term,
                              "Light sleep count: %" PRIu32 "\n",
@@ -999,39 +1001,14 @@ void solar_os_shell_cmd_power(solar_os_context_t *ctx, int argc, char **argv)
     }
 
     if (strcmp(argv[1], "key") == 0) {
-        if (argc == 2) {
-            solar_os_power_status_t status;
-            solar_os_power_get_status(&status);
-            solar_os_shell_io_printf(term,
-                                     "key: %s\n",
-                                     solar_os_power_key_action_name(status.key_action));
-            solar_os_shell_io_writeln(term, "values: off sleep suspend");
+        if (argc > 4) {
+            solar_os_shell_diag_unexpected(term, "power key", argv[4],
+                "power key [short|long] [action]");
             return;
         }
-        if (argc != 3) {
-            solar_os_shell_diag_unexpected(term, "power key", argv[3],
-                                           "power key [off|sleep|suspend]");
-            return;
-        }
-
-        solar_os_power_key_action_t action;
-        if (!solar_os_power_parse_key_action(argv[2], &action)) {
-            solar_os_shell_diag_invalid(term, "power key", "action", argv[2],
-                                        "off, sleep, or suspend",
-                                        "power key [off|sleep|suspend]", false);
-            return;
-        }
-
-        const esp_err_t err = solar_os_power_set_key_action(action);
-        if (err == ESP_OK) {
-            solar_os_shell_io_printf(term,
-                                     "power key: %s\n",
-                                     solar_os_power_key_action_name(action));
-        } else {
-            solar_os_shell_io_printf(term,
-                                     "power key: save failed: %s\n",
-                                     solar_os_shell_error_text(err));
-        }
+        char *args[4] = {"setterm", "powerkey", NULL, NULL};
+        for (int i = 2; i < argc; i++) args[i] = argv[i];
+        solar_os_shell_cmd_setterm(ctx, argc, args);
         return;
     }
 

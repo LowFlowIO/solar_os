@@ -45,6 +45,17 @@ class BoardManifestTest(unittest.TestCase):
                 board = load_board_manifest(path, self.manifest_dir)
                 validate_board(board, self.drivers)
 
+    def test_owned_keyboard_metadata_selects_key_defaults(self) -> None:
+        for name, expected in (
+            ("t_deck_plus", 1), ("t_lora_pager", 1), ("cl_32", 1),
+            ("thinknode_m9", 1), ("ttgo_vga32_v14", 1),
+            ("solar_term", 0), ("esp32_s3_devkitc1_n16r8", 0), ("odroid_go", 0),
+        ):
+            with self.subTest(board=name):
+                board = load_board_manifest(self.manifest_dir / f"{name}.toml", self.manifest_dir)
+                header = generate_header(board, self.drivers)
+                self.assertIn(f"#define SOLAR_OS_BOARD_HAS_WIRED_KEYBOARD {expected}", header)
+
     def test_stream_dlp_generates_typed_stream_binding_on_headless_board(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)

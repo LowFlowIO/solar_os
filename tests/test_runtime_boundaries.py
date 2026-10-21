@@ -175,9 +175,10 @@ class RuntimeBoundaryTest(unittest.TestCase):
             "static void key_button_init", 1
         )[0]
 
-        self.assertIn("SOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY", short_press)
-        self.assertIn("solar_os_input_write_char(", short_press)
-        self.assertIn("return;", short_press)
+        self.assertIn("handle_key_action(status.key_action", short_press)
+        self.assertIn("solar_os_input_write_char(", main)
+        power = (ROOT / "src/services/solar_os_power.c").read_text(encoding="utf-8")
+        self.assertIn("SOLAR_OS_BOARD_KEY_SHORT_INPUT_KEY", power)
 
     def test_expansion_drivers_declare_categories(self):
         descriptor_sources = []
