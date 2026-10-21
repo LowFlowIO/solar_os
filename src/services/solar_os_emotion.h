@@ -6,7 +6,9 @@
 typedef struct solar_os_emotion solar_os_emotion_t;
 typedef struct {
     const char *display; /* NULL borrows the calling foreground surface. */
-    const char *theme;   /* "mono" (default), "cozmo", or "auto". */
+    /* Unspecified colors use the terminal settings at open. */
+    uint32_t foreground_rgb888, background_rgb888;
+    bool foreground_set, background_set;
     bool sound;
     uint16_t fps;        /* 0 uses the target's rate, capped at 25. */
     int motion;          /* -1 automatic, 0 still poses, 1 animation. */

@@ -64,6 +64,7 @@ typedef struct {
     uint8_t microphone_tab_modifiers;
     solar_os_input_source_t input_source;
 } tdeck_device_t;
+static esp_err_t solar_os_backlight_toggle(void) { return ESP_OK; }
 #include "tdeck_matrix.inc"
 
 static int trackball_levels[64];

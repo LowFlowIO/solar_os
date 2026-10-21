@@ -1,6 +1,6 @@
 """Cycle the emotion poses on the current display or an optional target.
 
-Usage: python /examples/emotion.py [display] [mono|cozmo|auto]
+Usage: python /examples/emotion.py [display]
 """
 import sys
 import solaros
@@ -12,9 +12,8 @@ poses = (
     "furious", "scared", "awe",
 )
 target = sys.argv[1] if len(sys.argv) > 1 else None
-theme = sys.argv[2] if len(sys.argv) > 2 else "mono"
 
-with solaros.emotion.open(target, sound=True, theme=theme) as face:
+with solaros.emotion.open(target, sound=True) as face:
     for pose in poses:
         if solaros.should_exit():
             break

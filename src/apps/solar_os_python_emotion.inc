@@ -91,6 +91,13 @@ static uint32_t python_emotion_ms(mp_obj_t value, uint32_t fallback)
     if (ms > 60000) mp_raise_ValueError(MP_ERROR_TEXT("duration must be 0..60000 ms"));
     return ms;
 }
+static uint32_t python_emotion_color(mp_obj_t value)
+{
+    const mp_int_t color = mp_obj_get_int(value);
+    if (color < 0 || (uint64_t)color > 0xffffffU)
+        mp_raise_ValueError(MP_ERROR_TEXT("color must be 0x000000..0xFFFFFF"));
+    return (uint32_t)color;
+}
 static mp_obj_t solaros_emotion_face_close(mp_obj_t object)
 {
     python_emotion_t *self = python_emotion_object(object);
@@ -181,18 +188,23 @@ static MP_DEFINE_CONST_OBJ_TYPE(solaros_emotion_face_type, MP_QSTR_emotion_face,
     MP_TYPE_FLAG_NONE, locals_dict, &solaros_emotion_face_locals);
 static mp_obj_t solaros_emotion_open(size_t count, const mp_obj_t *args, mp_map_t *kwargs)
 {
-    const char *names[] = {"display", "sound", "theme", "fps", "motion"}; mp_obj_t v[5];
-    python_emotion_args(count, args, kwargs, names, 5, v);
-    solar_os_emotion_options_t options = {.theme = "mono", .motion = -1};
+    const char *names[] = {"display", "sound", "fg", "bg", "fps", "motion"}; mp_obj_t v[6];
+    python_emotion_args(count, args, kwargs, names, 6, v);
+    solar_os_emotion_options_t options = {.motion = -1};
     if (v[0] != MP_OBJ_NULL && v[0] != mp_const_none) options.display = python_emotion_string(v[0]);
     if (v[1] != MP_OBJ_NULL) options.sound = mp_obj_is_true(v[1]);
-    if (v[2] != MP_OBJ_NULL) options.theme = python_emotion_string(v[2]);
-    if (v[3] != MP_OBJ_NULL) {
-        uint32_t fps = python_u32_from_obj(v[3]);
+    if (v[2] != MP_OBJ_NULL && v[2] != mp_const_none) {
+        options.foreground_rgb888 = python_emotion_color(v[2]); options.foreground_set = true;
+    }
+    if (v[3] != MP_OBJ_NULL && v[3] != mp_const_none) {
+        options.background_rgb888 = python_emotion_color(v[3]); options.background_set = true;
+    }
+    if (v[4] != MP_OBJ_NULL) {
+        uint32_t fps = python_u32_from_obj(v[4]);
         if (fps > 30) mp_raise_ValueError(MP_ERROR_TEXT("fps must be 0..30"));
         options.fps = fps;
     }
-    if (v[4] != MP_OBJ_NULL && v[4] != mp_const_none) options.motion = mp_obj_is_true(v[4]);
+    if (v[5] != MP_OBJ_NULL && v[5] != mp_const_none) options.motion = mp_obj_is_true(v[5]);
     char current[SOLAR_OS_DISPLAY_TARGET_NAME_MAX] = {0};
     if (python_app.session_gfx) solar_os_gfx_display_target_name(python_app.session_gfx, current, sizeof(current));
     bool foreground = *current && (!options.display || !strcmp(options.display, current));

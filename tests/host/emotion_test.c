@@ -6,6 +6,11 @@
 const solar_os_emotion_api_v1_t *solar_os_emotion_engine_api_v1(void);
 int main(int argc, char **argv)
 {
+    uint16_t palette[4];
+    solar_os_emotion_palette_rgb565(0xf800,0x001f,palette);
+    assert(palette[0]==0x001f && palette[1]==0x5015 && palette[2]==0xa80a && palette[3]==0xf800);
+    solar_os_emotion_palette_rgb565(0,0xffff,palette);
+    assert(palette[0]==0xffff && palette[3]==0);
     const solar_os_emotion_api_v1_t *a = solar_os_emotion_engine_api_v1();
     void *s = calloc(1, a->state_bytes), *other = calloc(1, a->state_bytes);
     unsigned char image[64 * 64 + 2], neutral[64 * 64 + 2], second[64 * 64 + 2];

@@ -7,7 +7,7 @@ local poses = {
     "bored", "unimpressed", "sleepy", "suspicious", "squint", "angry",
     "furious", "scared", "awe",
 }
-local face <close> = solaros.emotion.open(nil, true, "mono")
+local face <close> = solaros.emotion.open(nil, true)
 for _, pose in ipairs(poses) do
     if solaros.should_exit() then break end
     face:set(pose)

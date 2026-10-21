@@ -19,8 +19,10 @@ skipped. Hosts may pause their clock during suspension.
 
 `render` writes INDEX2 pixels, least-significant pixel first, with background
 index 0 and eye index 3. It preserves aspect ratio and clears row padding.
-Use a white-to-black palette for reflective displays, or black-to-cyan for
-color displays. Set `animate=0` to suppress idle movement and automatic blinks.
+The SolarOS host defaults to terminal foreground/background colors, with
+optional per-face overrides. Native consumers can build the presentation
+palette with `solar_os_emotion_palette_rgb565(foreground, background, palette)`.
+Set `animate=0` to suppress idle movement and automatic blinks.
 `sound` produces chunk-independent mono S16 samples for chirp, giggle, sigh,
 and alert cues. Playback, volume, and output ownership belong to the host.
 

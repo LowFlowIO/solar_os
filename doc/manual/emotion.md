@@ -44,7 +44,7 @@ From a port shell or a headless script, supply a ready target returned by
 
 ## Display and lifetime
 
-`open(display=None, sound=False, theme="mono", fps=0, motion=None)` returns a
+`open(display=None, sound=False, fg=None, bg=None, fps=0, motion=None)` returns a
 face object. Python accepts positional or keyword arguments. Lua accepts the
 same arguments positionally; use `nil` for omitted optional values.
 
@@ -69,10 +69,20 @@ is not supported. The library cannot be unloaded while a face holds it.
 
 ## Appearance and refresh
 
-`theme="mono"` draws black eyes on white and is the default for reflective
-displays. `"cozmo"` draws cyan eyes on black. `"auto"` selects the color theme
-when the target advertises a color frame format. Monochrome targets convert the
-selected palette through the display service.
+When the face opens, it uses the configured terminal foreground color for the
+eyes and background color for the background (`setterm foreground` and
+`setterm background`). Optional `fg` and `bg` values override those colors for
+this face. Each accepts an integer from `0x000000` to `0xFFFFFF` in `0xRRGGBB`
+format; omitted values or `None`/`nil` independently use the terminal setting.
+The colors are captured at open; reopen the face to change them. Monochrome
+targets convert the selected colors through the display service.
+
+```python
+face = solaros.emotion.open(fg=0x00FFFF, bg=0x000000)
+```
+
+The equivalent Lua call is
+`solaros.emotion.open(nil, false, 0x00FFFF, 0x000000)`.
 
 Faces preserve their proportions and fit the target's oriented dimensions.
 `fps=0` uses the target's preferred rate, capped at 25 frames per second. An
@@ -137,7 +147,7 @@ face continues; inspect `audio_skipped` and `audio_error`.
 
 ```lua
 local solaros = require("solaros")
-local face <close> = solaros.emotion.open(nil, true, "mono")
+local face <close> = solaros.emotion.open(nil, true)
 face:set("happy", 200)
 face:look(0.4, -0.2)
 face:react("surprised", 700, 120, "chirp")
@@ -157,6 +167,24 @@ Native consumers own their scheduling and use their available host services
 for presentation and playback. The library itself acquires no hardware.
 
 A foreground application can use its existing foreground video/audio service.
+Use its `text_colors` method to obtain the terminal foreground and background
+in RGB565. `solar_os_emotion_palette_rgb565` builds the four-entry presentation
+palette, with background at index 0 and eyes at index 3. Supply different
+RGB565 endpoints to override either color:
+
+```c
+uint16_t fg, bg, palette[4];
+int err = foreground->text_colors(&fg, &bg);
+if (err != SOLAR_OS_NATIVE_OK) return err;
+/* Optional override: fg = 0x07ff; bg = 0x0000; */
+solar_os_emotion_palette_rgb565(fg, bg, palette);
+```
+
+Pass this palette to the native foreground video service with INDEX2 frames.
+Firmware consumers of `solar_os_emotion_open` can set `foreground_set` and/or
+`background_set` alongside the corresponding `foreground_rgb888` and
+`background_rgb888` options; unset colors use terminal settings.
+
 The scripting runtime adapter is a firmware service; it is not a general
 display/audio ABI for external jobs. An independent emotion job is not required
 to use a face from a robot script.
@@ -168,7 +196,7 @@ the installed `emotion` native library. `pkg available` lists catalog modules;
 `pkg install emotion` installs it when published. `display list` lists targets.
 
 ```text
-solaros.emotion.open(display=None, sound=False, theme="mono", fps=0, motion=None)
+solaros.emotion.open(display=None, sound=False, fg=None, bg=None, fps=0, motion=None)
 face.set(pose, transition_ms=200)
 face.react(pose, hold_ms=700, transition_ms=120, sound=None)
 face.look(x=0, y=0)
@@ -181,7 +209,8 @@ Lua uses positional arguments, `nil`, colon methods, and `<close>`; Python
 supports keywords and `with`. Omit the display only in a foreground application.
 Use a verified explicit target for port shells and background scripts.
 
-Themes: `mono` (black on white), `cozmo` (cyan on black), `auto`. Sound cues:
+`fg` colors the eyes and `bg` colors the background. Both accept `0xRRGGBB`
+integers; omitted values use the terminal colors at open. Sound cues:
 `silent`, `chirp`, `giggle`, `sigh`, `alert`; sound also needs `sound=True` and
 an available audio output. A busy speaker skips the cue.
 

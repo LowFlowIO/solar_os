@@ -258,7 +258,8 @@ esp_err_t solar_os_emotion_open(const solar_os_emotion_options_t *o,
     solar_os_gfx_t *foreground, solar_os_emotion_t **out, char *detail, size_t detail_size)
 {
     if (!o || !out || *out || o->fps > 30 || o->motion < -1 || o->motion > 1 ||
-        (o->theme && strcmp(o->theme, "mono") && strcmp(o->theme, "cozmo") && strcmp(o->theme, "auto")))
+        (o->foreground_set && o->foreground_rgb888 > 0xffffffU) ||
+        (o->background_set && o->background_rgb888 > 0xffffffU))
         return ESP_ERR_INVALID_ARG;
     if (detail && detail_size) detail[0] = 0;
     solar_os_emotion_t *s = solar_os_memory_calloc(1, sizeof(*s),
@@ -317,13 +318,15 @@ esp_err_t solar_os_emotion_open(const solar_os_emotion_options_t *o,
 #if SOLAR_OS_PACKAGE_SERVICE_AUDIO
     s->sound = o->sound && solar_os_audio_output_available();
 #endif
-    bool color = o->theme && !strcmp(o->theme, "cozmo");
-    if (o->theme && !strcmp(o->theme, "auto"))
-        color = (target.frame_formats & (SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT | SOLAR_OS_DISPLAY_FORMAT_INDEX8_BIT)) != 0;
-    s->palette[0] = color ? 0 : 0xffff;
-    s->palette[1] = color ? 0x02aa : 0xaaaa;
-    s->palette[2] = color ? 0x0555 : 0x5555;
-    s->palette[3] = color ? 0x07ff : 0;
+    uint32_t colors[2] = {0, 0xffffffU};
+    (void)solar_os_display_get_colors(&colors[0], &colors[1]);
+    if (o->foreground_set) colors[0] = o->foreground_rgb888;
+    if (o->background_set) colors[1] = o->background_rgb888;
+    uint16_t endpoints[2];
+    for (unsigned i = 0; i < 2; ++i)
+        endpoints[i] = (uint16_t)(((colors[i] >> 8) & 0xf800U) |
+            ((colors[i] >> 5) & 0x07e0U) | ((colors[i] >> 3) & 0x001fU));
+    solar_os_emotion_palette_rgb565(endpoints[0], endpoints[1], s->palette);
     for (unsigned i = 0; i < 4; ++i) {
         uint16_t c = s->palette[i];
         s->canvas_palette[i] = solar_os_gfx_rgb(((c >> 11) & 31) * 255 / 31,

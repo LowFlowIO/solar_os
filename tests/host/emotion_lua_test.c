@@ -37,14 +37,24 @@ static void run(lua_State *L,const char *source)
 {if(luaL_dostring(L,source)){fprintf(stderr,"%s\n",lua_tostring(L,-1));abort();}}
 int main(void)
 {
+    terminal_foreground=0xff0000;terminal_background=0x0000ff;
     lua_State *L=luaL_newstate();assert(L);luaL_openlibs(L);
     lua_newtable(L);solua_set_func(L,-1,"open",solua_emotion_open);lua_setglobal(L,"emotion");
+    run(L,"f=emotion.open('oled0',false,0x00ffff,0)");
+    assert(state.emotions[0]->palette[0]==0 && state.emotions[0]->palette[3]==0x07ff);
+    run(L,"f:close(); f=emotion.open('oled0',false,nil,0)");
+    assert(state.emotions[0]->palette[0]==0 && state.emotions[0]->palette[3]==0xf800);
+    run(L,"f:close()");
     run(L,
         "assert(not pcall(emotion.open)); "
         "assert(not pcall(emotion.open, 'missing')); "
         "assert(not pcall(emotion.open, 'oled0', false, 'invalid')); "
-        "assert(not pcall(emotion.open, 'oled0', false, 'mono', 65536)); "
-        "f=emotion.open('oled0', true, 'mono', 25, true); "
+        "assert(not pcall(emotion.open, 'oled0', false, -1)); "
+        "assert(not pcall(emotion.open, 'oled0', false, 0x1000000)); "
+        "assert(not pcall(emotion.open, 'oled0', false, nil, -1)); "
+        "assert(not pcall(emotion.open, 'oled0', false, nil, 0x1000000)); "
+        "assert(not pcall(emotion.open, 'oled0', false, nil, nil, 65536)); "
+        "f=emotion.open('oled0', true, nil, nil, 25, true); "
         "assert(f:status().fps==25 and f:status().motion); "
         "assert(not pcall(emotion.open,'oled0')); "
         "assert(not pcall(f.set,f,'missing')); "
@@ -57,6 +67,7 @@ int main(void)
         "g=emotion.open('oled0'); f:close(); assert(g:status().width==128); g:close(); "
         "assert(not pcall(function() local x <close> = emotion.open('oled0'); error('user error') end)); "
         "g=emotion.open('oled0')");
+    assert(state.emotions[0]->palette[0]==0x001f && state.emotions[0]->palette[3]==0xf800);
     assert(solua_emotion_drawing()&&!solua_emotion_active());
     solua_emotion_destroy();
     assert(!solua_emotion_drawing()&&!claims&&!leases&&!allocations);

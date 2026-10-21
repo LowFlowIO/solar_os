@@ -55,6 +55,8 @@ static unsigned allocations, claims, leases, submitted, audio_opened, audio_clos
 static bool join_ok = true, present_stop_ok = true, acquire_ok = true;
 static bool presenter_start_ok = true, output_busy, software_target;
 static unsigned canvas_rows;
+static uint32_t terminal_foreground, terminal_background = 0xffffff;
+static uint32_t expected_canvas_background, expected_canvas_foreground = 0xffffff;
 static uint64_t clock_ms = 1000;
 static unsigned delay_count;
 static solar_os_gfx_t gfx = {"oled0"};
@@ -88,12 +90,14 @@ static unsigned solar_os_gfx_format(solar_os_gfx_t *g) {(void)g;return SOLAR_OS_
 static bool solar_os_gfx_palette_inverted(solar_os_gfx_t *g) {(void)g;return true;}
 static bool solar_os_display_find_target(const char *name,solar_os_display_target_t *t)
 { if(strcmp(name,"oled0"))return false;*t=(solar_os_display_target_t){.preferred_stream_fps=25,.frame_formats=software_target?0:8};return true; }
+static int solar_os_display_get_colors(uint32_t *foreground, uint32_t *background)
+{ *foreground=terminal_foreground;*background=terminal_background;return ESP_OK; }
 static solar_os_gfx_color_t solar_os_gfx_rgb(unsigned r,unsigned g,unsigned b)
 {return (r<<16)|(g<<8)|b;}
 static void solar_os_gfx_prepare_surface(solar_os_gfx_t *g) {assert(g);}
 static void solar_os_gfx_bitmap_2bpp(solar_os_gfx_t *g,int x,int y,int w,int h,const uint8_t *pixels,size_t bytes,const solar_os_gfx_color_t *palette)
 {assert(g&&x==0&&y>=0&&y<64&&w==128&&h==1&&pixels&&bytes==32&&palette);
- assert(palette[0]==0 && palette[3]==0xffffff); /* literal mono theme on an inverted canvas */
+ assert(palette[0]==expected_canvas_background && palette[3]==expected_canvas_foreground);
  canvas_rows++;}
 static void solar_os_gfx_present(solar_os_gfx_t *g) {assert(g);submitted++;}
 static int solar_os_display_open_gfx(const char *name,const char *owner,solar_os_gfx_t **out,char *detail,size_t n)
@@ -108,7 +112,7 @@ static int solar_os_native_library_acquire(const char *name,unsigned abi,size_t 
 static int solar_os_native_library_release(uint32_t lease)
 {assert(lease==42&&leases);leases--;return 0;}
 static int solar_os_frame_presenter_init(solar_os_frame_presenter_t **out,const solar_os_frame_presenter_config_t *c)
-{assert(c->width==128&&c->height==64);*out=calloc(1,sizeof(**out));return presenter_start_ok?0:ESP_ERR_NO_MEM;}
+{assert(c->width==128&&c->height==64&&c->literal_direct_palette&&c->literal_mono_palette);*out=calloc(1,sizeof(**out));return presenter_start_ok?0:ESP_ERR_NO_MEM;}
 static int solar_os_frame_presenter_suspend_checked(solar_os_frame_presenter_t *p)
 {return !p||present_stop_ok?0:ESP_ERR_TIMEOUT;}
 static int solar_os_frame_presenter_deinit(solar_os_frame_presenter_t *p)
@@ -142,8 +146,60 @@ static int solar_os_audio_stream_write(solar_os_audio_stream_t *a,const void *sa
 #include "emotion_runtime.inc"
 static void fake_delay(unsigned ms)
 {clock_ms+=ms;if(++delay_count>=8)atomic_store(&((solar_os_emotion_t *)saved_arg)->stop,true);}
+static void test_terminal_colors(void)
+{
+    solar_os_emotion_options_t o={.display="oled0",.motion=0};
+    solar_os_emotion_t *s=NULL;
+    terminal_foreground=0xff0000;terminal_background=0x0000ff;
+    assert(!solar_os_emotion_open(&o,NULL,&s,NULL,0));
+    assert(s->palette[0]==0x001f && s->palette[3]==0xf800);
+    assert(s->palette[1]==0x5015 && s->palette[2]==0xa80a);
+    assert(!solar_os_emotion_close(&s));
+    terminal_foreground=0xffffff;terminal_background=0;
+    assert(!solar_os_emotion_open(&o,NULL,&s,NULL,0));
+    assert(s->palette[0]==0 && s->palette[3]==0xffff);
+    assert(!solar_os_emotion_close(&s));
+    terminal_foreground=0xff0000;terminal_background=0x0000ff;
+    /* Either endpoint can be overridden, including an explicit zero. */
+    o.foreground_set=true;o.foreground_rgb888=0;
+    assert(!solar_os_emotion_open(&o,NULL,&s,NULL,0));
+    assert(s->palette[0]==0x001f && s->palette[3]==0);
+    assert(!solar_os_emotion_close(&s));
+    o.background_set=true;o.background_rgb888=0x00ff00;
+    assert(!solar_os_emotion_open(&o,NULL,&s,NULL,0));
+    assert(s->palette[0]==0x07e0 && s->palette[3]==0);
+    assert(!solar_os_emotion_close(&s));
+    o.foreground_set=false;
+    assert(!solar_os_emotion_open(&o,NULL,&s,NULL,0));
+    assert(s->palette[0]==0x07e0 && s->palette[3]==0xf800);
+    assert(!solar_os_emotion_close(&s));
+    o.background_rgb888=0x1000000;
+    assert(solar_os_emotion_open(&o,NULL,&s,NULL,0)==ESP_ERR_INVALID_ARG && !s);
+    o.background_set=false;o.foreground_set=true;o.foreground_rgb888=0x1000000;
+    assert(solar_os_emotion_open(&o,NULL,&s,NULL,0)==ESP_ERR_INVALID_ARG && !s);
+    o.foreground_set=false;
+    /* The software monochrome path compensates canvas polarity once. */
+    software_target=true;
+    expected_canvas_background=0xffff00;expected_canvas_foreground=0x00ffff;
+    assert(!solar_os_emotion_open(&o,NULL,&s,NULL,0));
+    delay_count=0;saved_worker(saved_arg);
+    assert(canvas_rows==64);
+    assert(!solar_os_emotion_close(&s));
+    o.foreground_set=true;o.foreground_rgb888=0;
+    o.background_set=true;o.background_rgb888=0xffffff;
+    expected_canvas_background=0;expected_canvas_foreground=0xffffff;
+    assert(!solar_os_emotion_open(&o,NULL,&s,NULL,0));
+    delay_count=0;saved_worker(saved_arg);
+    assert(canvas_rows==128);
+    assert(!solar_os_emotion_close(&s));
+    software_target=false;canvas_rows=0;submitted=0;
+    terminal_foreground=0;terminal_background=0xffffff;
+    expected_canvas_background=0;expected_canvas_foreground=0xffffff;
+    assert(!claims&&!leases&&!allocations);
+}
 int main(void)
 {
+    test_terminal_colors();
     solar_os_emotion_options_t o={.display="oled0",.sound=true,.motion=0};
     solar_os_emotion_t *s=NULL,*second=NULL;
     char detail[96];

@@ -11,6 +11,23 @@ extern "C" {
 #define SOLAR_OS_EMOTION_LIBRARY "emotion"
 #define SOLAR_OS_EMOTION_ABI 1U
 
+/* Presentation palette: INDEX2 background=0, eyes=3. Native foreground
+ * consumers can get default RGB565 endpoints from foreground.text_colors,
+ * or supply their own colors. The engine itself owns no display settings. */
+static inline void solar_os_emotion_palette_rgb565(uint16_t foreground,
+    uint16_t background, uint16_t palette[4])
+{
+    for (unsigned i = 0; i < 4; ++i) {
+        const unsigned red = (((background >> 11) & 31U) * (3U - i) +
+            ((foreground >> 11) & 31U) * i + 1U) / 3U;
+        const unsigned green = (((background >> 5) & 63U) * (3U - i) +
+            ((foreground >> 5) & 63U) * i + 1U) / 3U;
+        const unsigned blue = ((background & 31U) * (3U - i) +
+            (foreground & 31U) * i + 1U) / 3U;
+        palette[i] = (uint16_t)((red << 11) | (green << 5) | blue);
+    }
+}
+
 enum {
     SOLAR_OS_EMOTION_NEUTRAL, SOLAR_OS_EMOTION_BLINK_HIGH,
     SOLAR_OS_EMOTION_HAPPY, SOLAR_OS_EMOTION_GLEE,
