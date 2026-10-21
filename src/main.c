@@ -23,6 +23,7 @@
 #include "solar_os_board_boot.h"
 #include "solar_os_boot_services.h"
 #include "solar_os.h"
+#include "solar_os_app_registry.h"
 #include "solar_os_adc_dpad.h"
 #include "solar_os_audio.h"
 #include "solar_os_battery.h"
@@ -2119,6 +2120,17 @@ void app_main(void)
                           esp_err_to_name(display_runtime_err));
         }
     }
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_NATIVE_MODULES
+    /* Warm the existing discovery cache before interactive shells or startup
+     * jobs can make their first lookup. Reuse the boot task and cache. */
+    if (display_u8g2 != NULL) {
+        solar_os_splash_draw(&gfx, "discovering apps");
+    }
+    const uint32_t discovery_started_ms = millis_u32();
+    const size_t discovered_apps = solar_os_app_registry_count();
+    ESP_LOGI(TAG, "boot milestone: app discovery ready (%u entries, %" PRIu32 " ms)",
+             (unsigned)discovered_apps, millis_u32() - discovery_started_ms);
 #endif
     ESP_LOGI(TAG, "boot milestone: peripherals ready");
     const esp_err_t board_jobs_err = solar_os_board_boot_start_jobs(&os_ctx);
