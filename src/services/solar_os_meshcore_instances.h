@@ -40,9 +40,10 @@ esp_err_t solar_os_meshcore_current_public_set(bool enabled);
  * scope is held. The manager restarts it when the saved binding is enabled. */
 void solar_os_meshcore_current_pause(void);
 
-/* Legacy APIs acquire the default instance; nested calls in an existing scope
- * reuse it. The returned lease must be ended on every exit path. */
-esp_err_t solar_os_meshcore_legacy_begin(void **lease);
+/* Legacy APIs prefer an unbound default or one matching the backend. Otherwise
+ * use the sole instance for that backend; multiple matches are ambiguous.
+ * Nested calls reuse their existing scope. End every returned lease. */
+esp_err_t solar_os_meshcore_legacy_begin(unsigned kind, void **lease);
 void solar_os_meshcore_legacy_end(void *lease);
 
 esp_err_t solar_os_meshcore_instances_bind(unsigned kind, int argc, const char *const *argv);

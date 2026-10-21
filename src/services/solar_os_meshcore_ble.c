@@ -773,7 +773,7 @@ esp_err_t solar_os_meshcore_ble_start(const uint8_t bda[6], uint8_t addr_type,
                                       const char *owner)
 {
     void *lease __attribute__((cleanup(finish_legacy_call))) = NULL;
-    esp_err_t context_error = solar_os_meshcore_legacy_begin(&lease);
+    esp_err_t context_error = solar_os_meshcore_legacy_begin(SOLAR_OS_MESHCORE_BACKEND_BLE, &lease);
     if (context_error != ESP_OK) return context_error;
     if (!solar_os_meshcore_current_state(SOLAR_OS_MESHCORE_BACKEND_BLE, sizeof(meshcore_ble_service_t))) return ESP_ERR_NO_MEM;
     if (bda == NULL || owner == NULL || owner[0] == '\0' ||
@@ -843,7 +843,7 @@ esp_err_t solar_os_meshcore_ble_start(const uint8_t bda[6], uint8_t addr_type,
 void solar_os_meshcore_ble_loop_once(void)
 {
     void *lease __attribute__((cleanup(finish_legacy_call))) = NULL;
-    esp_err_t context_error = solar_os_meshcore_legacy_begin(&lease);
+    esp_err_t context_error = solar_os_meshcore_legacy_begin(SOLAR_OS_MESHCORE_BACKEND_BLE, &lease);
     if (context_error != ESP_OK) return;
     if (!service.initialized || service.cancel_requested) return;
     if (service.peer == SOLAR_OS_BLE_PEER_INVALID) {
@@ -895,7 +895,7 @@ void solar_os_meshcore_ble_loop_once(void)
 void solar_os_meshcore_ble_cancel(void)
 {
     void *lease __attribute__((cleanup(finish_legacy_call))) = NULL;
-    esp_err_t context_error = solar_os_meshcore_legacy_begin(&lease);
+    esp_err_t context_error = solar_os_meshcore_legacy_begin(SOLAR_OS_MESHCORE_BACKEND_BLE, &lease);
     if (context_error != ESP_OK) return;
     service.cancel_requested = true;
     if (service.session != SOLAR_OS_BLE_SESSION_INVALID) {
@@ -906,7 +906,7 @@ void solar_os_meshcore_ble_cancel(void)
 void solar_os_meshcore_ble_stop(void)
 {
     void *lease __attribute__((cleanup(finish_legacy_call))) = NULL;
-    esp_err_t context_error = solar_os_meshcore_legacy_begin(&lease);
+    esp_err_t context_error = solar_os_meshcore_legacy_begin(SOLAR_OS_MESHCORE_BACKEND_BLE, &lease);
     if (context_error != ESP_OK) return;
     if (!service.initialized) return;
     if (service.inflight_request) (void)solar_os_messaging_outbox_update(service.inflight_request,
@@ -939,7 +939,7 @@ void solar_os_meshcore_ble_stop(void)
 esp_err_t solar_os_meshcore_ble_get_status(solar_os_meshcore_ble_status_t *status)
 {
     void *lease __attribute__((cleanup(finish_legacy_call))) = NULL;
-    esp_err_t context_error = solar_os_meshcore_legacy_begin(&lease);
+    esp_err_t context_error = solar_os_meshcore_legacy_begin(SOLAR_OS_MESHCORE_BACKEND_BLE, &lease);
     if (context_error != ESP_OK) return context_error;
     if (!solar_os_meshcore_current_state(SOLAR_OS_MESHCORE_BACKEND_BLE, sizeof(meshcore_ble_service_t))) return ESP_ERR_NO_MEM;
     if (status == NULL) return ESP_ERR_INVALID_ARG;
@@ -952,7 +952,7 @@ esp_err_t solar_os_meshcore_ble_get_status(solar_os_meshcore_ble_status_t *statu
 void solar_os_meshcore_ble_note_stack_watermark(uint32_t bytes)
 {
     void *lease __attribute__((cleanup(finish_legacy_call))) = NULL;
-    esp_err_t context_error = solar_os_meshcore_legacy_begin(&lease);
+    esp_err_t context_error = solar_os_meshcore_legacy_begin(SOLAR_OS_MESHCORE_BACKEND_BLE, &lease);
     if (context_error != ESP_OK) return;
     portENTER_CRITICAL(&service_lock);
     if (service.status.stack_watermark_bytes == 0U ||

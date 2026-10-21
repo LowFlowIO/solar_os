@@ -72,6 +72,16 @@ static void install(void)
 {
     solar_os_meshcore_backend_register(1, &fake_ops); solar_os_meshcore_backend_register(2, &fake_ops);
 }
+static void assert_legacy_instance(unsigned kind, solar_os_messaging_provider_id_t id)
+{
+    void *lease, *nested;
+    assert(solar_os_meshcore_legacy_begin(kind, &lease) == ESP_OK && lease);
+    assert(solar_os_meshcore_current_id() == id);
+    assert(solar_os_meshcore_legacy_begin(kind, &nested) == ESP_OK && !nested);
+    solar_os_meshcore_legacy_end(nested);
+    assert(solar_os_meshcore_current_id() == id);
+    solar_os_meshcore_legacy_end(lease);
+}
 static void reboot_instances(void)
 {
     for (meshcore_instance_t *node = meshcore_instances.instances; node;) {
@@ -92,11 +102,13 @@ int main(void)
     fail_migration_promotion = true;
     assert(solar_os_meshcore_instances_init() == ESP_OK && legacy_name && legacy_public && !nvs_writes);
     reboot_instances(); assert(!legacy_name && !legacy_public && nvs_writes == 1);
-    void *lease; assert(solar_os_meshcore_legacy_begin(&lease) == ESP_OK);
+    void *lease; assert(solar_os_meshcore_legacy_begin(1, &lease) == ESP_OK);
     solar_os_meshcore_instance_config_t config;
     assert(solar_os_meshcore_current_config(&config) == ESP_OK && !strcmp(config.name, "legacy") && !config.public_channel);
-    void *nested; assert(solar_os_meshcore_legacy_begin(&nested) == ESP_OK && !nested);
+    void *nested; assert(solar_os_meshcore_legacy_begin(1, &nested) == ESP_OK && !nested);
     solar_os_meshcore_legacy_end(nested); solar_os_meshcore_legacy_end(lease);
+    assert_legacy_instance(1, SOLAR_OS_MESSAGING_PROVIDER_MESHCORE);
+    assert_legacy_instance(2, SOLAR_OS_MESSAGING_PROVIDER_MESHCORE);
     const char *legacy_args[] = {"radio0", "profile-a"};
     assert(solar_os_meshcore_instances_bind(1, 2, legacy_args) == ESP_OK);
     solar_os_messaging_provider_id_t a = 2, b, companion;
@@ -104,6 +116,8 @@ int main(void)
     const char *ble_args[] = {"ble", "01:02:03:04:05:06", "random", "123456"};
     assert(solar_os_messaging_instance_add("meshcore", "radio-b", 3, radio_args, &b) == ESP_OK);
     assert(solar_os_messaging_instance_add("meshcore", "companion", 4, ble_args, &companion) == ESP_OK);
+    assert_legacy_instance(1, a);
+    assert_legacy_instance(2, companion);
     solar_os_messaging_provider_id_t duplicate;
     assert(solar_os_messaging_instance_add("meshcore", "duplicate", 3, radio_args, &duplicate) == ESP_ERR_INVALID_STATE);
     assert(solar_os_messaging_instance_add("meshcore", "duplicate", 4, ble_args, &duplicate) == ESP_ERR_INVALID_STATE);
@@ -147,6 +161,8 @@ int main(void)
     assert(solar_os_messaging_instance_remove(a) != ESP_OK && destroyed == 0);
     solar_os_meshcore_instances_poll(1); assert(polls[a] == 3 && polls[b] == 3);
     assert(solar_os_messaging_instance_remove(a) == ESP_OK && destroyed == 1);
+    assert_legacy_instance(1, b);
+    assert_legacy_instance(2, companion);
     solar_os_conversation_id_t selected_peer;
     assert(solar_os_messaging_direct_open(peer_a.contact_id, &selected_peer) == ESP_OK);
     assert(solar_os_messaging_conversation_get(selected_peer, &peer_b) == ESP_OK && peer_b.provider == b);
@@ -157,12 +173,29 @@ int main(void)
     reboot_instances(); assert(nvs_writes == 1);
     assert(solar_os_messaging_message_get(retained_key, &retained_message) == ESP_OK);
     assert(solar_os_messaging_conversation_get(retained_message.conversation_id, &retained_conversation) == ESP_OK && retained_conversation.history_only);
-    assert(solar_os_meshcore_legacy_begin(&lease) == ESP_ERR_NOT_FOUND);
+    assert_legacy_instance(1, b);
+    assert_legacy_instance(2, companion);
     assert(solar_os_messaging_provider_find("radio-b") == b && solar_os_messaging_provider_find("companion") == companion);
     solar_os_meshcore_instances_poll(1); solar_os_meshcore_instances_poll(2);
     assert(polls[b] == 5 && polls[companion] == 3);
-    assert(solar_os_messaging_instance_remove(b) == ESP_OK && solar_os_messaging_instance_remove(companion) == ESP_OK);
-    const char *files[] = {".chat/profiles/002.bin", ".chat/profiles/004.bin", ".chat/profiles/005.bin", ".messages/messages.bin", ".contacts/contacts.bin"};
+    /* A stopped binding still counts: start/stop must not redirect legacy
+     * identity/channel writes between two configured radios. */
+    solar_os_messaging_provider_id_t extra;
+    const char *extra_args[] = {"radio", "radio2", "profile-c"};
+    assert(solar_os_messaging_instance_add("meshcore", "extra", 3, extra_args, &extra) == ESP_OK);
+    assert(solar_os_meshcore_legacy_begin(1, &lease) == ESP_ERR_INVALID_STATE && !lease);
+    assert_legacy_instance(2, companion);
+    assert(solar_os_messaging_instance_remove(extra) == ESP_OK);
+    assert_legacy_instance(1, b);
+    assert(solar_os_messaging_instance_remove(b) == ESP_OK);
+    assert(solar_os_meshcore_legacy_begin(1, &lease) == ESP_ERR_NOT_FOUND && !lease);
+    assert_legacy_instance(2, companion);
+    assert(solar_os_messaging_instance_remove(companion) == ESP_OK);
+    assert(solar_os_meshcore_legacy_begin(2, &lease) == ESP_ERR_NOT_FOUND && !lease);
+    assert(solar_os_meshcore_legacy_begin(0, &lease) == ESP_ERR_INVALID_ARG && !lease);
+    assert(solar_os_meshcore_legacy_begin(1, NULL) == ESP_ERR_INVALID_ARG);
+    char extra_file[64]; snprintf(extra_file, sizeof(extra_file), ".chat/profiles/%03" PRIu32 ".bin", extra);
+    const char *files[] = {".chat/profiles/002.bin", ".chat/profiles/004.bin", ".chat/profiles/005.bin", extra_file, ".messages/messages.bin", ".contacts/contacts.bin"};
     char path[160];
     for (size_t i = 0; i < sizeof(files)/sizeof(files[0]); i++) {
         assert(solar_os_storage_default_path(files[i], path, sizeof(path)) == ESP_OK); assert(unlink(path) == 0);
