@@ -2,6 +2,17 @@
 
 ## 4.x
 
+- **4.16.24** — 2026-10-21 — Added GNSS output controls for recognized
+  receivers and software release of T-Deck's shared Grove UART. Shell tables
+  and the I/O TUI now fit terminal width. KEY short and long presses support
+  configurable actions, including suspend, sleep, and deep sleep. Fixed suspend
+  wake for supported wired keyboards. App discovery runs before shells start;
+  T-Deck's keyboard backlight starts disabled.
+  Added reusable trackball pointer input and the `pointer-arrows` job, with
+  held-key repeat and adjustable `min-vector` sensitivity (default `2`).
+  Added RX gain controls for SX1262, RFM95, and RFM69 radios. Contacts now
+  supports trust/block, rename, link/remove, filtering, and status, with
+  discoverable help and visible edit cursors.
 - **4.16.23** — 2026-10-20 — Improved T-Deck trackball navigation and
   keyboard shortcuts, including Mic for Tab and Shift+Mic for Ctrl.
   Added `setterm backlight` controls. Fixed held keys, typing repeat,
