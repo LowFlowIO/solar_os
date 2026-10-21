@@ -890,6 +890,87 @@ int main(void)
     solar_os_input_release_keyboard(&capture_owner);
     solar_os_input_source_close(capture_source);
 
+    /* Synthetic holds change atomically and survive full desktop/capture queues. */
+    assert(solar_os_input_set_repeat(0, 100) == ESP_OK);
+    solar_os_input_key_event_t held_events[64];
+    while (solar_os_input_read_events(held_events, 64)) {}
+    solar_os_input_source_t synthetic, pressure;
+    assert(solar_os_input_keyboard_source_open("held", true, &synthetic) == ESP_OK);
+    assert(solar_os_input_keyboard_source_open("pressure", true, &pressure) == ESP_OK);
+    assert(solar_os_input_set_key(synthetic, 1, 0x4f, SOLAR_OS_KEY_RIGHT, 0) == ESP_OK);
+    assert(solar_os_input_read_events(held_events, 64) == 1);
+    assert(held_events[0].action == SOLAR_OS_INPUT_KEY_PRESS);
+    assert(solar_os_input_set_key(synthetic, 1, 0x4f, SOLAR_OS_KEY_RIGHT, 0) == ESP_OK);
+    assert(solar_os_input_read_events(held_events, 64) == 0);
+    for (unsigned i = 0; i < 32; i++)
+        assert(solar_os_input_write_key_tap(pressure, 0, 0, 'x', 0) == ESP_OK);
+    assert(solar_os_input_set_key(synthetic, 1, 0x50, SOLAR_OS_KEY_LEFT, 1) == ESP_ERR_NO_MEM);
+    assert(solar_os_input_get_pressed(pressed, 2) == 1 && pressed[0].key == SOLAR_OS_KEY_RIGHT);
+    assert(solar_os_input_read_events(held_events, 1) == 1);
+    assert(solar_os_input_set_key(synthetic, 1, 0x50, SOLAR_OS_KEY_LEFT, 1) == ESP_ERR_NO_MEM);
+    assert(solar_os_input_read_events(held_events, 64) == 63);
+    assert(solar_os_input_set_key(synthetic, 1, 0x50, SOLAR_OS_KEY_LEFT, 1) == ESP_OK);
+    assert(solar_os_input_read_events(held_events, 64) == 2);
+    assert(held_events[0].key == SOLAR_OS_KEY_RIGHT && held_events[0].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    assert(held_events[1].key == SOLAR_OS_KEY_LEFT && held_events[1].action == SOLAR_OS_INPUT_KEY_PRESS && held_events[1].modifiers == 1);
+    for (unsigned i = 0; i < 32; i++)
+        assert(solar_os_input_write_key_tap(pressure, 0, 0, 'x', 0) == ESP_OK);
+    assert(solar_os_input_set_key(synthetic, 1, 0, 0, 0) == ESP_ERR_NO_MEM);
+    assert(solar_os_input_get_pressed(pressed, 2) == 1 && pressed[0].key == SOLAR_OS_KEY_LEFT);
+    assert(solar_os_input_read_events(held_events, 64) == 64);
+    assert(solar_os_input_set_key(synthetic, 1, 0, 0, 0) == ESP_OK);
+    assert(solar_os_input_read_events(held_events, 64) == 1 && held_events[0].action == SOLAR_OS_INPUT_KEY_RELEASE);
+
+    assert(solar_os_input_capture_keyboard("held", &capture_owner) == ESP_OK);
+    assert(solar_os_input_set_key(synthetic, 1, 0x4f, SOLAR_OS_KEY_RIGHT, 0) == ESP_OK);
+    assert(solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset) && !reset);
+    for (unsigned i = 0; i < 16; i++)
+        assert(solar_os_input_write_key_tap(synthetic, 0, 0, 'x', 0) == ESP_OK);
+    assert(solar_os_input_set_key(synthetic, 1, 0x50, SOLAR_OS_KEY_LEFT, 0) == ESP_ERR_NO_MEM);
+    assert(solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset) && !reset);
+    assert(solar_os_input_set_key(synthetic, 1, 0x50, SOLAR_OS_KEY_LEFT, 0) == ESP_ERR_NO_MEM);
+    for (unsigned i = 0; i < 31; i++)
+        assert(solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset) && !reset);
+    assert(solar_os_input_set_key(synthetic, 1, 0x50, SOLAR_OS_KEY_LEFT, 0) == ESP_OK);
+    assert(solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset) && !reset && capture_read.action == SOLAR_OS_INPUT_KEY_RELEASE);
+    assert(solar_os_input_read_captured_key(&capture_owner, &capture_read, &reset) && !reset && capture_read.action == SOLAR_OS_INPUT_KEY_PRESS);
+    solar_os_input_release_keyboard(&capture_owner);
+    solar_os_input_source_close(synthetic);
+    assert(solar_os_input_get_pressed(pressed, 2) == 0);
+    assert(solar_os_input_read_events(held_events, 64) == 1 && held_events[0].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    assert(solar_os_input_keyboard_source_open("held", true, &synthetic) == ESP_OK);
+    assert(solar_os_input_set_key(synthetic, 1, 0x4f, SOLAR_OS_KEY_RIGHT, 0) == ESP_OK);
+    assert(solar_os_input_read_events(held_events, 64) == 1);
+    assert(solar_os_input_set_key(synthetic, 1, 0, 0, 0) == ESP_OK);
+    solar_os_input_source_close(synthetic);
+    assert(solar_os_input_read_events(held_events, 64) == 1 && held_events[0].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    /* A full desktop queue cannot swallow the final release on source closure. */
+    assert(solar_os_input_keyboard_source_open("held", true, &synthetic) == ESP_OK);
+    assert(solar_os_input_set_key(synthetic, 1, 0x4f, SOLAR_OS_KEY_RIGHT, 0) == ESP_OK);
+    assert(solar_os_input_read_events(held_events, 64) == 1);
+    for (unsigned i = 0; i < 32; i++)
+        assert(solar_os_input_write_key_tap(pressure, 0, 0, 'x', 0) == ESP_OK);
+    solar_os_input_source_close(synthetic);
+    assert(solar_os_input_get_pressed(pressed, 2) == 0);
+    solar_os_input_source_t replacement;
+    assert(solar_os_input_keyboard_source_open("next", true, &replacement) == ESP_OK);
+    assert(replacement != synthetic);
+    assert(solar_os_input_read_events(held_events, 64) == 64);
+    assert(held_events[0].source == synthetic && held_events[0].action == SOLAR_OS_INPUT_KEY_RELEASE);
+    assert(solar_os_input_read_events(held_events, 64) == 1);
+    solar_os_input_source_close(replacement);
+    assert(solar_os_input_keyboard_source_open("held", true, &synthetic) == ESP_OK);
+    assert(solar_os_input_set_key(synthetic, 1, 0x4f, SOLAR_OS_KEY_RIGHT, 0) == ESP_OK);
+    assert(solar_os_input_read_events(held_events, 64) == 1);
+    for (unsigned i = 0; i < 32; i++)
+        assert(solar_os_input_write_key_tap(pressure, 0, 0, 'x', 0) == ESP_OK);
+    solar_os_input_source_close(synthetic);
+    char retired_chars[64];
+    assert(solar_os_input_read_chars(retired_chars, sizeof(retired_chars)) == 32);
+    assert(solar_os_input_read_chars(retired_chars, sizeof(retired_chars)) == 0);
+    assert(solar_os_input_get_pressed(pressed, 2) == 0);
+    solar_os_input_source_close(pressure);
+
     puts("input_test: ok");
     return 0;
 }

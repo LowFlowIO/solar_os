@@ -110,8 +110,16 @@ static esp_err_t start(const char *source)
 {
     char arg[40];
     snprintf(arg, sizeof(arg), "source=%s", source);
-    char *args[] = {"pointer-arrows", arg};
-    return solar_os_pointer_arrows_job.start(NULL, 2, args);
+    char *args[] = {"pointer-arrows", arg, "min-vector=1"};
+    return solar_os_pointer_arrows_job.start(NULL, 3, args);
+}
+static esp_err_t start_minimum(const char *value, bool option_first)
+{
+    char option[80];
+    snprintf(option, sizeof(option), "min-vector=%s", value);
+    char *args[] = {"pointer-arrows", option_first ? option : "source=trackball0",
+                   option_first ? "source=trackball0" : option};
+    return solar_os_pointer_arrows_job.start(NULL, 3, args);
 }
 static void expect_key(uint8_t key, uint8_t modifiers)
 {
@@ -120,8 +128,21 @@ static void expect_key(uint8_t key, uint8_t modifiers)
     assert(events[0].key == key && events[0].modifiers == modifiers);
     assert(events[0].action == SOLAR_OS_INPUT_KEY_PRESS &&
            events[1].action == SOLAR_OS_INPUT_KEY_RELEASE);
-    assert(events[0].physical_key == SOLAR_OS_INPUT_PHYSICAL_NONE);
+    assert(events[0].physical_key != SOLAR_OS_INPUT_PHYSICAL_NONE);
 }
+static void expect_action_at(uint8_t key, solar_os_input_key_action_t action, uint8_t modifiers, int line)
+{
+    solar_os_input_key_event_t event;
+    const size_t count = solar_os_input_read_events(&event, 1);
+    if (count != 1 || event.key != key || event.action != action || event.modifiers != modifiers)
+        fprintf(stderr, "line %d expected key=%u action=%u mods=%u; got count=%zu key=%u action=%u mods=%u\n",
+                line, key, action, modifiers, count, count ? event.key : 0,
+                count ? event.action : 0, count ? event.modifiers : 0);
+    assert(count == 1);
+    assert(event.key == key && event.action == action && event.modifiers == modifiers);
+    assert(event.physical_key != SOLAR_OS_INPUT_PHYSICAL_NONE);
+}
+#define expect_action(key, action, modifiers) expect_action_at(key, action, modifiers, __LINE__)
 static void no_key(void)
 {
     solar_os_input_key_event_t event;
@@ -131,6 +152,13 @@ static void settle(void)
 {
     now_us += 80000;
     tick();
+}
+static void roll_to_hold(int pin, uint8_t key)
+{
+    edge(pin); tick();
+    now_us += 39000; edge(pin); tick();
+    now_us += 39000; edge(pin); tick();
+    expect_action(key, SOLAR_OS_INPUT_KEY_PRESS, 0);
 }
 static void write_sample(solar_os_input_source_t source, solar_os_input_pointer_event_t event)
 {
@@ -164,6 +192,18 @@ int main(void)
     assert(solar_os_input_read_pointer_events(pointer, 8) == 2);
     assert(pointer[0].delta_y == -1 && pointer[1].delta_x == 1);
     assert(start("missing") == ESP_ERR_NOT_FOUND);
+    const char *invalid_minima[] = {"", "0", "-1", "+1", " 2", "2x", "65536",
+                                    "999999999999999999999999999999"};
+    for (size_t i = 0; i < sizeof(invalid_minima) / sizeof(invalid_minima[0]); i++) {
+        assert(start_minimum(invalid_minima[i], false) == ESP_ERR_INVALID_ARG);
+        assert(!solar_os_input_pointer_is_captured(track.source));
+    }
+    char *duplicate_source[] = {"pointer-arrows", "source=trackball0", "source=trackball0"};
+    char *duplicate_minimum[] = {"pointer-arrows", "min-vector=2", "min-vector=3"};
+    char *unknown_option[] = {"pointer-arrows", "source=trackball0", "sensitivity=2"};
+    assert(solar_os_pointer_arrows_job.start(NULL, 3, duplicate_source) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_pointer_arrows_job.start(NULL, 3, duplicate_minimum) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_pointer_arrows_job.start(NULL, 3, unknown_option) == ESP_ERR_INVALID_ARG);
     assert(start("trackball0") == ESP_OK);
     static const int another_owner;
     solar_os_input_source_t claim;
@@ -188,6 +228,109 @@ int main(void)
     assert(solar_os_input_pointer_filter_event(&pointer[0]));
     settle();
     expect_key(SOLAR_OS_KEY_UP, 0);
+    /* Evaluation uses fixed windows while rolling; repeat uses normal key settings. */
+    assert(solar_os_input_set_repeat(10, 100) == ESP_OK);
+    edge(2); tick(); no_key();
+    now_us += 39000; edge(2); tick(); no_key();
+    now_us += 39000; tick(); no_key();
+    edge(2); tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_PRESS, 0);
+    solar_os_input_key_event_t held[4];
+    assert(solar_os_input_get_pressed(held, 4) == 1 && held[0].key == SOLAR_OS_KEY_RIGHT);
+    now_us += 39000; edge(2); tick(); no_key();
+    now_us += 39000; edge(2); tick(); no_key();
+    now_us += 19000; edge(2); tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_REPEAT, 0);
+    now_us += 39000; edge(2); tick(); no_key();
+    now_us += 79000; tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_REPEAT, 0);
+    now_us += 1000; tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, 0);
+    assert(solar_os_input_get_pressed(held, 4) == 0);
+    assert(solar_os_input_set_repeat(0, 100) == ESP_OK);
+
+    /* The minimum measures net vector length, including partial windows. */
+    solar_os_pointer_arrows_job.stop(NULL);
+    assert(start_minimum("4", false) == ESP_OK);
+    edge(2); edge(2); edge(2); tick(); settle(); no_key();
+    edge(2); edge(2); edge(2); edge(2); tick(); settle();
+    expect_key(SOLAR_OS_KEY_RIGHT, 0);
+    solar_os_pointer_arrows_job.stop(NULL);
+    assert(start_minimum("5", true) == ESP_OK);
+    write_sample(track.source, (solar_os_input_pointer_event_t){
+        .mode = SOLAR_OS_INPUT_POINTER_RELATIVE, .delta_x = 3, .delta_y = 3});
+    tick(); settle(); no_key(); /* Two axes of 3 have length less than 5. */
+    write_sample(track.source, (solar_os_input_pointer_event_t){
+        .mode = SOLAR_OS_INPUT_POINTER_RELATIVE, .delta_x = 3, .delta_y = -4});
+    tick(); settle(); expect_key(SOLAR_OS_KEY_UP, 0); /* Length exactly 5. */
+    write_sample(track.source, (solar_os_input_pointer_event_t){
+        .mode = SOLAR_OS_INPUT_POINTER_RELATIVE, .delta_x = -5});
+    write_sample(track.source, (solar_os_input_pointer_event_t){
+        .mode = SOLAR_OS_INPUT_POINTER_RELATIVE, .delta_x = 4});
+    tick(); settle(); no_key(); /* Total travel does not defeat cancellation. */
+
+    /* Weak movement releases a hold and cannot accumulate across windows. */
+    write_sample(track.source, (solar_os_input_pointer_event_t){
+        .mode = SOLAR_OS_INPUT_POINTER_RELATIVE, .delta_x = 5});
+    tick();
+    now_us += 39000; edge(2); tick();
+    now_us += 39000; edge(2); tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_PRESS, 0);
+    now_us += 39000; edge(2); tick();
+    now_us += 39000; edge(2); tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, 0);
+    for (int i = 0; i < 6; i++) {
+        now_us += 39000; edge(2); tick(); no_key();
+    }
+    settle(); no_key();
+    solar_os_pointer_arrows_job.stop(NULL);
+    assert(start_minimum("65535", false) == ESP_OK);
+    write_sample(track.source, (solar_os_input_pointer_event_t){
+        .mode = SOLAR_OS_INPUT_POINTER_RELATIVE, .delta_x = INT16_MAX, .delta_y = INT16_MIN});
+    tick(); settle(); no_key();
+    for (int i = 0; i < 2; i++)
+        write_sample(track.source, (solar_os_input_pointer_event_t){
+            .mode = SOLAR_OS_INPUT_POINTER_RELATIVE, .delta_x = INT16_MAX, .delta_y = INT16_MIN});
+    tick(); settle(); expect_key(SOLAR_OS_KEY_UP, 0);
+    solar_os_pointer_arrows_job.stop(NULL);
+    char *default_args[] = {"pointer-arrows", "source=trackball0"};
+    assert(solar_os_pointer_arrows_job.start(NULL, 2, default_args) == ESP_OK);
+    edge(2); tick(); settle(); no_key(); /* Omitting the option restores 2. */
+    edge(2); edge(2); tick(); settle(); expect_key(SOLAR_OS_KEY_RIGHT, 0);
+    solar_os_pointer_arrows_job.stop(NULL);
+    assert(start("trackball0") == ESP_OK);
+
+    /* A turn releases the previous key before pressing the new direction. */
+    edge(2); tick();
+    now_us += 39000; edge(2); tick();
+    now_us += 39000; edge(2); tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_PRESS, 0);
+    now_us += 39000; edge(1); tick(); no_key();
+    edge(1); tick(); no_key();
+    now_us += 38000; edge(1); tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, 0);
+    expect_action(SOLAR_OS_KEY_LEFT, SOLAR_OS_INPUT_KEY_PRESS, 0);
+    settle();
+    expect_action(SOLAR_OS_KEY_LEFT, SOLAR_OS_INPUT_KEY_RELEASE, 0);
+
+    /* Stopping during a hold releases it and cancels future repeats. */
+    edge(3); tick();
+    now_us += 39000; edge(3); tick();
+    now_us += 39000; edge(3); tick();
+    expect_action(SOLAR_OS_KEY_UP, SOLAR_OS_INPUT_KEY_PRESS, 0);
+    solar_os_pointer_arrows_job.stop(NULL);
+    expect_action(SOLAR_OS_KEY_UP, SOLAR_OS_INPUT_KEY_RELEASE, 0);
+    assert(solar_os_input_get_pressed(held, 4) == 0);
+    assert(start("trackball0") == ESP_OK);
+    /* A capture overflow neutralizes an existing hold before discarding motion. */
+    roll_to_hold(2, SOLAR_OS_KEY_RIGHT);
+    for (unsigned i = 0; i < 40; i++)
+        write_sample(track.source, (solar_os_input_pointer_event_t){
+            .mode = SOLAR_OS_INPUT_POINTER_RELATIVE, .delta_x = 1});
+    tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, 0);
+    assert(solar_os_input_get_pressed(held, 4) == 0);
+    settle(); no_key();
     /* Opposite edges cancel; equal diagonals retain the final moved axis. */
     edge(1);
     edge(2);
@@ -210,6 +353,14 @@ int main(void)
     no_key();
     solar_os_input_source_t keyboard;
     assert(solar_os_input_keyboard_source_open("modifiers", true, &keyboard) == ESP_OK);
+    roll_to_hold(2, SOLAR_OS_KEY_RIGHT);
+    solar_os_input_composition_set_modifiers(keyboard, SOLAR_OS_INPUT_MOD_LEFT_SHIFT);
+    now_us += 39000; edge(2); tick(); no_key();
+    now_us += 39000; edge(2); tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, SOLAR_OS_INPUT_MOD_LEFT_SHIFT);
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_PRESS, SOLAR_OS_INPUT_MOD_LEFT_SHIFT);
+    settle();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, SOLAR_OS_INPUT_MOD_LEFT_SHIFT);
     solar_os_input_composition_set_modifiers(keyboard, SOLAR_OS_INPUT_MOD_LEFT_ALT);
     edge(3);
     tick();
@@ -307,6 +458,21 @@ int main(void)
     solar_os_pointer_arrows_job.stop(NULL);
 
     /* Absolute contact baselines do not jump or join across touches. */
+    char *touch_args[] = {"pointer-arrows", "source=touch0", "min-vector=5"};
+    assert(solar_os_pointer_arrows_job.start(NULL, 3, touch_args) == ESP_OK);
+    for (int displacement = 3; displacement <= 4; displacement++) {
+        write_sample(touch, (solar_os_input_pointer_event_t){
+            .mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE, .action = SOLAR_OS_INPUT_POINTER_PRESS,
+            .x = 100, .y = 100, .buttons = 1});
+        tick();
+        write_sample(touch, (solar_os_input_pointer_event_t){
+            .mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE, .action = SOLAR_OS_INPUT_POINTER_RELEASE,
+            .x = 103, .y = 100 + displacement});
+        tick();
+        if (displacement == 3) no_key();
+        else expect_key(SOLAR_OS_KEY_DOWN, 0);
+    }
+    solar_os_pointer_arrows_job.stop(NULL);
     assert(start("touch0") == ESP_OK);
     write_sample(touch, (solar_os_input_pointer_event_t){.mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE,
                                                          .action = SOLAR_OS_INPUT_POINTER_PRESS,
@@ -325,6 +491,30 @@ int main(void)
     tick();
     settle();
     expect_key(SOLAR_OS_KEY_RIGHT, 0);
+    /* Releasing another contact must not release the tracked contact's hold. */
+    write_sample(touch, (solar_os_input_pointer_event_t){.mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE,
+        .action = SOLAR_OS_INPUT_POINTER_PRESS, .x = 100, .y = 100, .buttons = 1});
+    tick();
+    write_sample(touch, (solar_os_input_pointer_event_t){.mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE,
+        .x = 110, .y = 100, .buttons = 1});
+    tick();
+    now_us += 39000;
+    write_sample(touch, (solar_os_input_pointer_event_t){.mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE,
+        .x = 120, .y = 100, .buttons = 1});
+    tick();
+    now_us += 39000;
+    write_sample(touch, (solar_os_input_pointer_event_t){.mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE,
+        .x = 130, .y = 100, .buttons = 1});
+    tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_PRESS, 0);
+    write_sample(touch, (solar_os_input_pointer_event_t){.mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE,
+        .action = SOLAR_OS_INPUT_POINTER_RELEASE, .pointer_id = 1});
+    tick(); no_key();
+    assert(solar_os_input_get_pressed(held, 4) == 1);
+    write_sample(touch, (solar_os_input_pointer_event_t){.mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE,
+        .action = SOLAR_OS_INPUT_POINTER_RELEASE, .x = 130, .y = 100});
+    tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, 0);
     write_sample(touch, (solar_os_input_pointer_event_t){.mode = SOLAR_OS_INPUT_POINTER_ABSOLUTE,
                                                          .action = SOLAR_OS_INPUT_POINTER_PRESS,
                                                          .x = 300,
@@ -370,11 +560,11 @@ int main(void)
     void (*late_irq)(void *) = handlers[3];
     void *late_arg = handler_args[3];
     assert(start("trackball0") == ESP_OK);
-    edge(3);
-    tick();
+    roll_to_hold(3, SOLAR_OS_KEY_UP);
     assert(solar_os_trackball_detach("trackball0") == ESP_OK);
     assert(!solar_os_trackball_active());
     tick();
+    expect_action(SOLAR_OS_KEY_UP, SOLAR_OS_INPUT_KEY_RELEASE, 0);
     settle();
     no_key();
     assert(stopped == 1);
@@ -388,15 +578,16 @@ int main(void)
     /* Stroke timestamps and capture boundaries survive millisecond wrap. */
     now_us = ((int64_t)UINT32_MAX - 40) * 1000;
     assert(start("trackball0") == ESP_OK);
-    edge(2);
-    tick();
+    roll_to_hold(2, SOLAR_OS_KEY_RIGHT);
     settle();
-    expect_key(SOLAR_OS_KEY_RIGHT, 0);
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, 0);
     solar_os_pointer_arrows_job.stop(NULL);
     assert(start("trackball0") == ESP_OK);
     assert(solar_os_input_source_find("trackball0", &track));
+    roll_to_hold(2, SOLAR_OS_KEY_RIGHT);
     assert(solar_os_input_source_set_ready(track.source, false) == ESP_OK);
     tick();
+    expect_action(SOLAR_OS_KEY_RIGHT, SOLAR_OS_INPUT_KEY_RELEASE, 0);
     assert(stopped == 2 && !solar_os_input_pointer_is_captured(track.source));
     assert(solar_os_input_source_set_ready(track.source, true) == ESP_OK);
     assert(solar_os_trackball_detach("trackball0") == ESP_OK);

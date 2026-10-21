@@ -2092,6 +2092,13 @@ static const char * const path_job_start_log_port[] = {"job", "start", "log", SH
 static const char * const path_job_start_log_file[] = {"job", "start", "log", "file"};
 static const char * const path_job_start_bridge[] = {"job", "start", "bridge"};
 static const char * const path_job_start_bridge_port[] = {"job", "start", "bridge", SHELL_COMPLETION_ANY};
+#if SOLAR_OS_PACKAGE_JOB_POINTER_ARROWS
+static const char * const pointer_arrows_options[] = {"source=", "min-vector="};
+static const char * const path_job_start_pointer_arrows[] = {"job", "start", "pointer-arrows"};
+static const char * const path_job_start_pointer_arrows_option[] = {
+    "job", "start", "pointer-arrows", SHELL_COMPLETION_ANY
+};
+#endif
 #if SOLAR_OS_PACKAGE_JOB_GPIO_KEYS
 static const char * const gpio_keys_options[] = {"--config"};
 static const char * const path_job_start_gpio_keys[] = {"job", "start", "gpio-keys"};
@@ -3364,6 +3371,10 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_PATH(path_job_start_log_file, false),
     SHELL_COMPLETION_PORTS(path_job_start_bridge),
     SHELL_COMPLETION_PORTS(path_job_start_bridge_port),
+#if SOLAR_OS_PACKAGE_JOB_POINTER_ARROWS
+    SHELL_COMPLETION_STATIC(path_job_start_pointer_arrows, pointer_arrows_options),
+    SHELL_COMPLETION_STATIC(path_job_start_pointer_arrows_option, pointer_arrows_options),
+#endif
 #if SOLAR_OS_PACKAGE_JOB_GPIO_KEYS
     SHELL_COMPLETION_STATIC(path_job_start_gpio_keys, gpio_keys_options),
     SHELL_COMPLETION_PATH(path_job_start_gpio_keys_config, false),

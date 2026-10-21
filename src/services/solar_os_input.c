@@ -467,6 +467,7 @@ static input_pressed_slot_t *input_find_pressed_locked(solar_os_input_source_t s
 {
     for (size_t i = 0; i < SOLAR_OS_INPUT_MAX_PRESSED_KEYS; i++) {
         if (input_pressed[i].active &&
+            input_pressed[i].event.action != SOLAR_OS_INPUT_KEY_RELEASE &&
             input_pressed[i].event.source == source &&
             input_pressed[i].event.physical_key == physical_key) {
             return &input_pressed[i];
@@ -505,6 +506,30 @@ static bool input_queue_push_locked(const solar_os_input_key_event_t *event)
     input_queue[index] = *event;
     input_queue_count++;
     return true;
+}
+
+static bool input_source_has_releases_locked(solar_os_input_source_t source)
+{
+    for (size_t i = 0; i < SOLAR_OS_INPUT_MAX_PRESSED_KEYS; i++) {
+        if (input_pressed[i].active && input_pressed[i].event.source == source &&
+            input_pressed[i].event.action == SOLAR_OS_INPUT_KEY_RELEASE) return true;
+    }
+    for (size_t i = 0; i < input_queue_count; i++) {
+        const solar_os_input_key_event_t *event = &input_queue[(input_queue_head + i) % INPUT_QUEUE_MAX];
+        if (event->source == source && event->action == SOLAR_OS_INPUT_KEY_RELEASE) return true;
+    }
+    return false;
+}
+
+static void input_flush_retired_releases_locked(void)
+{
+    for (size_t i = 0; i < SOLAR_OS_INPUT_MAX_PRESSED_KEYS && input_queue_count < INPUT_QUEUE_MAX; i++) {
+        if (input_pressed[i].active && input_pressed[i].event.action == SOLAR_OS_INPUT_KEY_RELEASE) {
+            (void)input_queue_push_locked(&input_pressed[i].event);
+            input_record_key_locked(&input_pressed[i].event);
+            memset(&input_pressed[i], 0, sizeof(input_pressed[i]));
+        }
+    }
 }
 
 static bool input_pointer_queue_push_locked(const solar_os_input_pointer_event_t *event)
@@ -726,7 +751,7 @@ static esp_err_t input_source_open_locked(const char *name,
     }
 
     for (size_t i = 0; i < INPUT_SOURCE_MAX; i++) {
-        if (input_sources[i].active) {
+        if (input_sources[i].active || input_source_has_releases_locked((solar_os_input_source_t)(i + 1U))) {
             continue;
         }
         input_sources[i].active = true;
@@ -1229,7 +1254,8 @@ void solar_os_input_source_close(solar_os_input_source_t source)
     size_t kept = 0;
     for (size_t i = 0; i < input_queue_count; i++) {
         const size_t read_index = (input_queue_head + i) % INPUT_QUEUE_MAX;
-        if (input_queue[read_index].source != source) {
+        if (input_queue[read_index].source != source ||
+            input_queue[read_index].action == SOLAR_OS_INPUT_KEY_RELEASE) {
             retained[kept++] = input_queue[read_index];
         }
     }
@@ -1280,7 +1306,17 @@ void solar_os_input_source_close(solar_os_input_source_t source)
     }
     for (size_t i = 0; i < SOLAR_OS_INPUT_MAX_PRESSED_KEYS; i++) {
         if (input_pressed[i].active && input_pressed[i].event.source == source) {
-            memset(&input_pressed[i], 0, sizeof(input_pressed[i]));
+            solar_os_input_key_event_t release = input_pressed[i].event;
+            release.action = SOLAR_OS_INPUT_KEY_RELEASE;
+            release.modifiers = 0;
+            if (input_queue_push_locked(&release)) {
+                input_record_key_locked(&release);
+                memset(&input_pressed[i], 0, sizeof(input_pressed[i]));
+            } else {
+                /* Reuse this existing slot until the reader can deliver the
+                 * final release. It is no longer a held or repeatable key. */
+                input_pressed[i].event = release;
+            }
         }
     }
     if (input_repeat.active && input_repeat.source == source) {
@@ -1421,6 +1457,60 @@ esp_err_t solar_os_input_write_key(solar_os_input_source_t source,
                 result = ESP_ERR_NO_MEM;
             } else {
                 input_record_key_locked(&repeat);
+            }
+        }
+    }
+    portEXIT_CRITICAL(&input_lock);
+    return result;
+}
+
+esp_err_t solar_os_input_set_key(solar_os_input_source_t source,
+                                 uint16_t physical_key, uint16_t usage,
+                                 uint8_t key, uint8_t modifiers)
+{
+    if (physical_key == SOLAR_OS_INPUT_PHYSICAL_NONE) return ESP_ERR_INVALID_ARG;
+    esp_err_t result = ESP_OK;
+    portENTER_CRITICAL(&input_lock);
+    if (!input_source_valid_locked(source) ||
+        (input_sources[source - 1U].capabilities & SOLAR_OS_INPUT_CAP_KEY_EVENTS) == 0) {
+        result = ESP_ERR_INVALID_STATE;
+    } else {
+        input_pressed_slot_t *pressed = input_find_pressed_locked(source, physical_key);
+        if (pressed && key && pressed->event.key == key &&
+            pressed->event.usage == usage && pressed->event.modifiers == modifiers) {
+            portEXIT_CRITICAL(&input_lock);
+            return ESP_OK;
+        }
+        const size_t needed = (pressed != NULL ? 1U : 0U) + (key != 0 ? 1U : 0U);
+        const bool captured = input_capture_owner != NULL && input_capture_source == source;
+        size_t available = INPUT_QUEUE_MAX - input_queue_count;
+        /* Captured session shortcuts can still route individual transitions to
+         * the desktop. Reserve both possible paths before changing held state. */
+        if (captured && INPUT_CAPTURE_QUEUE_MAX - input_capture_count < available)
+            available = INPUT_CAPTURE_QUEUE_MAX - input_capture_count;
+        input_pressed_slot_t *next = pressed;
+        if (key && !next) next = input_alloc_pressed_locked();
+        if (needed > available || (key && !next)) {
+            result = ESP_ERR_NO_MEM;
+        } else {
+            if (pressed) {
+                solar_os_input_key_event_t release = pressed->event;
+                release.action = SOLAR_OS_INPUT_KEY_RELEASE;
+                release.modifiers = modifiers;
+                (void)input_queue_push_locked(&release);
+                input_record_key_locked(&release);
+                input_repeat_stop_locked(source, physical_key);
+                memset(pressed, 0, sizeof(*pressed));
+            }
+            if (key) {
+                next->active = true;
+                next->event = (solar_os_input_key_event_t){
+                    .source = source, .physical_key = physical_key, .usage = usage,
+                    .key = key, .modifiers = modifiers, .action = SOLAR_OS_INPUT_KEY_PRESS,
+                };
+                (void)input_queue_push_locked(&next->event);
+                input_record_key_locked(&next->event);
+                input_repeat_start_locked(&next->event);
             }
         }
     }
@@ -2127,8 +2217,15 @@ size_t solar_os_input_read_events(solar_os_input_key_event_t *events, size_t eve
     }
 
     portENTER_CRITICAL(&input_lock);
-    input_queue_repeat_if_due_locked();
     size_t count = 0;
+    for (size_t i = 0; i < SOLAR_OS_INPUT_MAX_PRESSED_KEYS && count < event_count; i++) {
+        if (input_pressed[i].active && input_pressed[i].event.action == SOLAR_OS_INPUT_KEY_RELEASE) {
+            events[count++] = input_pressed[i].event;
+            input_record_key_locked(&input_pressed[i].event);
+            memset(&input_pressed[i], 0, sizeof(input_pressed[i]));
+        }
+    }
+    input_queue_repeat_if_due_locked();
     while (count < event_count && input_queue_count > 0) {
         events[count++] = input_queue[input_queue_head];
         input_queue_head = (input_queue_head + 1U) % INPUT_QUEUE_MAX;
@@ -2220,6 +2317,7 @@ static size_t input_read_chars_for_source(solar_os_input_source_t source,
     }
 
     portENTER_CRITICAL(&input_lock);
+    input_flush_retired_releases_locked();
     input_queue_repeat_if_due_locked();
     solar_os_input_key_event_t retained[INPUT_QUEUE_MAX];
     size_t kept = 0;
@@ -2255,6 +2353,7 @@ static size_t input_read_chars_for_source(solar_os_input_source_t source,
     memcpy(input_queue, retained, kept * sizeof(retained[0]));
     input_queue_head = 0;
     input_queue_count = kept;
+    input_flush_retired_releases_locked();
     portEXIT_CRITICAL(&input_lock);
     return count;
 }
@@ -2283,7 +2382,7 @@ size_t solar_os_input_get_pressed(solar_os_input_key_event_t *keys, size_t key_c
     portENTER_CRITICAL(&input_lock);
     size_t count = 0;
     for (size_t i = 0; i < SOLAR_OS_INPUT_MAX_PRESSED_KEYS && count < key_count; i++) {
-        if (input_pressed[i].active) {
+        if (input_pressed[i].active && input_pressed[i].event.action != SOLAR_OS_INPUT_KEY_RELEASE) {
             keys[count++] = input_pressed[i].event;
         }
     }

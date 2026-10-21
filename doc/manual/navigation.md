@@ -113,11 +113,14 @@ The trackball press uses the system KEY settings. Change a tap with
 Saved choices override these defaults. Any KEY press wakes suspend or sleep;
 the wake press is consumed until release. Deep-sleep wake starts a fresh boot.
 
-Each continuous roll produces one arrow key after 80 ms without movement.
-The direction follows the greater net horizontal or vertical movement;
-opposite movements cancel. Equal diagonals use the most recently moved axis.
-Gestures retain the modifiers held at the last movement pulse, so they can be
-released while the ball settles.
+Trackball movement is evaluated in fixed 80 ms windows. The first evaluation
+presses an arrow; continued rolling keeps it held, using `setterm keyrate` for
+repeat. Changing direction releases the old arrow before pressing the new one.
+The key is released after 80 ms without movement events. Short rolls that meet
+the minimum vector length produce a press and release.
+The direction follows the greater net horizontal or vertical movement within
+each window; opposite movements cancel. Equal diagonals use the most recently
+moved axis. Each evaluation uses the modifiers from its last movement pulse.
 
 The board attaches the `trackball` expansion driver as `trackball0` and starts
 the `pointer-arrows` job. The driver owns the four direction pins and publishes
@@ -134,9 +137,16 @@ Restore arrow navigation with:
 job start pointer-arrows source=trackball0
 ```
 
+To reduce sensitivity, stop the job and restart it with, for example,
+`job start pointer-arrows source=trackball0 min-vector=4`. `min-vector` accepts
+`1..65535` and defaults to `2`. Higher values require a longer net movement
+vector within each 80 ms window. Movement below the minimum releases the arrow
+and does not accumulate into the next window.
+
 The push switch continues using the system KEY settings in either case. The
 board starts arrow navigation again at boot; a startup script can stop the job
-to select relative pointer input on every boot.
+to select relative pointer input, or stop and restart it with a tuned
+`min-vector`, on every boot.
 
 For Ctrl, hold Shift and Mic in either order, then press another key or roll
 the trackball. Shift selects the Ctrl chord and is consumed, so this does not
@@ -146,8 +156,8 @@ Ctrl chord to be recognized without triggering completion. Sym+Mic retains
 its digit `0` mapping.
 
 Keyboard keys report their actual presses and releases, supporting held controls
-in foreground apps. `setterm keyrate` controls typing repeat; trackball rolls
-remain single navigation taps.
+in foreground apps. Trackball arrows also report presses and releases;
+`setterm keyrate` controls repeat for typing and held trackball arrows.
 
 The keyboard light starts disabled on every boot, retaining its saved brightness.
 Alt+B toggles the light through the keyboard firmware. An explicit

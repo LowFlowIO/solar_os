@@ -112,7 +112,8 @@ captured keyboards. Modules must not leave callbacks or tasks running after
 `main` returns.
 
 Physical keyboards and buttons retain their actual press/release timing.
-Logical taps, such as trackball navigation and character-only input, have zero
+The `pointer-arrows` job supplies held arrow keys while its pointer moves and
+releases them when movement stops. Logical taps from character-only input have zero
 physical identity and HID usage. `read_key` delivers their press immediately
 and a synthetic release after 140 ms, measured from consumption by the worker.
 This keeps taps visible to frame-based guests even when the producer queues
