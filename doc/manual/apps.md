@@ -1125,9 +1125,27 @@ contacts
 
 The list is grouped by trust and provider. Press `/` to search, `Enter` to view
 the selected endpoint addresses, capabilities, last-seen times, and bounded
-provider metadata summary, and `Esc` or `q` to leave.
+provider metadata summary, and `Esc` or `q` to leave. The footer shows
+`a Actions` and `? Help`, including on compact screens.
 
-Use the shell surface for mutations:
+Press `a` in the list or details to manage the selected contact:
+
+- `t`: trust all endpoints or choose one endpoint.
+- `b`: block all endpoints or choose one endpoint.
+- `r`: edit the contact name, then `Enter` to save or `Esc` to cancel.
+- `l`: choose another contact to link into the selected contact. Confirm with
+  `y` to move its endpoints and remove its source record.
+- `d`: remove the contact and its endpoints after confirming with `y`.
+
+These shortcuts also work directly from the list and details. Use arrows and
+`Enter` in menus, and `Esc` to cancel. Confirmation pages require `y`;
+`Enter` does not confirm removal or linking. Press `f` in the list to filter
+by endpoint trust (`all`, `discovered`, `trusted`, or `blocked`), and `s` for
+store status. `?` opens a scrollable key guide. Filters match contacts with any
+endpoint in that trust state; linking can select any other contact regardless
+of the current filter or name search.
+
+The same operations are available from the shell:
 
 ```text
 contacts status
