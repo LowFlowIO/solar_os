@@ -48,7 +48,7 @@ typedef struct {
     unsigned background_index;
 } solar_os_frame_presenter_config_t;
 typedef struct { esp_err_t last_error; } solar_os_frame_presenter_stats_t;
-typedef struct { unsigned count, size, head; unsigned char data[8][64]; } queue_t;
+typedef struct { unsigned count, size, head; bool caps; unsigned char data[8][64]; } queue_t;
 typedef queue_t *QueueHandle_t;
 #include "emotion_runtime_header.inc"
 static unsigned allocations, claims, leases, submitted, audio_opened, audio_closed;
@@ -73,11 +73,13 @@ static void *solar_os_memory_calloc(size_t n,size_t size,int kind,const char *ta
 static void solar_os_memory_free(void *p) { if(p){allocations--;free(p);} }
 static QueueHandle_t xQueueCreate(unsigned n, unsigned size)
 { assert(n==8 && size<=64); queue_t *q=calloc(1,sizeof(*q));q->size=size;return q; }
+static QueueHandle_t solar_os_queue_create(unsigned n, unsigned size)
+{ queue_t *q=xQueueCreate(n,size);q->caps=true;return q; }
 static int xQueueSend(queue_t *q,const void *item,unsigned wait)
 {(void)wait;if(q->count==8)return 0;memcpy(q->data[(q->head+q->count)%8],item,q->size);q->count++;return 1;}
 static int xQueueReceive(queue_t *q,void *item,unsigned wait)
 {(void)wait;if(!q->count)return 0;memcpy(item,q->data[q->head],q->size);q->head=(q->head+1)%8;q->count--;return 1;}
-static void solar_os_queue_delete(queue_t *q) { free(q); }
+static void solar_os_queue_delete(queue_t *q) { assert(q->caps);free(q); }
 static bool solar_os_gfx_display_target_name(solar_os_gfx_t *g,char *out,size_t n)
 { strlcpy(out,g->name,n);return true; }
 static unsigned solar_os_gfx_width(solar_os_gfx_t *g) {(void)g;return 128;}

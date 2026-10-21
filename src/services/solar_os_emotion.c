@@ -333,7 +333,7 @@ esp_err_t solar_os_emotion_open(const solar_os_emotion_options_t *o,
     s->state = solar_os_memory_calloc(1, s->api->state_bytes, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "emotion.state");
     s->pixels = solar_os_memory_alloc(s->bytes, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "emotion.frame");
     s->previous = solar_os_memory_alloc(s->bytes, SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "emotion.previous");
-    s->commands = xQueueCreate(EMOTION_QUEUE, sizeof(emotion_command_t));
+    s->commands = solar_os_queue_create(EMOTION_QUEUE, sizeof(emotion_command_t));
     if (!s->state || !s->pixels || !s->previous || !s->commands) { err = ESP_ERR_NO_MEM; goto fail; }
     err = result(s->api->init(s->state, now_ms(), (uint32_t)esp_timer_get_time()));
     if (err != ESP_OK) goto fail;
