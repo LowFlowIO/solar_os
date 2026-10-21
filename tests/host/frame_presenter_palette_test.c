@@ -111,6 +111,23 @@ int main(void)
                         assert(p.mono_luma[0] == 255 && p.mono_luma[3] == 0);
                 }
     }
+    /* A literal mono palette keeps black backgrounds and luminous eyes even
+     * when the terminal theme is inverted; direct-only flags retain legacy behavior. */
+    uint16_t eye_palette[4] = {0, 0, 0, 0xffff};
+    uint8_t eyes[8];
+    memset(eyes, 0xcc, sizeof(eyes));
+    solar_os_frame_presenter_t face = {
+        .config = {.gfx = (solar_os_gfx_t *)&captured, .format = SOLAR_OS_DISPLAY_FORMAT_INDEX2,
+            .width = 8, .height = 4, .stride = 2, .palette_rgb565 = eye_palette, .palette_size = 4,
+            .literal_mono_palette = true},
+        .presenting = eyes, .mono = mono, .source_size = sizeof(eyes), .mono_size = sizeof(mono),
+        .output_width = 8, .output_height = 4, .output_stride = 1, .mono_fallback = true,
+    };
+    inverted = true;
+    frame_prepare_mono_palette(&face);
+    assert(face.mono_luma[0] == 0 && face.mono_luma[3] == 255);
+    assert(frame_present(&face) == ESP_OK && !captured.palette_inverted);
+    for (unsigned row = 0; row < 4; ++row) assert(mono[row] == 0x55);
     puts("Literal color palettes, INDEX2 compatibility and mono polarity tests passed");
     return 0;
 }

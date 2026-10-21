@@ -236,10 +236,11 @@ static void frame_prepare_mono_palette(solar_os_frame_presenter_t *presenter)
     const size_t palette_size =
         presenter->config.format == SOLAR_OS_DISPLAY_FORMAT_INDEX2 ? 4U : 256U;
     for (size_t i = 0; i < palette_size; i++) {
-        /* INDEX2 is an ordinal shade ramp. Keep its dither independent of the
-         * color-display theme, then apply the terminal polarity below. */
+        /* By default INDEX2 is an ordinal shade ramp. Literal mono themes
+         * instead use the supplied RGB565 colors and bypass terminal polarity. */
         presenter->mono_luma[i] =
-            presenter->config.format == SOLAR_OS_DISPLAY_FORMAT_INDEX2 ?
+            presenter->config.format == SOLAR_OS_DISPLAY_FORMAT_INDEX2 &&
+                !presenter->config.literal_mono_palette ?
                 (uint8_t)(255U - i * 85U) :
                 rgb565_luma(presenter->config.palette_rgb565[i]);
     }
@@ -277,7 +278,7 @@ static esp_err_t frame_present(solar_os_frame_presenter_t *presenter)
         frame.source_height = presenter->output_height;
         frame.source_stride = presenter->output_stride;
         frame.format = SOLAR_OS_DISPLAY_FORMAT_MONO1;
-        frame.palette_inverted =
+        frame.palette_inverted = !presenter->config.literal_mono_palette &&
             solar_os_gfx_palette_inverted(presenter->config.gfx);
         frame.clear_background = false;
         frame.background_index = 0U;
