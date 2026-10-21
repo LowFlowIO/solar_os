@@ -1276,6 +1276,7 @@ static const char * const radio_config_fields[] = {
     "bandwidth",
     "sf",
     "coding-rate",
+    "rx-gain",
     "power",
     "crc",
     "variable",
@@ -1298,6 +1299,9 @@ static const char * const radio_spreading_factor_values[] = {
 };
 static const char * const radio_coding_rate_values[] = {
     "4/5", "4/6", "4/7", "4/8",
+};
+static const char * const radio_rx_gain_values[] = {
+    "default", "power-saving", "boosted", "auto", "g1", "g2", "g3", "g4", "g5", "g6",
 };
 static const char * const radio_state_values[] = {
     "sleep",
@@ -2684,6 +2688,7 @@ static const char * const path_radio_config_crc[] = {"radio", "config", SHELL_CO
 static const char * const path_radio_config_variable[] = {"radio", "config", SHELL_COMPLETION_ANY, "variable"};
 static const char * const path_radio_config_sf[] = {"radio", "config", SHELL_COMPLETION_ANY, "sf"};
 static const char * const path_radio_config_coding_rate[] = {"radio", "config", SHELL_COMPLETION_ANY, "coding-rate"};
+static const char * const path_radio_config_rx_gain[] = {"radio", "config", SHELL_COMPLETION_ANY, "rx-gain"};
 static const char * const path_radio_profile[] = {"radio", "profile"};
 static const char * const path_radio_profile_show[] = {"radio", "profile", "show"};
 static const char * const path_radio_profile_apply[] = {"radio", "profile", "apply"};
@@ -3769,6 +3774,7 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_radio_config_variable, on_off_values),
     SHELL_COMPLETION_STATIC(path_radio_config_sf, radio_spreading_factor_values),
     SHELL_COMPLETION_STATIC(path_radio_config_coding_rate, radio_coding_rate_values),
+    SHELL_COMPLETION_STATIC(path_radio_config_rx_gain, radio_rx_gain_values),
     SHELL_COMPLETION_STATIC(path_radio_profile, radio_profile_subcommands),
     SHELL_COMPLETION_RADIO_PROFILES(path_radio_profile_show),
     SHELL_COMPLETION_RADIOS(path_radio_profile_apply),

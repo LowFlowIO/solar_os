@@ -18,7 +18,9 @@ static int64_t sleep_us;
 static bool asleep, stuck_busy, fail_wake;
 static bool retained;
 static unsigned transfers, wakes;
-static uint8_t opcodes[256];
+static uint8_t opcodes[1024];
+static uint8_t rx_gain = 0x94;
+static bool fail_gain;
 
 int64_t esp_timer_get_time(void) { return now_us; }
 void esp_rom_delay_us(uint32_t us) { now_us += us; }
@@ -45,10 +47,19 @@ esp_err_t solar_os_bus_spi_transfer(const char *name, int cs, uint8_t mode,
         return ESP_OK;
     }
     assert(!asleep && !stuck_busy);
+    if (tx[0] == SX1262_OP_WRITE_REGISTER && tx[1] == 0x08 && tx[2] == 0xac) {
+        assert(len == 4);
+        if (fail_gain) return ESP_FAIL;
+        rx_gain = tx[3];
+    }
+    if (tx[0] == SX1262_OP_SET_RX) {
+        assert(rx_gain == 0x94 || rx_gain == 0x96);
+    }
     if (tx[0] == SX1262_OP_SET_SLEEP) {
         assert(len == 2);
         retained = (tx[1] & 0x04U) != 0U;
         asleep = true;
+        rx_gain = 0x94; /* Gain is not in the default warm-sleep retention list. */
         sleep_us = now_us;
     }
     if (tx[0] == SX1262_OP_GET_IRQ_STATUS) {
@@ -83,7 +94,8 @@ int main(void)
     assert(transfers == before && asleep); /* Repeated sleep must not wake. */
     assert(sx1262_set_state(&dev, SOLAR_OS_RADIO_STATE_RX) == ESP_OK);
     assert(!asleep && dev.state == SOLAR_OS_RADIO_STATE_RX && retained);
-    assert(opcodes[before] == SX1262_OP_GET_STATUS && opcodes[before + 1] == SX1262_OP_SET_RX);
+    assert(opcodes[before] == SX1262_OP_GET_STATUS && opcodes[before + 1] == SX1262_OP_SET_STANDBY);
+    assert(opcodes[before + 2] == SX1262_OP_WRITE_REGISTER && opcodes[before + 3] == SX1262_OP_SET_RX);
 
     sleep_radio(&dev);
     fail_wake = true;
@@ -110,6 +122,39 @@ int main(void)
     sleep_radio(&dev);
     assert(sx1262_receive(&dev, &packet, 8) == ESP_ERR_TIMEOUT);
     assert(!asleep && dev.state == SOLAR_OS_RADIO_STATE_RX && retained);
+    config = dev.config;
+    config.rx_gain = SOLAR_OS_RADIO_RX_GAIN_BOOSTED;
+    assert(sx1262_configure(&dev, &config) == ESP_OK && rx_gain == 0x96);
+    sleep_radio(&dev);
+    assert(rx_gain == 0x94);
+    assert(sx1262_set_state(&dev, SOLAR_OS_RADIO_STATE_RX) == ESP_OK && rx_gain == 0x96);
+    sleep_radio(&dev);
+    assert(sx1262_receive(&dev, &packet, 0) == ESP_ERR_TIMEOUT && rx_gain == 0x96);
+    before = transfers;
+    assert(sx1262_receive(&dev, &packet, 0) == ESP_ERR_TIMEOUT);
+    assert(transfers == before + 1); /* Polling does not re-arm or rewrite gain. */
+    config.rx_gain = SOLAR_OS_RADIO_RX_GAIN_POWER_SAVING;
+    assert(sx1262_configure(&dev, &config) == ESP_OK && rx_gain == 0x94);
+    config.rx_gain = SOLAR_OS_RADIO_RX_GAIN_G1;
+    before = transfers;
+    assert(sx1262_configure(&dev, &config) == ESP_ERR_NOT_SUPPORTED && transfers == before);
+    config.rx_gain = SOLAR_OS_RADIO_RX_GAIN_BOOSTED;
+    assert(sx1262_set_state(&dev, SOLAR_OS_RADIO_STATE_RX) == ESP_OK);
+    fail_gain = true;
+    assert(sx1262_configure(&dev, &config) == ESP_FAIL);
+    assert(dev.state == SOLAR_OS_RADIO_STATE_STANDBY);
+    assert(dev.config.rx_gain == SOLAR_OS_RADIO_RX_GAIN_POWER_SAVING);
+    fail_gain = false;
+    assert(sx1262_receive(&dev, &packet, 0) == ESP_ERR_TIMEOUT && rx_gain == 0x94);
+    assert(sx1262_configure(&dev, &config) == ESP_OK);
+    sleep_radio(&dev);
+    fail_gain = true;
+    assert(sx1262_set_state(&dev, SOLAR_OS_RADIO_STATE_RX) == ESP_FAIL);
+    assert(dev.state == SOLAR_OS_RADIO_STATE_STANDBY);
+    assert(dev.config.rx_gain == SOLAR_OS_RADIO_RX_GAIN_BOOSTED);
+    fail_gain = false;
+    assert(sx1262_set_state(&dev, SOLAR_OS_RADIO_STATE_RX) == ESP_OK);
+    assert(rx_gain == 0x96);
     /* Ordinary BUSY waits still apply when the radio is already awake. */
     stuck_busy = true;
     before = transfers;

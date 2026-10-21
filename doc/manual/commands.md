@@ -1549,10 +1549,35 @@ radio send radio0 hello
 radio recv radio0 5000
 ```
 
+`rx-gain` controls receiver gain policy. `radio status <name>` lists the modes
+supported by that radio; the radio TUI's `rx gain` row cycles through those
+choices with Left/Right. Changes leave the radio in standby, like other radio
+configuration changes.
+
+| Driver | RX gain modes | Default |
+| --- | --- | --- |
+| SX1262 | `power-saving`, `boosted` | `power-saving` |
+| RFM95W | `power-saving`, `boosted` | `boosted` |
+| RFM69 / RFM69H | `auto`, `g1` through `g6` | `auto` |
+
+```text
+radio config radio0 rx-gain boosted
+radio state radio0 rx
+```
+
+On SX1262 and RFM95W, `boosted` enables the higher-current RX/LNA mode;
+`power-saving` disables that boost. Automatic gain control remains active.
+On RFM69, `auto` enables AGC; `g1` selects maximum LNA gain and `g2` through
+`g6` reduce it by 6, 12, 24, 36, and 48 dB respectively. Fixed gain can reduce
+the receiver's ability to handle strong signals. These settings are not
+transmit power or a common numeric gain scale across radio families.
+`default` restores the driver's default policy. Unsupported modes are rejected.
+
 Profiles avoid partially reconfiguring one end while copying a list of fields.
 `lora-eu868`, `gfsk-eu868`, and `ook-eu868` are built in. Up to eight user
-profiles are stored as one versioned NVS record and consume no idle profile
-cache:
+profiles, including RX gain, are saved in mounted-storage settings and consume
+no idle profile cache. Existing profiles without RX gain use the driver's
+default:
 
 ```text
 radio profile list
