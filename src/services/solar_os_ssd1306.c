@@ -118,6 +118,7 @@ static esp_err_t register_display_target(solar_os_ssd1306_device_t *device)
     target.ready = true;
     target.brightness_supported = false;
     target.black_is_one = false;
+    target.preferred_stream_fps = 25;
     return solar_os_display_register_target(&target);
 }
 

@@ -74,6 +74,64 @@ static uint8_t ssd1306_u8x8_byte_cb(u8x8_t *u8x8,
     }
 }
 
+static uint8_t ssd1306_u8x8_cad_cb(u8x8_t *u8x8,
+                                   uint8_t message,
+                                   uint8_t arg_int,
+                                   void *arg_ptr)
+{
+    ssd1306_t *display = ssd1306_from_u8x8(u8x8);
+    if (display == NULL || display->last_error != ESP_OK) {
+        return 0;
+    }
+
+    /* ESP-IDF has no Arduino Wire buffer limit. Batch commands and send a
+     * page per data transaction, releasing the shared bus between packets.
+     * All pending state belongs to this display, including during init. */
+    switch (message) {
+    case U8X8_MSG_CAD_SEND_CMD:
+    case U8X8_MSG_CAD_SEND_ARG:
+        if (display->transfer_len == sizeof(display->transfer) &&
+            !ssd1306_u8x8_byte_cb(u8x8, U8X8_MSG_BYTE_END_TRANSFER, 0, NULL)) {
+            return 0;
+        }
+        if (display->transfer_len == 0) {
+            display->transfer[display->transfer_len++] = 0x00;
+        }
+        display->transfer[display->transfer_len++] = arg_int;
+        return 1;
+    case U8X8_MSG_CAD_SEND_DATA: {
+        if (arg_int != 0 && arg_ptr == NULL) {
+            ssd1306_set_error(display, ESP_ERR_INVALID_ARG);
+            return 0;
+        }
+        if (!ssd1306_u8x8_byte_cb(u8x8, U8X8_MSG_BYTE_END_TRANSFER, 0, NULL)) {
+            return 0;
+        }
+        const uint8_t *data = arg_ptr;
+        size_t remaining = arg_int;
+        while (remaining != 0) {
+            const size_t count = remaining > SSD1306_WIDTH ? SSD1306_WIDTH : remaining;
+            display->transfer[0] = 0x40;
+            memcpy(display->transfer + 1U, data, count);
+            display->transfer_len = count + 1U;
+            if (!ssd1306_u8x8_byte_cb(u8x8, U8X8_MSG_BYTE_END_TRANSFER, 0, NULL)) {
+                return 0;
+            }
+            data += count;
+            remaining -= count;
+        }
+        return 1;
+    }
+    case U8X8_MSG_CAD_INIT:
+        return ssd1306_u8x8_byte_cb(u8x8, U8X8_MSG_BYTE_INIT, arg_int, arg_ptr);
+    case U8X8_MSG_CAD_START_TRANSFER:
+    case U8X8_MSG_CAD_END_TRANSFER:
+        return ssd1306_u8x8_byte_cb(u8x8, U8X8_MSG_BYTE_END_TRANSFER, 0, NULL);
+    default:
+        return 0;
+    }
+}
+
 static uint8_t ssd1306_u8x8_gpio_delay_cb(u8x8_t *u8x8,
                                           uint8_t message,
                                           uint8_t arg_int,
@@ -82,6 +140,11 @@ static uint8_t ssd1306_u8x8_gpio_delay_cb(u8x8_t *u8x8,
     (void)arg_ptr;
     ssd1306_t *display = ssd1306_from_u8x8(u8x8);
     if (display == NULL || display->last_error != ESP_OK) {
+        return 0;
+    }
+    /* Preserve command-before-delay ordering in U8g2 setup sequences. */
+    if ((message == U8X8_MSG_DELAY_MILLI || message == U8X8_MSG_DELAY_10MICRO) &&
+        !ssd1306_u8x8_byte_cb(u8x8, U8X8_MSG_BYTE_END_TRANSFER, 0, NULL)) {
         return 0;
     }
 
@@ -135,7 +198,7 @@ esp_err_t ssd1306_init_with_io(ssd1306_t *display,
                       controller == SSD1306_CONTROLLER_SH1106
                           ? u8x8_d_sh1106_128x64_noname
                           : u8x8_d_ssd1306_128x64_noname,
-                      u8x8_cad_ssd13xx_i2c,
+                      ssd1306_u8x8_cad_cb,
                       ssd1306_u8x8_byte_cb,
                       ssd1306_u8x8_gpio_delay_cb);
     u8g2_SetupBuffer(&display->u8g2,

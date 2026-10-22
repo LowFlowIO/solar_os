@@ -14,7 +14,8 @@ extern "C" {
 #define SSD1306_WIDTH 128U
 #define SSD1306_HEIGHT 64U
 #define SSD1306_BUFFER_SIZE 1024U
-#define SSD1306_I2C_TRANSFER_MAX 32U
+/* One native page plus the I2C command/data control byte. */
+#define SSD1306_I2C_TRANSFER_MAX (SSD1306_WIDTH + 1U)
 
 typedef enum {
     SSD1306_CONTROLLER_SSD1306 = 0,
