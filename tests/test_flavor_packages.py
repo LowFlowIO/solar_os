@@ -101,10 +101,26 @@ class FlavorPackagesTest(unittest.TestCase):
             _, supported = generate_flavor_config.apply_board_capability_pruning(
                 self.catalog, groups, selected, {"i2c", "expansion_i2c"})
             self.assertTrue(supported["drv8830"])
+            self.assertTrue(supported["service_motor"])
             self.assertTrue(supported["service_i2c"])
             _, unsupported = generate_flavor_config.apply_board_capability_pruning(
                 self.catalog, groups, selected, {"i2c"})
             self.assertFalse(unsupported["drv8830"])
+            self.assertTrue(unsupported["service_motor"])
+
+    def test_motor_service_does_not_pull_a_concrete_driver(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "motor.toml"
+            path.write_text('[flavor]\nname = "motor-only"\n[groups]\nmotor = true\n')
+            _, _, groups, packages = generate_flavor_config.load_flavor(path, self.catalog)
+        self.assertTrue(packages["service_motor"])
+        self.assertFalse(packages["drv8830"])
+        self.assertFalse(packages["service_i2c"])
+        _, pruned = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, set())
+        self.assertTrue(pruned["service_motor"])
 
     def test_pca9685_is_optional_and_uses_i2c_without_native_pwm(self):
         _, _, core_groups, core_packages = self.resolve("writerdeck")

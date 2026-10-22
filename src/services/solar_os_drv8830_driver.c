@@ -6,6 +6,8 @@ static const solar_os_expansion_binding_spec_t bindings[] = {
     {.key = "addr", .value_hint = "0x60..0x68", .kind = SOLAR_OS_EXPANSION_BINDING_I2C_ADDRESS, .required = true,
         .allowed_values = addresses, .allowed_value_count = sizeof(addresses) / sizeof(addresses[0])},
     {.key = "int", .value_hint = "gpio", .kind = SOLAR_OS_EXPANSION_BINDING_GPIO, .role = "int"},
+    {.key = "max_mv", .value_hint = "5060", .kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER,
+        .role = "max_mv", .has_value_range = true, .min_value = 482, .max_value = 5060},
 };
 
 const solar_os_expansion_driver_t solar_os_drv8830_expansion_driver = {

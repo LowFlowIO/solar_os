@@ -192,6 +192,14 @@ class BoardManifestTest(unittest.TestCase):
         header = generate_header(board, self.drivers)
         self.assertIn('.driver = "drv8830", .name = "motor0"', header)
         self.assertIn('.role = "int"', header)
+        for maximum in (482, 3000, 5060):
+            device["bindings"]["max_mv"] = maximum
+            validate_board(board, self.drivers)
+        for maximum in (481, 5061):
+            device["bindings"]["max_mv"] = maximum
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+        device["bindings"]["max_mv"] = 3000
         for address in (0x5f, 0x69, 0xc0):
             device["bindings"]["addr"] = address
             with self.assertRaises(ManifestError):

@@ -1,9 +1,11 @@
 #include <assert.h>
 #include <limits.h>
+#include <math.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include "solar_os_drv8830.h"
+#include "solar_os_motor.h"
 #include "solar_os_buses.h"
 #include "solar_os_gpio_controller.h"
 #include "solar_os_memory.h"
@@ -28,13 +30,15 @@ size_t strlcpy(char *dst, const char *src, size_t size)
 }
 void *solar_os_memory_calloc(size_t count, size_t size, solar_os_memory_class_t cls, const char *tag)
 {
-    assert(cls == SOLAR_OS_MEMORY_EXTERNAL_PREFERRED && strcmp(tag, "drv8830.device") == 0);
+    assert((cls == SOLAR_OS_MEMORY_EXTERNAL_PREFERRED &&
+        (strcmp(tag, "drv8830.device") == 0 || strcmp(tag, "motor.device") == 0)) ||
+        (cls == SOLAR_OS_MEMORY_INTERNAL_CRITICAL && strcmp(tag, "motor.lock") == 0));
     if (fail_alloc) return NULL;
     void *ptr = calloc(count, size);
     if (ptr != NULL) allocations++;
     return ptr;
 }
-void solar_os_memory_free(void *ptr) { assert(ptr && allocations); allocations--; free(ptr); }
+void solar_os_memory_free(void *ptr) { if (ptr) { assert(allocations); allocations--; free(ptr); } }
 bool solar_os_bus_find(const char *name, solar_os_bus_protocol_t protocol, solar_os_bus_info_t *info)
 {
     assert(protocol == SOLAR_OS_BUS_PROTOCOL_I2C);
@@ -92,7 +96,7 @@ int main(void)
     const solar_os_expansion_driver_t *driver = &solar_os_drv8830_expansion_driver;
     assert(strcmp(driver->name, "drv8830") == 0 && driver->probe_supported);
     assert(driver->required_capabilities == SOLAR_OS_BOARD_CAP_EXPANSION_I2C);
-    assert(driver->binding_spec_count == 3U && !driver->binding_specs[2].required);
+    assert(driver->binding_spec_count == 4U && !driver->binding_specs[2].required);
     solar_os_expansion_binding_t bindings[] = {
         {.kind = SOLAR_OS_EXPANSION_BINDING_I2C_BUS, .target = "i2c0"},
         {.kind = SOLAR_OS_EXPANSION_BINDING_I2C_ADDRESS, .value = 0x60},
@@ -127,10 +131,10 @@ int main(void)
     /* Attaching an already running bridge must command coast. */
     regs[0][0][0] = 0xfd;
     assert(driver->attach("motor0", bindings, 3) == ESP_OK && regs[0][0][0] == 0);
-    assert(driver->attach("motor0", bindings, 3) == ESP_ERR_INVALID_STATE && allocations == 1);
+    assert(driver->attach("motor0", bindings, 3) == ESP_ERR_INVALID_STATE && allocations == 3);
     strcpy(bindings[0].target, "aux");
     bindings[1].value = 0x68;
-    assert(driver->attach("motor1", bindings, 2) == ESP_OK && allocations == 2);
+    assert(driver->attach("motor1", bindings, 2) == ESP_OK && allocations == 6);
     solar_os_drv8830_info_t info;
     assert(solar_os_drv8830_get(0, &info) && strcmp(info.bus, "aux") == 0 && info.interrupt_gpio == -1);
     assert(!solar_os_drv8830_get(2, &info));
@@ -202,23 +206,55 @@ int main(void)
     assert(solar_os_drv8830_drive("motor0", 2000) == ESP_FAIL && regs[0][0][0] == 0);
     assert(solar_os_drv8830_drive("motor0", 2000) == ESP_OK);
     write_failures = 2;
-    assert(driver->detach("motor0") == ESP_FAIL && allocations == 2);
+    assert(driver->detach("motor0") == ESP_FAIL && allocations == 6);
     assert(solar_os_drv8830_status("motor0", &status) == ESP_OK);
     fail_write = -1;
     speed = 1000000U;
     assert(solar_os_drv8830_status("motor0", &status) == ESP_ERR_INVALID_STATE);
-    assert(driver->detach("motor0") == ESP_ERR_INVALID_STATE && allocations == 2);
+    assert(driver->detach("motor0") == ESP_ERR_INVALID_STATE && allocations == 6);
     speed = 100000U;
     fail_reset = true;
-    assert(driver->detach("motor0") == ESP_FAIL && allocations == 2);
+    assert(driver->detach("motor0") == ESP_FAIL && allocations == 6);
     fail_reset = false;
-    assert(driver->detach("motor0") == ESP_OK && allocations == 1 && regs[0][0][0] == 0);
+    assert(driver->detach("motor0") == ESP_OK && allocations == 3 && regs[0][0][0] == 0);
     assert(driver->detach("motor1") == ESP_OK && allocations == 0);
     assert(driver->detach("motor1") == ESP_ERR_NOT_FOUND);
     assert(solar_os_drv8830_drive("motor0", 2000) == ESP_ERR_NOT_FOUND);
     assert(solar_os_drv8830_status(NULL, &status) == ESP_ERR_INVALID_ARG);
     assert(solar_os_drv8830_status("motor1", NULL) == ESP_ERR_INVALID_ARG);
     assert(!solar_os_drv8830_get(0, &info));
+    assert(solar_os_motor_count() == 0);
+    solar_os_expansion_binding_t normalized[] = {
+        {.kind = SOLAR_OS_EXPANSION_BINDING_I2C_BUS, .target = "i2c0"},
+        {.kind = SOLAR_OS_EXPANSION_BINDING_I2C_ADDRESS, .value = 0x60},
+        {.kind = SOLAR_OS_EXPANSION_BINDING_PARAMETER, .role = "max_mv", .value = 3000},
+    };
+    assert(driver->attach("normalized", normalized, 3) == ESP_OK);
+    solar_os_motor_info_t motor_info;
+    assert(solar_os_motor_get(0, &motor_info) && !strcmp(motor_info.driver, "drv8830") && motor_info.can_drive);
+    assert(solar_os_motor_drive("normalized", 0.5f) == ESP_OK && regs[0][0][0] == 0x4d);
+    assert(solar_os_motor_drive("normalized", -1.0f) == ESP_OK && regs[0][0][0] == 0x96);
+    solar_os_motor_status_t motor_status;
+    assert(solar_os_motor_status("normalized", &motor_status) == ESP_OK);
+    assert(motor_status.drive_valid && motor_status.drive == -1.0f && motor_status.mode == SOLAR_OS_MOTOR_MODE_REVERSE);
+    assert(motor_status.voltage_valid && motor_status.voltage_mv == 2972U);
+    assert(solar_os_motor_drive("normalized", NAN) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_motor_drive("normalized", 1000.0f) == ESP_ERR_INVALID_ARG);
+    assert(solar_os_motor_drive("normalized", 0.01f) == ESP_OK && regs[0][0][0] == 0);
+    regs[0][0][1] = SOLAR_OS_DRV8830_UVLO;
+    assert(solar_os_motor_drive("normalized", 0.5f) == ESP_OK);
+    assert(solar_os_motor_status("normalized", &motor_status) == ESP_OK && motor_status.blocking_faults == 0U);
+    assert(motor_status.faults == SOLAR_OS_MOTOR_FAULT_UNDERVOLTAGE);
+    regs[0][0][1] |= SOLAR_OS_DRV8830_FAULT;
+    assert(solar_os_motor_drive("normalized", 0.5f) == ESP_ERR_INVALID_STATE);
+    assert(solar_os_motor_status("normalized", &motor_status) == ESP_OK &&
+        motor_status.blocking_faults == SOLAR_OS_MOTOR_FAULT_UNDERVOLTAGE);
+    assert(solar_os_motor_clear("normalized") == ESP_OK && regs[0][0][0] == 0 && regs[0][0][1] == 0);
+    assert(driver->detach("normalized") == ESP_OK && allocations == 0 && solar_os_motor_count() == 0);
+    normalized[2].value = 481;
+    assert(driver->attach("normalized", normalized, 3) == ESP_ERR_INVALID_ARG && allocations == 0);
+    normalized[2].value = 5061;
+    assert(driver->attach("normalized", normalized, 3) == ESP_ERR_INVALID_ARG && allocations == 0);
     puts("drv8830_test: PASS");
     return 0;
 }

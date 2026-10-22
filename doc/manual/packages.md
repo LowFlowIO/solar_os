@@ -45,6 +45,7 @@ where the board supports them:
 | `pwm` | Use native PWM outputs where supported. | [GPIO and PWM](gpio.analog.md) |
 | `pca9685` | Add 16 PWM outputs over expansion I2C. | [PCA9685](servo.md#pca9685-expansion-controller) |
 | `drv8830` | Control brushed DC motors over named I2C buses. | [Motor control](motor.md) |
+| `motor` | Common motor service, shell controls and Python/Lua APIs. | [Motor control](motor.md) |
 | `ds3231` | Add a battery-backed I2C clock and hardware alarm. | [DS3231](expansion.md#ds3231-real-time-clock) |
 
 Python or Lua alone does not enable optional media, vision, or inference

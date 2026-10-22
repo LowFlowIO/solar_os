@@ -530,6 +530,14 @@ kind = "gpio"
 hint = "gpio"
 role = "int"
 
+[[drivers.drv8830.bindings]]
+key = "max_mv"
+kind = "parameter"
+hint = "5060"
+role = "max_mv"
+min = 482
+max = 5060
+
 [drivers.bq25896]
 summary = "TI BQ25896 battery charger"
 package = "bq25896"

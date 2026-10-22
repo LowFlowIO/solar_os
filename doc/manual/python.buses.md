@@ -177,6 +177,9 @@ name scalar streams;
 `keys` maps logical key names to GPIO numbers. `cs` requires `spi`; `addr` and
 `alt_addr` require `i2c`. Unknown keys are rejected.
 
+DRV8830 attachments also accept integer `max_mv` to configure the voltage
+represented by full normalized motor drive. See [Motor control](motor.md).
+
 Camera DVP attachments also accept GPIO-number bindings `d0`..`d7`, `siod`,
 `sioc`, `vsync`, `href`, `pclk`, `xclk`, and optional `pwdn`/`reset`. The camera
 driver validates required pins and claims; board-owned cameras cannot be detached.

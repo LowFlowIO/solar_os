@@ -121,6 +121,11 @@ label = "Haptic feedback"
 category = "Hardware interfaces"
 members = ["service_haptic"]
 
+[groups.motor]
+label = "Motor control"
+category = "Hardware interfaces"
+members = ["service_motor"]
+
 [groups.charger]
 label = "Battery charger"
 category = "Hardware interfaces"
@@ -1528,6 +1533,10 @@ sources = [
   "shell/solar_os_shell_haptic.c",
 ]
 
+[packages.service_motor]
+label = "service.motor"
+sources = ["services/solar_os_motor.c", "shell/solar_os_shell_motor.c"]
+
 [packages.service_charger]
 label = "service.charger"
 sources = [
@@ -1938,12 +1947,11 @@ capabilities = ["expansion_i2c"]
 label = "expansion.drv8830"
 targets = ["esp32", "esp32s3"]
 expansion_drivers = ["solar_os_drv8830_expansion_driver"]
-depends = ["service_expansion", "service_i2c"]
+depends = ["service_expansion", "service_i2c", "service_motor"]
 sources = [
   "drivers/drv8830.c",
   "services/solar_os_drv8830.c",
   "services/solar_os_drv8830_driver.c",
-  "shell/solar_os_shell_motor.c",
 ]
 requires = ["esp_driver_i2c", "esp_driver_gpio"]
 capabilities = ["expansion_i2c"]

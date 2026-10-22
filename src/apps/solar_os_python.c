@@ -121,6 +121,9 @@
 #if SOLAR_OS_PACKAGE_SERVICE_HAPTIC
 #include "solar_os_haptic.h"
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_MOTOR
+#include "solar_os_motor.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_CHARGER
 #include "solar_os_charger.h"
 #endif
@@ -3994,6 +3997,78 @@ static mp_obj_t solaros_pwm_off(mp_obj_t pin_obj)
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_pwm_off_obj, solaros_pwm_off);
 #endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_MOTOR
+static mp_obj_t python_motor_info(const solar_os_motor_info_t *info)
+{
+    mp_obj_t dict = mp_obj_new_dict(5);
+    python_dict_store_cstr(dict, "name", info->name);
+    python_dict_store_cstr(dict, "driver", info->driver);
+    python_dict_store_bool(dict, "can_drive", info->can_drive);
+    python_dict_store_bool(dict, "can_brake", info->can_brake);
+    python_dict_store_bool(dict, "can_clear", info->can_clear);
+    return dict;
+}
+
+static mp_obj_t solaros_motor_list(void)
+{
+    mp_obj_t list = mp_obj_new_list(0, NULL);
+    solar_os_motor_info_t info;
+    for (size_t i = 0; solar_os_motor_get(i, &info); i++)
+        mp_obj_list_append(list, python_motor_info(&info));
+    return list;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_motor_list_obj, solaros_motor_list);
+
+static mp_obj_t solaros_motor_status(mp_obj_t name)
+{
+    solar_os_motor_status_t status;
+    python_check_esp(solar_os_motor_status(mp_obj_str_get_str(name), &status));
+    mp_obj_t dict = python_motor_info(&status.info);
+    python_dict_store_cstr(dict, "mode", solar_os_motor_mode_name(status.mode));
+    python_dict_store_bool(dict, "drive_valid", status.drive_valid);
+    python_dict_store_float(dict, "drive", status.drive);
+    python_dict_store_bool(dict, "voltage_valid", status.voltage_valid);
+    python_dict_store_uint(dict, "voltage_mv", status.voltage_mv);
+    python_dict_store_uint(dict, "faults", status.faults);
+    python_dict_store_uint(dict, "blocking_faults", status.blocking_faults);
+    python_dict_store_bool(dict, "fault_input_present", status.fault_input_present);
+    python_dict_store_bool(dict, "fault_input_asserted", status.fault_input_asserted);
+    python_dict_store_bool(dict, "raw_valid", status.raw_valid);
+    python_dict_store_uint(dict, "raw_control", status.raw_control);
+    python_dict_store_uint(dict, "raw_fault", status.raw_fault);
+    return dict;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_motor_status_obj, solaros_motor_status);
+
+static mp_obj_t solaros_motor_drive(mp_obj_t name, mp_obj_t value)
+{
+    python_check_esp(solar_os_motor_drive(mp_obj_str_get_str(name), (float)mp_obj_get_float(value)));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_2(solaros_motor_drive_obj, solaros_motor_drive);
+
+static mp_obj_t solaros_motor_coast(mp_obj_t name)
+{
+    python_check_esp(solar_os_motor_coast(mp_obj_str_get_str(name)));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_motor_coast_obj, solaros_motor_coast);
+
+static mp_obj_t solaros_motor_brake(mp_obj_t name)
+{
+    python_check_esp(solar_os_motor_brake(mp_obj_str_get_str(name)));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_motor_brake_obj, solaros_motor_brake);
+
+static mp_obj_t solaros_motor_clear(mp_obj_t name)
+{
+    python_check_esp(solar_os_motor_clear(mp_obj_str_get_str(name)));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_motor_clear_obj, solaros_motor_clear);
+#endif
+
 #if SOLAR_OS_PACKAGE_SERVICE_SERVO
 static mp_obj_t python_servo_info(const solar_os_servo_info_t *info)
 {
@@ -5274,7 +5349,7 @@ MP_DEFINE_CONST_FUN_OBJ_0(solaros_expansion_devices_obj, solaros_expansion_devic
 static bool python_expansion_key_known(const char *key)
 {
     static const char *const keys[] = {
-        "stream", "timeout-ms", "ready", "clock", "reset-ms", "boot-ms", "reset-active",
+        "stream", "timeout-ms", "ready", "clock", "reset-ms", "boot-ms", "reset-active", "max_mv",
         "spi", "cs", "ce", "i2c", "addr", "alt_addr", "uart", "ps2", "gpio", "irq", "int", "reset",
         "rst", "data", "bck", "din", "rck", "mclk", "ws", "dout", "dc",
         "busy", "adc", "pwm", "backlight", "a", "b",
@@ -5542,7 +5617,7 @@ static mp_obj_t solaros_expansion_attach(mp_obj_t driver_obj,
                                      -1);
     }
     static const char *const parameter_bindings[] = {
-        "min", "center", "max", "deadzone", "timeout-ms", "clock", "reset-ms", "boot-ms", "reset-active",
+        "min", "center", "max", "deadzone", "timeout-ms", "clock", "reset-ms", "boot-ms", "reset-active", "max_mv",
     };
     for (size_t i = 0;
          i < sizeof(parameter_bindings) / sizeof(parameter_bindings[0]);
