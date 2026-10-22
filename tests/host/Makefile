@@ -14,6 +14,11 @@ KEYMAP_INPUTS := $(wildcard $(ROOT)/keymaps/profiles/*.json) $(ROOT)/scripts/gen
 
 .PHONY: all test clean
 
+TARGETS += can_twai_test
+
+can_twai_test: can_twai_test.c $(ROOT)/src/drivers/can_twai.c $(ROOT)/src/services/solar_os_can.c $(wildcard can_stubs/driver/*.h)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Ican_stubs -Iepd_stubs -Iexpansion_stubs -I. -I$(ROOT)/src/drivers -I$(ROOT)/src/services $(filter %.c,$^) -o $@
+
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test ble_coc_test
 TARGETS += input_action_match_test gesture_completion_test touch_gesture_test
 TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
@@ -1100,6 +1105,7 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 		rtc_pcf85063_test.c $(ROOT)/src/drivers/rtc_pcf85063.c -o $@
 
 test: $(TARGETS)
+	./can_twai_test
 	./i2c_buses_test
 	./inmp441_test
 	./epd_pixel_budget_test

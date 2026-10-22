@@ -920,6 +920,11 @@ After an auxiliary display is attached, it can also host a shell session:
 session create shell oled0
 ```
 
+## Classic CAN
+
+Classic CAN controllers attach through `twai-can`; see [Classic CAN](hardware.can.md)
+for transceiver wiring, bitrate, frame, and recovery controls.
+
 ## Quick reference
 
 Inspect runtime-safe pins and buses before attaching hardware. Use the `io`
