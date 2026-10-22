@@ -150,11 +150,39 @@ int main(void)
     assert(solar_os_drv8830_drive("motor0", 5061) == ESP_ERR_INVALID_ARG);
     assert(solar_os_drv8830_drive("motor0", INT_MIN) == ESP_ERR_INVALID_ARG && writes == before);
 
-    /* All fault sources block new drive commands, with or without INT. */
-    for (unsigned bit = 1; bit <= 0x10; bit <<= 1) {
-        regs[1][8][1] = (uint8_t)bit;
+    /* Recovered UVLO/OTS history must not require CLEAR between commands.
+     * Reproduce the reported -1500 -> UVLO=1, FAULT=0 -> -1000 sequence
+     * both with and without the optional fault input. */
+    const uint8_t recovered[] = {SOLAR_OS_DRV8830_UVLO, SOLAR_OS_DRV8830_OTS,
+        SOLAR_OS_DRV8830_UVLO | SOLAR_OS_DRV8830_OTS};
+    for (size_t device = 0; device < 2U; device++) {
+        const char *name = device == 0 ? "motor0" : "motor1";
+        uint8_t *r = device == 0 ? regs[0][0] : regs[1][8];
+        for (size_t i = 0; i < sizeof(recovered); i++) {
+            assert(solar_os_drv8830_drive(name, -1500) == ESP_OK && r[0] == 0x4e);
+            r[1] = recovered[i];
+            assert(solar_os_drv8830_status(name, &status) == ESP_OK && status.chip.fault == recovered[i]);
+            const unsigned before_drive = writes;
+            assert(solar_os_drv8830_drive(name, -1000) == ESP_OK && r[0] == 0x32);
+            assert(writes == before_drive + 1U && r[1] == recovered[i]);
+            assert(solar_os_drv8830_status(name, &status) == ESP_OK && status.chip.fault == recovered[i]);
+        }
+        r[1] = 0;
+    }
+
+    /* Active summary and OCP/ILIMIT latches still block, even alongside
+     * recovered UVLO/OTS history. Recovery must never clear these implicitly. */
+    const uint8_t blocking[] = {SOLAR_OS_DRV8830_FAULT, SOLAR_OS_DRV8830_OCP,
+        SOLAR_OS_DRV8830_ILIMIT, SOLAR_OS_DRV8830_FAULT | SOLAR_OS_DRV8830_UVLO,
+        SOLAR_OS_DRV8830_FAULT | SOLAR_OS_DRV8830_OTS,
+        SOLAR_OS_DRV8830_OCP | SOLAR_OS_DRV8830_UVLO,
+        SOLAR_OS_DRV8830_ILIMIT | SOLAR_OS_DRV8830_OTS};
+    for (size_t i = 0; i < sizeof(blocking); i++) {
+        regs[1][8][1] = blocking[i];
+        const unsigned before_drive = writes;
         assert(solar_os_drv8830_drive("motor1", 2000) == ESP_ERR_INVALID_STATE);
-        assert(solar_os_drv8830_status("motor1", &status) == ESP_OK && status.chip.fault == bit && !status.interrupt_present);
+        assert(writes == before_drive && regs[1][8][1] == blocking[i]);
+        assert(solar_os_drv8830_status("motor1", &status) == ESP_OK && status.chip.fault == blocking[i] && !status.interrupt_present);
         assert(solar_os_drv8830_clear("motor1") == ESP_OK && regs[1][8][0] == 0 && regs[1][8][1] == 0);
     }
     line_level = false;

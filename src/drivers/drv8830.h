@@ -17,6 +17,11 @@ typedef enum {
 #define SOLAR_OS_DRV8830_UVLO 0x04U
 #define SOLAR_OS_DRV8830_OTS 0x08U
 #define SOLAR_OS_DRV8830_ILIMIT 0x10U
+/* FAULT reports an active condition. OCP needs explicit recovery, and
+ * extended current limiting requires acknowledgement. UVLO/OTS source bits
+ * alone can remain as history after the chip has automatically recovered. */
+#define SOLAR_OS_DRV8830_DRIVE_FAULT_MASK \
+    (SOLAR_OS_DRV8830_FAULT | SOLAR_OS_DRV8830_OCP | SOLAR_OS_DRV8830_ILIMIT)
 
 typedef struct {
     esp_err_t (*read)(void *ctx, uint8_t reg, uint8_t *data, size_t len);
@@ -43,7 +48,8 @@ esp_err_t solar_os_drv8830_chip_init(solar_os_drv8830_chip_t *chip,
 esp_err_t solar_os_drv8830_chip_status(solar_os_drv8830_chip_t *chip,
                                        solar_os_drv8830_chip_status_t *status);
 /* Signed millivolts: zero coasts, otherwise abs(value) must be 480..5060.
- * Quantized to the nearest supported VSET code (6..63). */
+ * Quantized to the nearest supported VSET code (6..63). Recovered UVLO/OTS
+ * history remains readable and does not block drive on its own. */
 esp_err_t solar_os_drv8830_chip_drive(solar_os_drv8830_chip_t *chip, int voltage_mv);
 esp_err_t solar_os_drv8830_chip_stop(solar_os_drv8830_chip_t *chip, bool brake);
 /* Coasts before clearing, so fault recovery cannot restart the motor. */

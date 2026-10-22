@@ -58,7 +58,7 @@ esp_err_t solar_os_drv8830_chip_drive(solar_os_drv8830_chip_t *chip, int voltage
     solar_os_drv8830_chip_status_t status;
     esp_err_t ret = solar_os_drv8830_chip_status(chip, &status);
     if (ret != ESP_OK) return ret;
-    if (status.fault & 0x1fU) return ESP_ERR_INVALID_STATE;
+    if (status.fault & SOLAR_OS_DRV8830_DRIVE_FAULT_MASK) return ESP_ERR_INVALID_STATE;
     const solar_os_drv8830_mode_t mode = voltage_mv < 0 ? SOLAR_OS_DRV8830_REVERSE : SOLAR_OS_DRV8830_FORWARD;
     /* Pass through standby on reversal, restarting the chip's voltage ramp. */
     if ((status.mode == SOLAR_OS_DRV8830_FORWARD || status.mode == SOLAR_OS_DRV8830_REVERSE) && status.mode != mode) {

@@ -51,5 +51,17 @@ void solar_os_shell_cmd_motor(solar_os_context_t *ctx, int argc, char **argv)
     } else if (argc == 3 && strcmp(argv[1], "clear") == 0) {
         ret = solar_os_drv8830_clear(argv[2]);
     } else { usage(io); return; }
+    if (ret == ESP_ERR_INVALID_STATE && argc == 4 && strcmp(argv[1], "drive") == 0) {
+        solar_os_drv8830_status_t status;
+        if (solar_os_drv8830_status(argv[2], &status) == ESP_OK &&
+            ((status.chip.fault & SOLAR_OS_DRV8830_DRIVE_FAULT_MASK) || status.fault_asserted)) {
+            solar_os_shell_io_printf(io,
+                "motor: fault blocks drive (fault=0x%02x int=%s); inspect 'motor status %s' before 'motor clear %s'\r\n",
+                (unsigned)status.chip.fault,
+                !status.interrupt_present ? "unwired" : status.fault_asserted ? "asserted" : "inactive",
+                argv[2], argv[2]);
+            return;
+        }
+    }
     if (ret != ESP_OK) solar_os_shell_io_printf(io, "motor: %s\r\n", solar_os_shell_error_text(ret));
 }

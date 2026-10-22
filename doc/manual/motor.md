@@ -74,9 +74,18 @@ limiting). If `int` is wired, status also samples its active-low level. This
 input is sampled on status and drive calls; there is no asynchronous fault
 callback. The chip's hardware protections operate independently.
 
-A nonzero drive command is rejected while fault bits or the wired fault input
-are asserted. `clear` first coasts, then clears fault latches, leaving the
-motor stopped. Read status again before resuming. Stop commands remain
+A nonzero drive command is rejected while the active `FAULT` bit, an `OCP`
+or `ILIMIT` latch, or the wired fault input is asserted. The shell identifies
+this as a fault blocking drive and reports the register and input state.
+`UVLO` and `OTS` source bits alone can record earlier undervoltage or thermal
+events after the chip has automatically recovered. They remain visible in
+`status` and do not require `clear` before changing voltage or direction when
+`FAULT=0` and a wired fault input is inactive. Recovery is checked on every
+nonzero drive command, including devices without an interrupt wire.
+
+`clear` first coasts, then clears fault latches, leaving the motor stopped.
+It is an explicit recovery command, not a prerequisite for ordinary drive
+updates. Read status again before resuming after a blocking fault. Stop commands remain
 available during faults. A failed control write attempts to coast and returns
 the original error; a communication failure cannot guarantee a physical stop.
 If detach cannot stop the bridge, it keeps the attachment and resource claims
