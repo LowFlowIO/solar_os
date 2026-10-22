@@ -22,6 +22,7 @@ TARGETS += pwm_servo_test pwm_provider_test
 TARGETS += pca9685_test pca9685_expansion_test
 TARGETS += drv8830_test
 TARGETS += motor_service_test
+TARGETS += ssd1306_named_bus_test
 TARGETS += gt911_test
 TARGETS += sdmmc_expansion_test
 TARGETS += axp2101_service_test
@@ -247,6 +248,16 @@ x4pro_expansion_test: x4pro_expansion_test.c $(ROOT)/src/services/solar_os_x4pro
 EPD_U8G2_TEST_SOURCES := $(addprefix $(ROOT)/components/u8g2/src/clib/, \
         u8g2_setup.c u8g2_buffer.c u8g2_font.c u8g2_ll_hvline.c u8g2_hvline.c \
         u8g2_intersection.c u8x8_setup.c u8x8_display.c)
+
+OLED_U8G2_TEST_SOURCES := $(EPD_U8G2_TEST_SOURCES) $(addprefix $(ROOT)/components/u8g2/src/clib/, \
+        u8x8_byte.c u8x8_cad.c u8x8_message.c u8x8_gpio.c u8g2_message.c u8x8_d_ssd1306_128x64_noname.c)
+ssd1306_named_bus_test: ssd1306_named_bus_test.c $(ROOT)/src/drivers/ssd1306.c $(ROOT)/src/drivers/ssd1306.h \
+        $(ROOT)/src/services/solar_os_ssd1306.c $(ROOT)/src/services/solar_os_ssd1306.h $(OLED_U8G2_TEST_SOURCES)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -Wno-unused-parameter -ffunction-sections -fdata-sections \
+		-include compat.h -Iepd_stubs -Iexpansion_stubs -Iinputronic_stubs -I. \
+		-I$(ROOT)/src -I$(ROOT)/src/drivers -I$(ROOT)/src/services -I$(ROOT)/components/u8g2/src/clib \
+		ssd1306_named_bus_test.c $(ROOT)/src/drivers/ssd1306.c $(ROOT)/src/services/solar_os_ssd1306.c \
+		$(OLED_U8G2_TEST_SOURCES) -Wl,--gc-sections -o $@
 
 epd_uc8279_test: epd_uc8279_test.c $(ROOT)/src/drivers/epd_ultrachip.c $(ROOT)/src/drivers/epd_ultrachip.h \
         $(ROOT)/src/drivers/epd_uc8279.c $(ROOT)/src/drivers/epd_uc8279.h \
@@ -1222,6 +1233,7 @@ test: $(TARGETS)
 	./pca9685_expansion_test
 	./drv8830_test
 	./motor_service_test
+	./ssd1306_named_bus_test
 	./epd_xteink_identify_test
 	./x4pro_expansion_test
 	./gt911_test

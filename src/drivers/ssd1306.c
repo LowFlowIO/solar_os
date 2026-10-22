@@ -39,11 +39,8 @@ static uint8_t ssd1306_u8x8_byte_cb(u8x8_t *u8x8,
     }
 
     switch (message) {
-    case U8X8_MSG_BYTE_INIT: {
-        const esp_err_t err = i2c_bus_init();
-        ssd1306_set_error(display, err);
-        return err == ESP_OK;
-    }
+    case U8X8_MSG_BYTE_INIT:
+        return 1; /* The selected transport was probed before display setup. */
     case U8X8_MSG_BYTE_START_TRANSFER:
         display->transfer_len = 0;
         return 1;
@@ -63,9 +60,9 @@ static uint8_t ssd1306_u8x8_byte_cb(u8x8_t *u8x8,
         if (display->transfer_len == 0) {
             return 1;
         }
-        const esp_err_t err = i2c_bus_transmit(display->address,
-                                               display->transfer,
-                                               display->transfer_len);
+        const esp_err_t err = display->io.transmit(display->io.ctx,
+                                                    display->transfer,
+                                                    display->transfer_len);
         display->transfer_len = 0;
         ssd1306_set_error(display, err);
         return err == ESP_OK;
@@ -109,28 +106,29 @@ static uint8_t ssd1306_u8x8_gpio_delay_cb(u8x8_t *u8x8,
     }
 }
 
-esp_err_t ssd1306_init(ssd1306_t *display,
-                       uint8_t address,
-                       ssd1306_controller_t controller)
+esp_err_t ssd1306_init_with_io(ssd1306_t *display,
+                               uint8_t address,
+                               ssd1306_controller_t controller,
+                               const ssd1306_io_t *io)
 {
     if (display == NULL ||
         (address != 0x3c && address != 0x3d) ||
         (controller != SSD1306_CONTROLLER_SSD1306 &&
-         controller != SSD1306_CONTROLLER_SH1106)) {
+         controller != SSD1306_CONTROLLER_SH1106) ||
+        io == NULL || io->probe == NULL || io->transmit == NULL) {
         return ESP_ERR_INVALID_ARG;
     }
 
+    const ssd1306_io_t transport = *io;
     memset(display, 0, sizeof(*display));
     display->address = address;
+    display->io = transport;
     display->last_error = ESP_OK;
 
-    esp_err_t ret = i2c_bus_init();
-    if (ret == ESP_OK) {
-        ret = i2c_bus_probe(address);
-    }
+    esp_err_t ret = display->io.probe(display->io.ctx);
     if (ret != ESP_OK) {
         memset(display, 0, sizeof(*display));
-        return ret == ESP_ERR_INVALID_STATE ? ret : ESP_ERR_INVALID_RESPONSE;
+        return ret == ESP_ERR_NOT_FOUND ? ESP_ERR_INVALID_RESPONSE : ret;
     }
 
     u8g2_SetupDisplay(&display->u8g2,
@@ -156,6 +154,31 @@ esp_err_t ssd1306_init(ssd1306_t *display,
 
     display->initialized = true;
     return ESP_OK;
+}
+
+static esp_err_t ssd1306_default_probe(void *ctx)
+{
+    const ssd1306_t *display = ctx;
+    const esp_err_t ret = i2c_bus_init();
+    return ret == ESP_OK ? i2c_bus_probe(display->address) : ret;
+}
+
+static esp_err_t ssd1306_default_transmit(void *ctx, const uint8_t *data, size_t len)
+{
+    const ssd1306_t *display = ctx;
+    return i2c_bus_transmit(display->address, data, len);
+}
+
+esp_err_t ssd1306_init(ssd1306_t *display,
+                       uint8_t address,
+                       ssd1306_controller_t controller)
+{
+    const ssd1306_io_t io = {
+        .probe = ssd1306_default_probe,
+        .transmit = ssd1306_default_transmit,
+        .ctx = display,
+    };
+    return ssd1306_init_with_io(display, address, controller, &io);
 }
 
 void ssd1306_deinit(ssd1306_t *display)

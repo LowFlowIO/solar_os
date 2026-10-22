@@ -889,6 +889,12 @@ binding can still be reserved for future interrupt-driven operation.
 
 ### SSD1306 or SH1106 on SolarTerm
 
+OLED attachments use the named I2C bus for the address probe, initialization,
+display updates, and shutdown. This also supports runtime-created buses on
+headless boards. Other devices at different addresses can share the bus.
+Use the wiring of the selected bus; the SolarTerm example below uses its
+default `i2c0` pins.
+
 ```text
 VCC -> 3V3        GND -> GND
 SDA -> GPIO13     SCL -> GPIO14

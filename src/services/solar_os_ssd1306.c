@@ -5,6 +5,7 @@
 #include "esp_attr.h"
 #include "esp_check.h"
 #include "esp_log.h"
+#include "solar_os_buses.h"
 #include "solar_os_display.h"
 #include "ssd1306.h"
 
@@ -120,6 +121,18 @@ static esp_err_t register_display_target(solar_os_ssd1306_device_t *device)
     return solar_os_display_register_target(&target);
 }
 
+static esp_err_t probe(void *ctx)
+{
+    const solar_os_ssd1306_device_t *device = ctx;
+    return solar_os_bus_i2c_probe(device->i2c_bus, device->address);
+}
+
+static esp_err_t transmit(void *ctx, const uint8_t *data, size_t len)
+{
+    const solar_os_ssd1306_device_t *device = ctx;
+    return solar_os_bus_i2c_transmit(device->i2c_bus, device->address, data, len);
+}
+
 static esp_err_t attach_display(const char *name,
                                 const solar_os_expansion_binding_t *bindings,
                                 size_t binding_count,
@@ -153,7 +166,8 @@ static esp_err_t attach_display(const char *name,
     strlcpy(device->name, name, sizeof(device->name));
     strlcpy(device->i2c_bus, i2c_bus, sizeof(device->i2c_bus));
 
-    esp_err_t ret = ssd1306_init(&device->display, address, controller);
+    const ssd1306_io_t io = {.probe = probe, .transmit = transmit, .ctx = device};
+    esp_err_t ret = ssd1306_init_with_io(&device->display, address, controller, &io);
     if (ret == ESP_OK) {
         ret = register_display_target(device);
     }
