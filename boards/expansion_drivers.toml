@@ -504,6 +504,32 @@ role = "osc_hz"
 min = 20000000
 max = 30000000
 
+[drivers.drv8830]
+summary = "TI DRV8830 brushed DC motor driver"
+package = "drv8830"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2c"]
+default_name = "motor0"
+
+[[drivers.drv8830.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+
+[[drivers.drv8830.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x60..0x68"
+required = true
+allowed = [0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68]
+
+[[drivers.drv8830.bindings]]
+key = "int"
+kind = "gpio"
+hint = "gpio"
+role = "int"
+
 [drivers.bq25896]
 summary = "TI BQ25896 battery charger"
 package = "bq25896"

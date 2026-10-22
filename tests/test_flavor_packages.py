@@ -89,6 +89,23 @@ class FlavorPackagesTest(unittest.TestCase):
                 self.assertTrue(pruned["service_pwm"])
                 self.assertEqual(pruned["driver_pwm_native"], enabled)
 
+    def test_drv8830_is_optional_and_requires_expansion_i2c(self):
+        for flavor in ("classic", "writerdeck"):
+            _, _, groups, packages = self.resolve(flavor)
+            self.assertFalse(groups["drv8830"])
+            self.assertFalse(packages["drv8830"])
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["drv8830"])
+        for target in ("esp32", "esp32s3"):
+            selected = generate_flavor_config.apply_target_pruning(self.catalog, packages, target)
+            _, supported = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, selected, {"i2c", "expansion_i2c"})
+            self.assertTrue(supported["drv8830"])
+            self.assertTrue(supported["service_i2c"])
+            _, unsupported = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, selected, {"i2c"})
+            self.assertFalse(unsupported["drv8830"])
+
     def test_pca9685_is_optional_and_uses_i2c_without_native_pwm(self):
         _, _, core_groups, core_packages = self.resolve("writerdeck")
         self.assertFalse(core_groups["pca9685"])

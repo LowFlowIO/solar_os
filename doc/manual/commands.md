@@ -1313,6 +1313,10 @@ available for the compiled board.
 | `haptic` | `haptic [list]` | List registered haptic devices, their concrete drivers, and supported effect range. |
 | `haptic` | `haptic play <effect> [name]` | Play one numbered effect on a haptic device. |
 | `haptic` | `haptic stop [name]` | Stop the active haptic effect. |
+| `motor` | `motor [list]` | List attached motors and bus bindings. |
+| `motor` | `motor status <name>` | Read bridge mode, nominal voltage, fault flags and optional active-low fault input. |
+| `motor` | `motor drive <name> <signed-mV>` | Set forward (positive) or reverse (negative) voltage: magnitude `480..5060`, or zero to coast. |
+| `motor` | `motor coast\|brake\|clear <name>` | Coast, brake, or coast and clear fault latches. |
 | `charger` | `charger [list]` | List registered battery chargers, concrete drivers, and valid configuration ranges. |
 | `charger` | `charger status [name]` | Show charger state, input status, configured limits, and the raw fault byte. |
 | `charger` | `charger enable <on\|off> [name]` | Enable or disable charging. |

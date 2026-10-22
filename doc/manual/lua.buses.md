@@ -144,7 +144,7 @@ local reply = solaros.buses.onewire_xfer("onewire0", 9, "\xcc\x44")
 `autostart`, `detachable`, and normalized `bindings`. Each binding contains
 `kind`, `role`, `target`, `value`, and `aux`. `attach(driver, name, bindings)`
 and `detach(name)` mirror the shell lifecycle. Binding tables accept `spi`,
-`cs` (or `ce`), `i2c`, `addr`, `alt_addr`, `uart`, `ps2`, `gpio`, `irq`, `reset` (or
+`cs` (or `ce`), `i2c`, `addr`, `alt_addr`, `uart`, `ps2`, `gpio`, `irq`, `int`, `reset` (or
 `rst`), `dc`, `busy`, `data`, `bck`, `din`, `rck`, `mclk`, `ws`, `dout`,
 `adc`, `pwm`, `count`, `keys`, `x`, `y`, `min`, `center`, `max`, and
 `deadzone`. `ps2` names an

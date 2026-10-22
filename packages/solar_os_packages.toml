@@ -622,6 +622,11 @@ label = "PCA9685 PWM controller"
 category = "Expansion hardware"
 members = ["pca9685"]
 
+[groups.drv8830]
+label = "DRV8830 DC motor driver"
+category = "Expansion hardware"
+members = ["drv8830"]
+
 [groups.bq25896]
 label = "BQ25896 battery charger"
 category = "Expansion hardware"
@@ -1927,6 +1932,20 @@ sources = [
   "services/solar_os_pca9685_driver.c",
 ]
 requires = ["esp_driver_i2c"]
+capabilities = ["expansion_i2c"]
+
+[packages.drv8830]
+label = "expansion.drv8830"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_drv8830_expansion_driver"]
+depends = ["service_expansion", "service_i2c"]
+sources = [
+  "drivers/drv8830.c",
+  "services/solar_os_drv8830.c",
+  "services/solar_os_drv8830_driver.c",
+  "shell/solar_os_shell_motor.c",
+]
+requires = ["esp_driver_i2c", "esp_driver_gpio"]
 capabilities = ["expansion_i2c"]
 
 [packages.bq25896]

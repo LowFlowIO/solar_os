@@ -59,6 +59,7 @@ COMMAND_GITHUB_HREFS = {
     "job": "jobs.md",
     "jobs": "jobs.md",
     "link": "link.md",
+    "motor": "motor.md",
     "servo": "servo.md",
 }
 # Bare names intentionally owned by a richer topic or an earlier focused page.
@@ -82,6 +83,7 @@ DERIVED_ALIAS_OWNERS = {
     ("command.jobs", "jobs"): "jobs",
     ("command.link", "link"): "link",
     ("command.meshcore", "meshcore"): "meshcore",
+    ("command.motor", "motor"): "motor",
     ("command.mqtt", "mqtt"): "network",
     ("command.network", "network"): "network",
     ("command.neopixel", "neopixel"): "expansion",

@@ -20,6 +20,7 @@ TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_tes
 TARGETS += frontlight_pwm_test epd_xteink_identify_test x4pro_expansion_test
 TARGETS += pwm_servo_test pwm_provider_test
 TARGETS += pca9685_test pca9685_expansion_test
+TARGETS += drv8830_test
 TARGETS += gt911_test
 TARGETS += sdmmc_expansion_test
 TARGETS += axp2101_service_test
@@ -792,6 +793,14 @@ pca9685_expansion_test: pca9685_expansion_test.c $(ROOT)/src/drivers/pca9685.c $
 		$(ROOT)/src/services/solar_os_pca9685_driver.c $(ROOT)/src/services/solar_os_pwm.c \
 		$(ROOT)/src/services/solar_os_servo.c -pthread -lm -o $@
 
+drv8830_test: drv8830_test.c $(ROOT)/src/drivers/drv8830.c $(ROOT)/src/drivers/drv8830.h \
+		$(ROOT)/src/services/solar_os_drv8830.c $(ROOT)/src/services/solar_os_drv8830.h \
+		$(ROOT)/src/services/solar_os_drv8830_driver.c
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Igpio_controller_stubs -Ipwm_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/src -I$(ROOT)/src/drivers -I$(ROOT)/src/services \
+		drv8830_test.c $(ROOT)/src/drivers/drv8830.c $(ROOT)/src/services/solar_os_drv8830.c \
+		$(ROOT)/src/services/solar_os_drv8830_driver.c -pthread -o $@
+
 drv2605_test: drv2605_test.c $(ROOT)/src/drivers/drv2605.c $(ROOT)/src/drivers/drv2605.h
 	$(CC) $(CFLAGS) -I. -I$(ROOT)/src/drivers \
 		drv2605_test.c $(ROOT)/src/drivers/drv2605.c -o $@
@@ -1206,6 +1215,7 @@ test: $(TARGETS)
 	./pwm_provider_test
 	./pca9685_test
 	./pca9685_expansion_test
+	./drv8830_test
 	./epd_xteink_identify_test
 	./x4pro_expansion_test
 	./gt911_test

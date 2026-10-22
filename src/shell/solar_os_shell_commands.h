@@ -65,6 +65,9 @@ void solar_os_shell_cmd_gnss(solar_os_context_t *ctx, int argc, char **argv);
 #if SOLAR_OS_PACKAGE_SERVICE_HAPTIC
 void solar_os_shell_cmd_haptic(solar_os_context_t *ctx, int argc, char **argv);
 #endif
+#if SOLAR_OS_PACKAGE_DRV8830
+void solar_os_shell_cmd_motor(solar_os_context_t *ctx, int argc, char **argv);
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_CHARGER
 void solar_os_shell_cmd_charger(solar_os_context_t *ctx, int argc, char **argv);
 #endif

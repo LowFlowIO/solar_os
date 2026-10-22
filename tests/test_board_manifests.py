@@ -176,6 +176,31 @@ class BoardManifestTest(unittest.TestCase):
         self.assertEqual(image["build"], base["build"])
         self.assertEqual(image["upload"], base["upload"])
 
+    def test_drv8830_named_bus_addresses_and_optional_int(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        device = {"driver": "drv8830", "name": "motor0",
+                  "bindings": {"i2c": "i2c0", "addr": 0x60}}
+        board.setdefault("devices", []).append(device)
+        validate_board(board, self.drivers)
+        self.assertIn("drv8830", required_packages(board, self.drivers))
+        device["bindings"]["int"] = 1
+        pin = next(pin for pin in board["pins"] if pin["gpio"] == 1)
+        pin.update(policy="fixed", user=False, adc=False, pwm=False)
+        for address in range(0x60, 0x69):
+            device["bindings"]["addr"] = address
+            validate_board(board, self.drivers)
+        header = generate_header(board, self.drivers)
+        self.assertIn('.driver = "drv8830", .name = "motor0"', header)
+        self.assertIn('.role = "int"', header)
+        for address in (0x5f, 0x69, 0xc0):
+            device["bindings"]["addr"] = address
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+        device["bindings"]["addr"] = 0x60
+        device["bindings"]["i2c"] = "missing"
+        with self.assertRaises(ManifestError):
+            validate_board(board, self.drivers)
+
     def test_pca9685_overlay_and_calibration_bindings(self) -> None:
         board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
         device = {"driver": "pca9685", "name": "servos0",

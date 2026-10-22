@@ -170,7 +170,7 @@ service is compiled.
 - `detach(name)`: detach a device and release its resource claims and bus leases.
 
 Binding dictionaries accept `spi`, `cs` (or `ce`), `i2c`, `addr`, `alt_addr`, `uart`,
-`ps2`, `gpio`, `irq`, `reset` (or `rst`), `data`, `bck`, `din`, `rck`, `dc`,
+`ps2`, `gpio`, `irq`, `int`, `reset` (or `rst`), `data`, `bck`, `din`, `rck`, `dc`,
 `mclk`, `ws`, `dout`, `busy`, `adc`, `pwm`, `count`, `keys`, `x`, `y`, `min`,
 `center`, `max`, and `deadzone`. `ps2` names an existing PS/2 bus; `x` and `y`
 name scalar streams;
