@@ -2,6 +2,16 @@
 
 ## 4.x
 
+- **4.16.27** — 2026-10-22 — Added named motor and encoder services with
+  shell controls and Python/Lua bindings. DRV8830 motors use normalized signed
+  drive commands over named I2C buses, with an optional fault input. Native
+  A/B encoders support explicit x1, x2, and x4 counting modes, signed counts,
+  and reset. Fixed SSD1306/SH1106 OLED attachment on named buses and reduced
+  I2C refresh overhead; OLED emotion faces now default to animated 25 fps
+  submissions. Emotion colors follow terminal settings, with independent
+  foreground/background overrides. Fixed T-Deck keyboard and Wi-Fi wake
+  regressions, restored keyboard backlight state after suspend, and preserved
+  SD power and SPI chip selects during light sleep.
 - **4.16.25** — 2026-10-21 — Added an optional emotion engine for
   ESP32-S3 devices with executable PSRAM. Python and Lua scripts can animate
   21 Cozmo-style expressions on supported display targets, control gaze and

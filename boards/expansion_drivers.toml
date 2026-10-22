@@ -504,6 +504,85 @@ role = "osc_hz"
 min = 20000000
 max = 30000000
 
+[drivers.pcnt-encoder]
+summary = "Hardware quadrature encoder with explicit x1/x2/x4 counting"
+package = "pcnt_encoder"
+targets = ["esp32", "esp32s3"]
+capabilities = ["gpio"]
+default_name = "encoder0"
+
+[[drivers.pcnt-encoder.bindings]]
+key = "a"
+kind = "gpio"
+hint = "gpio"
+required = true
+
+[[drivers.pcnt-encoder.bindings]]
+key = "b"
+kind = "gpio"
+hint = "gpio"
+required = true
+
+[[drivers.pcnt-encoder.bindings]]
+key = "mode"
+kind = "parameter"
+hint = "1|2|4"
+required = true
+allowed = [1, 2, 4]
+
+[[drivers.pcnt-encoder.bindings]]
+key = "invert"
+kind = "parameter"
+hint = "0|1"
+allowed = [0, 1]
+
+[[drivers.pcnt-encoder.bindings]]
+key = "pull"
+kind = "parameter"
+hint = "0|1|2"
+allowed = [0, 1, 2]
+
+[[drivers.pcnt-encoder.bindings]]
+key = "filter_ns"
+kind = "parameter"
+hint = "1000"
+min = 0
+max = 2147483647
+
+[drivers.drv8830]
+summary = "TI DRV8830 brushed DC motor driver"
+package = "drv8830"
+targets = ["esp32", "esp32s3"]
+capabilities = ["expansion_i2c"]
+default_name = "motor0"
+
+[[drivers.drv8830.bindings]]
+key = "i2c"
+kind = "i2c_bus"
+hint = "bus"
+required = true
+
+[[drivers.drv8830.bindings]]
+key = "addr"
+kind = "i2c_address"
+hint = "0x60..0x68"
+required = true
+allowed = [0x60, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66, 0x67, 0x68]
+
+[[drivers.drv8830.bindings]]
+key = "int"
+kind = "gpio"
+hint = "gpio"
+role = "int"
+
+[[drivers.drv8830.bindings]]
+key = "max_mv"
+kind = "parameter"
+hint = "5060"
+role = "max_mv"
+min = 482
+max = 5060
+
 [drivers.bq25896]
 summary = "TI BQ25896 battery charger"
 package = "bq25896"

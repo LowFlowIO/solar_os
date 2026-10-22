@@ -57,6 +57,12 @@
 #if SOLAR_OS_PACKAGE_SERVICE_SERVO
 #include "solar_os_servo.h"
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_MOTOR
+#include "solar_os_motor.h"
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+#include "solar_os_encoder.h"
+#endif
 #include "solar_os_identity.h"
 #include "solar_os_input.h"
 #if SOLAR_OS_PACKAGE_APP_INBOX
@@ -193,6 +199,8 @@ typedef enum {
     SHELL_COMPLETION_SOURCE_GPIO_PINS,
     SHELL_COMPLETION_SOURCE_PWM_OUTPUTS,
     SHELL_COMPLETION_SOURCE_SERVO_NAMES,
+    SHELL_COMPLETION_SOURCE_MOTOR_NAMES,
+    SHELL_COMPLETION_SOURCE_ENCODER_NAMES,
     SHELL_COMPLETION_SOURCE_I2C_ARGUMENTS,
     SHELL_COMPLETION_SOURCE_ONEWIRE_BUSES,
     SHELL_COMPLETION_SOURCE_PS2_BUSES,
@@ -708,6 +716,12 @@ static const shell_command_t shell_builtin_commands[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_HAPTIC
     {"haptic", "haptic feedback tools", solar_os_shell_cmd_haptic},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_MOTOR
+    {"motor", "control attached motors", solar_os_shell_cmd_motor},
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+    {"encoder", "read named encoder counts", solar_os_shell_cmd_encoder},
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_CHARGER
     {"charger", "battery charger tools", solar_os_shell_cmd_charger},
 #endif
@@ -1182,6 +1196,12 @@ static const char * const neopixel_subcommands[] = {
     "clear",
     "show",
 };
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_MOTOR
+static const char * const motor_subcommands[] = {"list", "status", "drive", "coast", "brake", "clear"};
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+static const char * const encoder_subcommands[] = {"list", "status", "read", "reset"};
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_OSC
 static const char * const osc_subcommands[] = {
@@ -2686,6 +2706,20 @@ static const char * const path_neopixel_fill[] = {"neopixel", "fill"};
 static const char * const path_neopixel_clear[] = {"neopixel", "clear"};
 static const char * const path_neopixel_show[] = {"neopixel", "show"};
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_MOTOR
+static const char * const path_motor[] = {"motor"};
+static const char * const path_motor_status[] = {"motor", "status"};
+static const char * const path_motor_drive[] = {"motor", "drive"};
+static const char * const path_motor_coast[] = {"motor", "coast"};
+static const char * const path_motor_brake[] = {"motor", "brake"};
+static const char * const path_motor_clear[] = {"motor", "clear"};
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+static const char * const path_encoder[] = {"encoder"};
+static const char * const path_encoder_status[] = {"encoder", "status"};
+static const char * const path_encoder_read[] = {"encoder", "read"};
+static const char * const path_encoder_reset[] = {"encoder", "reset"};
+#endif
 static const char * const path_radio[] = {"radio"};
 static const char * const path_radio_status[] = {"radio", "status"};
 static const char * const path_radio_config[] = {"radio", "config"};
@@ -3028,6 +3062,18 @@ static const char * const path_ota_boot[] = {"ota", "boot"};
         .path = path_array, \
         .path_count = SHELL_ARRAY_COUNT(path_array), \
         .source = SHELL_COMPLETION_SOURCE_SERVO_NAMES, \
+    }
+#define SHELL_COMPLETION_ENCODER_NAMES(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .source = SHELL_COMPLETION_SOURCE_ENCODER_NAMES, \
+    }
+#define SHELL_COMPLETION_MOTOR_NAMES(path_array) \
+    { \
+        .path = path_array, \
+        .path_count = SHELL_ARRAY_COUNT(path_array), \
+        .source = SHELL_COMPLETION_SOURCE_MOTOR_NAMES, \
     }
 #define SHELL_COMPLETION_I2C_ARGUMENTS(path_array) \
     { \
@@ -3775,6 +3821,20 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_EXPANSION_DEVICES(path_neopixel_clear),
     SHELL_COMPLETION_EXPANSION_DEVICES(path_neopixel_show),
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_MOTOR
+    SHELL_COMPLETION_STATIC(path_motor, motor_subcommands),
+    SHELL_COMPLETION_MOTOR_NAMES(path_motor_status),
+    SHELL_COMPLETION_MOTOR_NAMES(path_motor_drive),
+    SHELL_COMPLETION_MOTOR_NAMES(path_motor_coast),
+    SHELL_COMPLETION_MOTOR_NAMES(path_motor_brake),
+    SHELL_COMPLETION_MOTOR_NAMES(path_motor_clear),
+#endif
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+    SHELL_COMPLETION_STATIC(path_encoder, encoder_subcommands),
+    SHELL_COMPLETION_ENCODER_NAMES(path_encoder_status),
+    SHELL_COMPLETION_ENCODER_NAMES(path_encoder_read),
+    SHELL_COMPLETION_ENCODER_NAMES(path_encoder_reset),
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_RADIO
     SHELL_COMPLETION_STATIC(path_radio, radio_subcommands),
     SHELL_COMPLETION_RADIOS(path_radio_status),
@@ -3961,6 +4021,8 @@ static uint16_t shell_completion_rule_next(uint16_t index, const char *command)
 #undef SHELL_COMPLETION_GPIO_PINS
 #undef SHELL_COMPLETION_PWM_OUTPUTS
 #undef SHELL_COMPLETION_SERVO_NAMES
+#undef SHELL_COMPLETION_MOTOR_NAMES
+#undef SHELL_COMPLETION_ENCODER_NAMES
 #undef SHELL_COMPLETION_STREAMS
 #undef SHELL_COMPLETION_SCALAR_STREAMS
 #undef SHELL_COMPLETION_SPI_CS
@@ -6875,6 +6937,28 @@ static void shell_completion_emit_servo_names(shell_completion_match_t *state)
 #endif
 }
 
+static void shell_completion_emit_encoder_names(shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+    solar_os_encoder_info_t info;
+    for (size_t i = 0; solar_os_encoder_get(i, &info); i++) shell_completion_emit(state, info.name);
+#else
+    (void)state;
+#endif
+}
+
+static void shell_completion_emit_motor_names(shell_completion_match_t *state)
+{
+#if SOLAR_OS_PACKAGE_SERVICE_MOTOR
+    solar_os_motor_info_t info;
+    for (size_t i = 0; solar_os_motor_get(i, &info); i++) {
+        shell_completion_emit(state, info.name);
+    }
+#else
+    (void)state;
+#endif
+}
+
 static void shell_completion_emit_spi_buses(shell_completion_match_t *state)
 {
 #if SOLAR_OS_PACKAGE_SERVICE_RESOURCES
@@ -8584,6 +8668,12 @@ static bool shell_completion_collect_matches(solar_os_context_t *ctx,
             break;
         case SHELL_COMPLETION_SOURCE_SERVO_NAMES:
             shell_completion_emit_servo_names(state);
+            break;
+        case SHELL_COMPLETION_SOURCE_MOTOR_NAMES:
+            shell_completion_emit_motor_names(state);
+            break;
+        case SHELL_COMPLETION_SOURCE_ENCODER_NAMES:
+            shell_completion_emit_encoder_names(state);
             break;
         case SHELL_COMPLETION_SOURCE_I2C_ARGUMENTS:
             shell_completion_emit_i2c_arguments(state, tokens, token_count);

@@ -121,6 +121,21 @@ label = "Haptic feedback"
 category = "Hardware interfaces"
 members = ["service_haptic"]
 
+[groups.motor]
+label = "Motor control"
+category = "Hardware interfaces"
+members = ["service_motor"]
+
+[groups.encoder]
+label = "Encoder counts"
+category = "Hardware interfaces"
+members = ["service_encoder"]
+
+[groups.pcnt_encoder]
+label = "PCNT quadrature encoders"
+category = "Expansion hardware"
+members = ["pcnt_encoder"]
+
 [groups.charger]
 label = "Battery charger"
 category = "Hardware interfaces"
@@ -621,6 +636,11 @@ members = ["drv2605"]
 label = "PCA9685 PWM controller"
 category = "Expansion hardware"
 members = ["pca9685"]
+
+[groups.drv8830]
+label = "DRV8830 DC motor driver"
+category = "Expansion hardware"
+members = ["drv8830"]
 
 [groups.bq25896]
 label = "BQ25896 battery charger"
@@ -1523,6 +1543,23 @@ sources = [
   "shell/solar_os_shell_haptic.c",
 ]
 
+[packages.service_motor]
+label = "service.motor"
+sources = ["services/solar_os_motor.c", "shell/solar_os_shell_motor.c"]
+
+[packages.service_encoder]
+label = "service.encoder"
+sources = ["services/solar_os_encoder.c", "shell/solar_os_shell_encoder.c"]
+
+[packages.pcnt_encoder]
+label = "expansion.pcnt-encoder"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_pcnt_encoder_expansion_driver"]
+depends = ["service_expansion", "service_encoder"]
+sources = ["drivers/pcnt_encoder.c", "services/solar_os_pcnt_encoder.c", "services/solar_os_pcnt_encoder_driver.c"]
+requires = ["esp_driver_pcnt", "esp_driver_gpio"]
+capabilities = ["gpio"]
+
 [packages.service_charger]
 label = "service.charger"
 sources = [
@@ -1927,6 +1964,19 @@ sources = [
   "services/solar_os_pca9685_driver.c",
 ]
 requires = ["esp_driver_i2c"]
+capabilities = ["expansion_i2c"]
+
+[packages.drv8830]
+label = "expansion.drv8830"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_drv8830_expansion_driver"]
+depends = ["service_expansion", "service_i2c", "service_motor"]
+sources = [
+  "drivers/drv8830.c",
+  "services/solar_os_drv8830.c",
+  "services/solar_os_drv8830_driver.c",
+]
+requires = ["esp_driver_i2c", "esp_driver_gpio"]
 capabilities = ["expansion_i2c"]
 
 [packages.bq25896]
