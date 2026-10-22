@@ -65,6 +65,9 @@ typedef struct {
     solar_os_input_source_t input_source;
 } tdeck_device_t;
 static esp_err_t solar_os_backlight_toggle(void) { return ESP_OK; }
+static void vTaskDelay(unsigned ticks) { now_us += (int64_t)ticks * 1000; }
+#define pdMS_TO_TICKS(ms) (ms)
+#define TDECK_SCAN_SETTLE_MS 50U
 #include "tdeck_matrix.inc"
 
 static int trackball_levels[64];

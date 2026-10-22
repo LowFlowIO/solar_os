@@ -9,11 +9,33 @@
 #include "solar_os_input_composition.h"
 
 static unsigned backlight_toggles;
+static unsigned controller_duty, requested_duty;
+static bool native_toggle_pending;
+static void vTaskDelay(unsigned ticks)
+{
+    now_us += (int64_t)ticks * 1000;
+    if (native_toggle_pending) {
+        assert(ticks >= 35);
+        controller_duty = controller_duty ? 0 : 128;
+        native_toggle_pending = false;
+    }
+}
+#define pdMS_TO_TICKS(ms) (ms)
+#define TDECK_SCAN_SETTLE_MS 50U
 static esp_err_t solar_os_backlight_toggle(void)
-{ backlight_toggles++; return ESP_OK; }
+{
+    backlight_toggles++;
+    requested_duty = requested_duty ? 0 : 26;
+    controller_duty = requested_duty;
+    return ESP_OK;
+}
 
 #define TDECK_COLUMNS 5U
 #define TDECK_ROWS 7U
+#define TDECK_POLL_MS 10U
+#define TDECK_MODE_RAW 3U
+#define TDECK_RECONFIGURE_GAP_US 250000
+#define SOLAR_OS_TDECK_KEYBOARD_ADDRESS 0x55U
 typedef struct { uint8_t normal, symbol; } tdeck_key_t;
 static const tdeck_key_t keymap[TDECK_COLUMNS][TDECK_ROWS] = SOLAR_OS_BOARD_TDECK_KEYMAP;
 typedef struct {
@@ -22,7 +44,32 @@ typedef struct {
     bool microphone_tab_pending;
     uint8_t microphone_tab_modifiers;
     solar_os_input_source_t input_source;
+    char i2c_bus[16];
+    bool raw_ready, wait_for_release;
+    int64_t last_poll_us;
 } tdeck_device_t;
+static uint8_t controller_matrix[TDECK_COLUMNS];
+static unsigned raw_selections, reads;
+static esp_err_t read_error, write_error;
+static bool stale_response;
+static esp_err_t solar_os_bus_i2c_transmit(const char *bus, unsigned address,
+                                          const uint8_t *data, size_t size)
+{
+    (void)bus;
+    assert(address == 0x55 && size == 1 && data[0] == 3);
+    raw_selections++;
+    return write_error;
+}
+static esp_err_t solar_os_bus_i2c_receive(const char *bus, unsigned address,
+                                         uint8_t *data, size_t size)
+{
+    (void)bus;
+    assert(address == 0x55 && size == TDECK_COLUMNS);
+    reads++;
+    if (stale_response) { memset(data, 0xff, size); stale_response = false; }
+    else memcpy(data, controller_matrix, size);
+    return read_error;
+}
 #include "tdeck_matrix.inc"
 
 static tdeck_device_t device;
@@ -158,7 +205,9 @@ static void test_holds_layers_and_shortcuts(void)
     for (unsigned layer = 0; layer < 3; layer++) {
         matrix[0] = (1U << 4) | (layer == 2 ? 1U << 2 : 0);
         matrix[1] = layer == 1 ? 1U << 6 : 0;
+        native_toggle_pending = true;
         matrix[3] = 1U << 4; scan(); expect_none();
+        assert(!native_toggle_pending && controller_duty == 26);
         assert(backlight_toggles == before + layer * 2 + 1);
         scan(); expect_none();
         assert(backlight_toggles == before + layer * 2 + 1);
@@ -166,6 +215,7 @@ static void test_holds_layers_and_shortcuts(void)
         clear_matrix(); expect_none();
         assert(backlight_toggles == before + layer * 2 + 1);
         matrix[0] = 1U << 4; matrix[3] = 1U << 4; scan(); expect_none();
+        assert(controller_duty == 0);
         matrix[3] = 0; scan(); expect_none();
         clear_matrix(); expect_none();
         assert(backlight_toggles == before + layer * 2 + 2);
@@ -374,6 +424,61 @@ static void test_microphone_ctrl(void)
     solar_os_input_release_keyboard(&owner);
 }
 
+static void test_poll_recovery(void)
+{
+    /* Selecting raw mode must drain a queued character-mode response. */
+    stale_response = true;
+    poll_matrix(&device);
+    assert(raw_selections == 1 && reads == 1 && device.wait_for_release);
+    expect_none();
+    poll_matrix(&device);
+    assert(!device.wait_for_release);
+    controller_matrix[0] = (1U << 4) | 1U;
+    poll_matrix(&device);
+    expect_event(SOLAR_OS_KEY_APP_EXIT, SOLAR_OS_INPUT_KEY_PRESS, 0, 0);
+
+    /* A sleep-sized polling gap releases held keys and clears modifiers.
+     * Ignore the wake chord until the controller reports a neutral matrix. */
+    now_us += 1000000;
+    stale_response = true;
+    poll_matrix(&device);
+    assert(raw_selections == 2 && device.wait_for_release);
+    assert(solar_os_input_composition_modifiers() == 0);
+    assert(solar_os_input_get_pressed(NULL, 0) == 0);
+    expect_event(SOLAR_OS_KEY_APP_EXIT, SOLAR_OS_INPUT_KEY_RELEASE, 0, 0);
+    poll_matrix(&device); expect_none();
+    memset(controller_matrix, 0, sizeof(controller_matrix));
+    poll_matrix(&device); expect_none();
+    controller_matrix[0] = 1U << 3;
+    poll_matrix(&device); expect_event('a', SOLAR_OS_INPUT_KEY_PRESS, 0, 0x04);
+
+    /* Failed transfers must stop repeats immediately and retry raw selection. */
+    read_error = ESP_FAIL;
+    poll_matrix(&device);
+    expect_event('a', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0x04);
+    assert(!device.raw_ready);
+    write_error = ESP_FAIL;
+    const unsigned before = reads;
+    poll_matrix(&device);
+    assert(reads == before && !device.raw_ready);
+    write_error = read_error = ESP_OK;
+    poll_matrix(&device); expect_none();
+    memset(controller_matrix, 0, sizeof(controller_matrix));
+    poll_matrix(&device);
+
+    /* Invalid high row bits are rejected before they can create any keys. */
+    memset(controller_matrix, 0xff, sizeof(controller_matrix));
+    poll_matrix(&device);
+    assert(!device.raw_ready);
+    expect_none();
+    memset(controller_matrix, 0, sizeof(controller_matrix));
+    poll_matrix(&device); poll_matrix(&device);
+    controller_matrix[3] = 1U << 4;
+    poll_matrix(&device); expect_event('b', SOLAR_OS_INPUT_KEY_PRESS, 0, 0x05);
+    memset(controller_matrix, 0, sizeof(controller_matrix));
+    poll_matrix(&device); expect_event('b', SOLAR_OS_INPUT_KEY_RELEASE, 0, 0x05);
+}
+
 int main(void)
 {
     assert(solar_os_input_init() == ESP_OK);
@@ -385,6 +490,7 @@ int main(void)
     test_native_capture();
     test_keyrate();
     test_microphone_ctrl();
+    test_poll_recovery();
     solar_os_input_source_close(device.input_source);
     puts("T-Deck real holds/releases, native capture, shortcuts and keyrate passed");
     return 0;

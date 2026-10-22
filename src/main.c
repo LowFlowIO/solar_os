@@ -42,6 +42,9 @@
 #include "solar_os_fonts.h"
 #include "solar_os_input.h"
 #include "solar_os_input_actions.h"
+#if SOLAR_OS_PACKAGE_EXPANSION_TDECK_KEYBOARD
+#include "solar_os_tdeck_keyboard.h"
+#endif
 #if SOLAR_OS_PACKAGE_EXPANSION_TRACKBALL
 #include "solar_os_trackball.h"
 #endif
@@ -1084,7 +1087,12 @@ static void enter_sleep(const char *reason, bool deep_sleep)
     bool radio_resumed = false;
 #if SOLAR_OS_PACKAGE_SERVICE_WIFI
     if (board_has(SOLAR_OS_BOARD_CAP_WIFI)) {
-        const esp_err_t wifi_resume_err = solar_os_wifi_resume();
+        esp_err_t wifi_resume_err = ESP_OK;
+        for (unsigned attempt = 0; attempt < 3U; attempt++) {
+            wifi_resume_err = solar_os_wifi_resume();
+            if (wifi_resume_err == ESP_OK) break;
+            if (attempt < 2U) vTaskDelay(pdMS_TO_TICKS(100));
+        }
         if (wifi_resume_err != ESP_OK) {
             SOLAR_OS_LOGW(TAG, "Wi-Fi resume failed: %s", esp_err_to_name(wifi_resume_err));
         } else {
@@ -1119,10 +1127,14 @@ static void enter_sleep(const char *reason, bool deep_sleep)
     if (radio_resumed) {
         (void)solar_os_power_hold_automatic_light_sleep(RADIO_RESUME_PM_HOLDOFF_MS);
     }
-    (void)solar_os_power_end_explicit_sleep();
-
-    update_status();
+    /* Bring shared display/peripheral rails back before auxiliary controllers
+     * receive their restored settings. */
     resume_display_after_sleep(now_ms);
+    (void)solar_os_power_end_explicit_sleep();
+#if SOLAR_OS_PACKAGE_EXPANSION_TDECK_KEYBOARD
+    solar_os_tdeck_keyboard_resume();
+#endif
+    update_status();
 }
 
 static void enter_light_sleep(const char *reason)

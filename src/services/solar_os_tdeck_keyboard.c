@@ -6,6 +6,7 @@
 
 #include "esp_check.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "solar_os_board.h"
@@ -22,6 +23,10 @@
 #define TDECK_MODE_KEY 0x04U
 #define TDECK_POLL_MS 10U
 #define TDECK_TASK_STACK 3072U
+/* The controller scans 35 cells at 1 ms each, then runs its native Alt+B
+ * action. A raw snapshot can expose B before that action has happened. */
+#define TDECK_SCAN_SETTLE_MS 50U
+#define TDECK_RECONFIGURE_GAP_US 250000
 
 typedef struct { uint8_t normal; uint8_t symbol; } tdeck_key_t;
 #ifndef SOLAR_OS_BOARD_TDECK_KEYMAP
@@ -51,6 +56,9 @@ typedef struct {
     bool microphone_tab_pending;
     uint8_t microphone_tab_modifiers;
     solar_os_input_source_t input_source;
+    bool raw_ready;
+    bool wait_for_release;
+    int64_t last_poll_us;
     TaskHandle_t worker_task;
 } tdeck_device_t;
 
@@ -164,9 +172,10 @@ static void process_matrix(tdeck_device_t *dev,
                     modifier_usage, 0U, modifiers, SOLAR_OS_INPUT_KEY_PRESS);
                 continue;
             }
-            /* Override the firmware's native Alt+B toggle with the service's
-             * boot-local choice, so sleep can blank and restore it correctly. */
+            /* Let the controller finish its native toggle before writing the
+             * service's absolute level. Otherwise the two toggles race. */
             if (alt && col == 3U && row == 4U) {
+                vTaskDelay(pdMS_TO_TICKS(TDECK_SCAN_SETTLE_MS));
                 (void)solar_os_backlight_toggle();
                 continue;
             }
@@ -189,21 +198,78 @@ static void process_matrix(tdeck_device_t *dev,
     memcpy(dev->previous, effective, sizeof(dev->previous));
 }
 
+static void reset_matrix(tdeck_device_t *dev)
+{
+    solar_os_input_source_release_all(dev->input_source);
+    solar_os_input_composition_set_modifiers(dev->input_source, 0U);
+    memset(dev->previous, 0, sizeof(dev->previous));
+    dev->microphone_ctrl = false;
+    dev->microphone_tab_pending = false;
+    dev->raw_ready = false;
+    dev->wait_for_release = true;
+}
+
+static void poll_matrix(tdeck_device_t *dev)
+{
+    const int64_t now = esp_timer_get_time();
+    if (dev->raw_ready && now - dev->last_poll_us > TDECK_RECONFIGURE_GAP_US)
+        reset_matrix(dev);
+    dev->last_poll_us = now;
+
+    uint8_t state[TDECK_COLUMNS] = {0};
+    if (!dev->raw_ready) {
+        /* Sleep or a controller reset can leave character mode or a stale
+         * slave TX response behind. Re-select raw mode and drain that response
+         * before interpreting any bytes as matrix bits. */
+        const uint8_t command = TDECK_MODE_RAW;
+        if (solar_os_bus_i2c_transmit(dev->i2c_bus,
+                SOLAR_OS_TDECK_KEYBOARD_ADDRESS, &command, 1) != ESP_OK) return;
+        vTaskDelay(pdMS_TO_TICKS(TDECK_POLL_MS));
+        if (solar_os_bus_i2c_receive(dev->i2c_bus,
+                SOLAR_OS_TDECK_KEYBOARD_ADDRESS, state, sizeof(state)) != ESP_OK) return;
+        dev->raw_ready = true;
+        dev->wait_for_release = true;
+        return;
+    }
+    if (solar_os_bus_i2c_receive(dev->i2c_bus,
+            SOLAR_OS_TDECK_KEYBOARD_ADDRESS, state, sizeof(state)) != ESP_OK) {
+        reset_matrix(dev);
+        return;
+    }
+    bool released = true;
+    for (size_t col = 0; col < TDECK_COLUMNS; col++) {
+        /* Only seven row bits exist. Short character-mode responses and
+         * interrupted I2C transfers must never become phantom held keys. */
+        if ((state[col] & 0x80U) != 0U) {
+            reset_matrix(dev);
+            return;
+        }
+        released &= state[col] == 0U;
+    }
+    if (dev->wait_for_release) {
+        if (released) dev->wait_for_release = false;
+        return;
+    }
+    process_matrix(dev, state);
+}
+
 static void worker(void *arg)
 {
     tdeck_device_t *dev = arg;
     while (!dev->stop_requested) {
-        uint8_t state[TDECK_COLUMNS] = {0};
-        if (solar_os_bus_i2c_receive(dev->i2c_bus,
-                                    SOLAR_OS_TDECK_KEYBOARD_ADDRESS,
-                                    state, sizeof(state)) == ESP_OK) {
-            process_matrix(dev, state);
-        }
-        (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(TDECK_POLL_MS));
+        poll_matrix(dev);
+        if (ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(TDECK_POLL_MS)) != 0U)
+            reset_matrix(dev);
     }
     solar_os_input_composition_set_modifiers(dev->input_source, 0U);
     dev->worker_done = true;
     solar_os_task_delete_internal(NULL);
+}
+
+void solar_os_tdeck_keyboard_resume(void)
+{
+    if (device.active && device.worker_task != NULL)
+        (void)xTaskNotifyGive(device.worker_task);
 }
 
 esp_err_t solar_os_tdeck_keyboard_attach(

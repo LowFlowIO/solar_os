@@ -62,7 +62,8 @@ int main(void) {
         source = (ROOT / "src/services/solar_os_tdeck_keyboard.c").read_text()
         defines = tomllib.loads((ROOT / "boards/manifests/t_deck_plus.toml").read_text())["defines"]
         with tempfile.TemporaryDirectory() as tmp:
-            Path(tmp, "tdeck_matrix.inc").write_text(production_functions(source, ("key_usage", "process_matrix")))
+            Path(tmp, "tdeck_matrix.inc").write_text(production_functions(source, (
+                "key_usage", "process_matrix", "reset_matrix", "poll_matrix")))
             Path(tmp, "suspend_wake.inc").write_text(production_functions(
                 (ROOT / "src/main.c").read_text(), ("maybe_exit_suspend_for_input",)))
             Path(tmp, "solar_os_board.h").write_text('#pragma once\n#include "solar_os_keys.h"\n' + ''.join(

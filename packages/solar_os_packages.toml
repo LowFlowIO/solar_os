@@ -1819,7 +1819,7 @@ sources = [
   "services/solar_os_tdeck_keyboard.c",
   "services/solar_os_tdeck_keyboard_driver.c",
 ]
-requires = ["esp_driver_i2c"]
+requires = ["esp_driver_i2c", "esp_timer"]
 capabilities = ["expansion_i2c"]
 
 [packages.expansion_stc8h_keyboard]
