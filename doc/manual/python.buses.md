@@ -180,6 +180,10 @@ name scalar streams;
 DRV8830 attachments also accept integer `max_mv` to configure the voltage
 represented by full normalized motor drive. See [Motor control](motor.md).
 
+`pcnt-encoder` requires integer `a`, `b`, and `mode` (1, 2, or 4). Optional
+integer `invert`, `pull`, and `filter_ns` configure its inputs.
+See [Encoder counts](encoder.md).
+
 Camera DVP attachments also accept GPIO-number bindings `d0`..`d7`, `siod`,
 `sioc`, `vsync`, `href`, `pclk`, `xclk`, and optional `pwdn`/`reset`. The camera
 driver validates required pins and claims; board-owned cameras cannot be detached.

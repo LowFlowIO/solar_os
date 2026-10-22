@@ -176,6 +176,37 @@ class BoardManifestTest(unittest.TestCase):
         self.assertEqual(image["build"], base["build"])
         self.assertEqual(image["upload"], base["upload"])
 
+    def test_pcnt_encoder_explicit_modes_and_independent_pins(self) -> None:
+        board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
+        device = {"driver": "pcnt-encoder", "name": "left", "bindings": {"a": 1, "b": 2, "mode": 4}}
+        board.setdefault("devices", []).append(device)
+        for pin in board["pins"]:
+            if pin["gpio"] in (1, 2, 3, 21):
+                pin.update(policy="fixed", user=False, adc=False, pwm=False)
+        for mode in (1, 2, 4):
+            device["bindings"].update(mode=mode, invert=1, pull=2, filter_ns=1000)
+            validate_board(board, self.drivers)
+        self.assertIn("pcnt_encoder", required_packages(board, self.drivers))
+        header = generate_header(board, self.drivers)
+        self.assertIn('.driver = "pcnt-encoder", .name = "left"', header)
+        self.assertIn('.role = "mode"', header)
+        for key, value in (("mode", 0), ("mode", 3), ("mode", 8), ("invert", 2),
+                           ("pull", 3), ("filter_ns", -1), ("b", 1)):
+            old = device["bindings"][key]
+            device["bindings"][key] = value
+            with self.assertRaises(ManifestError):
+                validate_board(board, self.drivers)
+            device["bindings"][key] = old
+        del device["bindings"]["mode"]
+        with self.assertRaises(ManifestError):
+            validate_board(board, self.drivers)
+        device["bindings"]["mode"] = 4
+        board["devices"].append({"driver": "pcnt-encoder", "name": "right", "bindings": {"a": 3, "b": 21, "mode": 2}})
+        validate_board(board, self.drivers)
+        board["devices"][-1]["bindings"]["a"] = 1
+        with self.assertRaises(ManifestError):
+            validate_board(board, self.drivers)
+
     def test_drv8830_named_bus_addresses_and_optional_int(self) -> None:
         board = load_board_manifest(self.manifest_dir / "esp32_s3_devkitc1_n16r8.toml", self.manifest_dir)
         device = {"driver": "drv8830", "name": "motor0",

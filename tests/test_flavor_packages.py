@@ -108,6 +108,37 @@ class FlavorPackagesTest(unittest.TestCase):
             self.assertFalse(unsupported["drv8830"])
             self.assertTrue(unsupported["service_motor"])
 
+    def test_encoder_driver_is_optional_and_requires_gpio(self):
+        for flavor in ("classic", "writerdeck"):
+            _, _, groups, packages = self.resolve(flavor)
+            self.assertFalse(groups["pcnt_encoder"])
+            self.assertFalse(packages["pcnt_encoder"])
+        _, _, groups, packages = self.resolve("full")
+        for target in ("esp32", "esp32s3"):
+            selected = generate_flavor_config.apply_target_pruning(self.catalog, packages, target)
+            _, supported = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, selected, {"gpio"})
+            self.assertTrue(supported["pcnt_encoder"])
+            self.assertTrue(supported["service_encoder"])
+            _, unsupported = generate_flavor_config.apply_board_capability_pruning(
+                self.catalog, groups, selected, set())
+            self.assertFalse(unsupported["pcnt_encoder"])
+            self.assertTrue(unsupported["service_encoder"])
+
+    def test_encoder_service_does_not_pull_a_concrete_driver(self):
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "encoder.toml"
+            path.write_text('[flavor]\nname = "encoder-only"\n[groups]\nencoder = true\n')
+            _, _, groups, packages = generate_flavor_config.load_flavor(path, self.catalog)
+        self.assertTrue(packages["service_encoder"])
+        self.assertFalse(packages["pcnt_encoder"])
+        self.assertFalse(packages["rotary_encoder"])
+        _, pruned = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, set())
+        self.assertTrue(pruned["service_encoder"])
+
     def test_motor_service_does_not_pull_a_concrete_driver(self):
         import tempfile
 

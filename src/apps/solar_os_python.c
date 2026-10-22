@@ -124,6 +124,9 @@
 #if SOLAR_OS_PACKAGE_SERVICE_MOTOR
 #include "solar_os_motor.h"
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+#include "solar_os_encoder.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_CHARGER
 #include "solar_os_charger.h"
 #endif
@@ -3997,6 +4000,53 @@ static mp_obj_t solaros_pwm_off(mp_obj_t pin_obj)
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_pwm_off_obj, solaros_pwm_off);
 #endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+static mp_obj_t python_encoder_info(const solar_os_encoder_info_t *info)
+{
+    mp_obj_t dict = mp_obj_new_dict(4);
+    python_dict_store_cstr(dict, "name", info->name);
+    python_dict_store_cstr(dict, "driver", info->driver);
+    python_dict_store_int(dict, "mode", info->mode);
+    python_dict_store_bool(dict, "can_reset", info->can_reset);
+    return dict;
+}
+
+static mp_obj_t solaros_encoder_list(void)
+{
+    mp_obj_t list = mp_obj_new_list(0, NULL);
+    solar_os_encoder_info_t info;
+    for (size_t i = 0; solar_os_encoder_get(i, &info); i++)
+        mp_obj_list_append(list, python_encoder_info(&info));
+    return list;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_encoder_list_obj, solaros_encoder_list);
+
+static mp_obj_t solaros_encoder_status(mp_obj_t name)
+{
+    solar_os_encoder_status_t status;
+    python_check_esp(solar_os_encoder_status(mp_obj_str_get_str(name), &status));
+    mp_obj_t dict = python_encoder_info(&status.info);
+    python_dict_store_int(dict, "count", status.count);
+    return dict;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_encoder_status_obj, solaros_encoder_status);
+
+static mp_obj_t solaros_encoder_read(mp_obj_t name)
+{
+    int32_t count;
+    python_check_esp(solar_os_encoder_read(mp_obj_str_get_str(name), &count));
+    return mp_obj_new_int(count);
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_encoder_read_obj, solaros_encoder_read);
+
+static mp_obj_t solaros_encoder_reset(mp_obj_t name)
+{
+    python_check_esp(solar_os_encoder_reset(mp_obj_str_get_str(name)));
+    return mp_const_none;
+}
+MP_DEFINE_CONST_FUN_OBJ_1(solaros_encoder_reset_obj, solaros_encoder_reset);
+#endif
+
 #if SOLAR_OS_PACKAGE_SERVICE_MOTOR
 static mp_obj_t python_motor_info(const solar_os_motor_info_t *info)
 {
@@ -5350,6 +5400,7 @@ static bool python_expansion_key_known(const char *key)
 {
     static const char *const keys[] = {
         "stream", "timeout-ms", "ready", "clock", "reset-ms", "boot-ms", "reset-active", "max_mv",
+        "mode", "invert", "pull", "filter_ns",
         "spi", "cs", "ce", "i2c", "addr", "alt_addr", "uart", "ps2", "gpio", "irq", "int", "reset",
         "rst", "data", "bck", "din", "rck", "mclk", "ws", "dout", "dc",
         "busy", "adc", "pwm", "backlight", "a", "b",
@@ -5618,6 +5669,7 @@ static mp_obj_t solaros_expansion_attach(mp_obj_t driver_obj,
     }
     static const char *const parameter_bindings[] = {
         "min", "center", "max", "deadzone", "timeout-ms", "clock", "reset-ms", "boot-ms", "reset-active", "max_mv",
+        "mode", "invert", "pull", "filter_ns",
     };
     for (size_t i = 0;
          i < sizeof(parameter_bindings) / sizeof(parameter_bindings[0]);

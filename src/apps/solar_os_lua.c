@@ -113,6 +113,9 @@
 #if SOLAR_OS_PACKAGE_SERVICE_MOTOR
 #include "solar_os_motor.h"
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+#include "solar_os_encoder.h"
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_CHARGER
 #include "solar_os_charger.h"
 #endif
@@ -3696,6 +3699,51 @@ static int solua_pwm_pulse(lua_State *L)
 }
 #endif
 
+#if SOLAR_OS_PACKAGE_SERVICE_ENCODER
+static void solua_push_encoder_info(lua_State *L, const solar_os_encoder_info_t *info)
+{
+    lua_newtable(L);
+    solua_set_str(L, -1, "name", info->name);
+    solua_set_str(L, -1, "driver", info->driver);
+    solua_set_int(L, -1, "mode", info->mode);
+    solua_set_bool(L, -1, "can_reset", info->can_reset);
+}
+
+static int solua_encoder_list(lua_State *L)
+{
+    lua_newtable(L);
+    const int list = lua_gettop(L);
+    solar_os_encoder_info_t info;
+    for (size_t i = 0; solar_os_encoder_get(i, &info); i++) {
+        solua_push_encoder_info(L, &info);
+        lua_rawseti(L, list, (lua_Integer)i + 1);
+    }
+    return 1;
+}
+
+static int solua_encoder_status(lua_State *L)
+{
+    solar_os_encoder_status_t status;
+    (void)solua_check_esp(L, solar_os_encoder_status(luaL_checkstring(L, 1), &status));
+    solua_push_encoder_info(L, &status.info);
+    solua_set_int(L, -1, "count", status.count);
+    return 1;
+}
+
+static int solua_encoder_read(lua_State *L)
+{
+    int32_t count;
+    (void)solua_check_esp(L, solar_os_encoder_read(luaL_checkstring(L, 1), &count));
+    lua_pushinteger(L, count);
+    return 1;
+}
+
+static int solua_encoder_reset(lua_State *L)
+{
+    return solua_check_esp(L, solar_os_encoder_reset(luaL_checkstring(L, 1)));
+}
+#endif
+
 #if SOLAR_OS_PACKAGE_SERVICE_MOTOR
 static void solua_push_motor_info(lua_State *L, const solar_os_motor_info_t *info)
 {
@@ -4978,6 +5026,7 @@ static bool solua_expansion_key_known(const char *key)
 {
     static const char *const keys[] = {
         "stream", "timeout-ms", "ready", "clock", "reset-ms", "boot-ms", "reset-active", "max_mv",
+        "mode", "invert", "pull", "filter_ns",
         "spi", "cs", "ce", "i2c", "addr", "alt_addr", "uart", "ps2", "gpio", "irq", "int", "reset",
         "rst", "data", "bck", "din", "rck", "mclk", "ws", "dout", "dc",
         "busy", "adc", "pwm", "backlight", "a", "b",
@@ -5027,7 +5076,9 @@ static bool solua_table_optional_int(lua_State *L,
         lua_pop(L, 1);
         return false;
     }
-    *value = (int)luaL_checkinteger(L, -1);
+    const lua_Integer integer = luaL_checkinteger(L, -1);
+    if (integer < INT_MIN || integer > INT_MAX) luaL_error(L, "%s is outside the integer range", key);
+    *value = (int)integer;
     lua_pop(L, 1);
     return true;
 }
@@ -5271,6 +5322,7 @@ static int solua_expansion_attach(lua_State *L)
     }
     static const char *const parameter_bindings[] = {
         "min", "center", "max", "deadzone", "timeout-ms", "clock", "reset-ms", "boot-ms", "reset-active", "max_mv",
+        "mode", "invert", "pull", "filter_ns",
     };
     for (size_t i = 0;
          i < sizeof(parameter_bindings) / sizeof(parameter_bindings[0]);

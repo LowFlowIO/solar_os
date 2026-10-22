@@ -22,6 +22,7 @@ TARGETS += pwm_servo_test pwm_provider_test
 TARGETS += pca9685_test pca9685_expansion_test
 TARGETS += drv8830_test
 TARGETS += motor_service_test
+TARGETS += encoder_service_test pcnt_encoder_test
 TARGETS += ssd1306_named_bus_test
 TARGETS += gt911_test
 TARGETS += sdmmc_expansion_test
@@ -813,6 +814,18 @@ drv8830_test: drv8830_test.c $(ROOT)/src/drivers/drv8830.c $(ROOT)/src/drivers/d
 		drv8830_test.c $(ROOT)/src/drivers/drv8830.c $(ROOT)/src/services/solar_os_drv8830.c \
 		$(ROOT)/src/services/solar_os_drv8830_driver.c $(ROOT)/src/services/solar_os_motor.c -pthread -lm -o $@
 
+encoder_service_test: encoder_service_test.c $(ROOT)/src/services/solar_os_encoder.c $(ROOT)/src/services/solar_os_encoder.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Ipwm_stubs -I. \
+		-I$(ROOT)/src -I$(ROOT)/src/services encoder_service_test.c $(ROOT)/src/services/solar_os_encoder.c -pthread -o $@
+
+pcnt_encoder_test: pcnt_encoder_test.c encoder_service_test.c $(wildcard encoder_stubs/driver/*.h) \
+		$(wildcard $(ROOT)/src/drivers/pcnt_encoder.*) $(wildcard $(ROOT)/src/services/solar_os_pcnt_encoder*) \
+		$(ROOT)/src/services/solar_os_encoder.c $(ROOT)/src/services/solar_os_encoder.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Iencoder_stubs -Ipwm_stubs -Iexpansion_stubs -I. \
+		-I$(ROOT)/src -I$(ROOT)/src/drivers -I$(ROOT)/src/services pcnt_encoder_test.c \
+		$(ROOT)/src/drivers/pcnt_encoder.c $(ROOT)/src/services/solar_os_pcnt_encoder.c \
+		$(ROOT)/src/services/solar_os_pcnt_encoder_driver.c $(ROOT)/src/services/solar_os_encoder.c -pthread -o $@
+
 motor_service_test: motor_service_test.c $(ROOT)/src/services/solar_os_motor.c $(ROOT)/src/services/solar_os_motor.h
 	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Ipwm_stubs -I. \
 		-I$(ROOT)/src -I$(ROOT)/src/services motor_service_test.c $(ROOT)/src/services/solar_os_motor.c -pthread -lm -o $@
@@ -1233,6 +1246,8 @@ test: $(TARGETS)
 	./pca9685_expansion_test
 	./drv8830_test
 	./motor_service_test
+	./encoder_service_test
+	./pcnt_encoder_test
 	./ssd1306_named_bus_test
 	./epd_xteink_identify_test
 	./x4pro_expansion_test

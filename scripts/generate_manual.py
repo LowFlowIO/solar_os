@@ -53,6 +53,7 @@ EMBEDDED_MANUAL_NOTICE = (
 )
 COMMAND_GITHUB_HREFS = {
     "agent": "agent.md",
+    "encoder": "encoder.md",
     "expansion": "expansion.md",
     "help": "help.md",
     "identity": "identity.md",
@@ -75,6 +76,7 @@ DERIVED_ALIAS_OWNERS = {
     ("command.commands", "commands"): "commands",
     ("command.control", "control"): "controls",
     ("command.expansion", "expansion"): "expansion",
+    ("command.encoder", "encoder"): "encoder",
     ("command.gpio", "gpio"): "gpio.analog",
     ("command.help", "help"): "help",
     ("command.i2c", "i2c"): "compatibility.io",

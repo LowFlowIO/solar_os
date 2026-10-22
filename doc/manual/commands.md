@@ -1313,6 +1313,10 @@ available for the compiled board.
 | `haptic` | `haptic [list]` | List registered haptic devices, their concrete drivers, and supported effect range. |
 | `haptic` | `haptic play <effect> [name]` | Play one numbered effect on a haptic device. |
 | `haptic` | `haptic stop [name]` | Stop the active haptic effect. |
+| `encoder` | `encoder [list]` | List named encoders, providers, and counting modes. |
+| `encoder` | `encoder status <name>` | Read the mode and signed count of one encoder. |
+| `encoder` | `encoder read <name>` | Print the signed count without clearing it. |
+| `encoder` | `encoder reset <name>` | Set the encoder count to zero. |
 | `motor` | `motor [list]` | List registered motor endpoints, drivers, and supported operations. |
 | `motor` | `motor status <name>` | Read mode, normalized applied drive, common fault masks and optional driver diagnostics. |
 | `motor` | `motor drive <name> <value>` | Apply a normalized signed demand from `-1.0` to `1.0`; zero coasts. |

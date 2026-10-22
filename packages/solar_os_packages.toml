@@ -126,6 +126,16 @@ label = "Motor control"
 category = "Hardware interfaces"
 members = ["service_motor"]
 
+[groups.encoder]
+label = "Encoder counts"
+category = "Hardware interfaces"
+members = ["service_encoder"]
+
+[groups.pcnt_encoder]
+label = "PCNT quadrature encoders"
+category = "Expansion hardware"
+members = ["pcnt_encoder"]
+
 [groups.charger]
 label = "Battery charger"
 category = "Hardware interfaces"
@@ -1536,6 +1546,19 @@ sources = [
 [packages.service_motor]
 label = "service.motor"
 sources = ["services/solar_os_motor.c", "shell/solar_os_shell_motor.c"]
+
+[packages.service_encoder]
+label = "service.encoder"
+sources = ["services/solar_os_encoder.c", "shell/solar_os_shell_encoder.c"]
+
+[packages.pcnt_encoder]
+label = "expansion.pcnt-encoder"
+targets = ["esp32", "esp32s3"]
+expansion_drivers = ["solar_os_pcnt_encoder_expansion_driver"]
+depends = ["service_expansion", "service_encoder"]
+sources = ["drivers/pcnt_encoder.c", "services/solar_os_pcnt_encoder.c", "services/solar_os_pcnt_encoder_driver.c"]
+requires = ["esp_driver_pcnt", "esp_driver_gpio"]
+capabilities = ["gpio"]
 
 [packages.service_charger]
 label = "service.charger"
