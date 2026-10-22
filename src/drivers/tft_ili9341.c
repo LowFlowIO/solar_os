@@ -256,6 +256,10 @@ static esp_err_t ili9341_configure_control_pins(tft_ili9341_t *display) {
                         "rst high failed");
   }
   if (gpio_valid(display->config.power_pin)) {
+    /* A panel rail can also supply storage and the keyboard (T-Deck). Light
+     * sleep must not float it and reset those still-mounted peripherals. */
+    ESP_RETURN_ON_ERROR(gpio_sleep_sel_dis(display->config.power_pin), TAG,
+                        "panel power sleep retention failed");
     (void)gpio_hold_dis(display->config.power_pin);
     ESP_RETURN_ON_ERROR(
         gpio_set_level(display->config.power_pin,
