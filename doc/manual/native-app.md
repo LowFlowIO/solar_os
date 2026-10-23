@@ -161,6 +161,12 @@ The appended `calendar_read` method returns the host local calendar date and
 time. It does not provide a way to set the host clock. Request a service table
 large enough to include each method before using it.
 
+`audio_open` opens the selected SolarOS playback output, including I2S expansion
+outputs, and returns its sample rate and channel count. `audio_write` accepts
+signed 16-bit PCM in that format. `audio_close` releases the output. An app can
+open and close it to discover the output rate before starting synth audio;
+direct PCM playback and synth playback cannot be open together.
+
 Packed INDEX2 frames use four shades of the current display theme. The appended
 synth methods accept a bounded block size and required sample rate. Callbacks
 render signed 16-bit stereo PCM under a host mutex. The module uses
