@@ -3,6 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <stdint.h>
+#include <math.h>
 #include "lua.h"
 #include "lauxlib.h"
 #include "lualib.h"
@@ -76,6 +77,23 @@ int main(int argc,char **argv) {
             "g=jet.open('display0');s:close();assert(g:status().width==64);g:close(); "
             "assert(not pcall(function() local a <close> = jet.open('display0');error('script error') end))");
         jet_test_assert_clean();
+        run(L,"s=jet.open('display0');assert(s:capabilities().textures and s:capabilities().materials); "
+            "t=s:texture(2,2,string.rep(string.char(255,0,0),4),{format='rgb888',name='red'}); "
+            "assert(s:texture_info(t).width==2 and s:texture_info(t).format=='rgb888'); "
+            "m=s:material{texture=t,shading='unlit',name='surface'}; "
+            "assert(s:material_info(m).texture==t and s:material_info(m).shading=='unlit'); "
+            "c=s:cube(150,150,150);s:assign(c,m);s:render(); "
+            "assert(not pcall(s.remove,s,t));assert(not pcall(s.remove,s,m)); "
+            "assert(not pcall(s.material_set,s,m,{shading='typo'})); "
+            "assert(not pcall(s.texture_set,s,t,{unknown=true})); "
+            "assert(not pcall(s.texture,s,1,1,'\\0',{format='index8',palette={}})); "
+            "s:material_set(m,{alpha=180,specular=32});assert(s:material_info(m).alpha==180); "
+            "s:texture_set(t,{pixels=string.rep(string.char(0,255,0),4)});s:render(); "
+            "i=s:texture(2,2,string.char(0,1,1,0),{format='index8',palette={0xffffff,0x000000}}); "
+            "s:texture_set(i,{offset=1,palette={0xff0000,0x00ff00}}); "
+            "mesh=s:mesh_data({{-80,-80,0,0,0,0,0,-1},{0,80,0,0.5,1,0,0,-1},{80,-80,0,1,0,0,0,-1}},{{1,2,3,m}}); "
+            "s:render();s:remove(mesh);s:assign(c,0);s:remove(m);s:remove(t);s:remove(i);s:remove(c);s:close()");
+        jet_test_assert_clean();
         solua.session_gfx=jet_test_gfx();solua.events=(void *)1;
         run(L,"s=jet.open(); c=s:cube(150,150,150); s:render()");assert(mode&&solua_jet_drawing());
         state.jet_busy=true;solua_jet_visibility(NULL,false);
@@ -88,7 +106,7 @@ int main(int argc,char **argv) {
         run(L,"g=jet.open(); g:cube(150,150,150);g:render()");
         solua_jet_destroy();assert(!solua_jet_drawing()&&!solua_jet_active());jet_test_assert_clean();
         run(L,"assert(not pcall(g.render,g))");
-        if(argc==2) {
+        if(argc>=2) {
             lua_newtable(L);lua_getglobal(L,"jet");lua_setfield(L,-2,"jet");
             solua_set_func(L,-1,"should_exit",should_exit);
             lua_newtable(L);solua_set_func(L,-1,"sleep_ms",sleep_ms);lua_setfield(L,-2,"time");
@@ -99,6 +117,10 @@ int main(int argc,char **argv) {
             size_t bytes;const uint8_t *pixels=jet_test_image(&bytes);unsigned nonwhite=0;
             for(size_t i=0;i<bytes;i+=2) nonwhite+=pixels[i]!=0xff||pixels[i+1]!=0xff;
             assert(nonwhite>10&&nonwhite<64*48/2);
+            if(argc>2) {
+                if(luaL_dofile(L,argv[2])) {fprintf(stderr,"%s\n",lua_tostring(L,-1));abort();}
+                jet_test_assert_clean();assert(!mode);
+            }
         }
         lua_close(L);jet_test_assert_clean();
     }

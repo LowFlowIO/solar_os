@@ -4,9 +4,25 @@
 #include <algorithm>
 #include <memory>
 #include <new>
+#include <cstring>
+#include <cmath>
 
 using namespace Renderer;
 namespace {
+struct Resource {
+    uint32_t id=0;
+    char name[SOLAR_OS_JET_NAME]={0};
+    double values[SOLAR_OS_JET_VALUES]={0};
+};
+struct TextureResource:Resource {
+    unsigned width=0,height=0;
+    std::vector<uint16_t> pixels,palette;
+    std::unique_ptr<Texture> value;
+};
+struct MaterialResource:Resource {
+    Material value;
+    MaterialResource() {value.name=name;}
+};
 struct Item {
     Material material;
     std::unique_ptr<Object> object;
@@ -14,6 +30,7 @@ struct Item {
     explicit Item(uint32_t color) : material(uint16_t(((color >> 8) & 0xf800) |
         ((color >> 5) & 0x7e0) | ((color >> 3) & 31))), id(0) {
         material.shadingMode = ShadingMode::GOURAUD;
+        material.name=nullptr;
     }
 };
 struct Engine {
@@ -21,6 +38,8 @@ struct Engine {
     AmbientLight ambient{Color{90,90,90}};
     DirectionalLight light{Vector3{35,40,0}, Color{255,245,230}, 220};
     std::unique_ptr<Item> items[SOLAR_OS_JET_MAX_OBJECTS];
+    std::unique_ptr<TextureResource> textures[SOLAR_OS_JET_MAX_TEXTURES];
+    std::unique_ptr<MaterialResource> materials[SOLAR_OS_JET_MAX_MATERIALS];
     uint32_t next_id = 0;
     uint16_t width, height;
     Scene scene;
@@ -128,6 +147,7 @@ static Item *find(uint32_t id) {
     for(auto &item:active->items) if(item && item->id==id) return item.get();
     return nullptr;
 }
+#include "surface_api.inc"
 static int transform(void *s,uint32_t id,const solar_os_jet_pose_t *p) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if(!pose_valid(p)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -141,7 +161,7 @@ static int remove(void *s,uint32_t id) {
         auto &objects=active->scene.getObjects();
         objects.erase(std::remove(objects.begin(),objects.end(),item->object.get()),objects.end());
         item.reset(); return 0;
-    } return int(SOLAR_OS_NATIVE_ERROR_NOT_FOUND); });
+    } return remove_surface(id); });
 }
 struct Cancellation {
     solar_os_native_cancel_fn callback;
@@ -175,9 +195,10 @@ template<auto Function,class... Args> static int serialized(Args... args) {
     __atomic_store_n(&call_busy,0U,__ATOMIC_RELEASE);
     return result;
 }
+static const solar_os_jet_extensions_v1_t extensions={1,sizeof(extensions),serialized<execute>};
 static const solar_os_jet_api_v1_t api={1,sizeof(api),serialized<create>,serialized<destroy>,
     serialized<background>,serialized<camera>,serialized<light>,serialized<cube>,serialized<mesh>,
-    serialized<transform>,serialized<remove>,serialized<render>};
+    serialized<transform>,serialized<remove>,serialized<render>,&extensions};
 }
 extern "C" const solar_os_jet_api_v1_t *solar_os_jet_engine_api_v1(void) { return &api; }
 extern "C" bool solar_os_jet_engine_idle(void) { return active==nullptr && !__atomic_load_n(&call_busy,__ATOMIC_ACQUIRE); }

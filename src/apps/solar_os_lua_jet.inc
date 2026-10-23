@@ -159,6 +159,7 @@ static int solua_jet_scene_status(lua_State *L) {
 #undef FIELD
     return 1;
 }
+#include "solar_os_lua_jet_surface.inc"
 static int solua_jet_open(lua_State *L) {
     if(lua_gettop(L)>2) return luaL_error(L,"too many Jet arguments");
     solar_os_jet_options_t options={0};
@@ -175,6 +176,8 @@ static int solua_jet_open(lua_State *L) {
 #define METHOD(name) solua_set_func(L,-1,#name,solua_jet_scene_##name)
         METHOD(background);METHOD(camera);METHOD(light);METHOD(cube);METHOD(mesh);METHOD(transform);
         METHOD(remove);METHOD(render);METHOD(status);METHOD(close);
+        METHOD(capabilities);METHOD(material);METHOD(material_set);METHOD(material_info);
+        METHOD(texture);METHOD(texture_set);METHOD(texture_info);METHOD(assign);METHOD(mesh_data);
 #undef METHOD
         solua_set_func(L,-1,"__gc",solua_jet_scene_close); solua_set_func(L,-1,"__close",solua_jet_scene_close);
         lua_pushvalue(L,-1); lua_setfield(L,-2,"__index");

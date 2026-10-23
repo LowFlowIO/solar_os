@@ -38,3 +38,5 @@ esp_err_t solar_os_jet_transform(solar_os_jet_t *scene, uint32_t object, const s
 esp_err_t solar_os_jet_remove(solar_os_jet_t *scene, uint32_t object);
 esp_err_t solar_os_jet_render(solar_os_jet_t *scene, solar_os_native_cancel_fn cancel, void *user);
 void solar_os_jet_status(solar_os_jet_t *scene, solar_os_jet_status_t *status);
+esp_err_t solar_os_jet_execute(solar_os_jet_t *scene,const solar_os_jet_command_t *command,
+    solar_os_jet_reply_t *reply);

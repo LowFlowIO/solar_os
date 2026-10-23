@@ -114,7 +114,7 @@ esp_err_t solar_os_jet_open(const solar_os_jet_options_t *o,solar_os_gfx_t *fore
     s->stats.width=width; s->stats.height=height; s->bytes=width*height*2;
     const void *api=NULL;
     err=result(solar_os_native_library_acquire(SOLAR_OS_JET_LIBRARY,SOLAR_OS_JET_ABI,
-        sizeof(*s->api),&s->lease,&api));
+        SOLAR_OS_JET_BASE_SIZE,&s->lease,&api));
     if(err!=ESP_OK) {
         if(detail && size) snprintf(detail,size,"install compatible jet library first");
         goto fail;
@@ -219,4 +219,14 @@ esp_err_t solar_os_jet_render(solar_os_jet_t *s,solar_os_native_cancel_fn cancel
 void solar_os_jet_status(solar_os_jet_t *s,solar_os_jet_status_t *stats) {
     if(!s || !stats) return;
     collect(s); *stats=s->stats;
+}
+esp_err_t solar_os_jet_execute(solar_os_jet_t *s,const solar_os_jet_command_t *command,
+    solar_os_jet_reply_t *reply) {
+    if(!s || !s->engine) return ESP_ERR_INVALID_STATE;
+    if(!command || !reply) return ESP_ERR_INVALID_ARG;
+    if(s->api->struct_size<sizeof(*s->api)) return ESP_ERR_NOT_SUPPORTED;
+    const solar_os_jet_extensions_v1_t *ext=s->api->extensions;
+    if(!ext || ext->abi_version!=1 || ext->struct_size<sizeof(*ext) || !ext->execute)
+        return ESP_ERR_NOT_SUPPORTED;
+    return result(ext->execute(s->engine,command,reply));
 }

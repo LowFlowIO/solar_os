@@ -108,7 +108,7 @@ class JetFramebufferTest(unittest.TestCase):
                         extra.append(str(obj))
                 binary = tmp / ("lua" if lua else "runtime")
                 subprocess.run(["g++", *flags, *objects, *extra, "-lm", "-o", str(binary)], check=True, capture_output=True)
-                subprocess.run([str(binary), *([str(ROOT / "examples/lua/jet.lua")] if lua else [])],
+                subprocess.run([str(binary), *([str(ROOT / "examples/lua/jet.lua"), str(ROOT / "examples/lua/jet_materials.lua")] if lua else [])],
                     check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
 
 

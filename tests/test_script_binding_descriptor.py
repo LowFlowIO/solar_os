@@ -41,6 +41,14 @@ HID_KEYCODES = (REPOSITORY / "src/services/solar_os_hid_keycodes.inc").read_text
 
 
 class ScriptBindingDescriptorTest(unittest.TestCase):
+    def test_jet_scene_methods_match_in_both_runtimes(self):
+        methods=[]
+        for runtime in ("python", "lua"):
+            source=(REPOSITORY / f"src/apps/solar_os_{runtime}_jet.inc").read_text()
+            methods.append(set(re.findall(r"METHOD\((\w+)\)",source)) - {"name"})
+        self.assertEqual(methods[0],methods[1])
+        self.assertTrue({"mesh_data", "texture", "material", "capabilities"} <= methods[0])
+
     def test_both_interpreters_expand_the_shared_descriptor_once(self):
         include = '#include "solar_os_script_api.inc"'
         self.assertEqual(PYTHON_SOURCE.count(include), 1)

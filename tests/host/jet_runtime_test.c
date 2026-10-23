@@ -16,6 +16,7 @@ static struct solar_os_gfx gfx;
 static unsigned allocations,claims,leases,attempts,presented;
 static int fail_at=-1;
 static bool installed=true,join_ok=true,release_ok=true,display_busy=false,bad_api=false;
+static bool legacy_api;
 static bool terminal_blocked;
 static solar_os_jet_api_v1_t provider;
 static uint8_t image[64*48*2];
@@ -66,10 +67,11 @@ esp_err_t solar_os_display_open_gfx(const char *name,const char *owner,solar_os_
     esp_err_t err=solar_os_display_claim(name,owner,detail,size);if(!err)*out=&gfx;return err;
 }
 int solar_os_native_library_acquire(const char *id,uint32_t abi,uint32_t minimum,uint32_t *lease,const void **api) {
-    assert(!strcmp(id,"jet")&&abi==1&&minimum==sizeof(provider));
+    assert(!strcmp(id,"jet")&&abi==1&&minimum==SOLAR_OS_JET_BASE_SIZE);
     if(!installed) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
     assert(!leases);++leases;*lease=1;provider=*solar_os_jet_engine_api_v1();
     if(bad_api) provider.render=NULL;
+    if(legacy_api) {provider.struct_size=SOLAR_OS_JET_BASE_SIZE;provider.extensions=(const void *)(uintptr_t)1;}
     *api=&provider;return 0;
 }
 int solar_os_native_library_release(uint32_t lease) {
@@ -133,6 +135,12 @@ int main(void) {
         jet_test_assert_clean();installed=true;
         bad_api=true;assert(solar_os_jet_open(&options,&gfx,&s,detail,sizeof(detail))==ESP_ERR_NOT_SUPPORTED&&!s);
         jet_test_assert_clean();bad_api=false;
+        legacy_api=true;
+        assert(solar_os_jet_open(&options,&gfx,&s,detail,sizeof(detail))==ESP_OK);
+        solar_os_jet_command_t query={.opcode=SOLAR_OS_JET_INFO};solar_os_jet_reply_t reply;
+        assert(solar_os_jet_execute(s,&query,&reply)==ESP_ERR_NOT_SUPPORTED);
+        assert(solar_os_jet_render(s,NULL,NULL)==ESP_OK);
+        assert(solar_os_jet_close(&s)==ESP_OK);jet_test_assert_clean();legacy_api=false;presented=0;
         bool complete=false;
         for(int failure=0;failure<30;++failure) {
             attempts=0;fail_at=failure;

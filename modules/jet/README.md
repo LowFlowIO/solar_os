@@ -13,6 +13,11 @@ already in LCD wire byte order; MONO1 dithering belongs to the host presenter.
 Only one scene may be live, and calls must be serialized, because upstream still
 has shared material/trigonometric state. Exceptions stay inside the provider.
 
+The optional size-checked extension adds reusable materials, shading controls,
+copied RGB565/RGB888/indexed textures, palette animation, and UV/normal mesh
+attributes. Older providers retain the base scene API; scripts can query
+`capabilities()` before using extensions. Resources reject removal while in use.
+
 See the [Jet manual](../../doc/manual/jet.md) for script APIs and limitations.
 Examples are [Python](../../examples/python/jet.py) and
 [Lua](../../examples/lua/jet.lua). Install the library from a compatible signed

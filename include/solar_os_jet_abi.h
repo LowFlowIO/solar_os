@@ -1,5 +1,6 @@
 #pragma once
 #include "solar_os_native_service_abi.h"
+#include "solar_os_jet_commands.h"
 #ifdef __cplusplus
 extern "C" {
 #endif
@@ -12,6 +13,10 @@ extern "C" {
 typedef struct { int32_t x, y, z, rx, ry, rz; } solar_os_jet_pose_t;
 typedef struct { int32_t x, y, z; } solar_os_jet_vertex_t;
 typedef struct { uint16_t a, b, c; } solar_os_jet_triangle_t;
+typedef struct {
+    uint32_t abi_version, struct_size;
+    int (*execute)(void *scene, const solar_os_jet_command_t *command, solar_os_jet_reply_t *reply);
+} solar_os_jet_extensions_v1_t;
 
 /* One live scene per loaded provider. Serialize all calls; concurrent/reentrant
  * calls return INVALID_STATE without waiting. Geometry is copied;
@@ -39,7 +44,10 @@ typedef struct {
     int (*remove)(void *scene, uint32_t object);
     int (*render)(void *scene, uint16_t *color, size_t bytes,
                   solar_os_native_cancel_fn cancel, void *user);
+    /* Optional append-only extension. Consumers check struct_size before use. */
+    const solar_os_jet_extensions_v1_t *extensions;
 } solar_os_jet_api_v1_t;
+#define SOLAR_OS_JET_BASE_SIZE offsetof(solar_os_jet_api_v1_t,extensions)
 
 #ifdef __cplusplus
 }

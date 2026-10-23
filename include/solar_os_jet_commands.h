@@ -1,0 +1,91 @@
+#pragma once
+#include <stdint.h>
+#include <stddef.h>
+#include <string.h>
+
+/* Shared control schema for the provider and both interpreters. Payloads are
+ * borrowed for one synchronous call; providers copy all retained resources.
+ * Numeric slots use doubles so integer handles retain all 32 bits. */
+#define SOLAR_OS_JET_VALUES 24
+#define SOLAR_OS_JET_NAME 64
+#define SOLAR_OS_JET_MAX_TEXTURES 16
+#define SOLAR_OS_JET_MAX_MATERIALS 32
+typedef struct {
+    uint32_t opcode, handle, fields;
+    double values[SOLAR_OS_JET_VALUES];
+    const void *data, *extra;
+    size_t bytes, extra_bytes;
+    char name[SOLAR_OS_JET_NAME];
+} solar_os_jet_command_t;
+typedef struct {
+    uint32_t handle, count, handles[32];
+    double values[SOLAR_OS_JET_VALUES];
+    char name[SOLAR_OS_JET_NAME];
+} solar_os_jet_reply_t;
+enum {
+    SOLAR_OS_JET_INFO=1, SOLAR_OS_JET_MATERIAL, SOLAR_OS_JET_MATERIAL_SET,
+    SOLAR_OS_JET_MATERIAL_INFO, SOLAR_OS_JET_TEXTURE, SOLAR_OS_JET_TEXTURE_SET,
+    SOLAR_OS_JET_TEXTURE_INFO, SOLAR_OS_JET_ASSIGN, SOLAR_OS_JET_MESH_DATA,
+};
+enum { SOLAR_OS_JET_FEATURE_MATERIALS=1, SOLAR_OS_JET_FEATURE_TEXTURES=2 };
+typedef struct {
+    int32_t x,y,z,u,v,nx,ny,nz;
+} solar_os_jet_mesh_vertex_t;
+typedef struct { uint16_t a,b,c,pad; uint32_t material; } solar_os_jet_mesh_face_t;
+enum { SOLAR_OS_JET_MESH_NORMALS=1 };
+
+enum { JET_INT, JET_FLOAT, JET_BOOL, JET_ENUM, JET_NAME, JET_BYTES, JET_PALETTE };
+typedef struct {
+    const char *name;
+    uint8_t kind;
+    double initial,minimum,maximum;
+    const char *choices;
+} solar_os_jet_field_t;
+#define JET_MATERIAL_FIELDS(X) \
+ X(color,INT,16777215,0,16777215,NULL) \
+ X(shading,ENUM,1,0,6,"flat|gouraud|phong|wireframe|unlit|water|additive") \
+ X(texture,INT,0,0,4294967295.0,NULL) \
+ X(alpha,INT,255,0,255,NULL) \
+ X(diffuse,INT,255,0,255,NULL) \
+ X(specular,INT,0,0,255,NULL) \
+ X(gloss,INT,0,0,255,NULL) \
+ X(emissive,BOOL,0,0,1,NULL) \
+ X(perspective,BOOL,1,0,1,NULL) \
+ X(water_bias,INT,0,0,255,NULL) \
+ X(reflection_max_y,INT,-1,-1,1023,NULL) \
+ X(name,NAME,0,0,0,NULL)
+#define JET_TEXTURE_FIELDS(X) \
+ X(format,ENUM,0,0,2,"rgb565|rgb888|index8") \
+ X(address,ENUM,0,0,2,"wrap|clamp|zero") \
+ X(alpha_key,INT,-1,-1,16777215,NULL) \
+ X(screen_space,BOOL,0,0,1,NULL) \
+ X(reflection,BOOL,0,0,1,NULL) \
+ X(bilinear,BOOL,0,0,1,NULL) \
+ X(offset,INT,0,0,255,NULL) \
+ X(palette,PALETTE,0,0,0,NULL) \
+ X(pixels,BYTES,0,0,0,NULL) \
+ X(name,NAME,0,0,0,NULL)
+#define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_MAT_##name,
+enum { JET_MATERIAL_FIELDS(JET_FIELD_ENUM) JET_MAT_COUNT };
+#undef JET_FIELD_ENUM
+#define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_TEX_##name,
+enum { JET_TEXTURE_FIELDS(JET_FIELD_ENUM) JET_TEX_COUNT };
+#undef JET_FIELD_ENUM
+#define JET_FIELD_VALUE(name,kind,initial,low,high,choices) {#name,JET_##kind,initial,low,high,choices},
+static const solar_os_jet_field_t jet_material_fields[]={JET_MATERIAL_FIELDS(JET_FIELD_VALUE)};
+static const solar_os_jet_field_t jet_texture_fields[]={JET_TEXTURE_FIELDS(JET_FIELD_VALUE)};
+#undef JET_FIELD_VALUE
+static inline int solar_os_jet_choice(const char *choices,const char *text,size_t length) {
+    int index=0;
+    while(choices && *choices) {
+        const char *end=strchr(choices,'|');size_t n=end ? (size_t)(end-choices) : strlen(choices);
+        if(n==length && !memcmp(choices,text,n)) return index;
+        choices=end ? end+1 : NULL;++index;
+    }
+    return -1;
+}
+static inline const char *solar_os_jet_choice_at(const char *choices,unsigned index,size_t *length) {
+    while(index-- && choices) {const char *end=strchr(choices,'|');choices=end ? end+1 : NULL;}
+    if(!choices) {*length=0;return "";}
+    const char *end=strchr(choices,'|');*length=end ? (size_t)(end-choices) : strlen(choices);return choices;
+}
