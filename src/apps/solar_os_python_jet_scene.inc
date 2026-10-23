@@ -62,6 +62,7 @@ static mp_obj_t solaros_jet_scene_object_info(mp_obj_t self,mp_obj_t handle) {
     mp_obj_t result=python_jet_info_dict(&r,jet_object_fields,JET_OBJ_COUNT);
     python_dict_store_uint(result,"vertices",r.count);python_dict_store_uint(result,"triangles",r.handles[0]);
     python_dict_store_uint(result,"lod_levels",r.handles[7]);
+    python_dict_store_uint(result,"instances",r.handles[8]);
     mp_obj_t bounds[6];for(unsigned i=0;i<6;++i) bounds[i]=mp_obj_new_int((int32_t)r.handles[i+1]);
     mp_obj_dict_store(result,MP_OBJ_NEW_QSTR(MP_QSTR_bounds),mp_obj_new_tuple(6,bounds));
     return result;

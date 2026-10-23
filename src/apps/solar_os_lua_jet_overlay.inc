@@ -33,12 +33,16 @@ static int solua_jet_scene_pick(lua_State *L) {
 }
 static int solua_jet_scene_picks(lua_State *L) {
     solar_os_jet_t *scene=solua_jet_scene(L);
-    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_PICK_RESULT};solar_os_jet_reply_t r;
+    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_INFO};solar_os_jet_reply_t r;
+    SOLUA_JET_CALL(solar_os_jet_execute(scene,&q,&r));bool instancing=(r.handle&SOLAR_OS_JET_FEATURE_INSTANCING)!=0;
+    q.opcode=SOLAR_OS_JET_PICK_RESULT;
     SOLUA_JET_CALL(solar_os_jet_execute(scene,&q,&r));unsigned count=r.count;lua_newtable(L);
     for(unsigned i=0;i<count;++i) {
         if(i) {q.values[0]=i;SOLUA_JET_CALL(solar_os_jet_execute(scene,&q,&r));}
         lua_newtable(L);lua_pushboolean(L,r.values[0]);lua_setfield(L,-2,"hit");
         solua_set_int(L,-1,"object",r.handle);solua_set_int(L,-1,"triangle",r.values[1]+1);
+        solua_set_int(L,-1,"mesh",instancing ? r.values[5] : 0);solua_set_int(L,-1,"instance",instancing ? r.values[6]+1 : 0);
+        solua_set_int(L,-1,"batch",instancing ? r.values[7] : 0);
         solua_set_int(L,-1,"depth",r.values[2]);solua_set_int(L,-1,"x",r.values[3]);solua_set_int(L,-1,"y",r.values[4]);
         lua_rawseti(L,-2,i+1);
     }

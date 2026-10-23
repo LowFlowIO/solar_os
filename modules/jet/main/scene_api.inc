@@ -53,10 +53,10 @@ static int object_control(const solar_os_jet_command_t &q,solar_os_jet_reply_t &
     double old[SOLAR_OS_JET_VALUES]={0};object_values(*item,old);
     if(q.opcode==SOLAR_OS_JET_OBJECT_INFO) {
         std::memcpy(r.values,old,sizeof(old));std::memcpy(r.name,item->name,sizeof(r.name));
-        r.count=o.vertices.size();r.handles[0]=o.triangles.size();
+        r.count=o.vertexCount();r.handles[0]=o.triangleCount();
         r.handles[1]=o.boundingBoxMin.x;r.handles[2]=o.boundingBoxMin.y;r.handles[3]=o.boundingBoxMin.z;
         r.handles[4]=o.boundingBoxMax.x;r.handles[5]=o.boundingBoxMax.y;r.handles[6]=o.boundingBoxMax.z;
-        r.handles[7]=o.lodMeshes.size();return 0;
+        r.handles[7]=o.lodMeshes.size();r.handles[8]=o.instances.size();return 0;
     }
     if(!valid_values(q,jet_object_fields,JET_OBJ_COUNT) || object_name_used(q.name,q.handle)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     double v[SOLAR_OS_JET_VALUES]={0};merge_values(v,q,jet_object_fields,JET_OBJ_COUNT,old);
@@ -74,7 +74,8 @@ static int object_control(const solar_os_jet_command_t &q,solar_os_jet_reply_t &
 }
 static bool bounded_mesh(const Object &o) {
     for(auto &v:o.vertices) if(!coordinate(v.position.x)||!coordinate(v.position.y)||!coordinate(v.position.z)) return false;
-    return true;
+    return coordinate(o.boundingBoxMin.x)&&coordinate(o.boundingBoxMin.y)&&coordinate(o.boundingBoxMin.z)&&
+        coordinate(o.boundingBoxMax.x)&&coordinate(o.boundingBoxMax.y)&&coordinate(o.boundingBoxMax.z);
 }
 static int object_action(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
     if(!valid_values(q,jet_object_action_fields,JET_OACT_COUNT)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -95,12 +96,13 @@ static int object_action(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r
         Object changed=o;
         if(v[JET_OACT_action]==3) changed.bakeRotation();else changed.bakeScale(v[JET_OACT_numerator],v[JET_OACT_denominator]);
         if(!bounded_mesh(changed)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
-        o=std::move(changed);return 0;
+        o=std::move(changed);refresh_instance_poses(*item);return 0;
     }
     case 5:return o.cachePositions() ? 0 : SOLAR_OS_NATIVE_ERROR_NO_MEMORY;
     case 6:o.invalidatePositions();return 0;
     case 7: {
         auto copy=std::make_unique<Item>(0xffffff);copy->material=item->material;copy->object=std::make_unique<Object>(o);
+        copy->instance_poses=item->instance_poses;
         copy->face_materials.resize(item->face_materials.size());
         for(auto &face:copy->object->triangles) {
             if(face.material==&item->material) face.material=&copy->material;

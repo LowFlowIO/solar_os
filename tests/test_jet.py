@@ -60,13 +60,14 @@ class JetFramebufferTest(unittest.TestCase):
             self.skipTest("g++ unavailable")
         with tempfile.TemporaryDirectory(prefix="solaros-jet-") as temporary:
             images = []
-            for swapped, optimization in ((0, "-O1"), (1, "-O1"), (1, "-O3")):
-                binary = Path(temporary) / f"jet-{swapped}-{optimization}"
-                output = Path(temporary) / f"jet-{swapped}-{optimization}.rgb565"
+            for swapped, optimization, instancing in ((0, "-O1", 0), (0, "-O1", 1), (1, "-O1", 1), (1, "-O3", 1)):
+                binary = Path(temporary) / f"jet-{swapped}-{optimization}-{instancing}"
+                output = Path(temporary) / f"jet-{swapped}-{optimization}-{instancing}.rgb565"
                 command = [compiler, "-std=c++17", optimization, "-g", "-fsanitize=address",
                            "-fno-omit-frame-pointer", f"-DJET_FRAMEBUFFER_SWAP_BYTES={swapped}",
                            f"-DJET_CONSTANT_COLOR_LIGHTING={swapped}",
                            f"-DJET_UNIFORM_BYTE_CLEAR={swapped}",
+                           f"-DJET_MESH_INSTANCING={instancing}",
                            f"-I{MODULE}", f"-I{MODULE / 'vendor'}",
                            str(ROOT / "tests/host/jet_framebuffer_test.cpp"), *SOURCES, "-o", str(binary)]
                 subprocess.run(command, check=True, capture_output=True, text=True)
@@ -74,7 +75,8 @@ class JetFramebufferTest(unittest.TestCase):
                                text=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
                 images.append(output.read_bytes())
             self.assertEqual(len(images[0]), (144 + 1) * 64 * 48 * 2)
-            native, wire, optimized_wire = images
+            baseline, native, wire, optimized_wire = images
+            self.assertEqual(baseline,native)
             self.assertEqual(wire, optimized_wire)
             self.assertEqual(native[0::2], wire[1::2])
             self.assertEqual(native[1::2], wire[0::2])
@@ -121,7 +123,8 @@ class JetFramebufferTest(unittest.TestCase):
                 subprocess.run(["g++", *flags, *objects, *extra, "-lm", "-o", str(binary)], check=True, capture_output=True)
                 subprocess.run([str(binary), *([str(ROOT / name) for name in
                     ("examples/lua/jet.lua", "examples/lua/jet_materials.lua", "examples/lua/jet_scene.lua",
-                     "examples/lua/jet_picking.lua", "examples/lua/jet_assets.lua")] if lua else [])],
+                     "examples/lua/jet_picking.lua", "examples/lua/jet_assets.lua",
+                     "examples/lua/jet_instances.lua")] if lua else [])],
                     check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
 
 

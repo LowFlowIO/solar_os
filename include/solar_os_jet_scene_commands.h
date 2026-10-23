@@ -47,6 +47,14 @@
 #define JET_OBJ_LOAD_FIELDS(X) \
  X(scale,FLOAT,1,0.0009765625,32,NULL) X(material,INT,0,0,4294967295.0,NULL) \
  X(color,INT,16777215,0,16777215,NULL) X(name,NAME,0,0,0,NULL)
+#define JET_INSTANCE_FIELDS(X) \
+ X(x,INT,0,-4096,4096,NULL) X(y,INT,0,-4096,4096,NULL) X(z,INT,0,-4096,4096,NULL) \
+ X(rx,INT,0,-360000,360000,NULL) X(ry,INT,0,-360000,360000,NULL) X(rz,INT,0,-360000,360000,NULL) \
+ X(material,INT,0,0,4294967295.0,NULL) X(materials,HANDLES,0,0,0,NULL)
+#define JET_PROTOTYPE_FIELDS(X) X(name,NAME,0,0,0,NULL)
+#define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_INST_##name,
+enum { JET_INSTANCE_FIELDS(JET_FIELD_ENUM) JET_INST_COUNT };
+#undef JET_FIELD_ENUM
 #define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_LOAD_##name,
 enum { JET_OBJ_LOAD_FIELDS(JET_FIELD_ENUM) JET_LOAD_COUNT };
 #undef JET_FIELD_ENUM
@@ -84,4 +92,6 @@ static const solar_os_jet_field_t jet_point_fields[]={JET_POINT_FIELDS(JET_FIELD
 static const solar_os_jet_field_t jet_scene_fields[]={JET_SCENE_FIELDS(JET_FIELD_VALUE)};
 static const solar_os_jet_field_t jet_sprite_fields[]={JET_SPRITE_FIELDS(JET_FIELD_VALUE)};
 static const solar_os_jet_field_t jet_obj_load_fields[]={JET_OBJ_LOAD_FIELDS(JET_FIELD_VALUE)};
+static const solar_os_jet_field_t jet_instance_fields[]={JET_INSTANCE_FIELDS(JET_FIELD_VALUE)};
+static const solar_os_jet_field_t jet_prototype_fields[]={JET_PROTOTYPE_FIELDS(JET_FIELD_VALUE)};
 #undef JET_FIELD_VALUE

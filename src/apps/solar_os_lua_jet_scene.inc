@@ -61,6 +61,7 @@ static int solua_jet_scene_object_info(lua_State *L) {
     SOLUA_JET_CALL(solar_os_jet_execute(scene,&q,&r));solua_jet_info_table(L,&r,jet_object_fields,JET_OBJ_COUNT);
     solua_set_int(L,-1,"vertices",r.count);solua_set_int(L,-1,"triangles",r.handles[0]);
     solua_set_int(L,-1,"lod_levels",r.handles[7]);
+    solua_set_int(L,-1,"instances",r.handles[8]);
     lua_newtable(L);for(unsigned i=0;i<6;++i) {lua_pushinteger(L,(int32_t)r.handles[i+1]);lua_rawseti(L,-2,i+1);}
     lua_setfield(L,-2,"bounds");
     return 1;

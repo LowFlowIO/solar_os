@@ -32,8 +32,18 @@ struct SpriteResource:Resource {
     Sprite2D value;
     SpriteResource() {fallback.name=nullptr;}
 };
+struct MeshResource:Resource {
+    Material fallback;
+    std::vector<std::unique_ptr<Material>> face_materials;
+    Object::SharedMesh value;
+};
+struct InstancePose {
+    uint32_t prototype=0;
+    double values[JET_INST_COUNT]={0};
+};
 struct PickSnapshot {
-    uint32_t object=0;
+    uint32_t object=0,mesh=0,batch=0;
+    int32_t instance=-1;
     int32_t triangle=-1,depth=0;
     int16_t x=-1,y=-1;
     bool hit=false;
@@ -44,6 +54,7 @@ struct Item {
     uint32_t id;
     char name[SOLAR_OS_JET_NAME]={0};
     std::vector<std::unique_ptr<Material>> face_materials;
+    std::vector<InstancePose> instance_poses;
     explicit Item(uint32_t color) : material(uint16_t(((color >> 8) & 0xf800) |
         ((color >> 5) & 0x7e0) | ((color >> 3) & 31))), id(0) {
         material.shadingMode = ShadingMode::GOURAUD;
@@ -59,6 +70,7 @@ struct Engine {
     std::unique_ptr<MaterialResource> materials[SOLAR_OS_JET_MAX_MATERIALS];
     std::unique_ptr<LightResource> lights[SOLAR_OS_JET_MAX_LIGHTS];
     std::unique_ptr<SpriteResource> sprites[SOLAR_OS_JET_MAX_SPRITES];
+    std::unique_ptr<MeshResource> prototypes[SOLAR_OS_JET_MAX_PROTOTYPES];
     PickSnapshot picks[SOLAR_OS_JET_MAX_PICKS];
     solar_os_jet_pick_t query_points[SOLAR_OS_JET_MAX_PICKS];
     unsigned pick_count=0,query_count=0;
@@ -175,10 +187,14 @@ static Item *find(uint32_t id) {
 static int scene_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static int overlay_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static int asset_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
+static int instance_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
+static void refresh_instance_poses(Item &);
+static int remove_prototype(uint32_t);
 #include "surface_api.inc"
 #include "scene_api.inc"
 #include "overlay_api.inc"
 #include "asset_api.inc"
+#include "instance_api.inc"
 static int transform(void *s,uint32_t id,const solar_os_jet_pose_t *p) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if(!pose_valid(p)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -194,7 +210,8 @@ static int remove(void *s,uint32_t id) {
         auto &objects=active->scene.getObjects();
         objects.erase(std::remove(objects.begin(),objects.end(),item->object.get()),objects.end());
         item.reset(); return 0;
-    } int err=remove_sprite(id);if(err!=SOLAR_OS_NATIVE_ERROR_NOT_FOUND)return err;
+    } int err=remove_prototype(id);if(err!=SOLAR_OS_NATIVE_ERROR_NOT_FOUND)return err;
+      err=remove_sprite(id);if(err!=SOLAR_OS_NATIVE_ERROR_NOT_FOUND)return err;
       err=remove_light(id);return err==SOLAR_OS_NATIVE_ERROR_NOT_FOUND ? remove_surface(id) : err; });
 }
 struct Cancellation {

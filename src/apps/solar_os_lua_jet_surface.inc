@@ -31,12 +31,18 @@ static void solua_jet_options(lua_State *L,int index,const solar_os_jet_field_t 
         case JET_BOOL:luaL_checktype(L,-1,LUA_TBOOLEAN);q->values[i]=lua_toboolean(L,-1);break;
         case JET_FLOAT:q->values[i]=luaL_checknumber(L,-1);break;
         case JET_BYTES:luaL_checktype(L,-1,LUA_TSTRING);q->data=lua_tolstring(L,-1,&q->bytes);break;
-        case JET_PALETTE: {
+        case JET_PALETTE:case JET_HANDLES: {
             luaL_checktype(L,-1,LUA_TTABLE);int colors=lua_absindex(L,-1);size_t length=lua_rawlen(L,colors);
-            if(!length || length>256) luaL_error(L,"invalid Jet palette");
+            if((!length&&fields[i].kind==JET_PALETTE) || length>(fields[i].kind==JET_HANDLES ? SOLAR_OS_JET_MAX_TRIANGLES : 256))
+                luaL_error(L,"invalid Jet entry list");
             uint32_t *palette=lua_newuserdatauv(L,length*sizeof(*palette),0);
             for(size_t k=0;k<length;++k) {
-                lua_rawgeti(L,colors,k+1);luaL_checkinteger(L,-1);palette[k]=solua_jet_integer(L,-1,0,0xffffff,0);lua_pop(L,1);
+                lua_rawgeti(L,colors,k+1);lua_Integer id=luaL_checkinteger(L,-1);
+                if(fields[i].kind==JET_HANDLES) {
+                    if(id<0||(uint64_t)id>UINT32_MAX)luaL_error(L,"invalid Jet handle");
+                    palette[k]=(uint32_t)id;
+                } else palette[k]=solua_jet_integer(L,-1,0,0xffffff,0);
+                lua_pop(L,1);
             }
             lua_replace(L,colors);retain=true;q->extra=palette;q->extra_bytes=length*sizeof(*palette);break;
         }
@@ -51,7 +57,7 @@ static void solua_jet_info_table(lua_State *L,const solar_os_jet_reply_t *r,cons
     lua_newtable(L);int table=lua_absindex(L,-1);solua_set_int(L,table,"id",r->handle);
     for(unsigned i=0;i<n;++i) {
         const solar_os_jet_field_t *f=&fields[i];
-        if(f->kind==JET_BYTES || f->kind==JET_PALETTE) continue;
+        if(f->kind==JET_BYTES || f->kind==JET_PALETTE || f->kind==JET_HANDLES) continue;
         if(f->kind==JET_NAME) lua_pushstring(L,r->name);
         else if(f->kind==JET_ENUM) {
             size_t length;const char *name=solar_os_jet_choice_at(f->choices,r->values[i],&length);lua_pushlstring(L,name,length);
@@ -72,8 +78,9 @@ static int solua_jet_scene_capabilities(lua_State *L) {
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_SPRITES);lua_setfield(L,-2,"sprites");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_PICKING);lua_setfield(L,-2,"picking");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_ASSETS);lua_setfield(L,-2,"assets");
-    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks"};
-    for(unsigned i=0;i<9;++i) solua_set_int(L,-1,names[i],r.values[i]);
+    lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_INSTANCING);lua_setfield(L,-2,"instancing");
+    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks","max_prototypes","max_instances"};
+    for(unsigned i=0;i<11;++i) solua_set_int(L,-1,names[i],r.values[i]);
     return 1;
 }
 static int solua_jet_scene_material(lua_State *L) {

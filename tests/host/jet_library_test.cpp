@@ -90,6 +90,28 @@ static int overlay_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *
     assert(api->remove(scene,cube)==0);assert(execute()==0&&r.handle==cube); // Last completed frame, never a dangling pointer.
     assert(api->remove(scene,sprite)==0);return 0;
 }
+static int instance_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
+    solar_os_jet_command_t q={};solar_os_jet_reply_t r;
+    auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
+    q.opcode=SOLAR_OS_JET_PRIMITIVE;q.fields=1U<<JET_PRIM_kind;q.values[JET_PRIM_kind]=9;
+    int err=execute();if(err)return err;uint32_t source=r.handle;
+    q={};q.opcode=SOLAR_OS_JET_PROTOTYPE;q.handle=source;err=execute();if(err)return err;uint32_t prototype=r.handle;
+    assert(api->remove(scene,source)==0);
+    q={};q.opcode=SOLAR_OS_JET_MATERIAL;err=execute();if(err)return err;uint32_t mat=r.handle;
+    q={};q.opcode=SOLAR_OS_JET_INSTANCE;q.values[16]=prototype;q.fields=1U<<JET_INST_x;q.values[JET_INST_x]=-50;
+    err=execute();if(err)return err;uint32_t batch=r.handle;
+    uint32_t overrides[12];for(auto &id:overrides)id=mat;
+    q={};q.opcode=SOLAR_OS_JET_INSTANCE_ADD;q.handle=batch;q.values[16]=prototype;
+    q.fields=(1U<<JET_INST_x)|(1U<<JET_INST_materials);q.values[JET_INST_x]=50;q.extra=overrides;q.extra_bytes=sizeof(overrides);
+    err=execute();if(err)return err;assert(r.count==1);
+    q={};q.opcode=SOLAR_OS_JET_OBJECT_ACTION;q.handle=batch;q.fields=1U<<JET_OACT_action;q.values[JET_OACT_action]=4;
+    err=execute();if(err)return err;
+    q.values[JET_OACT_action]=7;err=execute();if(err)return err;uint32_t clone=r.handle;
+    assert(api->remove(scene,batch)==0&&api->remove(scene,prototype)==SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+    assert(api->remove(scene,mat)==SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+    err=api->render(scene,color,bytes,nullptr,nullptr);if(err)return err;
+    assert(api->remove(scene,clone)==0&&api->remove(scene,prototype)==0&&api->remove(scene,mat)==0);return 0;
+}
 #include "jet_assets_test.inc"
 int main() {
     auto *api=solar_os_jet_engine_api_v1();assert(api->abi_version==1&&api->struct_size==sizeof(*api));
@@ -143,6 +165,16 @@ int main() {
         requests=0;fail_at=failure;void *s=nullptr;
         int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
         if(!err) {err=asset_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
+        assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
+        assert(solar_os_jet_engine_idle()&&live==baseline);
+        if(requests<=failure){complete=true;break;}
+    }
+    assert(complete);fail_at=-1;
+    complete=false;
+    for(long failure=0;failure<250;++failure) {
+        requests=0;fail_at=failure;void *s=nullptr;
+        int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
+        if(!err) {err=instance_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
         assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
         assert(solar_os_jet_engine_idle()&&live==baseline);
         if(requests<=failure){complete=true;break;}

@@ -38,6 +38,26 @@ static void snapshot_picks() {
         dest.hit=source.hit;dest.triangle=source.triangleIndex;dest.depth=source.depth;
         dest.x=source.hit ? source.x : active->query_points[i].x;dest.y=source.hit ? source.y : active->query_points[i].y;
         if(source.hit)for(auto &item:active->items)if(item && item->object.get()==source.object) {dest.object=item->id;break;}
+        dest.instance=source.instanceIndex;
+        if(source.hit) {
+            if(source.instanceIndex<0) {
+                for(auto &item:active->items)if(item&&item->object.get()==source.mesh) {dest.batch=item->id;break;}
+            }
+            if(source.instanceIndex>=0)for(auto &owner:active->items)if(owner&&owner->object.get()==source.object) {
+                auto matches=[&](const Object *object) {return size_t(source.instanceIndex)<object->instances.size()&&
+                    object->instances[size_t(source.instanceIndex)].mesh.get()==source.mesh;};
+                if(matches(owner->object.get()))dest.batch=owner->id;
+                else for(auto *lod:owner->object->lodMeshes)if(matches(lod)) {
+                    for(auto &item:active->items)if(item&&item->object.get()==lod) {dest.batch=item->id;break;}
+                    break;
+                }
+                break;
+            }
+            for(auto &item:active->items)if(item&&item->object.get()==source.mesh) {dest.mesh=item->id;break;}
+            for(auto &mesh:active->prototypes)if(mesh&&mesh->value.get()==source.mesh) {dest.mesh=mesh->id;break;}
+            if(!dest.mesh)for(auto &item:active->items)if(item)for(size_t j=0;j<item->object->instances.size();++j)
+                if(item->object->instances[j].mesh.get()==source.mesh) {dest.mesh=item->instance_poses[j].prototype;break;}
+        }
     }
 }
 static int overlay_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
@@ -63,7 +83,8 @@ static int overlay_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
         double index=q.values[0];if(!std::isfinite(index) || index<0 || index>=r.count || index!=std::floor(index))
             return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
         const auto &p=active->picks[unsigned(index)];
-        r.handle=p.object;r.values[0]=p.hit;r.values[1]=p.triangle;r.values[2]=p.depth;r.values[3]=p.x;r.values[4]=p.y;return 0;
+        r.handle=p.object;r.values[0]=p.hit;r.values[1]=p.triangle;r.values[2]=p.depth;r.values[3]=p.x;r.values[4]=p.y;
+        r.values[5]=p.mesh;r.values[6]=p.instance;r.values[7]=p.batch;return 0;
     }
     default:return asset_command(q,r);
     }

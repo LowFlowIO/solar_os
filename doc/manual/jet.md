@@ -354,6 +354,62 @@ with open("/sdcard/assets/model.obj") as source:
 Self-contained examples that build a tiny BMP and import a textured OBJ cube
 are `examples/python/jet_assets.py` and `examples/lua/jet_assets.lua`.
 
+## Shared mesh instancing
+
+Jet library 1.5 or later reports `instancing=True`. A prototype is an immutable
+copy of an object's local geometry. Its default and object-owned face materials
+are copied; named materials stay shared and remain editable. The source object
+can be changed or removed afterward. Its position, rotation, scale and LOD
+links are not part of the prototype; bake any wanted geometry changes first.
+Objects that already contain instances cannot become prototypes.
+
+| Method | Contract |
+| --- | --- |
+| `prototype(object, name="")` | Freeze local geometry and return a prototype handle. Python accepts the name keyword; Lua takes an options table. |
+| `prototype_info(prototype)` | Return id, name, vertex/triangle counts and six local-space bounds. |
+| `instance(prototype, ...)` | Create an object containing one instance; return its object handle. |
+| `instance_add(object, prototype, ...)` | Append an instance to an existing object; return its index. The object may also have its own geometry. |
+| `instance_set(object, index, ...)` | Partially update an instance's local pose and material overrides. |
+| `instance_info(object, index)` | Return local pose/options, prototype handle, per-face material handles, row-major 3×3 `basis`, and `baked`. |
+| `instance_remove(object, index)`, `instance_clear(object)` | Remove one or all instances, preserving the object's own geometry. Later indices shift down after removal. |
+| `remove(prototype)` | Release a prototype after all of its instances and clones are removed. |
+
+Instance indices are zero-based in Python and one-based in Lua. Options are
+`x/y/z`, `rx/ry/rz`, `material` (all default zero), and `materials`
+(optional per-triangle material handles). Python uses keywords; Lua uses an
+options table. Zero material handles retain the prototype's original face
+materials. A nonzero uniform `material` takes precedence over the per-face
+table. A supplied table must match the prototype's triangle count; an empty
+sequence clears it. Material references reject removal while in use.
+
+Instances share prototype geometry and inherit their containing object's
+transform, culling, fade, LOD and depth flags. Their local bounds must fit
+-4096–4096. A scene supports 16 prototypes and up to 32 instances per object;
+the object's own geometry plus all instances must fit 2048 triangles.
+`capabilities()` reports `max_prototypes` and `max_instances`.
+`object_info()` includes the instance count and total geometry counts.
+
+`clone` copies the batch placements while retaining shared prototypes.
+`bake_rotation` moves the object's rotation into its geometry and instance
+placements. `bake_scale` creates shared scaled mesh copies within that batch;
+`instance_info().baked` then becomes true while `prototype` identifies the
+original prototype whose materials remain retained. Later partial instance
+updates preserve that baked geometry. Pose angles are rounded integer Euler
+angles; `basis` exposes the exact retained matrix.
+`assign(object, material)` updates both the object's own faces and all
+instance overrides, clearing per-face override tables.
+
+Picking results additionally include `mesh`, `batch`, and `instance`.
+`object` identifies the owning scene object, `batch` identifies the object
+whose geometry was selected by LOD, and `mesh` is the actual object/prototype
+handle. `instance` uses the language's index base, or Python -1 / Lua 0 for
+ordinary geometry. For older providers these extra handles are zero and the
+instance index indicates ordinary geometry. Results retain the last completed
+frame's values even after resources are removed.
+
+Complete examples are `examples/python/jet_instances.py` and
+`examples/lua/jet_instances.lua`.
+
 ## Presentation and memory
 
 Rendering uses the display's full dimensions. Width must be a multiple of eight;

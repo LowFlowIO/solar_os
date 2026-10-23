@@ -25,11 +25,13 @@ static void python_jet_options(size_t count,const mp_obj_t *args,mp_map_t *kwarg
             mp_buffer_info_t buffer;mp_get_buffer_raise(value,&buffer,MP_BUFFER_READ);
             q->data=buffer.buf;q->bytes=buffer.len;break;
         }
-        case JET_PALETTE: {
-            size_t length;mp_obj_t *colors;mp_obj_get_array(value,&length,&colors);
-            if(!length || length>256) mp_raise_ValueError(MP_ERROR_TEXT("invalid Jet palette"));
+        case JET_PALETTE:case JET_HANDLES: {
+            size_t length=0;mp_obj_t *colors=NULL;
+            if(fields[i].kind!=JET_HANDLES||value!=mp_const_none)mp_obj_get_array(value,&length,&colors);
+            if((!length&&fields[i].kind==JET_PALETTE) || length>(fields[i].kind==JET_HANDLES ? SOLAR_OS_JET_MAX_TRIANGLES : 256))
+                mp_raise_ValueError(MP_ERROR_TEXT("invalid Jet entry list"));
             uint32_t *palette=m_new(uint32_t,length);
-            for(size_t k=0;k<length;++k) palette[k]=python_jet_color(colors[k]);
+            for(size_t k=0;k<length;++k) palette[k]=fields[i].kind==JET_HANDLES ? python_u32_from_obj(colors[k]) : python_jet_color(colors[k]);
             q->extra=palette;q->extra_bytes=length*sizeof(*palette);break;
         }
         default:
@@ -46,7 +48,7 @@ static mp_obj_t python_jet_info_dict(const solar_os_jet_reply_t *r,const solar_o
     python_dict_store_uint(dict,"id",r->handle);
     for(unsigned i=0;i<n;++i) {
         const solar_os_jet_field_t *f=&fields[i];mp_obj_t value;
-        if(f->kind==JET_BYTES || f->kind==JET_PALETTE) continue;
+        if(f->kind==JET_BYTES || f->kind==JET_PALETTE || f->kind==JET_HANDLES) continue;
         if(f->kind==JET_NAME) value=mp_obj_new_str(r->name,strlen(r->name));
         else if(f->kind==JET_ENUM) {
             size_t length;const char *name=solar_os_jet_choice_at(f->choices,r->values[i],&length);
@@ -71,8 +73,9 @@ static mp_obj_t solaros_jet_scene_capabilities(mp_obj_t self) {
     python_dict_store_bool(dict,"sprites",r.handle&SOLAR_OS_JET_FEATURE_SPRITES);
     python_dict_store_bool(dict,"picking",r.handle&SOLAR_OS_JET_FEATURE_PICKING);
     python_dict_store_bool(dict,"assets",r.handle&SOLAR_OS_JET_FEATURE_ASSETS);
-    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks"};
-    for(unsigned i=0;i<9;++i) python_dict_store_uint(dict,names[i],r.values[i]);
+    python_dict_store_bool(dict,"instancing",r.handle&SOLAR_OS_JET_FEATURE_INSTANCING);
+    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks","max_prototypes","max_instances"};
+    for(unsigned i=0;i<11;++i) python_dict_store_uint(dict,names[i],r.values[i]);
     return dict;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_capabilities_obj,solaros_jet_scene_capabilities);

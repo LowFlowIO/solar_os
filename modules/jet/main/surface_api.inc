@@ -134,6 +134,13 @@ static int texture_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
 }
 static int remove_surface(uint32_t id) {
     if(auto *entry=resource(active->materials,id)) {
+        for(auto &mesh:active->prototypes)if(mesh)for(auto &face:mesh->value->triangles)
+            if(face.material==&entry->value)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+        for(auto &item:active->items)if(item)for(auto &instance:item->object->instances) {
+            if(instance.materialOverride==&entry->value)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+            if(instance.triangleMaterials)for(auto *mat:*instance.triangleMaterials)
+                if(mat==&entry->value)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+        }
         for(auto &sprite:active->sprites) if(sprite && sprite->value.material==&entry->value)
             return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
         for(auto &item:active->items) if(item) for(auto &face:item->object->triangles)
@@ -159,6 +166,8 @@ static int mesh_data(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
     auto item=std::make_unique<Item>(0xffffff);item->object=std::make_unique<Object>();
     Item *existing=q.handle ? find(q.handle) : nullptr;
     if(q.handle && !existing) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
+    if(existing && existing->object->triangleCount()-existing->object->triangles.size()+t>SOLAR_OS_JET_MAX_TRIANGLES)
+        return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
     auto &obj=*item->object;obj.vertices.reserve(t*3);obj.triangles.reserve(t);
     for(size_t i=0;i<n;++i) {
         auto &v=vertices[i];
@@ -190,12 +199,13 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
         const auto &q=*command;auto &r=*reply;r={};
         switch(q.opcode) {
         case SOLAR_OS_JET_INFO: {
-            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS;
+            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS|SOLAR_OS_JET_FEATURE_INSTANCING;
             int objects,triangles,vertices;active->scene.getStatistics(objects,triangles,vertices);
             r.values[0]=objects;r.values[1]=triangles;r.values[2]=vertices;
             r.values[3]=SOLAR_OS_JET_MAX_MATERIALS;r.values[4]=SOLAR_OS_JET_MAX_TEXTURES;
             r.values[5]=SOLAR_OS_JET_MAX_LIGHTS;r.values[6]=SOLAR_OS_JET_MAX_OBJECTS;
-            r.values[7]=SOLAR_OS_JET_MAX_SPRITES;r.values[8]=SOLAR_OS_JET_MAX_PICKS;return 0;
+            r.values[7]=SOLAR_OS_JET_MAX_SPRITES;r.values[8]=SOLAR_OS_JET_MAX_PICKS;
+            r.values[9]=SOLAR_OS_JET_MAX_PROTOTYPES;r.values[10]=SOLAR_OS_JET_MAX_INSTANCES;return 0;
         }
         case SOLAR_OS_JET_MATERIAL:case SOLAR_OS_JET_MATERIAL_SET:case SOLAR_OS_JET_MATERIAL_INFO:
             return material_command(q,r);
@@ -207,6 +217,10 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
                 return int(SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT);
             auto *mat=material(uint32_t(q.values[0]),&item->material);if(!mat) return int(SOLAR_OS_NATIVE_ERROR_NOT_FOUND);
             for(auto &face:item->object->triangles) {face.material=mat;face.colorBaked=false;}
+            for(size_t i=0;i<item->object->instances.size();++i) {
+                auto &instance=item->object->instances[i];instance.materialOverride=q.values[0] ? mat : nullptr;
+                instance.triangleMaterials.reset();item->instance_poses[i].values[JET_INST_material]=q.values[0];
+            }
             return 0;
         }
         case SOLAR_OS_JET_MESH_DATA:return mesh_data(q,r);

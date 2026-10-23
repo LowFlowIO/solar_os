@@ -8,6 +8,7 @@ typedef intptr_t mp_obj_t;
 typedef int mp_map_t;
 typedef struct {void *buf;size_t len;} mp_buffer_info_t;
 #define MP_OBJ_NULL INTPTR_MIN
+#define mp_const_none (INTPTR_MIN+1)
 #define MP_ERROR_TEXT(x) x
 #define MP_BUFFER_READ 1
 #define m_new(type,n) ((type *)calloc(n,sizeof(type)))

@@ -34,13 +34,18 @@ static mp_obj_t solaros_jet_scene_pick(mp_obj_t self,mp_obj_t points) {
 MP_DEFINE_CONST_FUN_OBJ_2(solaros_jet_scene_pick_obj,solaros_jet_scene_pick);
 static mp_obj_t solaros_jet_scene_picks(mp_obj_t self) {
     solar_os_jet_t *scene=python_jet_scene(self);
-    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_PICK_RESULT};solar_os_jet_reply_t r;
+    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_INFO};solar_os_jet_reply_t r;
+    PYTHON_JET_CALL(solar_os_jet_execute(scene,&q,&r));bool instancing=(r.handle&SOLAR_OS_JET_FEATURE_INSTANCING)!=0;
+    q.opcode=SOLAR_OS_JET_PICK_RESULT;
     PYTHON_JET_CALL(solar_os_jet_execute(scene,&q,&r));
     mp_obj_t list=mp_obj_new_list(0,NULL);unsigned count=r.count;
     for(unsigned i=0;i<count;++i) {
         if(i) {q.values[0]=i;PYTHON_JET_CALL(solar_os_jet_execute(scene,&q,&r));}
         mp_obj_t entry=mp_obj_new_dict(0);
         python_dict_store_bool(entry,"hit",r.values[0]);python_dict_store_uint(entry,"object",r.handle);
+        python_dict_store_uint(entry,"mesh",instancing ? r.values[5] : 0);
+        python_dict_store_uint(entry,"batch",instancing ? r.values[7] : 0);
+        mp_obj_dict_store(entry,mp_obj_new_str("instance",8),mp_obj_new_int(instancing ? r.values[6] : -1));
         const char *names[]={"triangle","depth","x","y"};
         for(unsigned k=0;k<4;++k)mp_obj_dict_store(entry,mp_obj_new_str(names[k],strlen(names[k])),mp_obj_new_int(r.values[k+1]));
         mp_obj_list_append(list,entry);

@@ -260,6 +260,6 @@ static int asset_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r
     case SOLAR_OS_JET_LOAD_OBJ:return load_obj(q,r);
     case SOLAR_OS_JET_LOAD_MTL:return load_mtl(q,r);
     case SOLAR_OS_JET_LOAD_BMP:return load_bmp(q,r);
-    default:return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    default:return instance_command(q,r);
     }
 }
