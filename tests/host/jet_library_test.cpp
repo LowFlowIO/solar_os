@@ -1,4 +1,5 @@
 #include "solar_os_jet_abi.h"
+#include "Framebuffer.hpp"
 #include <cassert>
 #include <cstdlib>
 #include <cstdio>
@@ -22,6 +23,29 @@ void *operator new[](size_t n,const std::nothrow_t &) noexcept {return operator 
 void operator delete(void *p,const std::nothrow_t &) noexcept {operator delete(p);}
 void operator delete[](void *p,const std::nothrow_t &) noexcept {operator delete(p);}
 static bool cancellation(void *user) {return ++*static_cast<unsigned *>(user)==4;}
+static void controls_validation(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
+    solar_os_jet_command_t q={};solar_os_jet_reply_t r;
+    auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
+    q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=(1U<<JET_SCENE_texture_lod)|(1U<<JET_SCENE_clear);
+    q.values[JET_SCENE_texture_lod]=1;assert(execute()==SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT);
+    q={};q.opcode=SOLAR_OS_JET_SCENE_INFO;assert(execute()==0&&r.values[JET_SCENE_clear]==1&&!r.values[JET_SCENE_texture_lod]);
+    const uint8_t red[]={248,0,248,0,248,0,248,0};
+    q={};q.opcode=SOLAR_OS_JET_TEXTURE;q.values[16]=q.values[17]=2;q.data=red;q.bytes=sizeof(red);
+    assert(execute()==0);uint32_t texture=r.handle;
+    q={};q.opcode=SOLAR_OS_JET_MATERIAL;q.fields=(1U<<JET_MAT_texture)|(1U<<JET_MAT_color)|(1U<<JET_MAT_shading);
+    q.values[JET_MAT_texture]=texture;q.values[JET_MAT_color]=0x00ff00;q.values[JET_MAT_shading]=4;
+    assert(execute()==0);uint32_t material=r.handle,cube=0;assert(api->cube(scene,150,150,150,0xffffff,&cube)==0);
+    q={};q.opcode=SOLAR_OS_JET_ASSIGN;q.handle=cube;q.values[0]=material;assert(execute()==0);
+    assert(api->render(scene,color,bytes,nullptr,nullptr)==0&&Renderer::framebufferDecode(color[24*64+32])==0xf800);
+    q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=(1U<<JET_SCENE_texture_lod)|(1U<<JET_SCENE_texture_far);
+    q.values[JET_SCENE_texture_lod]=q.values[JET_SCENE_texture_far]=1;assert(execute()==0);
+    assert(api->render(scene,color,bytes,nullptr,nullptr)==0&&Renderer::framebufferDecode(color[24*64+32])==0x07e0);
+    q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=1U<<JET_SCENE_wireframe;q.values[JET_SCENE_wireframe]=1;
+    assert(execute()==0&&api->render(scene,color,bytes,nullptr,nullptr)==0&&color[0]==0);
+    q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=(1U<<JET_SCENE_wireframe)|(1U<<JET_SCENE_texture_lod);
+    assert(execute()==0&&api->render(scene,color,bytes,nullptr,nullptr)==0);
+    assert(color[0]==0xffff&&Renderer::framebufferDecode(color[24*64+32])==0xf800);
+}
 struct ShaderProbe {unsigned calls=0;bool fail=false;};
 static int shader_probe(void *user,uint32_t slot,double u,double v,
     const solar_os_jet_shader_parameters_t *p,uint32_t *color) {
@@ -348,5 +372,8 @@ int main() {
     for(auto pixel:color)assert(pixel==0);
     asset_validation(api,scene,color.data(),bytes);
     assert(api->destroy(scene)==0&&api->destroy(scene)==SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
-    assert(solar_os_jet_engine_idle());puts("Jet provider ABI, allocation failures, geometry and cancellation passed");
+    assert(solar_os_jet_engine_idle());
+    scene=nullptr;assert(api->create(64,48,color.data(),depth.data(),bytes,&scene)==0);
+    controls_validation(api,scene,color.data(),bytes);assert(api->destroy(scene)==0&&solar_os_jet_engine_idle());
+    puts("Jet provider ABI, allocation failures, geometry and cancellation passed");
 }

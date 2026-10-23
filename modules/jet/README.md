@@ -15,7 +15,10 @@ has shared material/trigonometric state. Exceptions stay inside the provider.
 
 The optional size-checked extension adds reusable materials, textures and palette
 animation, mesh attributes, primitives, scene/camera controls, point lights,
-sprites, picking, in-memory asset loading and shared mesh instances.
+sprites, picking, in-memory asset loading, shared mesh instances, particle pools,
+lens flares, post-processing, tiled indexed textures, procedural shaders and
+renderer controls. Python and Lua expose the same operations. Script shader
+errors are contained during rendering and re-raised after the provider returns.
 Older providers retain the base scene API; scripts can query
 `capabilities()` before using extensions. Resources reject removal while in use.
 

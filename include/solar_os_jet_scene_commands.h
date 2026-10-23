@@ -35,7 +35,9 @@
  X(enabled,BOOL,1,0,1,NULL) X(name,NAME,0,0,0,NULL)
 #define JET_SCENE_FIELDS(X) \
  X(clear,BOOL,1,0,1,NULL) X(lod_scale,INT,0,0,16384,NULL) X(lod_bias,INT,0,-8,8,NULL) \
- X(water_time,FLOAT,0,0,1000000,NULL)
+ X(water_time,FLOAT,0,0,1000000,NULL) \
+ X(texture_lod,BOOL,0,0,1,NULL) X(texture_near,INT,0,0,16384,NULL) X(texture_far,INT,0,0,16384,NULL) \
+ X(wireframe,BOOL,0,0,1,NULL)
 #define JET_SPRITE_FIELDS(X) \
  X(x,INT,0,-4096,4096,NULL) X(y,INT,0,-4096,4096,NULL) \
  X(width,INT,32,0,4096,NULL) X(height,INT,32,0,4096,NULL) \

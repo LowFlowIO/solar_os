@@ -595,6 +595,22 @@ dictionary/table per fragment and can be much slower; use small surfaces or
 textures for complex patterns. See `examples/python/jet_shaders.py` and
 `examples/lua/jet_shaders.lua`.
 
+## Renderer controls
+
+Jet 1.10 reports `capabilities().renderer_controls`. The existing `settings()`
+method additionally accepts `texture_lod` (false), `texture_near` (0),
+`texture_far` (0), and `wireframe` (false). `settings_info()` reports them.
+Distances are camera-space Z values in 0–16384; enabling texture LOD requires
+`texture_far > texture_near`. Invalid updates preserve all previous settings.
+
+With texture LOD enabled, textures retain full detail through `texture_near`,
+fade toward the material's base color up to `texture_far`, then use that color
+alone. It does not fade procedural shaders. This is independent of mesh LOD.
+Global `wireframe` draws every object's outlines against a black background,
+skipping lighting, textures, shaders and depth. Turn it off to restore material
+shading; use `clear=True` for a clean transition. Examples are
+`examples/python/jet_controls.py` and `examples/lua/jet_controls.lua`.
+
 ## Presentation and memory
 
 Rendering uses the display's full dimensions. Width must be a multiple of eight;
@@ -612,7 +628,7 @@ Scripts provide asset contents to the loaders; the provider does not open paths.
 Indexed-only display output is not supported.
 The provider uses one fixed full-width, full-frame renderer profile. Scripts
 control scene behavior and optional effects; buffer layout, interlace,
-checkerboard reconstruction, diagnostic render modes and parallel raster
+checkerboard reconstruction, overdraw diagnostics and parallel raster
 workers are build-time choices. Tiled storage, mip selection and filter caches
 are managed resources; upstream worker feedback/residency pointers are not
 script objects. Display size follows the selected target; close and reopen

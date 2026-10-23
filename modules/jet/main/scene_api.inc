@@ -186,9 +186,15 @@ static int scene_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r
     case SOLAR_OS_JET_SCENE_INFO:std::memcpy(r.values,active->settings,sizeof(r.values));return 0;
     case SOLAR_OS_JET_SCENE_SET: {
         if(!valid_values(q,jet_scene_fields,JET_SCENE_COUNT)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
-        merge_values(active->settings,q,jet_scene_fields,JET_SCENE_COUNT,active->settings);
+        double v[SOLAR_OS_JET_VALUES]={0};merge_values(v,q,jet_scene_fields,JET_SCENE_COUNT,active->settings);
+        if(v[JET_SCENE_texture_lod]&&v[JET_SCENE_texture_far]<=v[JET_SCENE_texture_near])
+            return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+        std::memcpy(active->settings,v,sizeof(v));
         active->scene.setClearBuffer(active->settings[JET_SCENE_clear]);active->scene.lodScale=active->settings[JET_SCENE_lod_scale];
-        active->scene.lodBias=active->settings[JET_SCENE_lod_bias];active->scene.getRenderer()->waterTime=active->settings[JET_SCENE_water_time];return 0;
+        active->scene.lodBias=active->settings[JET_SCENE_lod_bias];
+        auto *raster=active->scene.getRenderer();raster->waterTime=v[JET_SCENE_water_time];
+        raster->textureLodEnabled=v[JET_SCENE_texture_lod];raster->textureLodNear=v[JET_SCENE_texture_near];
+        raster->textureLodFar=v[JET_SCENE_texture_far];raster->wireframeMode=v[JET_SCENE_wireframe];return 0;
     }
     case SOLAR_OS_JET_GRADIENT: {
         if(q.bytes%4 || q.bytes>1024*4 || (q.bytes && !q.data)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;

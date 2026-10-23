@@ -94,6 +94,8 @@ int main(int argc, char **argv) {
             cube->setPosition(frame % 2 ? -10 : 5, 0, 0);
             scene.backgroundGradientColors = frame % 2 ? gradient.data() : nullptr;
             scene.getRenderer()->wireframeMode = frame % 12 == 11;
+            scene.getRenderer()->textureLodEnabled=frame%3!=0;
+            scene.getRenderer()->textureLodNear=200;scene.getRenderer()->textureLodFar=600;
             scene.getRenderer()->reflectBuffer = frame ? reflection.data() : nullptr;
             sprite.blendMode = frame % 2 ? BlendMode::BLEND_ADD : BlendMode::BLEND_REPLACE;
             scene.render();

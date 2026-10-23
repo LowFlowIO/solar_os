@@ -73,6 +73,7 @@ static int solua_jet_scene_capabilities(lua_State *L) {
     SOLUA_JET_CALL((err=solar_os_jet_execute(scene,&q,&r),err==ESP_ERR_NOT_SUPPORTED ? ESP_OK : err));
     lua_newtable(L);lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_MATERIALS);lua_setfield(L,-2,"materials");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_SHADERS);lua_setfield(L,-2,"shaders");solua_set_int(L,-1,"max_shaders",r.values[14]);
+    lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_RENDERER_CONTROLS);lua_setfield(L,-2,"renderer_controls");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_TEXTURES);lua_setfield(L,-2,"textures");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_GEOMETRY);lua_setfield(L,-2,"geometry");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_SCENE);lua_setfield(L,-2,"scene");

@@ -216,6 +216,16 @@ int main(int argc,char **argv) {
             "s:mesh_update(a,{{-60,-60,0},{0,60,0},{60,-60,0}},{{1,2,3}}); "
             "assert(s:object_info(a).triangles==1);s:render();s:close()");
         jet_test_assert_clean();
+        run(L,"local s=jet.open();assert(s:capabilities().renderer_controls); "
+            "s:settings{texture_lod=true,texture_near=300,texture_far=600};local info=s:settings_info(); "
+            "assert(info.texture_lod and info.texture_far==600); "
+            "assert(not pcall(s.settings,s,{texture_far=250,clear=false})); "
+            "assert(s:settings_info().clear and s:settings_info().texture_far==600); "
+            "local t=s:texture(2,2,string.rep(string.char(248,0),4));local m=s:material{texture=t,color=0x00ff00,shading='unlit'}; "
+            "local c=s:cube(150,150,150);s:assign(c,m);s:render(); "
+            "s:settings{texture_near=0,texture_far=1};s:render(); "
+            "s:settings{wireframe=true};s:render();assert(s:settings_info().wireframe); "
+            "s:settings{wireframe=false,texture_lod=false};s:render();s:close()");jet_test_assert_clean();
         run(L,"local s=jet.open();assert(s:capabilities().shaders); "
             "local sh=s:shader(nil,{kind='checker',color=0xff0000,secondary=0x0000ff}); "
             "local m=s:material{shader=sh,shading='unlit'};local c=s:cube(150,150,150);s:assign(c,m); "
