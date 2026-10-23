@@ -26,8 +26,9 @@ Local changes:
 - ESP-IDF attribute declarations are included explicitly for blend SIMD kernels.
 - The external library's standard allocator routes geometry and scene vectors
   through its private C++ runtime to SolarOS managed PSRAM. Host builds retain
-  the standard host allocator. Cube and scene construction clean up partial
-  allocations if construction fails; provider calls report allocation failures.
+  the standard host allocator. Exposed primitive and scene constructors clean
+  up partial allocations if construction fails; provider calls report allocation
+  failures. Sphere/capsule generation uses 64-bit coordinate intermediates.
 - Trailing source whitespace is normalized.
 - Optional cancellation is checked between rasterized triangles. Cancelled
   frames are rejected by the provider before the host exchanges their buffers.

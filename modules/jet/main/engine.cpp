@@ -23,10 +23,15 @@ struct MaterialResource:Resource {
     Material value;
     MaterialResource() {value.name=name;}
 };
+struct LightResource:Resource {
+    PointLight value{{0,0,0},{255,255,255}};
+};
 struct Item {
     Material material;
     std::unique_ptr<Object> object;
     uint32_t id;
+    char name[SOLAR_OS_JET_NAME]={0};
+    std::unique_ptr<Material> face_materials[6];
     explicit Item(uint32_t color) : material(uint16_t(((color >> 8) & 0xf800) |
         ((color >> 5) & 0x7e0) | ((color >> 3) & 31))), id(0) {
         material.shadingMode = ShadingMode::GOURAUD;
@@ -40,6 +45,10 @@ struct Engine {
     std::unique_ptr<Item> items[SOLAR_OS_JET_MAX_OBJECTS];
     std::unique_ptr<TextureResource> textures[SOLAR_OS_JET_MAX_TEXTURES];
     std::unique_ptr<MaterialResource> materials[SOLAR_OS_JET_MAX_MATERIALS];
+    std::unique_ptr<LightResource> lights[SOLAR_OS_JET_MAX_LIGHTS];
+    std::vector<uint16_t> gradient;
+    double settings[SOLAR_OS_JET_VALUES]={1};
+    uint16_t fov=60;
     uint32_t next_id = 0;
     uint16_t width, height;
     Scene scene;
@@ -99,7 +108,7 @@ static int camera(void *s,const solar_os_jet_pose_t *p,uint16_t fov) {
     if (!pose_valid(p) || fov<10 || fov>150) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     return call([&] { active->camera.setPosition(p->x,p->y,p->z);
         active->camera.setRotation(p->rx%360,p->ry%360,p->rz%360);
-        active->camera.setFOV(int32_t(fov),int32_t(active->width)); return 0; });
+        active->camera.setFOV(int32_t(fov),int32_t(active->width)); active->fov=fov; return 0; });
 }
 static int light(void *s,uint32_t ambient,uint32_t color,uint16_t intensity,int32_t azimuth,int32_t elevation) {
     if (s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
@@ -147,7 +156,9 @@ static Item *find(uint32_t id) {
     for(auto &item:active->items) if(item && item->id==id) return item.get();
     return nullptr;
 }
+static int scene_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 #include "surface_api.inc"
+#include "scene_api.inc"
 static int transform(void *s,uint32_t id,const solar_os_jet_pose_t *p) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if(!pose_valid(p)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -158,10 +169,12 @@ static int transform(void *s,uint32_t id,const solar_os_jet_pose_t *p) {
 static int remove(void *s,uint32_t id) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     return call([&] { for(auto &item:active->items) if(item && item->id==id) {
+        for(auto &other:active->items) if(other) for(auto *lod:other->object->lodMeshes)
+            if(lod==item->object.get()) return int(SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
         auto &objects=active->scene.getObjects();
         objects.erase(std::remove(objects.begin(),objects.end(),item->object.get()),objects.end());
         item.reset(); return 0;
-    } return remove_surface(id); });
+    } int err=remove_light(id);return err==SOLAR_OS_NATIVE_ERROR_NOT_FOUND ? remove_surface(id) : err; });
 }
 struct Cancellation {
     solar_os_native_cancel_fn callback;

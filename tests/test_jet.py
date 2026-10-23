@@ -12,6 +12,17 @@ SOURCES = sorted(str(path) for path in (MODULE / "vendor").glob("*.cpp"))
 
 
 class JetFramebufferTest(unittest.TestCase):
+    def test_python_signed_options_and_full_width_handles(self):
+        with tempfile.TemporaryDirectory(prefix="solaros-jet-python-") as temporary:
+            tmp=Path(temporary)
+            source=(ROOT / "src/apps/solar_os_python_jet_surface.inc").read_text()
+            (tmp / "jet_python_options.inc").write_text(production_functions(source,("python_jet_options",)))
+            binary=tmp / "options"
+            subprocess.run(["cc","-std=c11","-Wall","-Wextra","-Werror",
+                f"-I{tmp}",f"-I{ROOT / 'include'}",str(ROOT / "tests/host/jet_python_options_test.c"),
+                "-o",str(binary)],check=True,capture_output=True)
+            subprocess.run([str(binary)],check=True)
+
     def test_display_claim_excludes_status_and_restores_terminal(self):
         with tempfile.TemporaryDirectory(prefix="solaros-jet-display-") as temporary:
             tmp = Path(temporary)
@@ -108,7 +119,8 @@ class JetFramebufferTest(unittest.TestCase):
                         extra.append(str(obj))
                 binary = tmp / ("lua" if lua else "runtime")
                 subprocess.run(["g++", *flags, *objects, *extra, "-lm", "-o", str(binary)], check=True, capture_output=True)
-                subprocess.run([str(binary), *([str(ROOT / "examples/lua/jet.lua"), str(ROOT / "examples/lua/jet_materials.lua")] if lua else [])],
+                subprocess.run([str(binary), *([str(ROOT / name) for name in
+                    ("examples/lua/jet.lua", "examples/lua/jet_materials.lua", "examples/lua/jet_scene.lua")] if lua else [])],
                     check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
 
 

@@ -95,6 +95,27 @@ int main(int argc,char **argv) {
             "s:render();s:remove(mesh);s:assign(c,0);s:remove(m);s:remove(t);s:remove(i);s:remove(c);s:close()");
         jet_test_assert_clean();
         solua.session_gfx=jet_test_gfx();solua.events=(void *)1;
+        run(L,"s=jet.open('display0');assert(s:capabilities().geometry and s:capabilities().scene); "
+            "for _,kind in ipairs{'cube','grid','plane','pyramid','sphere','capsule','cylinder','billboard','quad','debug_cube'} do "
+            "local p=s:primitive{kind=kind};local info=s:object_info(p);assert(info.vertices>0 and info.triangles>0); "
+            "s:object_set(p,{x=10,scale_x=0.5,culling='none',blend='average',depth_bias=2,name='shape'}); "
+            "assert(s:object_info(p).x==10 and s:object_info(p).scale_x==0.5); "
+            "s:object_action(p,{action='bake_rotation'});s:object_action(p,{action='bake_scale',numerator=1,denominator=2}); "
+            "s:object_action(p,{action='cache_positions'});local copy=s:object_action(p,{action='clone'}); "
+            "s:remove(p);s:render();s:remove(copy);end; "
+            "a=s:primitive{kind='sphere',segments=16};b=s:primitive{kind='sphere',segments=6}; "
+            "s:object_set(b,{enabled=false});s:lod(a,{b});assert(s:object_info(a).lod_levels==1); "
+            "assert(not pcall(s.lod,s,b,{a}));assert(not pcall(s.remove,s,b));s:lod(a,{});s:remove(b); "
+            "s:camera_set{z=-450,near=10,far=3000};s:camera_action{action='translate_local',x=2}; "
+            "assert(s:camera_info().z==-450 and s:camera_info().near==10); "
+            "assert(not pcall(s.camera_set,s,{near=3000,far=10})); "
+            "s:settings{lod_scale=200,water_time=2.5};assert(s:settings_info().water_time==2.5); "
+            "s:gradient{0xffffff,0x102040};s:render();s:gradient(nil); "
+            "p=s:point_light{x=-100,color=0xff0000,range_max=600,name='red'}; "
+            "s:point_light_set(p,{enabled=false});assert(not s:point_light_info(p).enabled);s:remove(p); "
+            "s:mesh_update(a,{{-60,-60,0},{0,60,0},{60,-60,0}},{{1,2,3}}); "
+            "assert(s:object_info(a).triangles==1);s:render();s:close()");
+        jet_test_assert_clean();
         run(L,"s=jet.open(); c=s:cube(150,150,150); s:render()");assert(mode&&solua_jet_drawing());
         state.jet_busy=true;solua_jet_visibility(NULL,false);
         assert(state.jet_suspended&&!solua_jet_active());
@@ -117,8 +138,8 @@ int main(int argc,char **argv) {
             size_t bytes;const uint8_t *pixels=jet_test_image(&bytes);unsigned nonwhite=0;
             for(size_t i=0;i<bytes;i+=2) nonwhite+=pixels[i]!=0xff||pixels[i+1]!=0xff;
             assert(nonwhite>10&&nonwhite<64*48/2);
-            if(argc>2) {
-                if(luaL_dofile(L,argv[2])) {fprintf(stderr,"%s\n",lua_tostring(L,-1));abort();}
+            for(int example=2;example<argc;++example) {
+                if(luaL_dofile(L,argv[example])) {fprintf(stderr,"%s\n",lua_tostring(L,-1));abort();}
                 jet_test_assert_clean();assert(!mode);
             }
         }

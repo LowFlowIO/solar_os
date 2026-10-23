@@ -53,7 +53,7 @@ on color targets. Presentation may coalesce queued frames.
 | Scene method | Arguments and result |
 | --- | --- |
 | `background(color)` | Set RGB888 clear color; default white. |
-| `camera(x=0, y=0, z=-500, rx=0, ry=0, rz=0, fov=60)` | Camera position, integer-degree rotation and horizontal field of view, 10–150 degrees. Near/far planes are 16/4096. |
+| `camera(x=0, y=0, z=-500, rx=0, ry=0, rz=0, fov=60)` | Camera position, integer-degree rotation and horizontal field of view, 10–150 degrees. Default near/far planes are 16/4096. |
 | `light(ambient=0x5a5a5a, color=0xfff5e6, intensity=220, azimuth=35, elevation=40)` | Ambient RGB888 and directional light; intensity is 0–255, direction is in integer degrees. |
 | `cube(width, height, depth, color=0xffffff)` | Create a shaded cube; each dimension is 1–4096. Return an integer object handle. |
 | `mesh(vertices, triangles, color=0xffffff)` | Copy vertices and indexed triangles; return an object handle. Vertices are `(x,y,z)` sequences. Python indices are zero-based. Normals are generated separately for each triangle. |
@@ -173,6 +173,74 @@ triangle. Zero selects the object's default material.
 
 Complete textured examples are `examples/python/jet_materials.py` and
 `examples/lua/jet_materials.lua`.
+
+## Geometry and scene controls
+
+These operations require Jet library 1.2 or later. Python setters accept keyword
+options; Lua setters take an options table. Setters change only supplied fields.
+`capabilities()` reports `geometry`, `scene`, `max_objects`, and `max_lights`.
+
+| Method | Contract |
+| --- | --- |
+| `primitive(...)` | Create a primitive and return its object handle. |
+| `object_set(object, ...)`, `object_info(object)` | Update or inspect object properties. Info also includes vertex/triangle counts, six local-space bounds (min XYZ, max XYZ), and `lod_levels`. |
+| `object_action(object, ...)` | Run a geometry or movement action; return the object handle, or the new handle for `clone`. |
+| `mesh_update(object, vertices, triangles, material=0)` | Replace geometry using the `mesh_data()` format while retaining transforms, flags and LOD links. Failed validation or allocation leaves the previous geometry intact. |
+| `camera_set(...)`, `camera_info()`, `camera_action(...)` | Partially update, inspect, or move the camera. |
+| `point_light(...)`, `point_light_set(light, ...)`, `point_light_info(light)` | Create, update or inspect one of up to eight point lights; `remove(light)` releases it. |
+| `gradient(colors)` | Copy a sequence of up to 1024 RGB888 color stops, interpolated over the display height. Empty sequence or Python `None` / Lua `nil` restores the solid background. |
+| `lod(object, levels)` | Set up to eight alternative object handles, ordered from highest to lowest detail. Empty sequence clears the list. Cycles and removal of referenced objects are rejected. |
+| `settings(...)`, `settings_info()` | Update or inspect scene-wide controls. |
+
+Primitive options:
+
+| Option | Default and meaning |
+| --- | --- |
+| `kind` | `"cube"`; also `"grid"`, `"plane"`, `"pyramid"`, `"sphere"`, `"capsule"`, `"cylinder"`, `"billboard"`, `"quad"`, `"debug_cube"`. |
+| `width`, `height`, `depth`, `radius` | 150, 150, 150, 75; each 1–4096. Capsule height is total height and must be at least twice its radius. |
+| `segments`, `rows`, `cols` | 12, 4, 4; segments 3–32, grid vertex rows/columns 2–32. Generated geometry must fit 2048 triangles and 8192 vertices. |
+| `caps`, `u_scale`, `v_scale`, `per_cell_uv` | True, 1, 1, false. Cylinder caps, sphere UV repetition (1–32), and grid UV mode. |
+| `material`, `material2`, `color` | Zero, zero, white. Zero selects the object's default material; grid material2 defaults to material. Debug cubes own six colored face materials. |
+| `name` | Optional unique object name, fewer than 64 UTF-8 bytes. |
+
+Object properties are `x/y/z`, `rx/ry/rz`, `scale_x/scale_y/scale_z` (1/64–16),
+`enabled`, `culling` (`"back"`, `"front"`, `"none"`), `blend` (`"replace"`,
+`"add"`, `"subtract"`, `"scale"`, `"average"`, `"xor"`), `billboard`,
+`depth_test`, `depth_write`, `depth_bias` (-128–127), `precise_sort`,
+`fade_near/fade_far`, `appear_near/appear_far` (0–16384), `lod_bias` (-8–8),
+`lod_persist`, and `name`. Positions and rotations default to zero, scales
+to one, culling to back, blend to replace, depth test/write and LOD persistence
+to true. Fade bands default to disabled (both zero); otherwise far must exceed
+near. Enabled defaults to true; billboard defaults to false except billboard
+primitives.
+
+`object_action()` takes `action` plus optional `x/y/z` (default zero) and
+`numerator/denominator` (default one, 1–16384). Actions are `"translate"`,
+`"rotate"`, `"look_at"`, `"bake_rotation"`, `"bake_scale"`,
+`"cache_positions"`, `"invalidate_positions"`, `"clone"`, `"bake_lighting"`,
+and `"unbake"`. Bake scale uses the supplied ratio and retains object scale;
+bake rotation moves rotation into the vertices and resets it. Clones have
+independent geometry and default materials, and share named materials and LOD
+references. Position caching is optional and reports an allocation error if its
+main buffer cannot be created. Baking lighting stores flat directional and
+ambient lighting per triangle; unbake restores live lighting.
+
+Camera properties are `x/y/z`, `rx/ry/rz`, `fov`, `near` (1–4095), and
+`far` (2–4096), with near less than far. `camera_action()` accepts `action`
+and `x/y/z`: `"translate"`, `"translate_local"`, `"translate_local_y"`,
+`"rotate"`, `"rotate_local"`, `"look_at"`, `"look_at_x"`, or
+`"look_at_y"`. Look-at values are target coordinates.
+
+Point-light options are `x/y/z`, `color` (white), `range_min` (0),
+`range_max` (255), `enabled` (true), and a unique `name`. Range values are
+0–16384 with minimum less than maximum. Scene settings are `clear` (true),
+`lod_scale` (0 disables distance LOD; otherwise 1–16384 design units),
+`lod_bias` (-8–8, default zero), and `water_time` (numeric animation time,
+0–1000000). Objects used only as LOD alternatives should be disabled as
+standalone objects with `object_set(alternative, enabled=False)`.
+
+Complete examples are `examples/python/jet_scene.py` and
+`examples/lua/jet_scene.lua`.
 
 ## Presentation and memory
 

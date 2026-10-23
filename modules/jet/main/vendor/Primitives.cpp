@@ -155,7 +155,7 @@ namespace Primitives
 
     Object *createGrid(int32_t width, int32_t height, int32_t rows, int32_t cols, Material *material, Material *material2, bool perCellUV)
     {
-        Object *grid = new Object();
+        std::unique_ptr<Object> grid(new Object());
 
         int32_t hw = width / 2;
         int32_t hh = height / 2;
@@ -207,12 +207,12 @@ namespace Primitives
 
         grid->calculateBoundingBox();
 
-        return grid;
+        return grid.release();
     }
 
     Object *createPlane(int32_t width, int32_t height, Material *material)
     {
-        Object *plane = new Object();
+        std::unique_ptr<Object> plane(new Object());
 
         int32_t hw = width / 2;
         int32_t hh = height / 2;
@@ -227,12 +227,12 @@ namespace Primitives
 
         plane->calculateBoundingBox();
 
-        return plane;
+        return plane.release();
     }
 
     Object *createPyramid(int32_t baseSize, int32_t height, Material *material)
     {
-        Object *pyramid = new Object();
+        std::unique_ptr<Object> pyramid(new Object());
 
         int32_t halfBase = baseSize / 2;
         const int32_t N = FIXED_POINT_SCALE;
@@ -273,12 +273,12 @@ namespace Primitives
         pyramid->computeFlatNormals();
         pyramid->calculateBoundingBox();
 
-        return pyramid;
+        return pyramid.release();
     }
 
     Object *createSphere(int32_t radius, int32_t segments, Material *material, int32_t uScale, int32_t vScale)
     {
-        Object *sphere = new Object();
+        std::unique_ptr<Object> sphere(new Object());
 
         // Ensure at least 3 segments
         if (segments < 3)
@@ -302,9 +302,9 @@ namespace Primitives
                 int32_t cosLon = lookupCosI(lonAngle % ANGLE_MAX);
 
                 // Calculate vertex position
-                Vector3 vertexPosition = {radius * sinLat * cosLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE,
+                Vector3 vertexPosition = {int32_t(int64_t(radius) * sinLat * cosLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE),
                                           radius * cosLat / FIXED_POINT_SCALE,
-                                          radius * sinLat * sinLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE};
+                                          int32_t(int64_t(radius) * sinLat * sinLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE)};
 
                 // Fixed UV coordinates
                 Vector2 uv = {
@@ -343,12 +343,12 @@ namespace Primitives
 
         sphere->calculateBoundingBox();
 
-        return sphere;
+        return sphere.release();
     }
 
     Object *createCapsule(int32_t radius, int32_t height, int32_t segments, Material *material)
     {
-        Object *capsule = new Object();
+        std::unique_ptr<Object> capsule(new Object());
 
         // Ensure at least 3 segments
         if (segments < 3)
@@ -372,9 +372,9 @@ namespace Primitives
             int32_t cosLon = lookupCosI(lonAngle % ANGLE_MAX);
 
             // Calculate vertex position
-            Vector3 vertexPosition = {radius * sinLat * cosLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE,
+            Vector3 vertexPosition = {int32_t(int64_t(radius) * sinLat * cosLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE),
                           radius * cosLat / FIXED_POINT_SCALE + height / 2,
-                          radius * sinLat * sinLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE};
+                          int32_t(int64_t(radius) * sinLat * sinLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE)};
 
             // Fixed UV coordinates
             Vector2 uv = {
@@ -429,9 +429,9 @@ namespace Primitives
             int32_t cosLon = lookupCosI(lonAngle % ANGLE_MAX);
 
             // Calculate vertex position
-            Vector3 vertexPosition = {radius * sinLat * cosLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE,
+            Vector3 vertexPosition = {int32_t(int64_t(radius) * sinLat * cosLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE),
                           radius * cosLat / FIXED_POINT_SCALE - height / 2,
-                          radius * sinLat * sinLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE};
+                          int32_t(int64_t(radius) * sinLat * sinLon / FIXED_POINT_SCALE / FIXED_POINT_SCALE)};
 
             // Fixed UV coordinates
             Vector2 uv = {
@@ -510,12 +510,12 @@ namespace Primitives
 
         capsule->calculateBoundingBox();
 
-        return capsule;
+        return capsule.release();
     }
 
     Object *createCylinder(int32_t radius, int32_t height, int32_t segments, bool closedCaps, Material *material)
     {
-        Object *cylinder = new Object();
+        std::unique_ptr<Object> cylinder(new Object());
 
         // Ensure at least 3 segments
         if (segments < 3)
@@ -625,12 +625,12 @@ namespace Primitives
 
         cylinder->calculateBoundingBox();
 
-        return cylinder;
+        return cylinder.release();
     }
 
     Object *createQuad(int32_t width, int32_t height, Material *material)
     {
-        Object *quad = new Object();
+        std::unique_ptr<Object> quad(new Object());
 
         // Define vertices for a plane centered at the origin
         int32_t hw = width / 2;
@@ -650,7 +650,7 @@ namespace Primitives
 
         quad->calculateBoundingBox();
 
-        return quad;
+        return quad.release();
     }
 
     Object *createBillboard(int32_t width, int32_t height, Material *material)

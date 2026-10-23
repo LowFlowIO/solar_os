@@ -153,6 +153,8 @@ static int mesh_data(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
     auto *vertices=static_cast<const solar_os_jet_mesh_vertex_t *>(q.data);
     auto *faces=static_cast<const solar_os_jet_mesh_face_t *>(q.extra);
     auto item=std::make_unique<Item>(0xffffff);item->object=std::make_unique<Object>();
+    Item *existing=q.handle ? find(q.handle) : nullptr;
+    if(q.handle && !existing) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
     auto &obj=*item->object;obj.vertices.reserve(t*3);obj.triangles.reserve(t);
     for(size_t i=0;i<n;++i) {
         auto &v=vertices[i];
@@ -169,7 +171,13 @@ static int mesh_data(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
         obj.addTriangle(i*3,i*3+1,i*3+2,mat);
     }
     if(!(q.fields&SOLAR_OS_JET_MESH_NORMALS)) obj.computeFlatNormals();
-    obj.calculateBoundingBox();return admit(std::move(item),&r.handle);
+    obj.calculateBoundingBox();
+    if(existing) {
+        for(auto &face:obj.triangles) if(face.material==&item->material) face.material=&existing->material;
+        existing->object->vertices.swap(obj.vertices);existing->object->triangles.swap(obj.triangles);
+        existing->object->calculateBoundingBox();r.handle=existing->id;return 0;
+    }
+    return admit(std::move(item),&r.handle);
 }
 static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_reply_t *reply) {
     if(!s || s!=active) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
@@ -178,10 +186,11 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
         const auto &q=*command;auto &r=*reply;r={};
         switch(q.opcode) {
         case SOLAR_OS_JET_INFO: {
-            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES;
+            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE;
             int objects,triangles,vertices;active->scene.getStatistics(objects,triangles,vertices);
             r.values[0]=objects;r.values[1]=triangles;r.values[2]=vertices;
-            r.values[3]=SOLAR_OS_JET_MAX_MATERIALS;r.values[4]=SOLAR_OS_JET_MAX_TEXTURES;return 0;
+            r.values[3]=SOLAR_OS_JET_MAX_MATERIALS;r.values[4]=SOLAR_OS_JET_MAX_TEXTURES;
+            r.values[5]=SOLAR_OS_JET_MAX_LIGHTS;r.values[6]=SOLAR_OS_JET_MAX_OBJECTS;return 0;
         }
         case SOLAR_OS_JET_MATERIAL:case SOLAR_OS_JET_MATERIAL_SET:case SOLAR_OS_JET_MATERIAL_INFO:
             return material_command(q,r);
@@ -196,7 +205,7 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
             return 0;
         }
         case SOLAR_OS_JET_MESH_DATA:return mesh_data(q,r);
-        default:return int(SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED);
+        default:return scene_command(q,r);
         }
     });
 }

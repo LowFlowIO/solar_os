@@ -32,7 +32,10 @@ static void python_jet_options(size_t count,const mp_obj_t *args,mp_map_t *kwarg
             for(size_t k=0;k<length;++k) palette[k]=python_jet_color(colors[k]);
             q->extra=palette;q->extra_bytes=length*sizeof(*palette);break;
         }
-        default:q->values[i]=fields[i].maximum==4294967295.0 ? python_u32_from_obj(value) : mp_obj_get_int(value);break;
+        default:
+            if(fields[i].maximum==4294967295.0) q->values[i]=python_u32_from_obj(value);
+            else q->values[i]=mp_obj_get_int(value);
+            break;
         }
         if(!isfinite(q->values[i]) || q->values[i]<fields[i].minimum || q->values[i]>fields[i].maximum)
             mp_raise_ValueError(MP_ERROR_TEXT("Jet option out of range"));
@@ -63,8 +66,10 @@ static mp_obj_t solaros_jet_scene_capabilities(mp_obj_t self) {
     mp_obj_t dict=mp_obj_new_dict(0);
     python_dict_store_bool(dict,"materials",r.handle&SOLAR_OS_JET_FEATURE_MATERIALS);
     python_dict_store_bool(dict,"textures",r.handle&SOLAR_OS_JET_FEATURE_TEXTURES);
-    const char *names[]={"objects","triangles","vertices","max_materials","max_textures"};
-    for(unsigned i=0;i<5;++i) python_dict_store_uint(dict,names[i],r.values[i]);
+    python_dict_store_bool(dict,"geometry",r.handle&SOLAR_OS_JET_FEATURE_GEOMETRY);
+    python_dict_store_bool(dict,"scene",r.handle&SOLAR_OS_JET_FEATURE_SCENE);
+    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects"};
+    for(unsigned i=0;i<7;++i) python_dict_store_uint(dict,names[i],r.values[i]);
     return dict;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_capabilities_obj,solaros_jet_scene_capabilities);
@@ -123,7 +128,7 @@ static int32_t python_jet_fixed(mp_obj_t object,float limit) {
     if(!isfinite(value) || value < -limit || value > limit) mp_raise_ValueError(MP_ERROR_TEXT("Jet vector out of range"));
     return (int32_t)(value*1024);
 }
-static mp_obj_t solaros_jet_scene_mesh_data(size_t count,const mp_obj_t *args) {
+static mp_obj_t python_jet_mesh_data(size_t count,const mp_obj_t *args,uint32_t handle) {
     solar_os_jet_t *scene=python_jet_scene(args[0]);
     size_t n,t;mp_obj_t *vertices,*triangles;mp_obj_get_array(args[1],&n,&vertices);mp_obj_get_array(args[2],&t,&triangles);
     if(!n || n>SOLAR_OS_JET_MAX_VERTICES || !t || t>SOLAR_OS_JET_MAX_TRIANGLES)
@@ -146,9 +151,8 @@ static mp_obj_t solaros_jet_scene_mesh_data(size_t count,const mp_obj_t *args) {
         faces[i]=(solar_os_jet_mesh_face_t){python_jet_integer(a[0],0,n-1,0),python_jet_integer(a[1],0,n-1,0),
             python_jet_integer(a[2],0,n-1,0),0,width==4 ? python_u32_from_obj(a[3]) : mat};
     }
-    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_MESH_DATA,.fields=stride==8 ? SOLAR_OS_JET_MESH_NORMALS : 0,
+    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_MESH_DATA,.handle=handle,.fields=stride==8 ? SOLAR_OS_JET_MESH_NORMALS : 0,
         .data=v,.bytes=n*sizeof(*v),.extra=faces,.extra_bytes=t*sizeof(*faces)};solar_os_jet_reply_t r;
     PYTHON_JET_CALL(solar_os_jet_execute(scene,&q,&r));m_del(solar_os_jet_mesh_vertex_t,v,n);m_del(solar_os_jet_mesh_face_t,faces,t);
     return mp_obj_new_int_from_uint(r.handle);
 }
-MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_jet_scene_mesh_data_obj,3,4,solaros_jet_scene_mesh_data);

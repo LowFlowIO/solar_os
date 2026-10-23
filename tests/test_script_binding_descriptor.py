@@ -47,7 +47,8 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
             source=(REPOSITORY / f"src/apps/solar_os_{runtime}_jet.inc").read_text()
             methods.append(set(re.findall(r"METHOD\((\w+)\)",source)) - {"name"})
         self.assertEqual(methods[0],methods[1])
-        self.assertTrue({"mesh_data", "texture", "material", "capabilities"} <= methods[0])
+        self.assertTrue({"mesh_data", "texture", "material", "capabilities", "primitive",
+            "object_set", "mesh_update", "camera_action", "point_light", "gradient", "lod"} <= methods[0])
 
     def test_both_interpreters_expand_the_shared_descriptor_once(self):
         include = '#include "solar_os_script_api.inc"'

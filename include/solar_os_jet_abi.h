@@ -1,6 +1,7 @@
 #pragma once
 #include "solar_os_native_service_abi.h"
 #include "solar_os_jet_commands.h"
+#include "solar_os_jet_scene_commands.h"
 #ifdef __cplusplus
 extern "C" {
 #endif

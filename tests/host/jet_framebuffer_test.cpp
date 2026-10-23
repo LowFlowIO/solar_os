@@ -33,10 +33,12 @@ int main(int argc, char **argv) {
         camera.nearPlane = 1; camera.farPlane = 4096; camera.setFOV(65, width);
         AmbientLight ambient(Color{50, 65, 80});
         DirectionalLight light(Vector3{40, 45, 0}, Color{255, 245, 230}, 230);
+        PointLight point(Vector3{-100,80,-80}, Color{255,100,50});point.rangeMax=700;
         std::unique_ptr<Object> cube(Primitives::createCube(170, 150, 130, &material));
         Scene scene(color.data() + guard, depth.data() + guard, width, height);
         scene.setCamera(&camera); scene.setAmbientLight(&ambient); scene.setDirectionalLight(&light);
         scene.setBackcolor(0x1234); scene.setClearBuffer(true); scene.addObject(cube.get());
+        scene.addPointLight(&point);
         Sprite2D solid, sprite;
         solid.material = &overlay; solid.x = 3; solid.y = 2;
         solid.width = 15; solid.height = 8; solid.alpha = 135;

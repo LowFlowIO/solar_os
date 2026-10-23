@@ -67,8 +67,10 @@ static int solua_jet_scene_capabilities(lua_State *L) {
     SOLUA_JET_CALL((err=solar_os_jet_execute(scene,&q,&r),err==ESP_ERR_NOT_SUPPORTED ? ESP_OK : err));
     lua_newtable(L);lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_MATERIALS);lua_setfield(L,-2,"materials");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_TEXTURES);lua_setfield(L,-2,"textures");
-    const char *names[]={"objects","triangles","vertices","max_materials","max_textures"};
-    for(unsigned i=0;i<5;++i) solua_set_int(L,-1,names[i],r.values[i]);
+    lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_GEOMETRY);lua_setfield(L,-2,"geometry");
+    lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_SCENE);lua_setfield(L,-2,"scene");
+    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects"};
+    for(unsigned i=0;i<7;++i) solua_set_int(L,-1,names[i],r.values[i]);
     return 1;
 }
 static int solua_jet_scene_material(lua_State *L) {
@@ -127,7 +129,7 @@ static int32_t solua_jet_fixed(lua_State *L,int index,double limit) {
     if(!isfinite(value) || value < -limit || value > limit) luaL_error(L,"Jet vector out of range");
     return (int32_t)(value*1024);
 }
-static int solua_jet_scene_mesh_data(lua_State *L) {
+static int solua_jet_mesh_data(lua_State *L,uint32_t handle) {
     solar_os_jet_t *scene=solua_jet_scene(L);luaL_checktype(L,2,LUA_TTABLE);luaL_checktype(L,3,LUA_TTABLE);
     size_t n=lua_rawlen(L,2),t=lua_rawlen(L,3),stride=0;
     if(!n || n>SOLAR_OS_JET_MAX_VERTICES || !t || t>SOLAR_OS_JET_MAX_TRIANGLES) return luaL_error(L,"invalid Jet mesh size");
@@ -157,7 +159,7 @@ static int solua_jet_scene_mesh_data(lua_State *L) {
         if(width==4) {lua_rawgeti(L,-1,4);luaL_checkinteger(L,-1);face_mat=solua_jet_optional_handle(L,-1);lua_pop(L,1);}
         faces[i]=(solar_os_jet_mesh_face_t){indices[0],indices[1],indices[2],0,face_mat};lua_pop(L,1);
     }
-    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_MESH_DATA,.fields=stride==8 ? SOLAR_OS_JET_MESH_NORMALS : 0,
+    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_MESH_DATA,.handle=handle,.fields=stride==8 ? SOLAR_OS_JET_MESH_NORMALS : 0,
         .data=v,.bytes=n*sizeof(*v),.extra=faces,.extra_bytes=t*sizeof(*faces)};solar_os_jet_reply_t r;
     SOLUA_JET_CALL(solar_os_jet_execute(scene,&q,&r));lua_pushinteger(L,r.handle);return 1;
 }
