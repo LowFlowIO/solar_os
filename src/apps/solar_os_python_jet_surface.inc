@@ -77,6 +77,7 @@ static mp_obj_t solaros_jet_scene_capabilities(mp_obj_t self) {
     python_dict_store_bool(dict,"particles",r.handle&SOLAR_OS_JET_FEATURE_PARTICLES);
     python_dict_store_bool(dict,"flares",r.handle&SOLAR_OS_JET_FEATURE_FLARES);
     python_dict_store_bool(dict,"postfx",r.handle&SOLAR_OS_JET_FEATURE_POSTFX);
+    python_dict_store_bool(dict,"tiled_textures",r.handle&SOLAR_OS_JET_FEATURE_TILED_TEXTURES);
     const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks","max_prototypes","max_instances","max_particle_systems","max_flares","max_flare_elements"};
     for(unsigned i=0;i<14;++i) python_dict_store_uint(dict,names[i],r.values[i]);
     return dict;
@@ -123,7 +124,9 @@ static mp_obj_t solaros_jet_scene_texture_info(mp_obj_t self,mp_obj_t handle) {
     solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_TEXTURE_INFO,.handle=python_u32_from_obj(handle)};solar_os_jet_reply_t r;
     PYTHON_JET_CALL(solar_os_jet_execute(scene,&q,&r));mp_obj_t dict=python_jet_info_dict(&r,jet_texture_fields,JET_TEX_COUNT);
     python_dict_store_uint(dict,"width",r.values[16]);python_dict_store_uint(dict,"height",r.values[17]);
-    python_dict_store_uint(dict,"palette_size",r.values[18]);return dict;
+    python_dict_store_uint(dict,"palette_size",r.values[18]);python_dict_store_uint(dict,"tile_bytes",r.values[19]);
+    python_dict_store_uint(dict,"filter_bytes",r.values[20]);python_dict_store_uint(dict,"sampler_width",r.values[21] ? r.values[21] : r.values[16]);
+    python_dict_store_uint(dict,"sampler_height",r.values[22] ? r.values[22] : r.values[17]);return dict;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(solaros_jet_scene_texture_info_obj,solaros_jet_scene_texture_info);
 static mp_obj_t solaros_jet_scene_assign(mp_obj_t self,mp_obj_t object,mp_obj_t material) {
@@ -132,6 +135,13 @@ static mp_obj_t solaros_jet_scene_assign(mp_obj_t self,mp_obj_t object,mp_obj_t 
     q.values[0]=python_u32_from_obj(material);PYTHON_JET_CALL(solar_os_jet_execute(scene,&q,&r));return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_3(solaros_jet_scene_assign_obj,solaros_jet_scene_assign);
+static mp_obj_t solaros_jet_scene_sample_texture(size_t count,const mp_obj_t *args) {
+    (void)count;solar_os_jet_t *scene=python_jet_scene(args[0]);
+    solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_SAMPLE_TEXTURE,.handle=python_u32_from_obj(args[1])};solar_os_jet_reply_t r;
+    q.values[0]=mp_obj_get_float(args[2]);q.values[1]=mp_obj_get_float(args[3]);
+    PYTHON_JET_CALL(solar_os_jet_execute(scene,&q,&r));return mp_obj_new_int_from_uint(r.values[0]);
+}
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_jet_scene_sample_texture_obj,4,4,solaros_jet_scene_sample_texture);
 static int32_t python_jet_fixed(mp_obj_t object,float limit) {
     double value=mp_obj_get_float(object);
     if(!isfinite(value) || value < -limit || value > limit) mp_raise_ValueError(MP_ERROR_TEXT("Jet vector out of range"));

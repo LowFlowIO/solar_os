@@ -72,7 +72,13 @@ static int texture_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
     if(q.opcode!=SOLAR_OS_JET_TEXTURE && !old) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
     if(q.opcode==SOLAR_OS_JET_TEXTURE_INFO) {
         surface_reply(*old,r);r.values[16]=old->width;r.values[17]=old->height;
-        r.values[18]=old->value->paletteSize;return 0;
+        r.values[18]=old->value->paletteSize;
+        if(old->tiles) {
+            r.values[19]=old->tiles->pages.size()+old->tiles->coarse.size()+old->tiles->palette.size()*2;
+            r.values[20]=old->tiles->filtered.size()*2;
+        }
+        r.values[21]=old->tiles&&old->tiles->view.coarseOnly ? old->tiles->view.coarseWidth : old->width;
+        r.values[22]=old->tiles&&old->tiles->view.coarseOnly ? old->tiles->view.coarseHeight : old->height;return 0;
     }
     if(!valid_values(q,jet_texture_fields,JET_TEX_COUNT) ||
         duplicate_name(active->textures,q.name,old ? old->id : 0)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -83,6 +89,7 @@ static int texture_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
     unsigned width=old ? old->width : unsigned(q.values[16]),height=old ? old->height : unsigned(q.values[17]);
     if(old && v[JET_TEX_format]!=old->values[JET_TEX_format]) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     size_t count=size_t(width)*height;unsigned format=v[JET_TEX_format];
+    if(v[JET_TEX_tiled]&&format!=2)return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     size_t expected=count*(format==0 ? 2 : format==1 ? 3 : 1);
     bool replace=!old || q.data || q.bytes;
     if(replace && (!q.data || q.bytes!=expected)) return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
@@ -91,7 +98,14 @@ static int texture_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
         return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     if(format==2 && !old && !palette_replace) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     if(old && !replace && !palette_replace) {
+        bool reconfigure=(bool(old->tiles)!=bool(v[JET_TEX_tiled]))||
+            (v[JET_TEX_tiled]&&(v[JET_TEX_filter]!=old->values[JET_TEX_filter]||v[JET_TEX_mip_level]!=old->values[JET_TEX_mip_level]||
+                (v[JET_TEX_filter]==3&&v[JET_TEX_offset]!=old->values[JET_TEX_offset])));
+        auto tiles=reconfigure ? prepare_tiles(*old,v) : nullptr;
+        if(reconfigure)old->tiles=std::move(tiles);
+        else if(old->tiles&&v[JET_TEX_offset]!=old->values[JET_TEX_offset])tile_palette(*old->tiles,*old,v);
         texture_settings(*old->value,v);std::memcpy(old->values,v,sizeof(v));
+        bind_tiles(*old->value,old->tiles.get(),v);
         if(q.fields&(1U<<JET_TEX_name)) std::memcpy(old->name,q.name,sizeof(old->name));
         r.handle=old->id;return 0;
     }
@@ -118,13 +132,15 @@ static int texture_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
         for(size_t i=0;i<count;++i) if(indices[i]>=entry->palette.size()) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     }
     entry->value=std::make_unique<Texture>(width,height,entry->pixels.data());
+    entry->tiles=prepare_tiles(*entry,v);
     auto &tex=*entry->value;
     tex.name=entry->name;
     tex.palette=entry->palette.empty() ? nullptr : entry->palette.data();tex.paletteSize=entry->palette.size();
     texture_settings(tex,v);
+    bind_tiles(tex,entry->tiles.get(),v);
     std::memcpy(entry->values,v,sizeof(v));
     if(old) {
-        old->pixels.swap(entry->pixels);old->palette.swap(entry->palette);*old->value=tex;
+        old->pixels.swap(entry->pixels);old->palette.swap(entry->palette);old->tiles=std::move(entry->tiles);*old->value=tex;
         old->value->name=old->name;
         std::memcpy(old->values,v,sizeof(v));
         if(q.fields&(1U<<JET_TEX_name)) std::memcpy(old->name,q.name,sizeof(old->name));
@@ -201,7 +217,7 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
         const auto &q=*command;auto &r=*reply;r={};
         switch(q.opcode) {
         case SOLAR_OS_JET_INFO: {
-            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS|SOLAR_OS_JET_FEATURE_INSTANCING|SOLAR_OS_JET_FEATURE_PARTICLES|SOLAR_OS_JET_FEATURE_FLARES|SOLAR_OS_JET_FEATURE_POSTFX;
+            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS|SOLAR_OS_JET_FEATURE_INSTANCING|SOLAR_OS_JET_FEATURE_PARTICLES|SOLAR_OS_JET_FEATURE_FLARES|SOLAR_OS_JET_FEATURE_POSTFX|SOLAR_OS_JET_FEATURE_TILED_TEXTURES;
             int objects,triangles,vertices;active->scene.getStatistics(objects,triangles,vertices);
             r.values[0]=objects;r.values[1]=triangles;r.values[2]=vertices;
             r.values[3]=SOLAR_OS_JET_MAX_MATERIALS;r.values[4]=SOLAR_OS_JET_MAX_TEXTURES;

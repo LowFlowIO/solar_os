@@ -184,6 +184,7 @@ static int solua_jet_open(lua_State *L) {
         METHOD(remove);METHOD(render);METHOD(status);METHOD(close);
         METHOD(capabilities);METHOD(material);METHOD(material_set);METHOD(material_info);
         METHOD(texture);METHOD(texture_set);METHOD(texture_info);METHOD(assign);METHOD(mesh_data);
+        METHOD(sample_texture);
         METHOD(primitive);METHOD(object_set);METHOD(object_info);METHOD(object_action);METHOD(mesh_update);
         METHOD(camera_set);METHOD(camera_info);METHOD(camera_action);METHOD(point_light);METHOD(point_light_set);
         METHOD(point_light_info);METHOD(settings);METHOD(settings_info);METHOD(gradient);METHOD(lod);

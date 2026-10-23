@@ -17,10 +17,16 @@ struct Resource {
     char name[SOLAR_OS_JET_NAME]={0};
     double values[SOLAR_OS_JET_VALUES]={0};
 };
+struct TileData {
+    std::vector<uint8_t> pages,coarse;
+    std::vector<uint16_t> palette,filtered;
+    TileTexture view;
+};
 struct TextureResource:Resource {
     unsigned width=0,height=0;
     std::vector<uint16_t> pixels,palette;
     std::unique_ptr<Texture> value;
+    std::unique_ptr<TileData> tiles;
 };
 struct MaterialResource:Resource {
     Material value;
@@ -210,6 +216,7 @@ static int remove_prototype(uint32_t);
 static int extras_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static int postfx_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static void process_postfx();
+#include "tile_texture.inc"
 #include "surface_api.inc"
 #include "scene_api.inc"
 #include "overlay_api.inc"

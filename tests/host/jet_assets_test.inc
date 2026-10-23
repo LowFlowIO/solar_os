@@ -88,4 +88,10 @@ static void asset_validation(const solar_os_jet_api_v1_t *api,void *scene,uint16
         q={};q.opcode=SOLAR_OS_JET_LOAD_OBJ;q.data=text;q.bytes=sizeof(text);long before=live;
         int err=execute();if(!err)assert(api->remove(scene,r.handle)==0);assert(live==before);
     }
+    std::vector<uint8_t> indices(33*35);indices.back()=1;uint32_t palette[]={0xff0000,0x00ff00};
+    q={};q.opcode=SOLAR_OS_JET_TEXTURE;q.data=indices.data();q.bytes=indices.size();q.extra=palette;q.extra_bytes=sizeof(palette);
+    q.values[16]=33;q.values[17]=35;q.fields=(1U<<JET_TEX_format)|(1U<<JET_TEX_tiled)|(1U<<JET_TEX_address);
+    q.values[JET_TEX_format]=2;q.values[JET_TEX_tiled]=1;q.values[JET_TEX_address]=1;assert(execute()==0);uint32_t tiled=r.handle;
+    q={};q.opcode=SOLAR_OS_JET_SAMPLE_TEXTURE;q.handle=tiled;q.values[0]=q.values[1]=1;
+    assert(execute()==0&&r.values[0]==0x00ff00);assert(api->remove(scene,tiled)==0);
 }

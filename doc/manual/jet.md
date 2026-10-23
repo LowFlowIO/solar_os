@@ -514,6 +514,38 @@ work; enable only the effects the scene needs.
 Complete examples are `examples/python/jet_effects.py` and
 `examples/lua/jet_effects.lua`.
 
+## Tiled indexed textures
+
+Jet library 1.8 or later reports `tiled_textures=True`. Existing texture
+constructors and setters accept three additional options:
+
+| Option | Default and meaning |
+| --- | --- |
+| `tiled` | False; true adds owned 32×32 indexed tile storage. Requires `format="index8"`. |
+| `filter` | `"nearest"`; also `"bilinear"`, `"three_point"`, and `"cached_bilinear"`. Controls tiled sampling; the ordinary `bilinear` option still applies to RGB textures. |
+| `mip_level` | Zero; 1–5 selects an owned nearest-downsampled mip at 1/2 through 1/32 dimensions. Tiled 3D sampling uses this mip; sprite images retain their original dimensions and pixels. |
+
+Bilinear and three-point filtering decode palette colors before interpolation.
+Cached bilinear precomputes the exact 1024×1024 integer-UV lookup into 2 MiB
+of RGB565 storage. It produces the same samples as bilinear filtering. Changes
+to pixels, palette, offset or mip rebuild this cache before publishing the
+update; rebuilding can temporarily require another cache's worth of memory.
+Uncached palette-offset animation does not allocate or copy image pixels.
+
+Tile pages, mip data and caches are owned by the provider. The original
+row-major indices remain available for sprites. Texture handles and all
+material references stay stable across updates. Turning off `tiled` releases
+tile storage. `texture_info()` adds `tile_bytes`, `filter_bytes`, and
+`sampler_width/height`. `load_bmp()` produces RGB textures and does not accept
+tiled mode.
+
+`sample_texture(texture, u, v)` samples any texture and returns its quantized
+RGB888 color. Coordinates are normalized numeric values in -32–32; wrap,
+clamp and zero addressing follow the texture settings.
+
+Complete examples are `examples/python/jet_tiles.py` and
+`examples/lua/jet_tiles.lua`.
+
 ## Presentation and memory
 
 Rendering uses the display's full dimensions. Width must be a multiple of eight;

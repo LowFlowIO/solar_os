@@ -52,7 +52,7 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
             "sprite", "sprite_info", "sprite_set", "pick", "picks", "load_obj", "load_mtl", "load_bmp",
             "prototype", "instance", "instance_set", "instance_info", "instance_clear",
             "particles", "particles_emit", "flare", "flare_element_set", "step",
-            "postfx", "postfx_info", "postfx_reset", "postfx_clear"} <= methods[0])
+            "postfx", "postfx_info", "postfx_reset", "postfx_clear", "sample_texture"} <= methods[0])
 
     def test_both_interpreters_expand_the_shared_descriptor_once(self):
         include = '#include "solar_os_script_api.inc"'

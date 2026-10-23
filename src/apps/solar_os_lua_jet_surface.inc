@@ -82,6 +82,7 @@ static int solua_jet_scene_capabilities(lua_State *L) {
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_PARTICLES);lua_setfield(L,-2,"particles");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_FLARES);lua_setfield(L,-2,"flares");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_POSTFX);lua_setfield(L,-2,"postfx");
+    lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_TILED_TEXTURES);lua_setfield(L,-2,"tiled_textures");
     const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks","max_prototypes","max_instances","max_particle_systems","max_flares","max_flare_elements"};
     for(unsigned i=0;i<14;++i) solua_set_int(L,-1,names[i],r.values[i]);
     return 1;
@@ -125,7 +126,10 @@ static int solua_jet_scene_texture_info(lua_State *L) {
     solar_os_jet_t *scene=solua_jet_scene(L);
     solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_TEXTURE_INFO,.handle=solua_jet_id(L,2)};solar_os_jet_reply_t r;
     SOLUA_JET_CALL(solar_os_jet_execute(scene,&q,&r));solua_jet_info_table(L,&r,jet_texture_fields,JET_TEX_COUNT);
-    solua_set_int(L,-1,"width",r.values[16]);solua_set_int(L,-1,"height",r.values[17]);solua_set_int(L,-1,"palette_size",r.values[18]);return 1;
+    solua_set_int(L,-1,"width",r.values[16]);solua_set_int(L,-1,"height",r.values[17]);solua_set_int(L,-1,"palette_size",r.values[18]);
+    solua_set_int(L,-1,"tile_bytes",r.values[19]);solua_set_int(L,-1,"filter_bytes",r.values[20]);
+    solua_set_int(L,-1,"sampler_width",r.values[21] ? r.values[21] : r.values[16]);
+    solua_set_int(L,-1,"sampler_height",r.values[22] ? r.values[22] : r.values[17]);return 1;
 }
 static uint32_t solua_jet_optional_handle(lua_State *L,int index) {
     lua_Integer id=luaL_optinteger(L,index,0);
@@ -141,6 +145,11 @@ static int32_t solua_jet_fixed(lua_State *L,int index,double limit) {
     double value=luaL_checknumber(L,index);
     if(!isfinite(value) || value < -limit || value > limit) luaL_error(L,"Jet vector out of range");
     return (int32_t)(value*1024);
+}
+static int solua_jet_scene_sample_texture(lua_State *L) {
+    solar_os_jet_t *scene=solua_jet_scene(L);solar_os_jet_command_t q={.opcode=SOLAR_OS_JET_SAMPLE_TEXTURE,.handle=solua_jet_id(L,2)};solar_os_jet_reply_t r;
+    q.values[0]=luaL_checknumber(L,3);q.values[1]=luaL_checknumber(L,4);
+    SOLUA_JET_CALL(solar_os_jet_execute(scene,&q,&r));lua_pushinteger(L,r.values[0]);return 1;
 }
 static int solua_jet_mesh_data(lua_State *L,uint32_t handle) {
     solar_os_jet_t *scene=solua_jet_scene(L);luaL_checktype(L,2,LUA_TTABLE);luaL_checktype(L,3,LUA_TTABLE);

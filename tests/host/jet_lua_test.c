@@ -108,6 +108,18 @@ int main(int argc,char **argv) {
             "s:remove(hud);s:remove(m);s:remove(t);s:pick(nil);s:render();assert(#s:picks()==0);s:close()");
         jet_test_assert_clean();
         solua.session_gfx=jet_test_gfx();solua.events=(void *)1;
+        run(L,"s=jet.open('display0');assert(s:capabilities().tiled_textures); "
+            "t=s:texture(2,2,string.char(0,1,2,3),{format='index8',palette={0xff0000,0x00ff00,0x0000ff,0xffffff},tiled=true,address='clamp'}); "
+            "assert(s:texture_info(t).tile_bytes>0 and s:sample_texture(t,0,0)==0xff0000); "
+            "local nearest=s:sample_texture(t,.5,.5);s:texture_set(t,{filter='bilinear'});local bilinear=s:sample_texture(t,.5,.5); "
+            "assert(nearest~=bilinear);s:texture_set(t,{filter='three_point'});assert(s:sample_texture(t,.5,.5)~=bilinear); "
+            "s:texture_set(t,{filter='cached_bilinear'});assert(s:sample_texture(t,.5,.5)==bilinear and s:texture_info(t).filter_bytes==2097152); "
+            "s:texture_set(t,{offset=1});assert(s:sample_texture(t,0,0)==0x00ff00); "
+            "s:texture_set(t,{filter='nearest',mip_level=1});assert(s:texture_info(t).sampler_width==1 and s:sample_texture(t,0,0)==0xff0000); "
+            "s:texture_set(t,{mip_level=0,address='zero'});assert(s:sample_texture(t,-1,-1)==0); "
+            "m=s:material{texture=t,shading='unlit'};c=s:cube(150,150,150);s:assign(c,m);s:render(); "
+            "s:texture_set(t,{tiled=false});assert(s:texture_info(t).tile_bytes==0);s:render();s:close()");
+        jet_test_assert_clean();
         run(L,"s=jet.open('display0');assert(s:capabilities().postfx); "
             "assert(s:postfx_info().scratch_bytes==0);c=s:cube(150,150,150); "
             "s:postfx{cel_bits=4};assert(s:postfx_info().scratch_bytes==0);s:render(); "

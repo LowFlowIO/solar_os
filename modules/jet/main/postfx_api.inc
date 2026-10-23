@@ -9,6 +9,13 @@ static void process_postfx() {
     if(v[JET_FX_motion_blur])fx.applyMotionBlur(frame,v[JET_FX_motion_blur]);
 }
 static int postfx_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
+    if(q.opcode==SOLAR_OS_JET_SAMPLE_TEXTURE) {
+        auto *entry=resource(active->textures,q.handle);if(!entry)return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
+        for(unsigned i=0;i<2;++i)if(!std::isfinite(q.values[i])||q.values[i]<-32||q.values[i]>32)return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+        uint16_t color=entry->value->getPixel(int(q.values[0]*1024),int(q.values[1]*1024));
+        r.handle=entry->id;r.values[0]=((((color>>11)*255+15)/31)<<16)|
+            (((((color>>5)&63)*255+31)/63)<<8)|(((color&31)*255+15)/31);return 0;
+    }
     if(q.opcode==SOLAR_OS_JET_POSTFX_INFO) {
         std::memcpy(r.values,active->effect_values,sizeof(r.values));
         r.values[16]=active->effects ? active->effects->scratchBytes() : 0;

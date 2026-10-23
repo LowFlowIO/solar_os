@@ -40,6 +40,9 @@ Local changes:
 - Runtime effects use lazy, reusable scratch buffers and honor framebuffer
   byte order within their filter passes. Chromatic aberration shifts channels;
   temporal history can be reset. Cel shading defaults to disabled at runtime.
+- Tiled sampling applies normal UV addressing. Optimized clamped-only tile
+  spans are selected only for clamped textures; other addressing uses the
+  general sampler.
 
 The external SolarOS library enables full-width, non-interlaced RGB565, per-pixel depth,
 lighting and perspective textures. Direct monochrome/indexed framebuffer

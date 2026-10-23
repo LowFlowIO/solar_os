@@ -1084,7 +1084,7 @@ namespace Renderer
 #endif
 
 #if TEXTURE_MAPPING && PERSPECTIVE_CORRECT_TEXTURES && FAST_Z && !Z_BUFFERING && !LIGHTING && !Z_BRIGHTNESS && !DEPTH_ALPHA_BLEND
-        const bool tiledSpan=diffuseMap&&diffuseMap->tiled&&usePerspectiveUV
+        const bool tiledSpan=diffuseMap&&diffuseMap->tiled&&diffuseMap->addressMode==CLAMP&&usePerspectiveUV
             &&alpha==255&&material->shadingMode==ShadingMode::UNLIT
             &&!diffuseMap->screenSpace&&!diffuseMap->reflectionMap&&!diffuseMap->hasAlpha;
         float tq[3]{},tu[3]{},tv[3]{},tdu=0,tdv=0,tdq=0;
@@ -1918,7 +1918,7 @@ namespace Renderer
                         // Sample color from material
     #if !BILINEAR_FILTER
                         if (diffuseMap->tiled) {
-                            color=diffuseMap->tiled->sample(uv.x,uv.y,((x&14)==0)?(yBandMin>0?1:0):-1);
+                            color=diffuseMap->getPixel(uv.x,uv.y);
                         } else if (directRGB565) {
                             const unsigned tx=((unsigned)uv.x & (FIXED_POINT_SCALE-1))*diffuseMap->width/FIXED_POINT_SCALE;
                             const unsigned ty=((unsigned)uv.y & (FIXED_POINT_SCALE-1))*diffuseMap->height/FIXED_POINT_SCALE;

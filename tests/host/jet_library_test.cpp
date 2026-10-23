@@ -147,6 +147,29 @@ static int postfx_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *c
     q.opcode=SOLAR_OS_JET_POSTFX_CLEAR;assert(execute()==0);
     q.opcode=SOLAR_OS_JET_POSTFX_INFO;assert(execute()==0&&r.values[16]==0&&r.values[JET_FX_cel_bits]==0);return 0;
 }
+static int tile_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
+    solar_os_jet_command_t q={};solar_os_jet_reply_t r;
+    auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
+    uint8_t pixels[]={0,1,2,3};uint32_t palette[]={0xff0000,0x00ff00,0x0000ff,0xffffff};
+    q.opcode=SOLAR_OS_JET_TEXTURE;q.data=pixels;q.bytes=sizeof(pixels);q.extra=palette;q.extra_bytes=sizeof(palette);
+    q.values[16]=q.values[17]=2;q.fields=(1U<<JET_TEX_format)|(1U<<JET_TEX_tiled);q.values[JET_TEX_format]=2;q.values[JET_TEX_tiled]=1;
+    int err=execute();if(err)return err;uint32_t texture=r.handle;
+    q={};q.opcode=SOLAR_OS_JET_TEXTURE_SET;q.handle=texture;q.fields=1U<<JET_TEX_offset;q.values[JET_TEX_offset]=1;
+    long before=requests;assert(execute()==0&&requests==before); // Uncached palette animation stays allocation-free.
+    q={};q.opcode=SOLAR_OS_JET_SAMPLE_TEXTURE;q.handle=texture;assert(execute()==0&&r.values[0]==0x00ff00);
+    q={};q.opcode=SOLAR_OS_JET_MATERIAL;q.fields=1U<<JET_MAT_texture;q.values[JET_MAT_texture]=texture;
+    err=execute();if(err)return err;uint32_t mat=r.handle,cube;
+    err=api->cube(scene,150,150,150,0xffffff,&cube);if(err)return err;
+    q={};q.opcode=SOLAR_OS_JET_ASSIGN;q.handle=cube;q.values[0]=mat;assert(execute()==0);
+    err=api->render(scene,color,bytes,nullptr,nullptr);if(err)return err;
+    q={};q.opcode=SOLAR_OS_JET_TEXTURE_SET;q.handle=texture;q.fields=1U<<JET_TEX_filter;q.values[JET_TEX_filter]=3;
+    err=execute();if(err) {
+        q={};q.opcode=SOLAR_OS_JET_TEXTURE_INFO;q.handle=texture;
+        assert(execute()==0&&r.values[JET_TEX_filter]==0&&r.values[20]==0);return err;
+    }
+    q={};q.opcode=SOLAR_OS_JET_SAMPLE_TEXTURE;q.handle=texture;assert(execute()==0&&r.values[0]==0x00ff00);
+    assert(api->remove(scene,cube)==0&&api->remove(scene,mat)==0&&api->remove(scene,texture)==0);return 0;
+}
 #include "jet_assets_test.inc"
 int main() {
     auto *api=solar_os_jet_engine_api_v1();assert(api->abi_version==1&&api->struct_size==sizeof(*api));
@@ -230,6 +253,16 @@ int main() {
         requests=0;fail_at=failure;void *s=nullptr;
         int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
         if(!err) {err=postfx_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
+        assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
+        assert(solar_os_jet_engine_idle()&&live==baseline);
+        if(requests<=failure){complete=true;break;}
+    }
+    assert(complete);fail_at=-1;
+    complete=false;
+    for(long failure=0;failure<250;++failure) {
+        requests=0;fail_at=failure;void *s=nullptr;
+        int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
+        if(!err) {err=tile_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
         assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
         assert(solar_os_jet_engine_idle()&&live==baseline);
         if(requests<=failure){complete=true;break;}

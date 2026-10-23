@@ -208,7 +208,7 @@ static int load_bmp(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
     if(!q.data||q.bytes<54||q.bytes>8*1024*1024||!valid_values(q,jet_texture_fields,JET_TEX_COUNT)||
         (q.fields&((1U<<JET_TEX_pixels)|(1U<<JET_TEX_palette)))||duplicate_name(active->textures,q.name,0))return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     double v[SOLAR_OS_JET_VALUES]={0};merge_values(v,q,jet_texture_fields,JET_TEX_COUNT);
-    if(v[JET_TEX_format]!=0)return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+    if(v[JET_TEX_format]!=0||v[JET_TEX_tiled])return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     auto *data=static_cast<const uint8_t *>(q.data);size_t offset=asset_u32(data+10),dib=asset_u32(data+14);
     if(data[0]!='B'||data[1]!='M'||dib<40||dib>q.bytes-14||offset<14+dib||offset>q.bytes||asset_u16(data+26)!=1)
         return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;

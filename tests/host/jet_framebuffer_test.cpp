@@ -28,6 +28,13 @@ int main(int argc, char **argv) {
         for (int y = 0; y < height; ++y) gradient[y] = uint16_t(0x1234 + y * 35);
         uint16_t texels[] = {0xf800, 0x07e0, 0x001f, 0xffe0};
         Texture texture(2, 2, texels);
+        std::array<uint8_t,1024> tileIndices{};
+        tileIndices[0]=0;tileIndices[1]=1;tileIndices[32]=2;tileIndices[33]=3;
+        TileTexture tileView;tileView.backing=tileIndices.data();tileView.palette=texels;
+        tileView.width=tileView.height=2;tileView.pagesX=1;tileView.direct=true;
+        uint16_t linearIndices[]={0x0100,0x0302};
+        Texture tiledTexture(2,2,linearIndices);tiledTexture.palette=texels;tiledTexture.paletteSize=4;
+        tiledTexture.tiled=&tileView;tiledTexture.addressMode=CLAMP;
         Material material(0xe94b), overlay(0x3b62), textured(0xffff, &texture);
         material.specular = 20;
         Camera camera;
@@ -68,6 +75,11 @@ int main(int argc, char **argv) {
             material.alpha = frame % 3 ? 255 : 117;
             material.specularExponent = frame % 2 ? 0 : 32;
             material.diffuseMap = frame % 4 ? nullptr : &texture;
+            if(frame%8==0) {
+                unsigned filter=(frame/8)%3;tiledTexture.bilinear=filter!=0;
+                tiledTexture.tiledFilter=filter==2 ? TileFilter::ThreePoint : TileFilter::Bilinear;
+                material.diffuseMap=&tiledTexture;
+            }
             cube->setRotation(frame * 7, frame * 13, frame * 3);
             cube->setPosition(frame % 2 ? -10 : 5, 0, 0);
             scene.backgroundGradientColors = frame % 2 ? gradient.data() : nullptr;
