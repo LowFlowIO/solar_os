@@ -69,8 +69,10 @@ static int solua_jet_scene_capabilities(lua_State *L) {
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_TEXTURES);lua_setfield(L,-2,"textures");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_GEOMETRY);lua_setfield(L,-2,"geometry");
     lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_SCENE);lua_setfield(L,-2,"scene");
-    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects"};
-    for(unsigned i=0;i<7;++i) solua_set_int(L,-1,names[i],r.values[i]);
+    lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_SPRITES);lua_setfield(L,-2,"sprites");
+    lua_pushboolean(L,r.handle&SOLAR_OS_JET_FEATURE_PICKING);lua_setfield(L,-2,"picking");
+    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks"};
+    for(unsigned i=0;i<9;++i) solua_set_int(L,-1,names[i],r.values[i]);
     return 1;
 }
 static int solua_jet_scene_material(lua_State *L) {

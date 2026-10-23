@@ -26,6 +26,17 @@ struct MaterialResource:Resource {
 struct LightResource:Resource {
     PointLight value{{0,0,0},{255,255,255}};
 };
+struct SpriteResource:Resource {
+    Material fallback;
+    Sprite2D value;
+    SpriteResource() {fallback.name=nullptr;}
+};
+struct PickSnapshot {
+    uint32_t object=0;
+    int32_t triangle=-1,depth=0;
+    int16_t x=-1,y=-1;
+    bool hit=false;
+};
 struct Item {
     Material material;
     std::unique_ptr<Object> object;
@@ -46,6 +57,10 @@ struct Engine {
     std::unique_ptr<TextureResource> textures[SOLAR_OS_JET_MAX_TEXTURES];
     std::unique_ptr<MaterialResource> materials[SOLAR_OS_JET_MAX_MATERIALS];
     std::unique_ptr<LightResource> lights[SOLAR_OS_JET_MAX_LIGHTS];
+    std::unique_ptr<SpriteResource> sprites[SOLAR_OS_JET_MAX_SPRITES];
+    PickSnapshot picks[SOLAR_OS_JET_MAX_PICKS];
+    solar_os_jet_pick_t query_points[SOLAR_OS_JET_MAX_PICKS];
+    unsigned pick_count=0,query_count=0;
     std::vector<uint16_t> gradient;
     double settings[SOLAR_OS_JET_VALUES]={1};
     uint16_t fov=60;
@@ -157,8 +172,10 @@ static Item *find(uint32_t id) {
     return nullptr;
 }
 static int scene_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
+static int overlay_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 #include "surface_api.inc"
 #include "scene_api.inc"
+#include "overlay_api.inc"
 static int transform(void *s,uint32_t id,const solar_os_jet_pose_t *p) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if(!pose_valid(p)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -174,7 +191,8 @@ static int remove(void *s,uint32_t id) {
         auto &objects=active->scene.getObjects();
         objects.erase(std::remove(objects.begin(),objects.end(),item->object.get()),objects.end());
         item.reset(); return 0;
-    } int err=remove_light(id);return err==SOLAR_OS_NATIVE_ERROR_NOT_FOUND ? remove_surface(id) : err; });
+    } int err=remove_sprite(id);if(err!=SOLAR_OS_NATIVE_ERROR_NOT_FOUND)return err;
+      err=remove_light(id);return err==SOLAR_OS_NATIVE_ERROR_NOT_FOUND ? remove_surface(id) : err; });
 }
 struct Cancellation {
     solar_os_native_cancel_fn callback;
@@ -198,7 +216,8 @@ static int render(void *s,uint16_t *color,size_t bytes,solar_os_native_cancel_fn
         try { active->scene.render(); }
         catch (...) { active->scene.setCancellation(nullptr,nullptr); throw; }
         active->scene.setCancellation(nullptr,nullptr);
-        return cancelled(&state) ? int(SOLAR_OS_NATIVE_ERROR_TIMEOUT) : 0;
+        if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
+        snapshot_picks();return 0;
     });
 }
 static unsigned call_busy;

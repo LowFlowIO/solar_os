@@ -974,10 +974,13 @@ void Scene::drawSprites() {
 #else
     if (sprites.empty()) return;
 
-    // Sort by zOrder each frame (list is typically tiny — insertion sort
-    // territory, but std::stable_sort keeps it simple and correct).
-    std::stable_sort(sprites.begin(), sprites.end(),
-        [](const Sprite2D* a, const Sprite2D* b){ return a->zOrder < b->zOrder; });
+    // Stable insertion sort avoids a temporary allocation on every frame.
+    // The small, usually already ordered list takes linear time in that case.
+    for(size_t i=1;i<sprites.size();++i) {
+        auto *sprite=sprites[i];size_t j=i;
+        while(j && sprites[j-1]->zOrder>sprite->zOrder) {sprites[j]=sprites[j-1];--j;}
+        sprites[j]=sprite;
+    }
 
     for (Sprite2D* sp : sprites) {
         if (!sp || !sp->enabled || !sp->material) continue;

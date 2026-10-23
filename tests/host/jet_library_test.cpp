@@ -16,6 +16,10 @@ void operator delete(void *p,size_t) noexcept {operator delete(p);}
 void *operator new[](size_t n) {return operator new(n);}
 void operator delete[](void *p) noexcept {operator delete(p);}
 void operator delete[](void *p,size_t) noexcept {operator delete(p);}
+void *operator new(size_t n,const std::nothrow_t &) noexcept {try{return operator new(n);}catch(...){return nullptr;}}
+void *operator new[](size_t n,const std::nothrow_t &) noexcept {return operator new(n,std::nothrow);}
+void operator delete(void *p,const std::nothrow_t &) noexcept {operator delete(p);}
+void operator delete[](void *p,const std::nothrow_t &) noexcept {operator delete(p);}
 static bool cancellation(void *user) {return ++*static_cast<unsigned *>(user)==4;}
 static int surface_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
     const uint8_t pixels[]={255,0,0,0,255,0,0,0,255,255,255,0};
@@ -70,6 +74,21 @@ static int scene_chain(const solar_os_jet_api_v1_t *api,void *scene) {
     }
     assert(api->remove(scene,copy)==0&&api->remove(scene,light)==0);return 0;
 }
+static int overlay_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
+    solar_os_jet_command_t q={};solar_os_jet_reply_t r;
+    auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
+    q.opcode=SOLAR_OS_JET_SPRITE;q.fields=(1U<<JET_SPR_color)|(1U<<JET_SPR_width)|(1U<<JET_SPR_height);
+    q.values[JET_SPR_color]=0xff0000;q.values[JET_SPR_width]=10;q.values[JET_SPR_height]=10;
+    int err=execute();if(err)return err;uint32_t sprite=r.handle;
+    uint32_t cube;err=api->cube(scene,150,150,150,0xffffff,&cube);if(err)return err;
+    solar_os_jet_pick_t point={32,24};q={};q.opcode=SOLAR_OS_JET_PICK;q.data=&point;q.bytes=sizeof(point);
+    err=execute();if(err)return err;
+    err=api->render(scene,color,bytes,nullptr,nullptr);if(err)return err;
+    assert(reinterpret_cast<uint8_t *>(color)[0]==0xf8&&reinterpret_cast<uint8_t *>(color)[1]==0x00);
+    q={};q.opcode=SOLAR_OS_JET_PICK_RESULT;assert(execute()==0&&r.count==1&&r.handle==cube&&r.values[0]==1);
+    assert(api->remove(scene,cube)==0);assert(execute()==0&&r.handle==cube); // Last completed frame, never a dangling pointer.
+    assert(api->remove(scene,sprite)==0);return 0;
+}
 int main() {
     auto *api=solar_os_jet_engine_api_v1();assert(api->abi_version==1&&api->struct_size==sizeof(*api));
     std::vector<uint16_t> color(64*48),depth(64*48);size_t bytes=color.size()*2;
@@ -102,6 +121,16 @@ int main() {
         requests=0;fail_at=failure;void *s=nullptr;
         int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
         if(!err) {err=scene_chain(api,s);assert(api->destroy(s)==0);}
+        assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
+        assert(solar_os_jet_engine_idle()&&live==baseline);
+        if(requests<=failure){complete=true;break;}
+    }
+    assert(complete);fail_at=-1;
+    complete=false;
+    for(long failure=0;failure<250;++failure) {
+        requests=0;fail_at=failure;void *s=nullptr;
+        int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
+        if(!err) {err=overlay_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
         assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
         assert(solar_os_jet_engine_idle()&&live==baseline);
         if(requests<=failure){complete=true;break;}

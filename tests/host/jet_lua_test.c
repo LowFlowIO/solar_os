@@ -94,6 +94,19 @@ int main(int argc,char **argv) {
             "mesh=s:mesh_data({{-80,-80,0,0,0,0,0,-1},{0,80,0,0.5,1,0,0,-1},{80,-80,0,1,0,0,0,-1}},{{1,2,3,m}}); "
             "s:render();s:remove(mesh);s:assign(c,0);s:remove(m);s:remove(t);s:remove(i);s:remove(c);s:close()");
         jet_test_assert_clean();
+        run(L,"s=jet.open('display0');assert(s:capabilities().sprites and s:capabilities().picking); "
+            "c=s:cube(150,150,150);hud=s:sprite{x=25,y=20,width=16,height=12,color=0xff0000,name='HUD'}; "
+            "assert(s:sprite_info(hud).name=='HUD');s:sprite_set(hud,{alpha=180,scale=2,blend='add'}); "
+            "s:pick{{32,24},{0,0},{-1,-1}};assert(#s:picks()==0);s:render();local p=s:picks(); "
+            "assert(#p==3 and p[1].hit and p[1].object==c and p[1].triangle>0); "
+            "assert(not p[2].hit and p[2].triangle==0 and p[2].x==0 and p[2].y==0); "
+            "assert(not p[3].hit);assert(not pcall(s.pick,s,{{1000,0}})); "
+            "s:remove(c);local newer=s:cube(150,150,150);assert(s:picks()[1].object==c);s:remove(newer); "
+            "t=s:texture(1,1,string.char(255,0,0),{format='rgb888'});m=s:material{texture=t}; "
+            "s:sprite_set(hud,{material=m,flip_x=true,mirror_y=true,scale=3});s:render(); "
+            "assert(not pcall(s.remove,s,m));assert(not pcall(s.remove,s,t)); "
+            "s:remove(hud);s:remove(m);s:remove(t);s:pick(nil);s:render();assert(#s:picks()==0);s:close()");
+        jet_test_assert_clean();
         solua.session_gfx=jet_test_gfx();solua.events=(void *)1;
         run(L,"s=jet.open('display0');assert(s:capabilities().geometry and s:capabilities().scene); "
             "for _,kind in ipairs{'cube','grid','plane','pyramid','sphere','capsule','cylinder','billboard','quad','debug_cube'} do "

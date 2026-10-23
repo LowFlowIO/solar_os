@@ -54,7 +54,7 @@
 #define depthFogNear (6144 * JET32_WORLD_SCALE)
 #define CHECKERBOARD_MODE 0
 #define CHECKERBOARD_RECONSTRUCTION 0
-#define MAX_PICK_QUERIES 0
+#define MAX_PICK_QUERIES 32
 // The native-order optimized texture/constant-blend spans are bypassed until
 // they support swapped storage. General rasterization retains all shading.
 #if JET_FRAMEBUFFER_SWAP_BYTES

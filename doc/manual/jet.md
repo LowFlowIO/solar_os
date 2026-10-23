@@ -242,6 +242,61 @@ standalone objects with `object_set(alternative, enabled=False)`.
 Complete examples are `examples/python/jet_scene.py` and
 `examples/lua/jet_scene.lua`.
 
+## Sprites and picking
+
+Jet library 1.3 or later adds `sprite(...)`, `sprite_set(handle, ...)`,
+`sprite_info(handle)`, `pick(points)`, and `picks()`. Python uses keyword
+options and Lua uses options tables. `capabilities()` includes `sprites`,
+`picking`, `max_sprites` (32), and `max_picks` (32).
+
+Sprites draw after 3D geometry, in ascending `z_order`, without depth testing.
+`sprite()` returns a handle; `remove(sprite)` unregisters it. An attached
+material cannot be removed until its sprites and geometry release it.
+
+| Sprite option | Default and meaning |
+| --- | --- |
+| `x`, `y` | Zero; top-left screen pixel, -4096–4096. |
+| `width`, `height` | 32; solid rectangle dimensions, 0–4096. Textured sprites use texture dimensions. |
+| `material`, `color` | Zero and white. Zero uses the sprite's own solid-color material; `color` changes this fallback. |
+| `alpha`, `enabled` | 255 and true. Alpha multiplies material alpha. |
+| `z_order` | Zero, -32768–32767; equal orders retain their current relative order. |
+| `blend` | `"replace"` uses normal alpha compositing; `"add"` adds source channels with saturation. For additive sprites, nonzero alpha enables the full source contribution, so put falloff into the texture. |
+| `scale` | One; integer nearest-neighbor upscale, 1–16. |
+| `flip_x`, `flip_y` | False; reverse texture sampling. |
+| `mirror_x`, `mirror_y` | False; append reflected halves to double the texture extent along that axis. Flips apply to the expanded image. |
+| `name` | Optional unique sprite name, fewer than 64 UTF-8 bytes. |
+
+`pick(points)` copies up to 32 `(x,y)` pairs in screen pixels. Coordinates
+must be inside the display, or -1 to disable a query. Empty sequence or
+Python `None` / Lua `nil` disables picking. New queries clear the previous
+results; call `render()` before `picks()`.
+
+`picks()` returns a list/table of result dictionaries/tables, one per query:
+`hit`, `object` (handle, zero on a miss), `triangle`, `depth`, `x`, and `y`.
+Python triangle indices start at zero and use -1 on a miss; Lua indices start
+at one and use zero on a miss. Results describe the last completed render and
+retain those handle values even if an object is subsequently removed.
+The index addresses the selected mesh, including any LOD alternative.
+
+Picking tests filled triangle coverage. Sprites, wireframe outlines, texture
+color-key holes and per-pixel transparency do not participate. Overlapping
+triangles are compared using mean camera-space triangle depth rather than an
+exact ray intersection. Picking is disabled by default; leaving the query list
+empty skips all query iterations.
+
+```python
+cursor = scene.sprite(x=width // 2 - 2, y=height // 2 - 2,
+                      width=5, height=5, color=0xff0000)
+scene.pick(((width // 2, height // 2),))
+scene.render()
+selection = scene.picks()[0]
+if selection["hit"]:
+    selected_object = selection["object"]
+```
+
+Complete examples are `examples/python/jet_picking.py` and
+`examples/lua/jet_picking.lua`.
+
 ## Presentation and memory
 
 Rendering uses the display's full dimensions. Width must be a multiple of eight;

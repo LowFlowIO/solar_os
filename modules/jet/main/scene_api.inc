@@ -211,6 +211,6 @@ static int scene_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r
         }
         item->object->lodMeshes.swap(levels);return 0;
     }
-    default:return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    default:return overlay_command(q,r);
     }
 }

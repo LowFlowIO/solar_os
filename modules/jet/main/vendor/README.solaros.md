@@ -32,6 +32,7 @@ Local changes:
 - Trailing source whitespace is normalized.
 - Optional cancellation is checked between rasterized triangles. Cancelled
   frames are rejected by the provider before the host exchanges their buffers.
+- Sprite order uses a stable insertion sort without per-frame allocations.
 
 The external SolarOS library enables full-width, non-interlaced RGB565, per-pixel depth,
 lighting and perspective textures. Direct monochrome/indexed framebuffer

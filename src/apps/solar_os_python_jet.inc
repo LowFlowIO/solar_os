@@ -194,6 +194,7 @@ static mp_obj_t solaros_jet_scene_status(mp_obj_t self) {
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_status_obj,solaros_jet_scene_status);
 #include "solar_os_python_jet_surface.inc"
 #include "solar_os_python_jet_scene.inc"
+#include "solar_os_python_jet_overlay.inc"
 static mp_obj_t solaros_jet_scene_enter(mp_obj_t self) { (void)python_jet_scene(self); return self; }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_enter_obj,solaros_jet_scene_enter);
 static mp_obj_t solaros_jet_scene_exit(size_t count,const mp_obj_t *args) {
@@ -209,6 +210,7 @@ static const mp_rom_map_elem_t solaros_jet_scene_locals_table[]={
     METHOD(primitive),METHOD(object_set),METHOD(object_info),METHOD(object_action),METHOD(mesh_update),
     METHOD(camera_set),METHOD(camera_info),METHOD(camera_action),METHOD(point_light),METHOD(point_light_set),
     METHOD(point_light_info),METHOD(settings),METHOD(settings_info),METHOD(gradient),METHOD(lod),
+    METHOD(sprite),METHOD(sprite_set),METHOD(sprite_info),METHOD(pick),METHOD(picks),
 #undef METHOD
     {MP_ROM_QSTR(MP_QSTR___del__),MP_ROM_PTR(&solaros_jet_scene_close_obj)},
     {MP_ROM_QSTR(MP_QSTR___enter__),MP_ROM_PTR(&solaros_jet_scene_enter_obj)},
