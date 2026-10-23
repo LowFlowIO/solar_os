@@ -61,6 +61,9 @@ public:
     void setCancellation(bool (*callback)(void *), void *user) {
         cancelCallback = callback; cancelUser = user;
     }
+    void setPostGeometryHook(void (*callback)(Scene &,void *),void *user) {
+        postGeometryHook=callback;postGeometryUser=user;
+    }
 
     /// @brief Add a point light to the scene.
     /// @param light Light to add. Pointer is borrowed; caller retains ownership.
@@ -186,6 +189,7 @@ public:
 
     /// @brief Get the number of active pick queries set for the next render().
     int getPickQueryCount() const { return pickQueryCount; }
+    const PickQuery* getPickQueries() const { return pickQueries; }
 #endif
 
 
@@ -357,6 +361,8 @@ public:
 
 private:
 
+    void (*postGeometryHook)(Scene &,void *)=nullptr;
+    void *postGeometryUser=nullptr;
 #if MAX_PICK_QUERIES > 0
     PickQuery  pickQueries[MAX_PICK_QUERIES];
     PickResult pickResults[MAX_PICK_QUERIES];

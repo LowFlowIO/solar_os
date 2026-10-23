@@ -112,6 +112,24 @@ static int instance_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t 
     err=api->render(scene,color,bytes,nullptr,nullptr);if(err)return err;
     assert(api->remove(scene,clone)==0&&api->remove(scene,prototype)==0&&api->remove(scene,mat)==0);return 0;
 }
+static int extras_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
+    solar_os_jet_command_t q={};solar_os_jet_reply_t r;
+    auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
+    q.opcode=SOLAR_OS_JET_PARTICLES;int err=execute();if(err)return err;uint32_t pool=r.handle;
+    q={};q.opcode=SOLAR_OS_JET_PARTICLES_EMIT;q.handle=pool;long before=requests;
+    assert(execute()==0&&r.count==24&&requests==before);
+    q={};q.opcode=SOLAR_OS_JET_MATERIAL;err=execute();if(err)return err;uint32_t mat=r.handle;
+    solar_os_jet_element_t elements[SOLAR_OS_JET_MAX_FLARE_ELEMENTS]={};
+    for(auto &element:elements) {element.fields=1U<<JET_ELEM_material;element.values[JET_ELEM_material]=mat;}
+    q={};q.opcode=SOLAR_OS_JET_FLARE;q.data=elements;q.bytes=sizeof(elements);
+    err=execute();if(err)return err;uint32_t flare=r.handle;
+    assert(api->remove(scene,mat)==SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+    solar_os_jet_pick_t point={32,24};q={};q.opcode=SOLAR_OS_JET_PICK;q.data=&point;q.bytes=sizeof(point);assert(execute()==0);
+    q={};q.opcode=SOLAR_OS_JET_STEP;q.values[0]=.05;assert(execute()==0);
+    err=api->render(scene,color,bytes,nullptr,nullptr);if(err)return err;
+    q={};q.opcode=SOLAR_OS_JET_PICK_RESULT;assert(execute()==0&&r.count==1&&r.values[0]==0);
+    assert(api->remove(scene,flare)==0&&api->remove(scene,mat)==0&&api->remove(scene,pool)==0);return 0;
+}
 #include "jet_assets_test.inc"
 int main() {
     auto *api=solar_os_jet_engine_api_v1();assert(api->abi_version==1&&api->struct_size==sizeof(*api));
@@ -175,6 +193,16 @@ int main() {
         requests=0;fail_at=failure;void *s=nullptr;
         int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
         if(!err) {err=instance_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
+        assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
+        assert(solar_os_jet_engine_idle()&&live==baseline);
+        if(requests<=failure){complete=true;break;}
+    }
+    assert(complete);fail_at=-1;
+    complete=false;
+    for(long failure=0;failure<250;++failure) {
+        requests=0;fail_at=failure;void *s=nullptr;
+        int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
+        if(!err) {err=extras_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
         assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
         assert(solar_os_jet_engine_idle()&&live==baseline);
         if(requests<=failure){complete=true;break;}

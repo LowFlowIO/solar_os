@@ -164,6 +164,7 @@ static int solua_jet_scene_status(lua_State *L) {
 #include "solar_os_lua_jet_overlay.inc"
 #include "solar_os_lua_jet_assets.inc"
 #include "solar_os_lua_jet_instances.inc"
+#include "solar_os_lua_jet_extras.inc"
 static int solua_jet_open(lua_State *L) {
     if(lua_gettop(L)>2) return luaL_error(L,"too many Jet arguments");
     solar_os_jet_options_t options={0};
@@ -189,6 +190,8 @@ static int solua_jet_open(lua_State *L) {
         METHOD(load_obj);METHOD(load_mtl);METHOD(load_bmp);
         METHOD(prototype);METHOD(prototype_info);METHOD(instance);METHOD(instance_add);METHOD(instance_set);
         METHOD(instance_info);METHOD(instance_remove);METHOD(instance_clear);
+        METHOD(particles);METHOD(particles_set);METHOD(particles_emit);METHOD(particles_info);METHOD(particles_clear);
+        METHOD(flare);METHOD(flare_set);METHOD(flare_info);METHOD(flare_element_set);METHOD(flare_element_info);METHOD(step);
 #undef METHOD
         solua_set_func(L,-1,"__gc",solua_jet_scene_close); solua_set_func(L,-1,"__close",solua_jet_scene_close);
         lua_pushvalue(L,-1); lua_setfield(L,-2,"__index");

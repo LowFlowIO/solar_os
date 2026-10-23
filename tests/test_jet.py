@@ -124,7 +124,7 @@ class JetFramebufferTest(unittest.TestCase):
                 subprocess.run([str(binary), *([str(ROOT / name) for name in
                     ("examples/lua/jet.lua", "examples/lua/jet_materials.lua", "examples/lua/jet_scene.lua",
                      "examples/lua/jet_picking.lua", "examples/lua/jet_assets.lua",
-                     "examples/lua/jet_instances.lua")] if lua else [])],
+                     "examples/lua/jet_instances.lua", "examples/lua/jet_particles.lua")] if lua else [])],
                     check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
 
 

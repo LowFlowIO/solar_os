@@ -50,7 +50,8 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
         self.assertTrue({"mesh_data", "texture", "material", "capabilities", "primitive",
             "object_set", "mesh_update", "camera_action", "point_light", "gradient", "lod",
             "sprite", "sprite_info", "sprite_set", "pick", "picks", "load_obj", "load_mtl", "load_bmp",
-            "prototype", "instance", "instance_set", "instance_info", "instance_clear"} <= methods[0])
+            "prototype", "instance", "instance_set", "instance_info", "instance_clear",
+            "particles", "particles_emit", "flare", "flare_element_set", "step"} <= methods[0])
 
     def test_both_interpreters_expand_the_shared_descriptor_once(self):
         include = '#include "solar_os_script_api.inc"'

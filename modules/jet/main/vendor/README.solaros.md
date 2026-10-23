@@ -33,6 +33,10 @@ Local changes:
 - Optional cancellation is checked between rasterized triangles. Cancelled
   frames are rejected by the provider before the host exchanges their buffers.
 - Sprite order uses a stable insertion sort without per-frame allocations.
+- An optional post-geometry hook runs owned overlays before post-processing
+  and sprite compositing. Picking queries can be inspected for composition.
+- Particle pools use independent seedable random state. Lens flares allow
+  direction, fade, element and sort-order updates and sprite deregistration.
 
 The external SolarOS library enables full-width, non-interlaced RGB565, per-pixel depth,
 lighting and perspective textures. Direct monochrome/indexed framebuffer

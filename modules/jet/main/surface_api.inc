@@ -134,6 +134,8 @@ static int texture_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
 }
 static int remove_surface(uint32_t id) {
     if(auto *entry=resource(active->materials,id)) {
+        for(auto &flare:active->flares)if(flare)for(unsigned i=0;i<flare->count;++i)
+            if(flare->elements[i].values[JET_ELEM_material]==id)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
         for(auto &mesh:active->prototypes)if(mesh)for(auto &face:mesh->value->triangles)
             if(face.material==&entry->value)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
         for(auto &item:active->items)if(item)for(auto &instance:item->object->instances) {
@@ -199,13 +201,14 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
         const auto &q=*command;auto &r=*reply;r={};
         switch(q.opcode) {
         case SOLAR_OS_JET_INFO: {
-            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS|SOLAR_OS_JET_FEATURE_INSTANCING;
+            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS|SOLAR_OS_JET_FEATURE_INSTANCING|SOLAR_OS_JET_FEATURE_PARTICLES|SOLAR_OS_JET_FEATURE_FLARES;
             int objects,triangles,vertices;active->scene.getStatistics(objects,triangles,vertices);
             r.values[0]=objects;r.values[1]=triangles;r.values[2]=vertices;
             r.values[3]=SOLAR_OS_JET_MAX_MATERIALS;r.values[4]=SOLAR_OS_JET_MAX_TEXTURES;
             r.values[5]=SOLAR_OS_JET_MAX_LIGHTS;r.values[6]=SOLAR_OS_JET_MAX_OBJECTS;
             r.values[7]=SOLAR_OS_JET_MAX_SPRITES;r.values[8]=SOLAR_OS_JET_MAX_PICKS;
-            r.values[9]=SOLAR_OS_JET_MAX_PROTOTYPES;r.values[10]=SOLAR_OS_JET_MAX_INSTANCES;return 0;
+            r.values[9]=SOLAR_OS_JET_MAX_PROTOTYPES;r.values[10]=SOLAR_OS_JET_MAX_INSTANCES;
+            r.values[11]=SOLAR_OS_JET_MAX_PARTICLES;r.values[12]=SOLAR_OS_JET_MAX_FLARES;r.values[13]=SOLAR_OS_JET_MAX_FLARE_ELEMENTS;return 0;
         }
         case SOLAR_OS_JET_MATERIAL:case SOLAR_OS_JET_MATERIAL_SET:case SOLAR_OS_JET_MATERIAL_INFO:
             return material_command(q,r);

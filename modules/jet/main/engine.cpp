@@ -1,6 +1,8 @@
 #include "solar_os_jet_abi.h"
 #include "Scene.hpp"
 #include "Primitives.hpp"
+#include "ParticleSystem.hpp"
+#include "LensFlare.hpp"
 #include <algorithm>
 #include <memory>
 #include <new>
@@ -41,6 +43,12 @@ struct InstancePose {
     uint32_t prototype=0;
     double values[JET_INST_COUNT]={0};
 };
+struct ParticleResource:Resource {ParticleSystem value;};
+struct FlareResource:Resource {
+    solar_os_jet_element_t elements[SOLAR_OS_JET_MAX_FLARE_ELEMENTS]={};
+    unsigned count=0;
+    std::unique_ptr<LensFlare> value;
+};
 struct PickSnapshot {
     uint32_t object=0,mesh=0,batch=0;
     int32_t instance=-1;
@@ -71,6 +79,11 @@ struct Engine {
     std::unique_ptr<LightResource> lights[SOLAR_OS_JET_MAX_LIGHTS];
     std::unique_ptr<SpriteResource> sprites[SOLAR_OS_JET_MAX_SPRITES];
     std::unique_ptr<MeshResource> prototypes[SOLAR_OS_JET_MAX_PROTOTYPES];
+    std::unique_ptr<ParticleResource> particles[SOLAR_OS_JET_MAX_PARTICLES];
+    std::unique_ptr<FlareResource> flares[SOLAR_OS_JET_MAX_FLARES];
+    float frame_dt=1.0f/30;
+    bool (*frame_cancel)(void *)=nullptr;
+    void *frame_cancel_user=nullptr;
     PickSnapshot picks[SOLAR_OS_JET_MAX_PICKS];
     solar_os_jet_pick_t query_points[SOLAR_OS_JET_MAX_PICKS];
     unsigned pick_count=0,query_count=0;
@@ -190,11 +203,13 @@ static int asset_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static int instance_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static void refresh_instance_poses(Item &);
 static int remove_prototype(uint32_t);
+static int extras_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 #include "surface_api.inc"
 #include "scene_api.inc"
 #include "overlay_api.inc"
 #include "asset_api.inc"
 #include "instance_api.inc"
+#include "extras_api.inc"
 static int transform(void *s,uint32_t id,const solar_os_jet_pose_t *p) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if(!pose_valid(p)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -210,7 +225,8 @@ static int remove(void *s,uint32_t id) {
         auto &objects=active->scene.getObjects();
         objects.erase(std::remove(objects.begin(),objects.end(),item->object.get()),objects.end());
         item.reset(); return 0;
-    } int err=remove_prototype(id);if(err!=SOLAR_OS_NATIVE_ERROR_NOT_FOUND)return err;
+    } int err=remove_extras(id);if(err!=SOLAR_OS_NATIVE_ERROR_NOT_FOUND)return err;
+      err=remove_prototype(id);if(err!=SOLAR_OS_NATIVE_ERROR_NOT_FOUND)return err;
       err=remove_sprite(id);if(err!=SOLAR_OS_NATIVE_ERROR_NOT_FOUND)return err;
       err=remove_light(id);return err==SOLAR_OS_NATIVE_ERROR_NOT_FOUND ? remove_surface(id) : err; });
 }
@@ -231,11 +247,14 @@ static int render(void *s,uint16_t *color,size_t bytes,solar_os_native_cancel_fn
     return call([&] {
         Cancellation state{cancel,user,false};
         if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
+        prepare_extras();
+        active->frame_cancel=cancelled;active->frame_cancel_user=&state;
         active->scene.setFramebuffer(color);
         active->scene.setCancellation(cancelled,&state);
         try { active->scene.render(); }
-        catch (...) { active->scene.setCancellation(nullptr,nullptr); throw; }
+        catch (...) { active->scene.setCancellation(nullptr,nullptr);active->frame_cancel=nullptr;active->frame_cancel_user=nullptr;throw; }
         active->scene.setCancellation(nullptr,nullptr);
+        active->frame_cancel=nullptr;active->frame_cancel_user=nullptr;
         if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
         snapshot_picks();return 0;
     });

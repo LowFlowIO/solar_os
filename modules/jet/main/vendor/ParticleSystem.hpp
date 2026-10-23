@@ -73,6 +73,8 @@ public:
     /// Optional emissive additive sparks; water droplets retain alpha-over.
     /// False preserves the original compositing behaviour.
     bool additiveSparks = false;
+    void seed(uint32_t value) {randomState=value ? value : 1;}
+    uint32_t randomSeed() const {return randomState;}
     unsigned lastRenderedTriangles = 0; ///< Accepted triangles in the last render call.
     unsigned activeCount() const {
         unsigned count = 0;
@@ -379,8 +381,10 @@ private:
         return nullptr;
     }
 
-    static float randF() {
-        return (float)(rand() & 0x7FFF) / 32767.0f;
+    uint32_t randomState=1;
+    float randF() {
+        randomState^=randomState<<13;randomState^=randomState>>17;randomState^=randomState<<5;
+        return float(randomState&0x7fff)/32767.0f;
     }
 };
 

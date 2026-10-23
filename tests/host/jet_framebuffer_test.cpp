@@ -1,5 +1,7 @@
 #include "Scene.hpp"
 #include "Primitives.hpp"
+#include "ParticleSystem.hpp"
+#include "LensFlare.hpp"
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -46,7 +48,22 @@ int main(int argc, char **argv) {
         sprite.scale = 3; sprite.alpha = 187;
         sprite.textureFlags = Sprite2D::MIRROR_X | Sprite2D::FLIP_Y;
         scene.addSprite(&solid); scene.addSprite(&sprite);
+        ParticleSystem particles;particles.seed(123);particles.additiveSparks=true;
+        LensFlare::Element element;element.material=&overlay;element.width=8;element.height=8;element.axisT=.5f;
+        element.blendMode=BlendMode::BLEND_REPLACE;
+        LensFlare flare(&scene,&element,1,0,Vec3f{.4f,.3f,1});
+        struct ExtraContext {ParticleSystem *particles;LensFlare *flare;Camera *camera;};
+        ExtraContext extra{&particles,&flare,&camera};
+        scene.setPostGeometryHook([](Scene &s,void *user) {
+            auto &e=*static_cast<ExtraContext *>(user);auto *r=s.getRenderer();int queries=r->pickQueryCount;r->pickQueryCount=0;
+            e.particles->render(&s,e.camera,width,height);r->pickQueryCount=queries;e.flare->update(.05f,width,height);
+        },&extra);
         for (int frame = 0; frame < 48; ++frame) {
+            if(frame%8==0) {
+                particles.emitSparks({0,0,-100},{0,1,0},200,8);
+                particles.emitWaterSplash({0,0,-100},{0,0,1},{1,0,0},{0,1,0},200,8);
+            }
+            particles.update(.05f);flare.prepare(&camera,width,height);
             material.shadingMode = static_cast<ShadingMode>(frame % 7);
             material.alpha = frame % 3 ? 255 : 117;
             material.specularExponent = frame % 2 ? 0 : 32;

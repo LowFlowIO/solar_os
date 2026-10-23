@@ -74,8 +74,10 @@ static mp_obj_t solaros_jet_scene_capabilities(mp_obj_t self) {
     python_dict_store_bool(dict,"picking",r.handle&SOLAR_OS_JET_FEATURE_PICKING);
     python_dict_store_bool(dict,"assets",r.handle&SOLAR_OS_JET_FEATURE_ASSETS);
     python_dict_store_bool(dict,"instancing",r.handle&SOLAR_OS_JET_FEATURE_INSTANCING);
-    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks","max_prototypes","max_instances"};
-    for(unsigned i=0;i<11;++i) python_dict_store_uint(dict,names[i],r.values[i]);
+    python_dict_store_bool(dict,"particles",r.handle&SOLAR_OS_JET_FEATURE_PARTICLES);
+    python_dict_store_bool(dict,"flares",r.handle&SOLAR_OS_JET_FEATURE_FLARES);
+    const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks","max_prototypes","max_instances","max_particle_systems","max_flares","max_flare_elements"};
+    for(unsigned i=0;i<14;++i) python_dict_store_uint(dict,names[i],r.values[i]);
     return dict;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_capabilities_obj,solaros_jet_scene_capabilities);

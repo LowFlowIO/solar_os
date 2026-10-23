@@ -133,6 +133,6 @@ static int instance_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t
         }
         item->object->calculateBoundingBox();return 0;
     }
-    default:return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    default:return extras_command(q,r);
     }
 }

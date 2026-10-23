@@ -108,6 +108,22 @@ int main(int argc,char **argv) {
             "s:remove(hud);s:remove(m);s:remove(t);s:pick(nil);s:render();assert(#s:picks()==0);s:close()");
         jet_test_assert_clean();
         solua.session_gfx=jet_test_gfx();solua.events=(void *)1;
+        run(L,"s=jet.open('display0');assert(s:capabilities().particles and s:capabilities().flares); "
+            "pool=s:particles{seed=123,additive=true,name='sparks'};assert(s:particles_info(pool).capacity==200); "
+            "assert(s:particles_emit(pool,{count=12,speed=200})==12);assert(s:particles_info(pool).active==12); "
+            "s:particles_set(pool,{enabled=false});s:step(.1);assert(s:particles_info(pool).active==12); "
+            "s:particles_set(pool,{enabled=true});s:particles_emit(pool,{kind='splash',count=8}); "
+            "s:step(.05);s:render();assert(s:particles_info(pool).active>0); "
+            "s:particles_clear(pool);assert(s:particles_info(pool).active==0); "
+            "mat=s:material{color=0xffffff,shading='unlit'};flare=s:flare({{material=mat,width=8,height=8,blend='replace'}},{z=1}); "
+            "s:pick{{32,24}};s:step(.25);s:render();local info=s:flare_info(flare); "
+            "assert(info.elements==1 and info.in_front and info.on_screen and info.visibility>0); "
+            "assert(#s:picks()==1 and not s:picks()[1].hit);assert(not pcall(s.remove,s,mat)); "
+            "s:flare_element_set(flare,1,{alpha=.5,axis=.7,mirror_x=true,z_order=-20});assert(s:flare_element_info(flare,1).alpha==.5); "
+            "assert(s:flare_element_info(flare,1).z_order==-20); "
+            "s:flare_set(flare,{x=.1,enabled=false});s:render();s:remove(flare);s:remove(mat);s:remove(pool); "
+            "assert(not pcall(s.step,s,2));s:close()");
+        jet_test_assert_clean();
         run(L,"s=jet.open('display0');assert(s:capabilities().instancing); "
             "src=s:primitive{kind='debug_cube',width=120,height=120,depth=120};proto=s:prototype(src,{name='shared'}); "
             "assert(s:prototype_info(proto).triangles==12);s:remove(src); "

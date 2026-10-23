@@ -410,6 +410,70 @@ frame's values even after resources are removed.
 Complete examples are `examples/python/jet_instances.py` and
 `examples/lua/jet_instances.lua`.
 
+## Particles and lens flares
+
+Jet library 1.6 or later reports `particles` and `flares` in
+`capabilities()`. Both use scene-owned resources released by `remove()` or
+`close()`. They are drawn after opaque geometry; sprites retain their normal
+overlay ordering. Neither particles nor flare sprites participate in picking.
+Flares reserve separate occlusion queries without replacing the script's queries.
+
+`step(dt)` advances enabled particle pools, sets the next flare integration
+interval, and advances water animation time. Delta time is 0–1 seconds. Rendering
+does not advance particle physics by itself; flare integration defaults to
+1/30 second until `step()` is called.
+
+| Particle method | Contract |
+| --- | --- |
+| `particles(...)` | Create a fixed pool of 200 particles and return its handle. Up to four pools may exist. |
+| `particles_set(handle, ...)` | Partially update pool options. |
+| `particles_emit(handle, ...)` | Emit sparks or water splash; return the number spawned. A full pool spawns fewer particles. |
+| `particles_info(handle)` | Return options, `active`, `triangles` drawn last frame, `capacity`, and current `random_state`. |
+| `particles_clear(handle)` | Clear particles without resetting the random state. |
+
+Pool options are `world_scale` (1/64–16, default one), `additive` (false),
+`seed` (1–4294967295, default one), `enabled` (true), and unique `name`.
+Each pool has an independent deterministic random generator. Setting its seed
+affects subsequent emissions. Disabled pools pause physics and skip drawing.
+Particles that expire or leave the -4096–4096 world-coordinate range are removed.
+
+Emitter options are `kind` (`"sparks"` or `"splash"`), `x/y/z` origin,
+`nx/ny/nz` spark normal (default 0,1,0), `speed` (default 100, 0–4096),
+`count` (default 24, 0–200), and inherited velocity `vx/vy/vz` (default zero).
+Splash emitters also accept travel direction `tx/ty/tz` (0,0,1), side direction
+`sx/sy/sz` (1,0,0), and up direction `ux/uy/uz` (0,1,0). Origins and velocity
+components are numeric values in -4096–4096; normal/direction components are
+-1–1. Particle colors and lifetimes follow Jet's spark and splash profiles.
+
+| Flare method | Contract |
+| --- | --- |
+| `flare(elements, ...)` | Create a lens flare from 1–12 element option dictionaries/tables. Up to four flares may exist. |
+| `flare_set(handle, ...)`, `flare_info(handle)` | Update or inspect flare options. Info adds last computed `visibility`, `in_front`, `on_screen`, `projected_x/y`, and element count. |
+| `flare_element_set(handle, index, ...)`, `flare_element_info(handle, index)` | Update or inspect an element; Python indices start at zero and Lua indices at one. |
+
+Flare options are world-space light direction `x/y/z` (default 0,0,1),
+`fade_speed` (default 4, 0–1024 visibility units/second), `enabled` (true),
+and unique `name`. Direction components are -1–1 and the vector must be
+nonzero; it is normalized before use. Disabled flares hide their sprites and
+retain their last visibility state. Visibility describes geometry occlusion;
+sprite alpha also includes the screen-edge fade and element alpha.
+
+Element options are `material` (zero hides the element), `width/height`
+(32, 1–1024), `axis` (0, -2–2), `alpha` (1, 0–1), `blend` (`"add"`
+or `"replace"`), `scale` (1, 1–16), `flip_x/y`, `mirror_x/y` (false),
+and `z_order` (100 plus element index by default, -32768–32767).
+Axis zero pins an element to the light; positive/negative values place it along
+the light-to-screen-center line. Textured elements use texture dimensions for
+drawing and width/height for placement. Referenced materials cannot be removed.
+Additive elements retain the sprite blend contract: zero alpha skips them;
+nonzero alpha adds the full source. Use replace blending when alpha fading is
+needed.
+
+Python uses keyword options and Lua uses options tables. Capability limits are
+`max_particle_systems`, `max_flares`, and `max_flare_elements`.
+Complete examples are `examples/python/jet_particles.py` and
+`examples/lua/jet_particles.lua`.
+
 ## Presentation and memory
 
 Rendering uses the display's full dimensions. Width must be a multiple of eight;

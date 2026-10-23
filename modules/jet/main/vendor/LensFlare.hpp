@@ -69,6 +69,7 @@ public:
         /// Sprite2D texture flags. Width/height describe the expanded image
         /// before scaling, including any mirrored halves.
         uint8_t   textureFlags = 0;
+        int zOrder=INT32_MIN; ///< Default sorts at 100 + element index.
     };
 
     /// @param scene         Scene to register sprites with and to submit
@@ -101,7 +102,7 @@ public:
             sprites[i].height    = elements[i].height;
             sprites[i].alpha     = 0;
             sprites[i].enabled   = false;
-            sprites[i].zOrder    = 100 + i;  // draw above normal HUD
+            sprites[i].zOrder    = elements[i].zOrder==INT32_MIN ? 100+i : elements[i].zOrder;
             sprites[i].blendMode = elements[i].blendMode;
             sprites[i].scale     = elements[i].scale;
             sprites[i].textureFlags = elements[i].textureFlags;
@@ -296,6 +297,19 @@ public:
     /// @brief Current sun visibility [0..1]. Useful for driving other effects
     ///        (e.g. sun glare tint on the background gradient).
     float getVisibility() const { return visibility; }
+    void setDirection(Vec3f value) {flareDir=value;}
+    void setFadeSpeed(float value) {fadeSpeed=value;}
+    void setPickSlot(int value) {pickSlot=value;}
+    int projectedX() const {return sunScreenX;}
+    int projectedY() const {return sunScreenY;}
+    Sprite2D* getSprite(int index) {return index>=0&&index<elementCount ? &sprites[index] : nullptr;}
+    bool setElement(int index,const Element &value) {
+        if(index<0||index>=elementCount)return false;
+        elems[index]=value;auto &sprite=sprites[index];sprite.material=value.material;
+        sprite.width=value.width;sprite.height=value.height;sprite.blendMode=value.blendMode;
+        sprite.scale=value.scale;sprite.textureFlags=value.textureFlags;
+        sprite.zOrder=value.zOrder==INT32_MIN ? 100+index : value.zOrder;return true;
+    }
 
     /// @brief Whether the sun is currently within the camera frustum.
     bool isSunOnScreen() const { return sunInFrustum; }

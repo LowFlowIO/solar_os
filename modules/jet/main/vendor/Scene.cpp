@@ -907,6 +907,7 @@ void Scene::render(RasterExecutor executor) {
     prepareFrame();
     if (executor) executor(*this);
     else rasterizeBand(0, screenHeight);
+    if(postGeometryHook)postGeometryHook(*this,postGeometryUser);
 
     // Checkerboard reconstruction: fill in opposite-parity pixels from the
     // freshly-rendered current-parity neighbours so PostFX sees a fully-populated
