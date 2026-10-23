@@ -8,6 +8,7 @@ static int sprite_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &
     auto fresh=old ? nullptr : std::make_unique<SpriteResource>();auto *entry=old ? old : fresh.get();
     Material *mat=material(uint32_t(v[JET_SPR_material]),&entry->fallback);
     if(!mat) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
+    if(mat->shader)return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     entry->fallback.color=rgb565(uint32_t(v[JET_SPR_color]));
     auto &sp=entry->value;sp.material=mat;sp.x=v[JET_SPR_x];sp.y=v[JET_SPR_y];
     sp.width=v[JET_SPR_width];sp.height=v[JET_SPR_height];sp.alpha=v[JET_SPR_alpha];

@@ -52,10 +52,21 @@ static int material_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t
     double v[SOLAR_OS_JET_VALUES]={0};merge_values(v,q,jet_material_fields,JET_MAT_COUNT,old ? old->values : nullptr);
     auto *texture=resource(active->textures,uint32_t(v[JET_MAT_texture]));
     if(v[JET_MAT_texture] && !texture) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
+    auto *shader=resource(active->shaders,uint32_t(v[JET_MAT_shader]));
+    if(v[JET_MAT_shader] && !shader)return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
+    if(shader) {
+        if(v[JET_MAT_shading]==3||v[JET_MAT_shading]==5)return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+        if(old) {
+            for(auto &sprite:active->sprites)if(sprite&&sprite->value.material==&old->value)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+            for(auto &flare:active->flares)if(flare)for(unsigned i=0;i<flare->count;++i)
+                if(flare->elements[i].values[JET_ELEM_material]==old->id)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+        }
+    }
     auto fresh=old ? nullptr : std::make_unique<MaterialResource>();
     auto *entry=old ? old : fresh.get();
     Material updated=entry->value;
     material_values(updated,v,texture ? texture->value.get() : nullptr);
+    updated.shader=shader;
     entry->value=updated;std::memcpy(entry->values,v,sizeof(v));
     if(q.fields&(1U<<JET_MAT_name)) std::memcpy(entry->name,q.name,sizeof(entry->name));
     if(old) {r.handle=old->id;return 0;}
@@ -149,6 +160,10 @@ static int texture_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
     return store(active->textures,std::move(entry),q,r);
 }
 static int remove_surface(uint32_t id) {
+    if(auto *entry=resource(active->shaders,id)) {
+        for(auto &mat:active->materials)if(mat&&mat->value.shader==entry)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
+        for(auto &slot:active->shaders)if(slot.get()==entry) {slot.reset();return 0;}
+    }
     if(auto *entry=resource(active->materials,id)) {
         for(auto &flare:active->flares)if(flare)for(unsigned i=0;i<flare->count;++i)
             if(flare->elements[i].values[JET_ELEM_material]==id)return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
@@ -217,14 +232,14 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
         const auto &q=*command;auto &r=*reply;r={};
         switch(q.opcode) {
         case SOLAR_OS_JET_INFO: {
-            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS|SOLAR_OS_JET_FEATURE_INSTANCING|SOLAR_OS_JET_FEATURE_PARTICLES|SOLAR_OS_JET_FEATURE_FLARES|SOLAR_OS_JET_FEATURE_POSTFX|SOLAR_OS_JET_FEATURE_TILED_TEXTURES;
+            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS|SOLAR_OS_JET_FEATURE_INSTANCING|SOLAR_OS_JET_FEATURE_PARTICLES|SOLAR_OS_JET_FEATURE_FLARES|SOLAR_OS_JET_FEATURE_POSTFX|SOLAR_OS_JET_FEATURE_TILED_TEXTURES|SOLAR_OS_JET_FEATURE_SHADERS;
             int objects,triangles,vertices;active->scene.getStatistics(objects,triangles,vertices);
             r.values[0]=objects;r.values[1]=triangles;r.values[2]=vertices;
             r.values[3]=SOLAR_OS_JET_MAX_MATERIALS;r.values[4]=SOLAR_OS_JET_MAX_TEXTURES;
             r.values[5]=SOLAR_OS_JET_MAX_LIGHTS;r.values[6]=SOLAR_OS_JET_MAX_OBJECTS;
             r.values[7]=SOLAR_OS_JET_MAX_SPRITES;r.values[8]=SOLAR_OS_JET_MAX_PICKS;
             r.values[9]=SOLAR_OS_JET_MAX_PROTOTYPES;r.values[10]=SOLAR_OS_JET_MAX_INSTANCES;
-            r.values[11]=SOLAR_OS_JET_MAX_PARTICLES;r.values[12]=SOLAR_OS_JET_MAX_FLARES;r.values[13]=SOLAR_OS_JET_MAX_FLARE_ELEMENTS;return 0;
+            r.values[11]=SOLAR_OS_JET_MAX_PARTICLES;r.values[12]=SOLAR_OS_JET_MAX_FLARES;r.values[13]=SOLAR_OS_JET_MAX_FLARE_ELEMENTS;r.values[14]=SOLAR_OS_JET_MAX_SHADERS;return 0;
         }
         case SOLAR_OS_JET_MATERIAL:case SOLAR_OS_JET_MATERIAL_SET:case SOLAR_OS_JET_MATERIAL_INFO:
             return material_command(q,r);
@@ -243,6 +258,7 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
             return 0;
         }
         case SOLAR_OS_JET_MESH_DATA:return mesh_data(q,r);
+        case SOLAR_OS_JET_SHADER:case SOLAR_OS_JET_SHADER_SET:case SOLAR_OS_JET_SHADER_INFO:return shader_command(q,r);
         default:return scene_command(q,r);
         }
     });

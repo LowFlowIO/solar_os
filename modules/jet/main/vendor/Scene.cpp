@@ -658,6 +658,7 @@ void Scene::prepareFrame() {
                          + (int)(camSinX * camera->fovFactor / 1024.0f);
 
     renderQueue.clear();
+    shaderQueue.clear();
     std::fill(std::begin(preciseSortBuckets), std::end(preciseSortBuckets), false);
     renderBuckets.clear();
 #if TEXTURE_MAPPING
@@ -869,6 +870,7 @@ void Scene::rasterizeBand(int yMin, int yMax, uint8_t* triangleFlags) {
     for (const int32_t idx : renderOrder) {
         if (cancelCallback && cancelCallback(cancelUser)) break;
         const RenderTri& t = renderQueue[idx];
+        bandRast.shaderFace=t.shaderIndex==UINT32_MAX ? nullptr : &shaderQueue[t.shaderIndex];
         if (std::max({t.v1.position.y, t.v2.position.y, t.v3.position.y}) < yMin ||
             std::min({t.v1.position.y, t.v2.position.y, t.v3.position.y}) >= yMax) continue;
 #if MAX_PICK_QUERIES > 0
@@ -907,6 +909,7 @@ void Scene::render(RasterExecutor executor) {
     prepareFrame();
     if (executor) executor(*this);
     else rasterizeBand(0, screenHeight);
+    if(cancelCallback&&cancelCallback(cancelUser))return;
     if(postGeometryHook)postGeometryHook(*this,postGeometryUser);
 
     // Checkerboard reconstruction: fill in opposite-parity pixels from the
@@ -1605,6 +1608,7 @@ void PERF_CRITICAL Scene::renderObject(Object* obj,
 
     // Emit a projected triangle into renderQueue (does screen-bounds + backface
     // cull). Reused by both the fast path and the clipped path.
+    const Object::Triangle *shaderSource=nullptr;
     auto emitTri = [&](const auto& a,
                        const auto& b,
                        const auto& c,
@@ -1645,6 +1649,18 @@ void PERF_CRITICAL Scene::renderObject(Object* obj,
         if (shouldCull) return;
 
         RenderTri rt;
+        rt.shaderIndex=UINT32_MAX;
+        if(mat && mat->shader && mat->shader->needsCoordinates) {
+            ShaderFaceContext context;
+            const uint16_t indices[]={shaderSource->v1,shaderSource->v2,shaderSource->v3};
+            for(unsigned i=0;i<3;++i) {
+                context.local[i]=meshSource->vertices[indices[i]].position;
+                context.view[i]=cameraPosition(context.local[i]);
+            }
+            context.cameraPosition=camPos;
+            std::copy(cameraMatrix,cameraMatrix+9,context.cameraMatrix);
+            rt.shaderIndex=uint32_t(shaderQueue.size());shaderQueue.push_back(context);
+        }
         const bool reverse = cullingMode == CullingMode::NO_CULLING && shoelaceArea < 0;
         if (reverse) {
             rt.v1.assign(c); rt.v2.assign(b); rt.v3.assign(a);
@@ -1654,7 +1670,7 @@ void PERF_CRITICAL Scene::renderObject(Object* obj,
 #if TEXTURE_MAPPING
         rt.uvIndex = UINT32_MAX;
         // Fetch mesh UVs only after culling, and only for textured faces.
-        if (mat && mat->diffuseMap) {
+        if (mat && (mat->diffuseMap || mat->shader)) {
             rt.uvIndex = (uint32_t)textureQueue.size();
             textureQueue.push_back(reverse ? TriangleUV{*uvC, *uvB, *uvA}
                                            : TriangleUV{*uvA, *uvB, *uvC});
@@ -1717,6 +1733,7 @@ void PERF_CRITICAL Scene::renderObject(Object* obj,
 #else
         const auto& triangle = meshSource->triangles[triIdx];
 #endif // JET_MESH_INSTANCING
+        shaderSource=&triangle;
         const auto& vA = transformedVertices[triangle.v1];
         const auto& vB = transformedVertices[triangle.v2];
         const auto& vC = transformedVertices[triangle.v3];
@@ -1781,9 +1798,9 @@ void PERF_CRITICAL Scene::renderObject(Object* obj,
         RenderVertex clippedInput[3] = { vA.expand(), vB.expand(), vC.expand() };
 #if TEXTURE_MAPPING
 #if JET_MESH_INSTANCING
-        if (effectiveMat && effectiveMat->diffuseMap) {
+        if (effectiveMat && (effectiveMat->diffuseMap || effectiveMat->shader)) {
 #else
-        if (!triangle.colorBaked && triangle.material && triangle.material->diffuseMap) {
+        if (!triangle.colorBaked && triangle.material && (triangle.material->diffuseMap || triangle.material->shader)) {
 #endif // JET_MESH_INSTANCING
             clippedInput[0].uv = meshSource->vertices[triangle.v1].uv;
             clippedInput[1].uv = meshSource->vertices[triangle.v2].uv;

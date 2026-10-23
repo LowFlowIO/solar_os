@@ -546,6 +546,55 @@ clamp and zero addressing follow the texture settings.
 Complete examples are `examples/python/jet_tiles.py` and
 `examples/lua/jet_tiles.lua`.
 
+## Procedural shaders
+
+Jet 1.9 adds `capabilities().shaders` and up to 16 scene-owned shaders.
+Python uses `shader(callback=None, **options)` and
+`shader_set(handle, callback=None, **options)`. Lua uses
+`shader(callback, options)` and `shader_set(handle, callback, options)`;
+pass `nil` for a built-in shader. `shader_info(handle)` reports options,
+`calls` and `failed` for the last render. `remove(handle)` releases an unused
+shader; materials referring to it prevent removal.
+
+| Option | Default | Meaning |
+| --- | --- | --- |
+| `kind` | `"checker"` | `checker`, `uv`, `depth`, `callback` |
+| `color`, `secondary` | white, black | Checker colors in RGB888 |
+| `scale` | 8 | Checks per UV unit; screen-space cell size in pixels; depth shader white point in depth-buffer units; 1–4096 |
+| `screen_space` | false | Use pixel X/Y instead of normalized UV coordinates |
+| `alpha_key` | -1 | Transparent RGB888 color, compared after RGB565 quantization; -1 disables |
+| `name` | empty | Resource name |
+
+Bind with `material(shader=handle, shading="unlit")` in Python or
+`material{shader=handle, shading="unlit"}` in Lua. Shaders override texture
+sampling; the material's lighting, alpha and blend behavior still apply.
+Use `shader=0` to detach. Shader materials support filled 3D geometry,
+including shared instances and LOD. Wireframe, water reflection, HUD sprites
+and flare elements reject shader materials. Built-in `uv` visualizes wrapped
+U/V as red/green; `depth` maps depth linearly to grayscale.
+
+Passing a function selects `kind="callback"`. It receives `(u, v, params)`
+and returns an integer RGB888 color. UV coordinates are normalized, can extend
+outside 0–1, and use the material's perspective setting. With `screen_space`,
+`u` and `v` are pixel coordinates. `params` contains `x`, `y`, `depth`,
+`frame` (starting at zero), `local` and `world`. The last two are integer XYZ
+tuples/tables reconstructed on the source face, including transforms and
+near/far clipping. Lua accesses `params["local"]` because `local` is a keyword.
+
+Callbacks run synchronously for visible fragments after coverage and depth
+tests. Their functions stay alive with the scene, including through garbage
+collection; close/remove releases them. Calling Jet from a callback raises an
+error. A callback exception, invalid result, allocation failure or attempted
+Lua yield rejects that render without presenting its partial frame. The
+original script error is raised after the renderer returns. A later render
+can recover after replacing the callback. Set `kind` to a built-in to release
+a callback; omitting it in a partial update preserves the current kind.
+
+Built-in shaders execute natively. Script callbacks allocate a parameter
+dictionary/table per fragment and can be much slower; use small surfaces or
+textures for complex patterns. See `examples/python/jet_shaders.py` and
+`examples/lua/jet_shaders.lua`.
+
 ## Presentation and memory
 
 Rendering uses the display's full dimensions. Width must be a multiple of eight;
@@ -561,6 +610,13 @@ visible motion independently of successful presentation calls.
 
 Scripts provide asset contents to the loaders; the provider does not open paths.
 Indexed-only display output is not supported.
+The provider uses one fixed full-width, full-frame renderer profile. Scripts
+control scene behavior and optional effects; buffer layout, interlace,
+checkerboard reconstruction, diagnostic render modes and parallel raster
+workers are build-time choices. Tiled storage, mip selection and filter caches
+are managed resources; upstream worker feedback/residency pointers are not
+script objects. Display size follows the selected target; close and reopen
+the scene to change targets.
 Native consumers can use the C provider table in `solar_os_jet_abi.h`
 through the [resident library service](native-library.md).
 
@@ -577,6 +633,7 @@ through the [resident library service](native-library.md).
 | Shared geometry | `prototype(object,...)`; `instance(prototype,...)`; `instance_set(object,index,...)` |
 | Overlays and selection | `sprite(...)`; `pick(points)`; `picks()` |
 | Animation and effects | `particles(...)`; `flare(elements,...)`; `step(dt)`; `postfx(...)` |
+| Procedural surfaces | `shader(...)`; `shader_set(handle,...)`; `shader_info(handle)` |
 | Draw and inspect | `render()`; `status()` |
 | Release | `close()`, Python `with`, Lua `<close>` |
 | Limits | One scene, 32 objects, 1024 input vertices and 2048 triangles per mesh; RGB888 colors; design coordinates -4096..4096 |

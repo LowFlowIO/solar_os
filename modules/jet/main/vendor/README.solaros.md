@@ -50,5 +50,11 @@ storage is not implemented. Geometry rendering must be serialized: upstream
 still has shared baked-material and trigonometric state. Do not construct or
 render scenes concurrently.
 
+Shaders are evaluated by the general filled-triangle rasterizer after depth
+testing. Only shader faces retain source local/view geometry, allowing ray-plane
+reconstruction through clipping and instances. Shader results use native RGB565
+and pass through the same wire-order store as textures. Default Shader fields
+and parameters are initialized; scripts must contain VM exceptions before returning.
+
 Upstream updates require reviewing these changes and rerunning native versus
 wire-order image comparisons and firmware builds.

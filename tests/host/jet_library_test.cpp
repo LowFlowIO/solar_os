@@ -22,6 +22,36 @@ void *operator new[](size_t n,const std::nothrow_t &) noexcept {return operator 
 void operator delete(void *p,const std::nothrow_t &) noexcept {operator delete(p);}
 void operator delete[](void *p,const std::nothrow_t &) noexcept {operator delete(p);}
 static bool cancellation(void *user) {return ++*static_cast<unsigned *>(user)==4;}
+struct ShaderProbe {unsigned calls=0;bool fail=false;};
+static int shader_probe(void *user,uint32_t slot,double u,double v,
+    const solar_os_jet_shader_parameters_t *p,uint32_t *color) {
+    auto &probe=*static_cast<ShaderProbe *>(user);++probe.calls;
+    assert(slot==7&&p&&p->screen_x>=0&&p->screen_x<64&&p->screen_y>=0&&p->screen_y<48);
+    assert(u>-2&&u<2&&v>-2&&v<2&&p->depth>0);
+    for(unsigned i=0;i<3;++i)assert(std::abs(p->local[i]-p->world[i])<=1);
+    *color=0x00ff00;return probe.fail ? SOLAR_OS_NATIVE_ERROR_FAILED : 0;
+}
+static int shader_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
+    ShaderProbe probe;solar_os_jet_shader_callback_t callback={shader_probe,&probe,7};
+    solar_os_jet_command_t q={};solar_os_jet_reply_t r;
+    auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
+    q.opcode=SOLAR_OS_JET_SHADER;q.fields=1U<<JET_SHADER_kind;q.values[JET_SHADER_kind]=3;
+    q.data=&callback;q.bytes=sizeof(callback);int err=execute();if(err)return err;uint32_t shader=r.handle;
+    q={};q.opcode=SOLAR_OS_JET_MATERIAL;q.fields=(1U<<JET_MAT_shader)|(1U<<JET_MAT_shading);
+    q.values[JET_MAT_shader]=shader;q.values[JET_MAT_shading]=4;err=execute();if(err)return err;uint32_t mat=r.handle;
+    uint32_t cube=0;err=api->cube(scene,150,150,150,0xffffff,&cube);if(err)return err;
+    q={};q.opcode=SOLAR_OS_JET_ASSIGN;q.handle=cube;q.values[0]=mat;err=execute();if(err)return err;
+    err=api->render(scene,color,bytes,nullptr,nullptr);if(err)return err;assert(probe.calls>10);
+    assert(api->remove(scene,shader)==SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
+    probe.fail=true;unsigned before=probe.calls;
+    assert(api->render(scene,color,bytes,nullptr,nullptr)==SOLAR_OS_NATIVE_ERROR_FAILED&&probe.calls==before+1);
+    probe.fail=false;assert(api->render(scene,color,bytes,nullptr,nullptr)==0);
+    for(unsigned kind=0;kind<3;++kind) {
+        q={};q.opcode=SOLAR_OS_JET_SHADER_SET;q.handle=shader;q.fields=1U<<JET_SHADER_kind;q.values[JET_SHADER_kind]=kind;
+        assert(execute()==0);assert(api->render(scene,color,bytes,nullptr,nullptr)==0);
+    }
+    assert(api->remove(scene,cube)==0&&api->remove(scene,mat)==0&&api->remove(scene,shader)==0);return 0;
+}
 static int surface_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
     const uint8_t pixels[]={255,0,0,0,255,0,0,0,255,255,255,0};
     solar_os_jet_command_t q={};solar_os_jet_reply_t r;
@@ -263,6 +293,16 @@ int main() {
         requests=0;fail_at=failure;void *s=nullptr;
         int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
         if(!err) {err=tile_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
+        assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
+        assert(solar_os_jet_engine_idle()&&live==baseline);
+        if(requests<=failure){complete=true;break;}
+    }
+    assert(complete);fail_at=-1;
+    complete=false;
+    for(long failure=0;failure<250;++failure) {
+        requests=0;fail_at=failure;void *s=nullptr;
+        int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
+        if(!err) {err=shader_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
         assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
         assert(solar_os_jet_engine_idle()&&live==baseline);
         if(requests<=failure){complete=true;break;}

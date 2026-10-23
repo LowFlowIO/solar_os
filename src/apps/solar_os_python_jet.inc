@@ -1,5 +1,13 @@
 #if SOLAR_OS_PACKAGE_SERVICE_JET
-typedef struct { mp_obj_base_t base; uint32_t generation; } python_jet_t;
+typedef struct {
+    mp_obj_base_t base; uint32_t generation;
+    mp_obj_t shader_functions[SOLAR_OS_JET_MAX_SHADERS],shader_error;
+    uint32_t shader_ids[SOLAR_OS_JET_MAX_SHADERS];
+} python_jet_t;
+static bool python_jet_in_callback;
+static void python_jet_callback_guard(void) {
+    if(python_jet_in_callback)mp_raise_ValueError(MP_ERROR_TEXT("Jet calls are unavailable inside a shader"));
+}
 static const mp_obj_type_t solaros_jet_scene_type;
 static bool python_jet_active(void) {
     return python_runtime_state && __atomic_load_n(&python_runtime_state->jet_busy,__ATOMIC_ACQUIRE);
@@ -21,6 +29,7 @@ static bool python_jet_live(const python_jet_t *self) {
     return python_runtime_state && python_runtime_state->jet && self->generation==python_runtime_state->jet_generation;
 }
 static solar_os_jet_t *python_jet_scene(mp_obj_t object) {
+    python_jet_callback_guard();
     python_jet_t *self=python_jet_object(object);
     if(!python_jet_live(self)) mp_raise_ValueError(MP_ERROR_TEXT("Jet scene is closed"));
     return python_runtime_state->jet;
@@ -91,6 +100,7 @@ static solar_os_jet_pose_t python_jet_pose(mp_obj_t *v) {
 static mp_obj_t solaros_jet_scene_close(mp_obj_t object) {
     python_jet_t *self=python_jet_object(object);
     if(python_jet_live(self)) {
+        python_jet_callback_guard();
         bool foreground=solar_os_jet_uses_gfx(python_runtime_state->jet,python_app.session_gfx);
         python_jet_lock();
         esp_err_t err=solar_os_jet_close(&python_runtime_state->jet);
@@ -98,6 +108,8 @@ static mp_obj_t solaros_jet_scene_close(mp_obj_t object) {
         python_jet_unlock(); python_check_esp(err);
         if(foreground && !python_app.stop_requested && python_app.events) (void)python_jet_mode(false);
     }
+    memset(self->shader_functions,0,sizeof(self->shader_functions));self->shader_error=MP_OBJ_NULL;
+    memset(self->shader_ids,0,sizeof(self->shader_ids));
     return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_close_obj,solaros_jet_scene_close);
@@ -172,12 +184,23 @@ static mp_obj_t solaros_jet_scene_transform(size_t count,const mp_obj_t *args,mp
 MP_DEFINE_CONST_FUN_OBJ_KW(solaros_jet_scene_transform_obj,1,solaros_jet_scene_transform);
 static mp_obj_t solaros_jet_scene_remove(mp_obj_t self,mp_obj_t object) {
     solar_os_jet_t *scene=python_jet_scene(self); uint32_t id=python_u32_from_obj(object);
-    PYTHON_JET_CALL(solar_os_jet_remove(scene,id)); return mp_const_none;
+    PYTHON_JET_CALL(solar_os_jet_remove(scene,id));
+    python_jet_t *owner=python_jet_object(self);
+    for(unsigned i=0;i<SOLAR_OS_JET_MAX_SHADERS;++i)if(owner->shader_ids[i]==id) {
+        owner->shader_ids[i]=0;owner->shader_functions[i]=MP_OBJ_NULL;
+    }
+    return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_2(solaros_jet_scene_remove_obj,solaros_jet_scene_remove);
 static mp_obj_t solaros_jet_scene_render(mp_obj_t self) {
     solar_os_jet_t *scene=python_jet_scene(self);
-    PYTHON_JET_CALL(solar_os_jet_render(scene,python_should_cancel,NULL)); return mp_const_none;
+    python_jet_t *owner=python_jet_object(self);owner->shader_error=MP_OBJ_NULL;
+    esp_err_t err;
+    PYTHON_JET_CALL((err=solar_os_jet_render(scene,python_should_cancel,NULL),owner->shader_error!=MP_OBJ_NULL ? ESP_OK : err));
+    if(owner->shader_error!=MP_OBJ_NULL) {
+        mp_obj_t exception=owner->shader_error;owner->shader_error=MP_OBJ_NULL;nlr_raise(exception);
+    }
+    return mp_const_none;
 }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_render_obj,solaros_jet_scene_render);
 static mp_obj_t solaros_jet_scene_status(mp_obj_t self) {
@@ -199,6 +222,7 @@ MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_status_obj,solaros_jet_scene_status)
 #include "solar_os_python_jet_instances.inc"
 #include "solar_os_python_jet_extras.inc"
 #include "solar_os_python_jet_postfx.inc"
+#include "solar_os_python_jet_shaders.inc"
 static mp_obj_t solaros_jet_scene_enter(mp_obj_t self) { (void)python_jet_scene(self); return self; }
 MP_DEFINE_CONST_FUN_OBJ_1(solaros_jet_scene_enter_obj,solaros_jet_scene_enter);
 static mp_obj_t solaros_jet_scene_exit(size_t count,const mp_obj_t *args) {
@@ -222,6 +246,7 @@ static const mp_rom_map_elem_t solaros_jet_scene_locals_table[]={
     METHOD(particles),METHOD(particles_set),METHOD(particles_emit),METHOD(particles_info),METHOD(particles_clear),
     METHOD(flare),METHOD(flare_set),METHOD(flare_info),METHOD(flare_element_set),METHOD(flare_element_info),METHOD(step),
     METHOD(postfx),METHOD(postfx_info),METHOD(postfx_reset),METHOD(postfx_clear),
+    METHOD(shader),METHOD(shader_set),METHOD(shader_info),
 #undef METHOD
     {MP_ROM_QSTR(MP_QSTR___del__),MP_ROM_PTR(&solaros_jet_scene_close_obj)},
     {MP_ROM_QSTR(MP_QSTR___enter__),MP_ROM_PTR(&solaros_jet_scene_enter_obj)},
@@ -231,6 +256,7 @@ static MP_DEFINE_CONST_DICT(solaros_jet_scene_locals,solaros_jet_scene_locals_ta
 static MP_DEFINE_CONST_OBJ_TYPE(solaros_jet_scene_type,MP_QSTR_jet_scene,MP_TYPE_FLAG_NONE,
     locals_dict,&solaros_jet_scene_locals);
 static mp_obj_t solaros_jet_open(size_t count,const mp_obj_t *args,mp_map_t *kwargs) {
+    python_jet_callback_guard();
     const char *names[]={"display","fps"}; mp_obj_t v[2];
     python_jet_args(count,args,kwargs,names,2,v);
     solar_os_jet_options_t options={0};
@@ -243,6 +269,8 @@ static mp_obj_t solaros_jet_open(size_t count,const mp_obj_t *args,mp_map_t *kwa
     if(python_app.claimed_gfx || python_app.tui_active || python_emotion_drawing() || python_jet_drawing())
         mp_raise_ValueError(MP_ERROR_TEXT("close graphics, TUI, emotion and Jet scenes before opening Jet"));
     python_jet_t *self=mp_obj_malloc_with_finaliser(python_jet_t,&solaros_jet_scene_type);
+    memset(self->shader_functions,0,sizeof(self->shader_functions));self->shader_error=MP_OBJ_NULL;
+    memset(self->shader_ids,0,sizeof(self->shader_ids));
     self->generation=0;
     char current[SOLAR_OS_DISPLAY_TARGET_NAME_MAX]={0},detail[96]={0};
     if(python_app.session_gfx) solar_os_gfx_display_target_name(python_app.session_gfx,current,sizeof(current));

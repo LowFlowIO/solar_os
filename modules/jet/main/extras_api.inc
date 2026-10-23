@@ -70,6 +70,7 @@ static bool flare_element(const solar_os_jet_element_t &input,LensFlare::Element
     if(!(input.fields&(1U<<JET_ELEM_z_order)))stored.values[JET_ELEM_z_order]=100+index;
     auto *v=stored.values;out.material=material(uint32_t(v[JET_ELEM_material]));
     if(v[JET_ELEM_material]&&!out.material)return false;
+    if(out.material&&out.material->shader)return false;
     out.width=v[JET_ELEM_width];out.height=v[JET_ELEM_height];out.axisT=v[JET_ELEM_axis];out.baseAlpha=v[JET_ELEM_alpha];
     out.blendMode=v[JET_ELEM_blend] ? BlendMode::BLEND_ADD : BlendMode::BLEND_REPLACE;out.scale=v[JET_ELEM_scale];out.zOrder=v[JET_ELEM_z_order];
     out.textureFlags=(v[JET_ELEM_flip_x]?Sprite2D::FLIP_X:0)|(v[JET_ELEM_flip_y]?Sprite2D::FLIP_Y:0)|

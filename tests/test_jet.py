@@ -142,7 +142,8 @@ class JetFramebufferTest(unittest.TestCase):
                     ("examples/lua/jet.lua", "examples/lua/jet_materials.lua", "examples/lua/jet_scene.lua",
                      "examples/lua/jet_picking.lua", "examples/lua/jet_assets.lua",
                      "examples/lua/jet_instances.lua", "examples/lua/jet_particles.lua",
-                     "examples/lua/jet_effects.lua", "examples/lua/jet_tiles.lua")] if lua else [])],
+                     "examples/lua/jet_effects.lua", "examples/lua/jet_tiles.lua",
+                     "examples/lua/jet_shaders.lua")] if lua else [])],
                     check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
 
 

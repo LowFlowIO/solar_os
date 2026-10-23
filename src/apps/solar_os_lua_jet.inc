@@ -1,5 +1,13 @@
 #if SOLAR_OS_PACKAGE_SERVICE_JET
-typedef struct { uint32_t generation; } solua_jet_t;
+typedef struct {
+    uint32_t generation,shader_ids[SOLAR_OS_JET_MAX_SHADERS];
+    int shader_error;
+    lua_State *state;
+} solua_jet_t;
+static bool solua_jet_in_callback;
+static void solua_jet_callback_guard(lua_State *L) {
+    if(solua_jet_in_callback)luaL_error(L,"Jet calls are unavailable inside a shader");
+}
 static bool solua_jet_active(void) {
     return solua_runtime_state && __atomic_load_n(&solua_runtime_state->jet_busy,__ATOMIC_ACQUIRE);
 }
@@ -14,6 +22,7 @@ static bool solua_jet_live(const solua_jet_t *self) {
     return solua_runtime_state && solua_runtime_state->jet && self->generation==solua_runtime_state->jet_generation;
 }
 static solar_os_jet_t *solua_jet_scene(lua_State *L) {
+    solua_jet_callback_guard(L);
     solua_jet_t *self=luaL_checkudata(L,1,"solaros.jet.scene");
     if(!solua_jet_live(self)) luaL_error(L,"Jet scene is closed");
     return solua_runtime_state->jet;
@@ -72,13 +81,19 @@ static uint32_t solua_jet_id(lua_State *L,int index) {
 static int solua_jet_scene_close(lua_State *L) {
     solua_jet_t *self=luaL_checkudata(L,1,"solaros.jet.scene");
     if(solua_jet_live(self)) {
+        solua_jet_callback_guard(L);
         bool foreground=solar_os_jet_uses_gfx(solua_runtime_state->jet,solua.session_gfx);
         solua_jet_lock(); esp_err_t err=solar_os_jet_close(&solua_runtime_state->jet);
         if(err==ESP_OK) __atomic_store_n(&solua_runtime_state->jet_count,0,__ATOMIC_RELEASE);
         solua_jet_unlock(); solua_check_esp(L,err);
         if(foreground && !solua.stop_requested && solua.events) (void)solua_jet_mode(false);
     }
-    return 0;
+    lua_getiuservalue(L,1,1);
+    for(unsigned i=0;i<SOLAR_OS_JET_MAX_SHADERS;++i) {
+        lua_pushboolean(L,0);lua_rawseti(L,-2,i+1);self->shader_ids[i]=0;
+    }
+    lua_pop(L,1);
+    self->shader_error=0;return 0;
 }
 static int solua_jet_scene_background(lua_State *L) {
     solar_os_jet_t *scene=solua_jet_scene(L); uint32_t color=solua_jet_color(L,2,0xffffff);
@@ -143,11 +158,20 @@ static int solua_jet_scene_transform(lua_State *L) {
 }
 static int solua_jet_scene_remove(lua_State *L) {
     solar_os_jet_t *scene=solua_jet_scene(L); uint32_t id=solua_jet_id(L,2);
-    SOLUA_JET_CALL(solar_os_jet_remove(scene,id)); return 0;
+    SOLUA_JET_CALL(solar_os_jet_remove(scene,id));solua_jet_t *self=lua_touserdata(L,1);
+    for(unsigned i=0;i<SOLAR_OS_JET_MAX_SHADERS;++i)if(self->shader_ids[i]==id) {
+        lua_getiuservalue(L,1,1);lua_pushboolean(L,0);lua_rawseti(L,-2,i+1);lua_pop(L,1);self->shader_ids[i]=0;
+    }
+    return 0;
 }
 static int solua_jet_scene_render(lua_State *L) {
     solar_os_jet_t *scene=solua_jet_scene(L);
-    SOLUA_JET_CALL(solar_os_jet_render(scene,solua_should_cancel,NULL)); return 0;
+    solua_jet_t *self=lua_touserdata(L,1);self->shader_error=0;self->state=L;
+    if(!lua_checkstack(L,64))return luaL_error(L,"Jet shader stack unavailable");
+    esp_err_t err;
+    SOLUA_JET_CALL((err=solar_os_jet_render(scene,solua_should_cancel,NULL),self->shader_error ? ESP_OK : err));
+    if(self->shader_error) {lua_pushvalue(L,self->shader_error);self->shader_error=0;return lua_error(L);}
+    return 0;
 }
 static int solua_jet_scene_status(lua_State *L) {
     solar_os_jet_t *scene=solua_jet_scene(L); solar_os_jet_status_t status={0};
@@ -166,7 +190,9 @@ static int solua_jet_scene_status(lua_State *L) {
 #include "solar_os_lua_jet_instances.inc"
 #include "solar_os_lua_jet_extras.inc"
 #include "solar_os_lua_jet_postfx.inc"
+#include "solar_os_lua_jet_shaders.inc"
 static int solua_jet_open(lua_State *L) {
+    solua_jet_callback_guard(L);
     if(lua_gettop(L)>2) return luaL_error(L,"too many Jet arguments");
     solar_os_jet_options_t options={0};
     if(!lua_isnoneornil(L,1)) {
@@ -177,7 +203,10 @@ static int solua_jet_open(lua_State *L) {
     options.fps=solua_jet_integer(L,2,0,30,0);
     if(solua.claimed_gfx || solua.tui_active || solua_emotion_drawing() || solua_jet_drawing())
         return luaL_error(L,"close graphics, TUI, emotion and Jet scenes before opening Jet");
-    solua_jet_t *self=lua_newuserdatauv(L,sizeof(*self),0); self->generation=0;
+    solua_jet_t *self=lua_newuserdatauv(L,sizeof(*self),1);memset(self,0,sizeof(*self));self->state=L;
+    lua_createtable(L,SOLAR_OS_JET_MAX_SHADERS,0);
+    for(unsigned i=0;i<SOLAR_OS_JET_MAX_SHADERS;++i) {lua_pushboolean(L,0);lua_rawseti(L,-2,i+1);}
+    lua_setiuservalue(L,-2,1);
     if(luaL_newmetatable(L,"solaros.jet.scene")) {
 #define METHOD(name) solua_set_func(L,-1,#name,solua_jet_scene_##name)
         METHOD(background);METHOD(camera);METHOD(light);METHOD(cube);METHOD(mesh);METHOD(transform);
@@ -195,6 +224,7 @@ static int solua_jet_open(lua_State *L) {
         METHOD(particles);METHOD(particles_set);METHOD(particles_emit);METHOD(particles_info);METHOD(particles_clear);
         METHOD(flare);METHOD(flare_set);METHOD(flare_info);METHOD(flare_element_set);METHOD(flare_element_info);METHOD(step);
         METHOD(postfx);METHOD(postfx_info);METHOD(postfx_reset);METHOD(postfx_clear);
+        METHOD(shader);METHOD(shader_set);METHOD(shader_info);
 #undef METHOD
         solua_set_func(L,-1,"__gc",solua_jet_scene_close); solua_set_func(L,-1,"__close",solua_jet_scene_close);
         lua_pushvalue(L,-1); lua_setfield(L,-2,"__index");

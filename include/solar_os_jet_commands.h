@@ -18,6 +18,15 @@
 #define SOLAR_OS_JET_MAX_PARTICLES 4
 #define SOLAR_OS_JET_MAX_FLARES 4
 #define SOLAR_OS_JET_MAX_FLARE_ELEMENTS 12
+#define SOLAR_OS_JET_MAX_SHADERS 16
+typedef struct {
+    int32_t screen_x,screen_y,depth,local[3],world[3];
+    uint32_t frame;
+} solar_os_jet_shader_parameters_t;
+/* Callbacks must contain VM exceptions and return a native error instead. */
+typedef int (*solar_os_jet_shader_fn)(void *,uint32_t,double,double,
+    const solar_os_jet_shader_parameters_t *,uint32_t *);
+typedef struct {solar_os_jet_shader_fn function;void *user;uint32_t slot;} solar_os_jet_shader_callback_t;
 typedef struct {uint32_t fields;double values[SOLAR_OS_JET_VALUES];} solar_os_jet_element_t;
 typedef struct {int16_t x,y;} solar_os_jet_pick_t;
 typedef struct {
@@ -53,6 +62,7 @@ enum {
     SOLAR_OS_JET_FLARE_ELEMENT_SET, SOLAR_OS_JET_FLARE_ELEMENT_INFO,
     SOLAR_OS_JET_POSTFX, SOLAR_OS_JET_POSTFX_INFO, SOLAR_OS_JET_POSTFX_RESET, SOLAR_OS_JET_POSTFX_CLEAR,
     SOLAR_OS_JET_SAMPLE_TEXTURE,
+    SOLAR_OS_JET_SHADER, SOLAR_OS_JET_SHADER_SET, SOLAR_OS_JET_SHADER_INFO,
 };
 enum {
     SOLAR_OS_JET_FEATURE_MATERIALS=1, SOLAR_OS_JET_FEATURE_TEXTURES=2,
@@ -63,6 +73,7 @@ enum {
     SOLAR_OS_JET_FEATURE_PARTICLES=256, SOLAR_OS_JET_FEATURE_FLARES=512,
     SOLAR_OS_JET_FEATURE_POSTFX=1024,
     SOLAR_OS_JET_FEATURE_TILED_TEXTURES=2048,
+    SOLAR_OS_JET_FEATURE_SHADERS=4096,
 };
 typedef struct {
     int32_t x,y,z,u,v,nx,ny,nz;
@@ -89,6 +100,15 @@ typedef struct {
  X(perspective,BOOL,1,0,1,NULL) \
  X(water_bias,INT,0,0,255,NULL) \
  X(reflection_max_y,INT,-1,-1,1023,NULL) \
+ X(name,NAME,0,0,0,NULL) \
+ X(shader,INT,0,0,4294967295.0,NULL)
+#define JET_SHADER_FIELDS(X) \
+ X(kind,ENUM,0,0,3,"checker|uv|depth|callback") \
+ X(color,INT,16777215,0,16777215,NULL) \
+ X(secondary,INT,0,0,16777215,NULL) \
+ X(scale,INT,8,1,4096,NULL) \
+ X(screen_space,BOOL,0,0,1,NULL) \
+ X(alpha_key,INT,-1,-1,16777215,NULL) \
  X(name,NAME,0,0,0,NULL)
 #define JET_TEXTURE_FIELDS(X) \
  X(format,ENUM,0,0,2,"rgb565|rgb888|index8") \
@@ -107,11 +127,15 @@ typedef struct {
 #define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_MAT_##name,
 enum { JET_MATERIAL_FIELDS(JET_FIELD_ENUM) JET_MAT_COUNT };
 #undef JET_FIELD_ENUM
+#define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_SHADER_##name,
+enum { JET_SHADER_FIELDS(JET_FIELD_ENUM) JET_SHADER_COUNT };
+#undef JET_FIELD_ENUM
 #define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_TEX_##name,
 enum { JET_TEXTURE_FIELDS(JET_FIELD_ENUM) JET_TEX_COUNT };
 #undef JET_FIELD_ENUM
 #define JET_FIELD_VALUE(name,kind,initial,low,high,choices) {#name,JET_##kind,initial,low,high,choices},
 static const solar_os_jet_field_t jet_material_fields[]={JET_MATERIAL_FIELDS(JET_FIELD_VALUE)};
+static const solar_os_jet_field_t jet_shader_fields[]={JET_SHADER_FIELDS(JET_FIELD_VALUE)};
 static const solar_os_jet_field_t jet_texture_fields[]={JET_TEXTURE_FIELDS(JET_FIELD_VALUE)};
 #undef JET_FIELD_VALUE
 static inline int solar_os_jet_choice(const char *choices,const char *text,size_t length) {

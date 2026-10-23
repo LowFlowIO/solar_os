@@ -5,6 +5,7 @@
 #include <cstdint>
 #include <vector>
 #include <cmath>
+#include <algorithm>
 #include "FastMath.hpp"
 #include "TrigLUT.hpp"
 
@@ -544,10 +545,38 @@ struct Quaternion_f {
 struct ShaderParameters
 {
     Vector2 screenPos;
-    int32_t zBuffer;
+    int32_t zBuffer = 0;
     Vector3 localCoords;
     Vector3 worldCoords;
-    uint32_t frameNumber;
+    uint32_t frameNumber = 0;
+};
+
+// Only shader faces retain these inputs. Original view-space vertices preserve
+// local/world interpolation through clipping, billboards and mesh instances.
+struct ShaderFaceContext {
+    Vector3 local[3], view[3], cameraPosition;
+    float cameraMatrix[9];
+    ShaderParameters parameters(int x,int y,int depth,int width,int height,float fov,uint32_t frame) const {
+        ShaderParameters p;p.screenPos={x,y};p.zBuffer=depth;p.frameNumber=frame;
+        const Vector3_f a(view[0]),e1(Vector3_f(view[1])-a),e2(Vector3_f(view[2])-a);
+        const Vector3_f ray((x-width/2)/fov,(height/2-y)/fov,1);
+        const Vector3_f n=Vector3_f::cross(e1,e2);
+        const float nd=Vector3_f::dotProduct(n,ray);
+        if(std::abs(nd)<1e-12f)return p;
+        const Vector3_f hit=ray*(Vector3_f::dotProduct(n,a)/nd),d=hit-a;
+        const double aa=Vector3_f::dotProduct(e1,e1),ab=Vector3_f::dotProduct(e1,e2),bb=Vector3_f::dotProduct(e2,e2);
+        const double det=aa*bb-ab*ab;if(std::abs(det)<1e-12)return p;
+        const double da=Vector3_f::dotProduct(d,e1),db=Vector3_f::dotProduct(d,e2);
+        const double u=(da*bb-db*ab)/det,v=(db*aa-da*ab)/det;
+        auto integer=[](double value) {return int32_t(std::max(double(INT32_MIN),std::min(double(INT32_MAX),value)));};
+        p.localCoords={integer(local[0].x+u*(local[1].x-local[0].x)+v*(local[2].x-local[0].x)),
+            integer(local[0].y+u*(local[1].y-local[0].y)+v*(local[2].y-local[0].y)),
+            integer(local[0].z+u*(local[1].z-local[0].z)+v*(local[2].z-local[0].z))};
+        p.worldCoords={integer(cameraPosition.x+cameraMatrix[0]*hit.x+cameraMatrix[3]*hit.y+cameraMatrix[6]*hit.z),
+            integer(cameraPosition.y+cameraMatrix[1]*hit.x+cameraMatrix[4]*hit.y+cameraMatrix[7]*hit.z),
+            integer(cameraPosition.z+cameraMatrix[2]*hit.x+cameraMatrix[5]*hit.y+cameraMatrix[8]*hit.z)};
+        return p;
+    }
 };
 
 class Shader
@@ -555,9 +584,10 @@ class Shader
 public:
     virtual ~Shader() {}
 
-    bool screenSpace;
-    bool hasAlpha;       // Indicates if an alpha color is used
-    uint16_t alphaColor; // The color to treat as transparent
+    bool screenSpace = false;
+    bool needsCoordinates = true;
+    bool hasAlpha = false;       // Indicates if an alpha color is used
+    uint16_t alphaColor = 0; // The color to treat as transparent
 
     /**
      * @brief Computes the color of a pixel based on various parameters.

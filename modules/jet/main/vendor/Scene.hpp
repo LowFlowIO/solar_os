@@ -246,7 +246,9 @@ private:
     struct TriangleUV { Vector2 a, b, c; };
     JetVector<TriangleUV> textureQueue;
 #endif
+    JetVector<ShaderFaceContext> shaderQueue;
     struct RenderTri {
+        uint32_t shaderIndex;
         PipelineVertex v1, v2, v3;
 #if TEXTURE_MAPPING
         uint32_t uvIndex;

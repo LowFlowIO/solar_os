@@ -32,6 +32,12 @@ struct MaterialResource:Resource {
     Material value;
     MaterialResource() {value.name=name;}
 };
+struct ShaderResource:Resource,Shader {
+    solar_os_jet_shader_callback_t callback={};
+    uint32_t calls=0;
+    bool failed=false;
+    uint16_t getPixel(uint32_t u,uint32_t v,ShaderParameters *params) override;
+};
 struct LightResource:Resource {
     PointLight value{{0,0,0},{255,255,255}};
 };
@@ -82,6 +88,7 @@ struct Engine {
     std::unique_ptr<Item> items[SOLAR_OS_JET_MAX_OBJECTS];
     std::unique_ptr<TextureResource> textures[SOLAR_OS_JET_MAX_TEXTURES];
     std::unique_ptr<MaterialResource> materials[SOLAR_OS_JET_MAX_MATERIALS];
+    std::unique_ptr<ShaderResource> shaders[SOLAR_OS_JET_MAX_SHADERS];
     std::unique_ptr<LightResource> lights[SOLAR_OS_JET_MAX_LIGHTS];
     std::unique_ptr<SpriteResource> sprites[SOLAR_OS_JET_MAX_SPRITES];
     std::unique_ptr<MeshResource> prototypes[SOLAR_OS_JET_MAX_PROTOTYPES];
@@ -91,6 +98,7 @@ struct Engine {
     double effect_values[SOLAR_OS_JET_VALUES]={0};
     uint16_t *frame_color=nullptr;
     float frame_dt=1.0f/30;
+    bool shader_fault=false;
     bool (*frame_cancel)(void *)=nullptr;
     void *frame_cancel_user=nullptr;
     PickSnapshot picks[SOLAR_OS_JET_MAX_PICKS];
@@ -215,9 +223,11 @@ static void refresh_instance_poses(Item &);
 static int remove_prototype(uint32_t);
 static int extras_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static int postfx_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
+static int shader_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static void process_postfx();
 #include "tile_texture.inc"
 #include "surface_api.inc"
+#include "shader_api.inc"
 #include "scene_api.inc"
 #include "overlay_api.inc"
 #include "asset_api.inc"
@@ -254,24 +264,28 @@ static bool cancelled(void *value) {
     state.cancelled=state.cancelled || (state.callback && state.callback(state.user));
     return state.cancelled;
 }
+static bool frame_stopped(void *value) {return active->shader_fault||cancelled(value);}
 static int render(void *s,uint16_t *color,size_t bytes,solar_os_native_cancel_fn cancel,void *user) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if(!color || uintptr_t(color)%2 || bytes!=size_t(active->width)*active->height*2)
         return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
     return call([&] {
         Cancellation state{cancel,user,false};
+        active->shader_fault=false;
+        for(auto &shader:active->shaders)if(shader) {shader->failed=false;shader->calls=0;}
         if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
         prepare_extras();
-        active->frame_cancel=cancelled;active->frame_cancel_user=&state;
+        active->frame_cancel=frame_stopped;active->frame_cancel_user=&state;
         active->frame_color=color;
         active->scene.setFramebuffer(color);
-        active->scene.setCancellation(cancelled,&state);
+        active->scene.setCancellation(frame_stopped,&state);
         try { active->scene.render(); }
         catch (...) { active->scene.setCancellation(nullptr,nullptr);active->frame_cancel=nullptr;active->frame_cancel_user=nullptr;active->frame_color=nullptr;throw; }
         active->scene.setCancellation(nullptr,nullptr);
         active->frame_cancel=nullptr;active->frame_cancel_user=nullptr;
         active->frame_color=nullptr;
         if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
+        for(auto &shader:active->shaders)if(shader&&shader->failed)return int(SOLAR_OS_NATIVE_ERROR_FAILED);
         snapshot_picks();return 0;
     });
 }

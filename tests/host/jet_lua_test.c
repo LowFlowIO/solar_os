@@ -53,10 +53,18 @@ static void run(lua_State *L,const char *source) {
 }
 static int should_exit(lua_State *L) {lua_pushboolean(L,false);return 1;}
 static int sleep_ms(lua_State *L) {assert(luaL_checkinteger(L,1)>=0);return 0;}
+static bool fail_lua_alloc;
+static void *fixture_allocate(void *user,void *ptr,size_t old,size_t bytes) {
+    (void)user;if(!bytes) {free(ptr);return NULL;}
+    if(fail_lua_alloc&&bytes>old)return NULL;
+    return realloc(ptr,bytes);
+}
+static int arm_alloc_failure(lua_State *L) {(void)L;fail_lua_alloc=true;return 0;}
 int main(int argc,char **argv) {
     for(unsigned mono=0;mono<2;++mono) {
         jet_test_reset(mono);memset(&state,0,sizeof(state));memset(&solua,0,sizeof(solua));
-        lua_State *L=luaL_newstate();assert(L);luaL_openlibs(L);
+        lua_State *L=lua_newstate(fixture_allocate,NULL);assert(L);luaL_openlibs(L);
+        lua_pushcfunction(L,arm_alloc_failure);lua_setglobal(L,"arm_alloc_failure");
         lua_newtable(L);solua_set_func(L,-1,"open",solua_jet_open);lua_setglobal(L,"jet");
         run(L,"assert(not pcall(jet.open)); assert(not pcall(jet.open,'missing')); "
             "assert(not pcall(jet.open,'display0',65536)); assert(not pcall(jet.open,'display0',-1)); "
@@ -208,6 +216,44 @@ int main(int argc,char **argv) {
             "s:mesh_update(a,{{-60,-60,0},{0,60,0},{60,-60,0}},{{1,2,3}}); "
             "assert(s:object_info(a).triangles==1);s:render();s:close()");
         jet_test_assert_clean();
+        run(L,"local s=jet.open();assert(s:capabilities().shaders); "
+            "local sh=s:shader(nil,{kind='checker',color=0xff0000,secondary=0x0000ff}); "
+            "local m=s:material{shader=sh,shading='unlit'};local c=s:cube(150,150,150);s:assign(c,m); "
+            "s:render();assert(s:shader_info(sh).calls>10);assert(not pcall(s.remove,s,sh)); "
+            "assert(not pcall(s.sprite,s,{material=m})); "
+            "for _,kind in ipairs{'uv','depth'} do s:shader_set(sh,nil,{kind=kind});s:render();end; "
+            "local calls=0;s:shader_set(sh,function(u,v,p) "
+            "assert(type(u)=='number' and type(v)=='number' and p.depth>0 and p.frame>=3); "
+            "assert(math.abs(p.world[1]-p['local'][1])<2 and math.abs(p.world[3]-p['local'][3])<2); "
+            "calls=calls+1;return 0x00ff00 end);s:render();assert(calls>10); "
+            "local co=coroutine.create(function() s:render() end);assert(coroutine.resume(co)); "
+            "s:shader_set(sh,function() coroutine.yield() end);assert(not pcall(s.render,s)); "
+            "s:postfx{motion_blur=50};local marker={};s:shader_set(sh,function() error(marker) end); "
+            "local ok,err=pcall(s.render,s);assert(not ok and err==marker and s:shader_info(sh).failed); "
+            "assert(not s:postfx_info().history_valid);s:postfx_clear(); "
+            "s:shader_set(sh,function() return s:status() end);assert(not pcall(s.render,s)); "
+            "s:shader_set(sh,function() s:close();return 0 end);assert(not pcall(s.render,s)); "
+            "s:shader_set(sh,function() jet.open();return 0 end);assert(not pcall(s.render,s)); "
+            "s:shader_set(sh,function() return -1 end);assert(not pcall(s.render,s)); "
+            "s:shader_set(sh,function() return 'wrong' end);assert(not pcall(s.render,s)); "
+            "s:shader_set(sh,function() return 0x00ff00 end);collectgarbage();s:render(); "
+            "assert(not s:shader_info(sh).failed); "
+            "local proto=s:prototype(c);s:remove(c);local batch=s:instance(proto,{x=10,z=25}); "
+            "s:object_set(batch,{x=5,z=15,culling='none'});s:camera_set{near=490};calls=0; "
+            "s:shader_set(sh,function(u,v,p) assert(math.abs(p.world[1]-p['local'][1]-15)<3 "
+            "and math.abs(p.world[3]-p['local'][3]-40)<3,'instance coordinates');calls=calls+1;return 0x0088ff end); "
+            "s:render();assert(calls>10,'clipped shader missed');s:remove(batch);s:remove(proto); "
+            "s:material_set(m,{shader=0});s:remove(sh);s:render();s:close(); "
+            "s=nil;collectgarbage();local function cycle() local t=jet.open();local sh=t:shader(function() t:status();return 0 end);end; "
+            "cycle();collectgarbage();collectgarbage();local next=jet.open();next:close()");
+        jet_test_assert_clean();
+        run(L,"oomScene=jet.open();local sh=oomScene:shader(function() arm_alloc_failure();return 0xff0000 end); "
+            "oomShader=sh;local m=oomScene:material{shader=sh,shading='unlit'}; "
+            "local c=oomScene:cube(150,150,150);oomScene:assign(c,m);oom_ok=false;oom_error=false");
+        run(L,"oom_ok,oom_error=pcall(oomScene.render,oomScene)");fail_lua_alloc=false;
+        run(L,"assert(not oom_ok and type(oom_error)=='string' and oomScene:shader_info(oomShader).failed); "
+            "assert(oomScene:status().presented==0);oomScene:shader_set(oomShader,nil,{kind='checker'}); "
+            "oomScene:render();oomScene:close();oomScene=nil;collectgarbage()");jet_test_assert_clean();
         run(L,"s=jet.open(); c=s:cube(150,150,150); s:render()");assert(mode&&solua_jet_drawing());
         state.jet_busy=true;solua_jet_visibility(NULL,false);
         assert(state.jet_suspended&&!solua_jet_active());

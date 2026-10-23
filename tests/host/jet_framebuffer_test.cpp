@@ -2,6 +2,7 @@
 #include "Primitives.hpp"
 #include "ParticleSystem.hpp"
 #include "LensFlare.hpp"
+#include "Framebuffer.hpp"
 #include <algorithm>
 #include <array>
 #include <cassert>
@@ -10,6 +11,13 @@
 #include <vector>
 
 using namespace Renderer;
+struct FixtureShader:Shader {
+    unsigned calls=0;
+    uint16_t getPixel(uint32_t u,uint32_t v,ShaderParameters *p) override {
+        assert(p && p->screenPos.x>=0 && p->screenPos.y>=0);++calls;
+        return uint16_t(((u&1023)>>5)<<11|((v&1023)>>4)<<5|(p->frameNumber&31));
+    }
+};
 
 // Compare raw output from native/wire-order builds outside the renderer. The
 // fixture exercises actual scene transforms, clears, depth, shaders, textures,
@@ -36,6 +44,7 @@ int main(int argc, char **argv) {
         Texture tiledTexture(2,2,linearIndices);tiledTexture.palette=texels;tiledTexture.paletteSize=4;
         tiledTexture.tiled=&tileView;tiledTexture.addressMode=CLAMP;
         Material material(0xe94b), overlay(0x3b62), textured(0xffff, &texture);
+        FixtureShader shader;
         material.specular = 20;
         Camera camera;
         camera.setPosition(0, 0, -400);
@@ -81,6 +90,7 @@ int main(int argc, char **argv) {
                 material.diffuseMap=&tiledTexture;
             }
             cube->setRotation(frame * 7, frame * 13, frame * 3);
+            material.shader=frame%7==4 ? &shader : nullptr;
             cube->setPosition(frame % 2 ? -10 : 5, 0, 0);
             scene.backgroundGradientColors = frame % 2 ? gradient.data() : nullptr;
             scene.getRenderer()->wireframeMode = frame % 12 == 11;
@@ -95,6 +105,7 @@ int main(int argc, char **argv) {
             std::copy_n(color.data() + guard, count, reflection.data());
             assert(std::fwrite(color.data() + guard, sizeof(uint16_t), count, output) == count);
         }
+        assert(shader.calls>0);
     }
     // Independent constant-color check verifies channel order and depth writes.
     std::vector<uint16_t> color(count), depth(count, 0xffff);
@@ -106,5 +117,20 @@ int main(int argc, char **argv) {
     assert(raster.drawTriangle(a, b, c, &red, nullptr, nullptr, false, false, false, 0));
     assert(depth[10 * width + 10] == 100);
     assert(std::fwrite(color.data(), sizeof(uint16_t), count, output) == count);
+    struct ScreenShader:Shader {
+        unsigned calls=0;
+        uint16_t getPixel(uint32_t u,uint32_t v,ShaderParameters *p) override {
+            assert(p&&int32_t(u)==p->screenPos.x&&int32_t(v)==p->screenPos.y);++calls;return 0x07e0;
+        }
+    } screen;
+    screen.screenSpace=true;screen.hasAlpha=true;screen.alphaColor=0x07e0;
+    std::fill(color.begin(),color.end(),0);std::fill(depth.begin(),depth.end(),0xffff);
+    red.shader=&screen;
+    assert(raster.drawTriangle(a,b,c,&red,nullptr,nullptr,false,false,false,0)&&screen.calls>0);
+    assert(std::all_of(color.begin(),color.end(),[](auto v) {return v==0;}));
+    assert(std::all_of(depth.begin(),depth.end(),[](auto v) {return v==0xffff;}));
+    screen.hasAlpha=false;
+    assert(raster.drawTriangle(a,b,c,&red,nullptr,nullptr,false,false,false,0));
+    assert(framebufferDecode(color[10*width+10])==0x07e0&&depth[10*width+10]==100);
     std::fclose(output);
 }

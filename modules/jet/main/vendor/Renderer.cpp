@@ -391,7 +391,7 @@ namespace Renderer
     #endif
             textured=lodZ<textureLodFar;
         }
-        if(!textured)
+        if(!textured && !material->shader)
             return drawFlatTriangle(v1,v2,v3,material,directionalLight,ambientLight,
                 renderEvenLines,ignoreZBuffer,noWriteZBuffer,zBias,objAlpha,brightnessPrecomputed,avgZHint);
 #endif
@@ -438,7 +438,8 @@ namespace Renderer
         (void)avgZHint; // Only consumed on the FAST_Z && !LAZY_Z path.
 
 #if TEXTURE_MAPPING
-        Texture *diffuseMap = SampleTextures ? material->diffuseMap : nullptr;
+        Shader *shader=SampleTextures ? material->shader : nullptr;
+        Texture *diffuseMap = SampleTextures && !shader ? material->diffuseMap : nullptr;
         const bool usePerspectiveUV = PERSPECTIVE_CORRECT_TEXTURES && material->perspectiveCorrect;
 #endif
         const bool isWaterReflect = (material->shadingMode == ShadingMode::WATER_REFLECT);
@@ -641,7 +642,7 @@ namespace Renderer
 #endif
 
     #if TEXTURE_MAPPING
-        uint16_t color = SampleTextures ? material->getColor({0, 0}) : material->color;
+        uint16_t color = SampleTextures && !shader ? material->getColor({0, 0}) : material->color;
     #else
         uint16_t color = material->color;
     #endif
@@ -1862,15 +1863,18 @@ namespace Renderer
     #endif
 
     #if TEXTURE_MAPPING
-                    if (diffuseMap)
+                    if (diffuseMap || shader)
                     {
-                        if (diffuseMap->screenSpace)
+                        if (shader && shader->screenSpace) {
+                            uv={x,y};
+                        }
+                        else if (diffuseMap && diffuseMap->screenSpace)
                         {
                             // **Screen-space texture mapping**
                             uv.x = x * diffuseMap->width / screenWidth;
                             uv.y = y * diffuseMap->height / screenHeight;
                         }
-                        else if (diffuseMap->reflectionMap)
+                        else if (diffuseMap && diffuseMap->reflectionMap)
                         {
                             uv.x = x + z;
                             uv.y = y + z;
@@ -1915,6 +1919,14 @@ namespace Renderer
                             }
                         }
 
+                        // Shader callbacks run only after coverage/depth/alpha tests.
+                        if(shader) {
+                            ShaderParameters params;
+                            if(shaderFace&&shader->needsCoordinates)params=shaderFace->parameters(x,y,zb,screenWidth,screenHeight,camera->fovFactor,frameCounter);
+                            else {params.screenPos={x,y};params.zBuffer=zb;params.frameNumber=frameCounter;}
+                            color=shader->getPixel(uint32_t(uv.x),uint32_t(uv.y),&params);
+                            if(shader->hasAlpha && color==shader->alphaColor)continue;
+                        } else {
                         // Sample color from material
     #if !BILINEAR_FILTER
                         if (diffuseMap->tiled) {
@@ -1939,6 +1951,7 @@ namespace Renderer
                             continue;
                         }
 
+                        }
                         // Distance-based texture LOD cross-fade. textureLodFade
                         // is triangle-constant; outside the fade band it is
                         // 255 (no work). Inside the band, swap or blend the

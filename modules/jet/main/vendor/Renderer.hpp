@@ -189,6 +189,8 @@ class Rasterizer
         /// @return True if the pixel passes the dither / parity test.
         bool shouldDrawPixel(int x, int y, uint8_t alpha);
 
+        const ShaderFaceContext *shaderFace = nullptr;
+
         /// @brief Rasterise a single triangle.
         /// @details Matching view-space vertex normals automatically share one
         /// lighting evaluation for Phong/Gouraud, retaining each mode's specular
