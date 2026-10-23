@@ -867,6 +867,7 @@ void Scene::rasterizeBand(int yMin, int yMax, uint8_t* triangleFlags) {
     // denom) return false and don't count toward the rasterized total.
     int rasterized = 0;
     for (const int32_t idx : renderOrder) {
+        if (cancelCallback && cancelCallback(cancelUser)) break;
         const RenderTri& t = renderQueue[idx];
         if (std::max({t.v1.position.y, t.v2.position.y, t.v3.position.y}) < yMin ||
             std::min({t.v1.position.y, t.v2.position.y, t.v3.position.y}) >= yMax) continue;

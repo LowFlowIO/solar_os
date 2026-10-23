@@ -36,6 +36,8 @@ typedef struct {
     uint32_t generation;
     size_t refs;
     size_t claim_refs;
+    bool terminal_blocked;
+    uint32_t terminal_epoch;
     SemaphoreHandle_t present_mutex;
     solar_os_display_target_t target;
     solar_os_gfx_t gfx;
@@ -902,6 +904,10 @@ esp_err_t solar_os_display_release(const char *name, const char *owner)
         slot->claim_refs--;
     }
     if (slot->claim_refs == 0) {
+        if (slot->terminal_blocked) {
+            slot->terminal_blocked = false;
+            ++slot->terminal_epoch;
+        }
         slot->target.owner[0] = '\0';
         surface_storage = solar_os_gfx_detach_surface_storage(&slot->gfx);
         display_init_slot_gfx(slot);
@@ -909,6 +915,42 @@ esp_err_t solar_os_display_release(const char *name, const char *owner)
     portEXIT_CRITICAL(&display_targets_lock);
     solar_os_memory_free(surface_storage);
     return ESP_OK;
+}
+
+esp_err_t solar_os_display_set_terminal_blocked(const char *name, const char *owner, bool blocked)
+{
+    if (!display_target_name_valid(name, SOLAR_OS_DISPLAY_TARGET_NAME_MAX) ||
+        !display_owner_valid(owner)) return ESP_ERR_INVALID_ARG;
+    portENTER_CRITICAL(&display_targets_lock);
+    const int index = display_find_slot_locked(name);
+    esp_err_t err = ESP_ERR_NOT_FOUND;
+    if (index >= 0) {
+        display_target_slot_t *slot = &display_targets[index];
+        err = ESP_ERR_INVALID_STATE;
+        if (slot->claim_refs && !strcmp(slot->target.owner, owner)) {
+            if (slot->terminal_blocked != blocked) {
+                slot->terminal_blocked = blocked;
+                ++slot->terminal_epoch;
+            }
+            err = ESP_OK;
+        }
+    }
+    portEXIT_CRITICAL(&display_targets_lock);
+    return err;
+}
+
+bool solar_os_display_terminal_draw_state(const u8g2_t *u8g2, uint32_t *epoch)
+{
+    bool allowed = true;
+    if (epoch) *epoch = 0;
+    portENTER_CRITICAL(&display_targets_lock);
+    const int index = u8g2 ? display_find_slot_by_u8g2_locked(u8g2) : -1;
+    if (index >= 0) {
+        allowed = !display_targets[index].terminal_blocked;
+        if (epoch) *epoch = display_targets[index].terminal_epoch;
+    }
+    portEXIT_CRITICAL(&display_targets_lock);
+    return allowed;
 }
 
 static bool display_relax_cancelled(size_t index, uint32_t generation,

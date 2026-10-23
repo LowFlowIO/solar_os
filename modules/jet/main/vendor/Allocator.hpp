@@ -5,14 +5,14 @@
 #include <new>
 #include <vector>
 
-#if defined(ESP_PLATFORM) || defined(JET_SOLAROS_ALLOCATOR)
+#if !defined(JET_EXTERNAL_LIBRARY) && (defined(ESP_PLATFORM) || defined(JET_SOLAROS_ALLOCATOR))
 extern "C" {
 #include "solar_os_memory.h"
 }
 #endif
 
 namespace Renderer {
-#if defined(ESP_PLATFORM) || defined(JET_SOLAROS_ALLOCATOR)
+#if !defined(JET_EXTERNAL_LIBRARY) && (defined(ESP_PLATFORM) || defined(JET_SOLAROS_ALLOCATOR))
 // The managed PSRAM pool is distinct from the SDK malloc heap. Geometry and
 // scene queues must use that pool even when SDK PSRAM has been exhausted.
 template<class T> struct JetAllocator {

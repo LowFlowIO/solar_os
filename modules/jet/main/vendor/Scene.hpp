@@ -58,6 +58,9 @@ public:
     /// @brief Add an object to the scene.
     /// @param obj Object to add. Pointer is borrowed; caller retains ownership.
     void addObject(Object* obj);
+    void setCancellation(bool (*callback)(void *), void *user) {
+        cancelCallback = callback; cancelUser = user;
+    }
 
     /// @brief Add a point light to the scene.
     /// @param light Light to add. Pointer is borrowed; caller retains ownership.
@@ -308,6 +311,8 @@ private:
     bool* scanlinesUpdated;
 
     JetVector<Object*> objects;
+    bool (*cancelCallback)(void *) = nullptr;
+    void *cancelUser = nullptr;
     JetVector<PointLight*> pointLights;
     JetVector<Material*> materials;
     JetVector<Sprite2D*> sprites;

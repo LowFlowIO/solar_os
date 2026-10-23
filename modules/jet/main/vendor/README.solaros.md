@@ -5,7 +5,7 @@ Pinned upstream: https://github.com/CubeCoders/Jet
 Revision: `c56dfc0c012ba7a09a6e49b4123340ec24981441`.
 The upstream MIT notice is retained in `LICENSE`. Sources are vendored;
 firmware builds do not download the renderer. `Example.cpp` and `Sample.cpp`
-are excluded. All translation units use `services/JetConfig.hpp`.
+are excluded. All translation units use `modules/jet/main/JetConfig.hpp`.
 
 Local changes:
 
@@ -24,12 +24,15 @@ Local changes:
 - Uniform equal-byte RGB565 backgrounds use a bulk fill within the active
   render band; `JET_UNIFORM_BYTE_CLEAR=0` selects the original row-fill path.
 - ESP-IDF attribute declarations are included explicitly for blend SIMD kernels.
-- Geometry and scene vectors use SolarOS managed PSRAM on ESP-IDF. Host builds
-  retain the standard allocator. Cube and scene construction clean up partial
-  allocations if construction fails; the demo reports allocation failures.
+- The external library's standard allocator routes geometry and scene vectors
+  through its private C++ runtime to SolarOS managed PSRAM. Host builds retain
+  the standard host allocator. Cube and scene construction clean up partial
+  allocations if construction fails; provider calls report allocation failures.
 - Trailing source whitespace is normalized.
+- Optional cancellation is checked between rasterized triangles. Cancelled
+  frames are rejected by the provider before the host exchanges their buffers.
 
-The SolarOS package enables full-width, non-interlaced RGB565, per-pixel depth,
+The external SolarOS library enables full-width, non-interlaced RGB565, per-pixel depth,
 lighting and perspective textures. Direct monochrome/indexed framebuffer
 storage is not implemented. Geometry rendering must be serialized: upstream
 still has shared baked-material and trigonometric state. Do not construct or

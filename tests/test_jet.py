@@ -3,28 +3,42 @@ import os
 import shutil
 import subprocess
 import tempfile
-import tomllib
 import unittest
+from test_foreground_presenter import production_functions
 
 ROOT = Path(__file__).resolve().parents[1]
+MODULE = ROOT / "modules/jet/main"
+SOURCES = sorted(str(path) for path in (MODULE / "vendor").glob("*.cpp"))
 
 
 class JetFramebufferTest(unittest.TestCase):
-    def test_app_lifecycle_and_allocation_failures(self):
+    def test_display_claim_excludes_status_and_restores_terminal(self):
+        with tempfile.TemporaryDirectory(prefix="solaros-jet-display-") as temporary:
+            tmp = Path(temporary)
+            source = (ROOT / "src/services/solar_os_display.c").read_text()
+            (tmp / "display_terminal_policy.inc").write_text(production_functions(source, (
+                "solar_os_display_set_terminal_blocked", "solar_os_display_terminal_draw_state",
+                "solar_os_display_release")))
+            source = (ROOT / "src/services/solar_os_terminal.c").read_text()
+            (tmp / "terminal_draw_policy.inc").write_text(production_functions(source, (
+                "solar_os_terminal_needs_draw", "solar_os_terminal_draw")))
+            binary = tmp / "display"
+            subprocess.run(["cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
+                "-fsanitize=address,undefined", f"-I{tmp}", f"-I{ROOT / 'tests/host/jet_stubs'}",
+                str(ROOT / "tests/host/display_terminal_claim_test.c"), "-o", str(binary)], check=True)
+            subprocess.run([str(binary)], check=True)
+
+    def test_provider_abi_and_allocation_failures(self):
         compiler = shutil.which("g++")
         if not compiler:
             self.skipTest("g++ unavailable")
-        catalog = tomllib.loads((ROOT / "packages/solar_os_packages.toml").read_text())
-        sources = [str(ROOT / "src" / path) for path in catalog["packages"]["engine_jet"]["sources"]]
-        with tempfile.TemporaryDirectory(prefix="solaros-jet-app-") as temporary:
-            binary = Path(temporary) / "jet-app"
-            command = [compiler, "-std=c++17", "-O1", "-g", "-pthread", "-fsanitize=address",
-                       "-fno-omit-frame-pointer", "-DJET_SOLAROS_ALLOCATOR=1",
-                       f"-I{ROOT / 'tests/host/jet_stubs'}", f"-I{ROOT / 'src'}",
-                       f"-I{ROOT / 'src/apps'}", f"-I{ROOT / 'src/services'}",
-                       f"-I{ROOT / 'src/vendor/jet'}",
-                       str(ROOT / "tests/host/jet_app_test.cpp"),
-                       str(ROOT / "src/apps/solar_os_jet_app.cpp"), *sources, "-o", str(binary)]
+        with tempfile.TemporaryDirectory(prefix="solaros-jet-library-") as temporary:
+            binary = Path(temporary) / "jet-library"
+            command = [compiler, "-std=c++17", "-O1", "-g", "-fsanitize=address,undefined",
+                       "-fno-omit-frame-pointer", f"-I{ROOT / 'include'}",
+                       f"-I{MODULE}", f"-I{MODULE / 'vendor'}",
+                       str(ROOT / "tests/host/jet_library_test.cpp"),
+                       str(MODULE / "engine.cpp"), *SOURCES, "-o", str(binary)]
             subprocess.run(command, check=True, capture_output=True, text=True)
             subprocess.run([str(binary)], check=True, capture_output=True, text=True,
                            env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
@@ -33,8 +47,6 @@ class JetFramebufferTest(unittest.TestCase):
         compiler = shutil.which("g++")
         if not compiler:
             self.skipTest("g++ unavailable")
-        catalog = tomllib.loads((ROOT / "packages/solar_os_packages.toml").read_text())
-        sources = [str(ROOT / "src" / path) for path in catalog["packages"]["engine_jet"]["sources"]]
         with tempfile.TemporaryDirectory(prefix="solaros-jet-") as temporary:
             images = []
             for swapped, optimization in ((0, "-O1"), (1, "-O1"), (1, "-O3")):
@@ -44,8 +56,8 @@ class JetFramebufferTest(unittest.TestCase):
                            "-fno-omit-frame-pointer", f"-DJET_FRAMEBUFFER_SWAP_BYTES={swapped}",
                            f"-DJET_CONSTANT_COLOR_LIGHTING={swapped}",
                            f"-DJET_UNIFORM_BYTE_CLEAR={swapped}",
-                           f"-I{ROOT / 'src/services'}", f"-I{ROOT / 'src/vendor/jet'}",
-                           str(ROOT / "tests/host/jet_framebuffer_test.cpp"), *sources, "-o", str(binary)]
+                           f"-I{MODULE}", f"-I{MODULE / 'vendor'}",
+                           str(ROOT / "tests/host/jet_framebuffer_test.cpp"), *SOURCES, "-o", str(binary)]
                 subprocess.run(command, check=True, capture_output=True, text=True)
                 subprocess.run([str(binary), str(output)], check=True, capture_output=True,
                                text=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
@@ -59,6 +71,45 @@ class JetFramebufferTest(unittest.TestCase):
             self.assertEqual(wire[red:red + 2], b"\xf8\x00")
             # A non-symmetric background catches accidental no-op byte order.
             self.assertEqual(wire[:2], b"\x12\x34")
+
+    def test_frontend_leases_lua_bindings_and_example(self):
+        with tempfile.TemporaryDirectory(prefix="solaros-jet-runtime-") as temporary:
+            tmp = Path(temporary)
+            include = [f"-I{ROOT / 'tests/host/jet_stubs'}", f"-I{ROOT / 'include'}",
+                       f"-I{ROOT / 'src/services'}", f"-I{ROOT / 'src/apps'}", f"-I{tmp}"]
+            flags = ["-O1", "-g", "-fsanitize=address,undefined", "-fno-omit-frame-pointer"]
+            source = (ROOT / "src/apps/solar_os_lua.c").read_text()
+            (tmp / "jet_visibility.inc").write_text(production_functions(source, ("solua_jet_visibility",)))
+            objects = []
+            for path in [MODULE / "engine.cpp", *map(Path, SOURCES)]:
+                obj = tmp / (path.stem + ".o")
+                subprocess.run(["g++", "-std=c++17", *flags, *include,
+                    f"-I{MODULE}", f"-I{MODULE / 'vendor'}", "-c", str(path), "-o", str(obj)], check=True, capture_output=True)
+                objects.append(str(obj))
+            frontend = tmp / "frontend.o"
+            (tmp / "frontend.c").write_text((ROOT / "src/services/solar_os_jet.c").read_text())
+            subprocess.run(["cc", "-std=c11", *flags, *include, "-include", str(ROOT / "tests/host/compat.h"),
+                "-Wall", "-Wextra", "-Werror", "-c", str(tmp / "frontend.c"),
+                "-o", str(frontend)], check=True, capture_output=True)
+            objects.append(str(frontend))
+            for lua in (False, True):
+                fixture = tmp / "fixture.o"
+                subprocess.run(["cc", "-std=c11", *flags, *include,
+                    *( ["-DJET_TEST_NO_MAIN=1"] if lua else []), "-c",
+                    str(ROOT / "tests/host/jet_runtime_test.c"), "-o", str(fixture)], check=True, capture_output=True)
+                extra = [str(fixture)]
+                if lua:
+                    lua_dir = ROOT / "components/lua/lua/src"
+                    for path in [ROOT / "tests/host/jet_lua_test.c", *sorted(lua_dir.glob("*.c"))]:
+                        if path.name in ("lua.c", "luac.c"): continue
+                        obj = tmp / ("lua-" + path.stem + ".o")
+                        subprocess.run(["cc", "-std=gnu11", *flags, *include, f"-I{lua_dir}",
+                            "-Wall", "-Wextra", "-Werror", "-c", str(path), "-o", str(obj)], check=True, capture_output=True)
+                        extra.append(str(obj))
+                binary = tmp / ("lua" if lua else "runtime")
+                subprocess.run(["g++", *flags, *objects, *extra, "-lm", "-o", str(binary)], check=True, capture_output=True)
+                subprocess.run([str(binary), *([str(ROOT / "examples/lua/jet.lua")] if lua else [])],
+                    check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
 
 
 if __name__ == "__main__":
