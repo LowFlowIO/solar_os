@@ -9515,6 +9515,17 @@ static void solua_apply_tui_event(solar_os_context_t *ctx, const solua_event_t *
     }
 }
 
+#if SOLAR_OS_PACKAGE_SERVICE_EMOTION || SOLAR_OS_PACKAGE_SERVICE_JET
+static void solua_apply_streaming_mode(solar_os_context_t *ctx, bool active, bool *ack)
+{
+    solar_os_context_set_streaming_graphics_active(ctx, active);
+    /* A port context borrows this terminal; only its display task may paint. */
+    if (!active && solua.session_terminal)
+        solar_os_terminal_invalidate_render(solua.session_terminal);
+    __atomic_store_n(ack, true, __ATOMIC_RELEASE);
+}
+#endif
+
 static void solua_apply_gfx_event(solar_os_context_t *ctx, const solua_event_t *event)
 {
     if (event == NULL) {
@@ -9523,17 +9534,13 @@ static void solua_apply_gfx_event(solar_os_context_t *ctx, const solua_event_t *
 
 #if SOLAR_OS_PACKAGE_SERVICE_EMOTION
     if (event->type == SOLUA_EVENT_EMOTION_MODE) {
-        solar_os_context_set_streaming_graphics_active(ctx, event->attr != 0);
-        if (!event->attr && solua.session_terminal) solar_os_terminal_draw(solua.session_terminal);
-        __atomic_store_n(&solua_runtime_state->emotion_ack, true, __ATOMIC_RELEASE);
+        solua_apply_streaming_mode(ctx, event->attr != 0, &solua_runtime_state->emotion_ack);
         return;
     }
 #endif
 #if SOLAR_OS_PACKAGE_SERVICE_JET
     if (event->type == SOLUA_EVENT_JET_MODE) {
-        solar_os_context_set_streaming_graphics_active(ctx, event->attr != 0);
-        if (!event->attr && solua.session_terminal) solar_os_terminal_draw(solua.session_terminal);
-        __atomic_store_n(&solua_runtime_state->jet_ack, true, __ATOMIC_RELEASE);
+        solua_apply_streaming_mode(ctx, event->attr != 0, &solua_runtime_state->jet_ack);
         return;
     }
 #endif
