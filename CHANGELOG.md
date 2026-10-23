@@ -2,6 +2,10 @@
 
 ## 4.x
 
+- **4.16.28** — 2026-10-23 — Added the optional Jet 3D renderer for Python
+  and Lua, with textured meshes, lighting, sprites, particles, shaders and asset
+  loading on color and dithered monochrome displays. Fixed streaming-script
+  terminal redraw and native-app audio on T-Deck and other expansion outputs.
 - **4.16.27** — 2026-10-22 — Added named motor and encoder services with
   shell controls and Python/Lua bindings. DRV8830 motors use normalized signed
   drive commands over named I2C buses, with an optional fault input. Native
