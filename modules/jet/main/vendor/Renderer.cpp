@@ -773,7 +773,7 @@ namespace Renderer
 
 #if LIGHTING || Z_BRIGHTNESS
         uint16_t brightness = 0;
-    #if POSTFX_CELLSHADING
+    #if POSTFX_CELLSHADING || JET_RUNTIME_POSTFX
         // Hoist runtime selection out of the pixel loop. Band workers copy
         // these controls along with the rest of their rasterizer state.
         const unsigned celBits = celShadingEnabled ? std::min(unsigned(celShadingBits), 8u) : 0u;
@@ -884,7 +884,7 @@ namespace Renderer
         {
             if (constantColorLighting) brightness = constantBrightness;
             const uint16_t maxBrightness = (uint16_t)(255u + material->specular);
-    #if POSTFX_CELLSHADING
+    #if POSTFX_CELLSHADING || JET_RUNTIME_POSTFX
             brightness &= celMask;
     #endif
             color = jetModulateRGB565(color, brightness, ambR, ambG, ambB, maxBrightness);
@@ -2089,7 +2089,7 @@ namespace Renderer
     #endif
 
     #if LIGHTING || Z_BRIGHTNESS
-    #if POSTFX_CELLSHADING
+    #if POSTFX_CELLSHADING || JET_RUNTIME_POSTFX
                     brightness &= celMask;
     #endif
 

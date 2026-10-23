@@ -15,8 +15,8 @@ Local changes:
 - Scene background clears, sprites and tiled texture output use that policy.
   Complete full-width wire-order frames need no post-render conversion buffer.
 - The native-order simple-span optimization is disabled for swapped output.
-  Half-width/field layouts and buffered post-processing/checkerboard
-  reconstruction are rejected at compile time with swapped output.
+  Half-width/field layouts and checkerboard reconstruction are rejected at
+  compile time with swapped output.
 - Transform scratch belongs to the scene and is released on scene destruction.
 - Untextured faces with constant Gouraud brightness or constant Phong normals
   compute their final lit color once per triangle. Coverage and depth remain
@@ -37,6 +37,9 @@ Local changes:
   and sprite compositing. Picking queries can be inspected for composition.
 - Particle pools use independent seedable random state. Lens flares allow
   direction, fade, element and sort-order updates and sprite deregistration.
+- Runtime effects use lazy, reusable scratch buffers and honor framebuffer
+  byte order within their filter passes. Chromatic aberration shifts channels;
+  temporal history can be reset. Cel shading defaults to disabled at runtime.
 
 The external SolarOS library enables full-width, non-interlaced RGB565, per-pixel depth,
 lighting and perspective textures. Direct monochrome/indexed framebuffer

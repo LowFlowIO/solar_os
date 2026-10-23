@@ -474,6 +474,46 @@ Python uses keyword options and Lua uses options tables. Capability limits are
 Complete examples are `examples/python/jet_particles.py` and
 `examples/lua/jet_particles.lua`.
 
+## Optional effects
+
+Jet library 1.7 or later reports `postfx=True`. `postfx(...)` partially
+updates global effect options; Python uses keywords and Lua an options table.
+All effects default to disabled. Geometry keeps the direct RGB565 presentation
+path, and disabled effects allocate no image scratch buffers.
+
+| Option | Default and meaning |
+| --- | --- |
+| `fxaa` | False; five-tap luminance edge smoothing. |
+| `bloom` | False; thresholded, separable radius-three bloom. RGB565 channel sum above 75 seeds the blur. |
+| `crt` | Zero disables; 1–255 darkens odd display rows, with 255 making them black. |
+| `motion_blur` | Zero disables; 1–100 is the previous filtered frame's percentage. The first frame initializes history; 100 retains that frame. |
+| `chromatic` | Zero disables; 1–32 shifts red and blue sampling in opposite horizontal directions, clamping at edges. |
+| `pixelate` | One disables; 2–32 fills square blocks from their top-left sample. |
+| `cel_bits` | Zero disables; 1–8 discards low bits of scalar diffuse lighting in the existing raster pass. Ambient and gloss remain continuous. |
+
+Image effects run after geometry and particles, before all sprites, in this
+order: FXAA, bloom, CRT, pixelation, chromatic shift, motion blur. Cel shading
+acts during lighting. Picking continues to describe geometry before filtering.
+Filters read and write the configured RGB565 byte order within their work;
+presentation does not add a conversion pass.
+
+`postfx_info()` returns settings, image `scratch_bytes`, and
+`history_valid`. `postfx_reset()` invalidates temporal history without
+changing settings. `postfx_clear()` disables all effects and frees their
+scratch buffers. Disabling every image effect also frees scratch, even if
+cel shading remains enabled. Newly enabling motion blur resets its history.
+Failed allocation retains the previous effect configuration.
+
+Scratch is reused between frames: FXAA needs `width * 8` bytes, bloom
+`width * height * 4`, motion blur `width * height * 2`, and chromatic shift
+`width * 2`. CRT, pixelation and cel shading need no image scratch. Buffers
+for individually disabled filters remain reusable until all image effects
+are disabled or `postfx_clear()` is called. These optional passes add render
+work; enable only the effects the scene needs.
+
+Complete examples are `examples/python/jet_effects.py` and
+`examples/lua/jet_effects.lua`.
+
 ## Presentation and memory
 
 Rendering uses the display's full dimensions. Width must be a multiple of eight;
@@ -487,7 +527,8 @@ buffer. Terminal palette changes do not invert the scene. Transport may still
 rotate, scale or DMA-stage frames. E-paper refresh policy and settling determine
 visible motion independently of successful presentation calls.
 
-The module has no OBJ file loader or indexed-only display output.
+Scripts provide asset contents to the loaders; the provider does not open paths.
+Indexed-only display output is not supported.
 Native consumers can use the C provider table in `solar_os_jet_abi.h`
 through the [resident library service](native-library.md).
 
@@ -497,9 +538,13 @@ through the [resident library service](native-library.md).
 | --- | --- |
 | Install provider | `pkg install jet` |
 | Open scene | `solaros.jet.open(display, fps)`; defaults `None`/`nil`, 0 |
-| Geometry | `cube(width,height,depth,color)`; `mesh(vertices,triangles,color)` |
+| Geometry | `primitive(...)`; `mesh_data(vertices,triangles,material)`; `mesh_update(object,...)` |
+| Surfaces and assets | `material(...)`; `texture(...)`; `load_obj(data,...)`; `load_mtl(data)`; `load_bmp(data,...)` |
 | Update view | `camera(x,y,z,rx,ry,rz,fov)`; `light(ambient,color,intensity,azimuth,elevation)` |
 | Update object | `transform(object,x,y,z,rx,ry,rz)`; `remove(object)` |
+| Shared geometry | `prototype(object,...)`; `instance(prototype,...)`; `instance_set(object,index,...)` |
+| Overlays and selection | `sprite(...)`; `pick(points)`; `picks()` |
+| Animation and effects | `particles(...)`; `flare(elements,...)`; `step(dt)`; `postfx(...)` |
 | Draw and inspect | `render()`; `status()` |
 | Release | `close()`, Python `with`, Lua `<close>` |
 | Limits | One scene, 32 objects, 1024 input vertices and 2048 triangles per mesh; RGB888 colors; design coordinates -4096..4096 |

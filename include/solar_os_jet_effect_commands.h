@@ -61,8 +61,15 @@ enum { JET_FLARE_FIELDS(JET_FIELD_ENUM) JET_FLARE_COUNT };
 enum { JET_ELEMENT_FIELDS(JET_FIELD_ENUM) JET_ELEM_COUNT };
 #undef JET_FIELD_ENUM
 #define JET_FIELD_VALUE(name,kind,initial,low,high,choices) {#name,JET_##kind,initial,low,high,choices},
+#define JET_POSTFX_FIELDS(X) \
+ X(fxaa,BOOL,0,0,1,NULL) X(bloom,BOOL,0,0,1,NULL) X(crt,INT,0,0,255,NULL) \
+ X(motion_blur,INT,0,0,100,NULL) X(chromatic,INT,0,0,32,NULL) X(pixelate,INT,1,1,32,NULL) X(cel_bits,INT,0,0,8,NULL)
+#define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_FX_##name,
+enum { JET_POSTFX_FIELDS(JET_FIELD_ENUM) JET_FX_COUNT };
+#undef JET_FIELD_ENUM
 static const solar_os_jet_field_t jet_particle_fields[]={JET_PARTICLE_FIELDS(JET_FIELD_VALUE)};
 static const solar_os_jet_field_t jet_emit_fields[]={JET_EMIT_FIELDS(JET_FIELD_VALUE)};
 static const solar_os_jet_field_t jet_flare_fields[]={JET_FLARE_FIELDS(JET_FIELD_VALUE)};
 static const solar_os_jet_field_t jet_element_fields[]={JET_ELEMENT_FIELDS(JET_FIELD_VALUE)};
+static const solar_os_jet_field_t jet_postfx_fields[]={JET_POSTFX_FIELDS(JET_FIELD_VALUE)};
 #undef JET_FIELD_VALUE

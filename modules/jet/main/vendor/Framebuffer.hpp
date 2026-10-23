@@ -14,8 +14,8 @@
 #error "Byte-swapped framebuffer output currently requires complete full-width frames"
 #endif
 
-#if JET_FRAMEBUFFER_SWAP_BYTES && (POSTFX_ANTIALIASING || POSTFX_BLOOM || POSTFX_CRT || POSTFX_MOTION_BLUR || POSTFX_CHROMATIC || POSTFX_PIXELATE || CHECKERBOARD_RECONSTRUCTION)
-#error "Byte-swapped framebuffers do not yet support buffered post-processing or checkerboard reconstruction"
+#if JET_FRAMEBUFFER_SWAP_BYTES && CHECKERBOARD_RECONSTRUCTION
+#error "Byte-swapped framebuffers do not yet support checkerboard reconstruction"
 #endif
 
 namespace Renderer {

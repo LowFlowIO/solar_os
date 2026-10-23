@@ -12,6 +12,22 @@ SOURCES = sorted(str(path) for path in (MODULE / "vendor").glob("*.cpp"))
 
 
 class JetFramebufferTest(unittest.TestCase):
+    def test_effects_preserve_wire_order_and_filter_contracts(self):
+        with tempfile.TemporaryDirectory(prefix="solaros-jet-effects-") as temporary:
+            images=[]
+            for swapped in (0,1):
+                binary=Path(temporary)/f"effects-{swapped}"
+                output=binary.with_suffix('.rgb565')
+                subprocess.run(['g++','-std=c++17','-O1','-g','-fsanitize=address,undefined',
+                    f'-DJET_FRAMEBUFFER_SWAP_BYTES={swapped}',f'-I{MODULE}',f'-I{MODULE / "vendor"}',
+                    str(ROOT/'tests/host/jet_postfx_test.cpp'),str(MODULE/'vendor/PostFX.cpp'),'-o',str(binary)],
+                    check=True,capture_output=True)
+                subprocess.run([str(binary),str(output)],check=True,capture_output=True)
+                images.append(output.read_bytes())
+            native,wire=images
+            self.assertEqual(len(native),7*8*8*2)
+            self.assertEqual(native[::2],wire[1::2]);self.assertEqual(native[1::2],wire[::2])
+
     def test_python_signed_options_and_full_width_handles(self):
         with tempfile.TemporaryDirectory(prefix="solaros-jet-python-") as temporary:
             tmp=Path(temporary)
@@ -68,6 +84,7 @@ class JetFramebufferTest(unittest.TestCase):
                            f"-DJET_CONSTANT_COLOR_LIGHTING={swapped}",
                            f"-DJET_UNIFORM_BYTE_CLEAR={swapped}",
                            f"-DJET_MESH_INSTANCING={instancing}",
+                           f"-DJET_RUNTIME_POSTFX={instancing}",
                            f"-I{MODULE}", f"-I{MODULE / 'vendor'}",
                            str(ROOT / "tests/host/jet_framebuffer_test.cpp"), *SOURCES, "-o", str(binary)]
                 subprocess.run(command, check=True, capture_output=True, text=True)
@@ -124,7 +141,8 @@ class JetFramebufferTest(unittest.TestCase):
                 subprocess.run([str(binary), *([str(ROOT / name) for name in
                     ("examples/lua/jet.lua", "examples/lua/jet_materials.lua", "examples/lua/jet_scene.lua",
                      "examples/lua/jet_picking.lua", "examples/lua/jet_assets.lua",
-                     "examples/lua/jet_instances.lua", "examples/lua/jet_particles.lua")] if lua else [])],
+                     "examples/lua/jet_instances.lua", "examples/lua/jet_particles.lua",
+                     "examples/lua/jet_effects.lua")] if lua else [])],
                     check=True, env={**os.environ, "ASAN_OPTIONS": "detect_leaks=1"})
 
 

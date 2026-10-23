@@ -108,6 +108,14 @@ int main(int argc,char **argv) {
             "s:remove(hud);s:remove(m);s:remove(t);s:pick(nil);s:render();assert(#s:picks()==0);s:close()");
         jet_test_assert_clean();
         solua.session_gfx=jet_test_gfx();solua.events=(void *)1;
+        run(L,"s=jet.open('display0');assert(s:capabilities().postfx); "
+            "assert(s:postfx_info().scratch_bytes==0);c=s:cube(150,150,150); "
+            "s:postfx{cel_bits=4};assert(s:postfx_info().scratch_bytes==0);s:render(); "
+            "s:postfx{fxaa=true,bloom=true,crt=48,motion_blur=50,chromatic=2,pixelate=4}; "
+            "s:render();s:render();assert(s:postfx_info().scratch_bytes>0 and s:postfx_info().history_valid); "
+            "s:postfx_reset();assert(not s:postfx_info().history_valid);s:postfx_clear(); "
+            "assert(s:postfx_info().scratch_bytes==0 and s:postfx_info().cel_bits==0);s:render();s:close()");
+        jet_test_assert_clean();
         run(L,"s=jet.open('display0');assert(s:capabilities().particles and s:capabilities().flares); "
             "pool=s:particles{seed=123,additive=true,name='sparks'};assert(s:particles_info(pool).capacity==200); "
             "assert(s:particles_emit(pool,{count=12,speed=200})==12);assert(s:particles_info(pool).active==12); "

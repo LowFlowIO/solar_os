@@ -1,22 +1,24 @@
 #include "PostFX.hpp"
+#include "Framebuffer.hpp"
 #include <algorithm>
 #include <cstring>
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#if defined(CONFIG_IDF_TARGET_ESP32S3) && !JET_FRAMEBUFFER_SWAP_BYTES
 #include "esp_attr.h"
 #endif
 
 namespace Renderer {
 
-#if POSTFX_CRT
+#if POSTFX_CRT || JET_RUNTIME_POSTFX
 namespace {
 inline uint16_t crtPixel(uint16_t pixel, unsigned gain) {
+    pixel=framebufferDecode(pixel);
     const unsigned r = (((pixel >> 11) & 31) * gain + 127) / 255;
     const unsigned g = (((pixel >> 5) & 63) * gain + 127) / 255;
     const unsigned b = ((pixel & 31) * gain + 127) / 255;
-    return uint16_t((r << 11) | (g << 5) | b);
+    return framebufferEncode(uint16_t((r << 11) | (g << 5) | b));
 }
 
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#if defined(CONFIG_IDF_TARGET_ESP32S3) && !JET_FRAMEBUFFER_SWAP_BYTES
 alignas(16) static const DRAM_ATTR uint32_t crtConstants[] = {
     0x001f001f, 0x001f001f, 0x001f001f, 0x001f001f,
     0x003f003f, 0x003f003f, 0x003f003f, 0x003f003f,
@@ -30,7 +32,7 @@ static void crtSpan(
 #endif
     uint16_t* pixels, int count, unsigned gain) {
     if (count <= 0) return;
-#if defined(CONFIG_IDF_TARGET_ESP32S3)
+#if defined(CONFIG_IDF_TARGET_ESP32S3) && !JET_FRAMEBUFFER_SWAP_BYTES
     while (count && (uintptr_t(pixels) & 15)) {
         *pixels = crtPixel(*pixels, gain);
         ++pixels;
@@ -102,62 +104,83 @@ static void crtSpan(
 } // namespace
 #endif
 
-PostFX::PostFX(int screenWidth, int screenHeight)
-    : screenWidth(screenWidth), screenHeight(screenHeight) {
-    #if POSTFX_BLOOM
-    bloomBuffer = new uint16_t[screenWidth * screenHeight];
-    bloomTemp   = new uint16_t[screenWidth * screenHeight];
-    #endif
-    #if POSTFX_MOTION_BLUR
-    previousFrame = new uint16_t[screenWidth * screenHeight];
-    memset(previousFrame, 0, screenWidth * screenHeight * sizeof(uint16_t));
-    #endif
-    #if POSTFX_ANTIALIASING
-    // 4 int16s per column: r, g, b, lum. Reused across rows so each
-    // framebuffer pixel is unpacked exactly once per FXAA pass.
-    fxaaTopRow = new int16_t[screenWidth * 4];
-    #endif
+PostFX::PostFX(int screenWidth,int screenHeight)
+    : screenWidth(screenWidth),screenHeight(screenHeight) {
+#if !JET_RUNTIME_POSTFX
+    prepare((POSTFX_ANTIALIASING ? FXAA : 0)|(POSTFX_BLOOM ? BLOOM : 0)|
+            (POSTFX_MOTION_BLUR ? MOTION : 0)|(POSTFX_CHROMATIC ? CHROMATIC : 0));
+    motionReady=POSTFX_MOTION_BLUR != 0;
+#endif
 }
-
-PostFX::~PostFX() {
-    #if POSTFX_BLOOM
-    if (bloomBuffer) {
-        delete[] bloomBuffer;
-        bloomBuffer = nullptr;
+PostFX::~PostFX()=default;
+void PostFX::prepare(unsigned buffers) {
+    // Publish all newly requested buffers together; allocation failure retains
+    // the previous configuration without losing or leaking scratch storage.
+#if POSTFX_ANTIALIASING || JET_RUNTIME_POSTFX
+    std::unique_ptr<int16_t[]> top;
+    if((buffers&FXAA)&&!fxaaTopRow)top=std::make_unique<int16_t[]>(screenWidth*4);
+#endif
+#if POSTFX_BLOOM || JET_RUNTIME_POSTFX
+    std::unique_ptr<uint16_t[]> bloom,temp;
+    if((buffers&BLOOM)&&!bloomBuffer) {
+        bloom=std::make_unique<uint16_t[]>(size_t(screenWidth)*screenHeight);
+        temp=std::make_unique<uint16_t[]>(size_t(screenWidth)*screenHeight);
     }
-    if (bloomTemp) {
-        delete[] bloomTemp;
-        bloomTemp = nullptr;
-    }
-    #endif
-    #if POSTFX_MOTION_BLUR
-    if (previousFrame) {
-        delete[] previousFrame;
-        previousFrame = nullptr;
-    }
-    #endif
-    #if POSTFX_ANTIALIASING
-    if (fxaaTopRow) {
-        delete[] fxaaTopRow;
-        fxaaTopRow = nullptr;
-    }
-    #endif
+#endif
+#if POSTFX_MOTION_BLUR || JET_RUNTIME_POSTFX
+    std::unique_ptr<uint16_t[]> previous;
+    if((buffers&MOTION)&&!previousFrame)previous=std::make_unique<uint16_t[]>(size_t(screenWidth)*screenHeight);
+#endif
+#if POSTFX_CHROMATIC || JET_RUNTIME_POSTFX
+    std::unique_ptr<uint16_t[]> row;
+    if((buffers&CHROMATIC)&&!chromaticRow)row=std::make_unique<uint16_t[]>(screenWidth);
+#endif
+#if POSTFX_ANTIALIASING || JET_RUNTIME_POSTFX
+    if(top)fxaaTopRow=std::move(top);
+#endif
+#if POSTFX_BLOOM || JET_RUNTIME_POSTFX
+    if(bloom) {bloomBuffer=std::move(bloom);bloomTemp=std::move(temp);}
+#endif
+#if POSTFX_MOTION_BLUR || JET_RUNTIME_POSTFX
+    if(previous)previousFrame=std::move(previous);
+#endif
+#if POSTFX_CHROMATIC || JET_RUNTIME_POSTFX
+    if(row)chromaticRow=std::move(row);
+#endif
+    (void)buffers;
+}
+size_t PostFX::scratchBytes() const {
+    size_t bytes=0;
+#if POSTFX_ANTIALIASING || JET_RUNTIME_POSTFX
+    if(fxaaTopRow)bytes+=size_t(screenWidth)*8;
+#endif
+#if POSTFX_BLOOM || JET_RUNTIME_POSTFX
+    if(bloomBuffer)bytes+=size_t(screenWidth)*screenHeight*4;
+#endif
+#if POSTFX_MOTION_BLUR || JET_RUNTIME_POSTFX
+    if(previousFrame)bytes+=size_t(screenWidth)*screenHeight*2;
+#endif
+#if POSTFX_CHROMATIC || JET_RUNTIME_POSTFX
+    if(chromaticRow)bytes+=size_t(screenWidth)*2;
+#endif
+    return bytes;
 }
 
 void PostFX::applyFXAA(uint16_t* framebuffer) {
-    #if POSTFX_ANTIALIASING
+    #if POSTFX_ANTIALIASING || JET_RUNTIME_POSTFX
     const int W = screenWidth;
     const int H = screenHeight;
     if (W < 3 || H < 3) return;
+    prepare(FXAA);
 
     // Prime the top-row cache from row 0 (never modified by FXAA since
     // the loop starts at y=1). We only need columns [1..W-2] but filling
     // the whole row is simpler and harmless.
     {
         const uint16_t* row0 = framebuffer;
-        int16_t* cache = fxaaTopRow;
+        int16_t* cache = fxaaTopRow.get();
         for (int x = 0; x < W; x++) {
-            const uint16_t p = row0[x];
+            const uint16_t p = framebufferDecode(row0[x]);
             const int r = (p >> 11) & 0x1F;
             const int g = (p >> 5)  & 0x3F;
             const int b =  p        & 0x1F;
@@ -173,13 +196,13 @@ void PostFX::applyFXAA(uint16_t* framebuffer) {
         const uint16_t* rowB = rowC + W;
 
         // Prime the horizontal sliding window from rowC[0] / rowC[1].
-        uint16_t pL = rowC[0];
+        uint16_t pL = framebufferDecode(rowC[0]);
         int rL = (pL >> 11) & 0x1F;
         int gL = (pL >> 5)  & 0x3F;
         int bL =  pL        & 0x1F;
         int lumL = rL + gL + bL;
 
-        uint16_t pC = rowC[1];
+        uint16_t pC = framebufferDecode(rowC[1]);
         int rC = (pC >> 11) & 0x1F;
         int gC = (pC >> 5)  & 0x3F;
         int bC =  pC        & 0x1F;
@@ -193,14 +216,14 @@ void PostFX::applyFXAA(uint16_t* framebuffer) {
             const int lumT = fxaaTopRow[x * 4 + 3];
 
             // Bottom: fresh unpack of row y+1.
-            const uint16_t pB = rowB[x];
+            const uint16_t pB = framebufferDecode(rowB[x]);
             const int rB = (pB >> 11) & 0x1F;
             const int gB = (pB >> 5)  & 0x3F;
             const int bB =  pB        & 0x1F;
             const int lumB = rB + gB + bB;
 
             // Right: fresh unpack of next column.
-            const uint16_t pR = rowC[x + 1];
+            const uint16_t pR = framebufferDecode(rowC[x + 1]);
             const int rR = (pR >> 11) & 0x1F;
             const int gR = (pR >> 5)  & 0x3F;
             const int bR =  pR        & 0x1F;
@@ -234,7 +257,7 @@ void PostFX::applyFXAA(uint16_t* framebuffer) {
                 outG = (gC + gT + gB + gL + gR) / 5;
                 outB = (bC + bT + bB + bL + bR) / 5;
                 outLum = outR + outG + outB;
-                rowC[x] = (uint16_t)((outR << 11) | (outG << 5) | outB);
+                rowC[x] = framebufferEncode(uint16_t((outR << 11) | (outG << 5) | outB));
             } else {
                 outR = rC; outG = gC; outB = bC; outLum = lumC;
             }
@@ -256,7 +279,7 @@ void PostFX::applyFXAA(uint16_t* framebuffer) {
 }
 
 void PostFX::applyBloom(uint16_t* framebuffer) {
-    #if POSTFX_BLOOM
+    #if POSTFX_BLOOM || JET_RUNTIME_POSTFX
     // Separable two-pass blur. The previous implementation splattered each
     // bright source pixel into a (2r+1)² area — O(r²) per pixel and a
     // measurable fraction of frame time at 1080p. A separable box blur with
@@ -280,6 +303,7 @@ void PostFX::applyBloom(uint16_t* framebuffer) {
     constexpr int BLOOM_WINDOW = BLOOM_RADIUS * 2 + 1; // 7
     const int W = screenWidth;
     const int H = screenHeight;
+    prepare(BLOOM);
 
     // 1. Seed: bright pixels only. Storing the contribution in RGB565 keeps
     // the buffer compact; channels stay well under their max even after
@@ -287,7 +311,7 @@ void PostFX::applyBloom(uint16_t* framebuffer) {
     // shifted right by 3, so r:5 becomes <=3, g:6 becomes <=7, b:5 becomes
     // <=3; window sum fits in 5/6/5 bits with room to spare).
     for (int i = 0; i < W * H; i++) {
-        const uint16_t pixel = framebuffer[i];
+        const uint16_t pixel = framebufferDecode(framebuffer[i]);
         const int r = (pixel >> 11) & 0x1F;
         const int g = (pixel >> 5)  & 0x3F;
         const int b =  pixel        & 0x1F;
@@ -304,8 +328,8 @@ void PostFX::applyBloom(uint16_t* framebuffer) {
     // get fewer samples — we divide by the actual window size for
     // correctness, which avoids darkening at the borders.
     for (int y = 0; y < H; y++) {
-        const uint16_t* row = bloomTemp   + y * W;
-        uint16_t*       out = bloomBuffer + y * W;
+        const uint16_t* row = bloomTemp.get() + y * W;
+        uint16_t*       out = bloomBuffer.get() + y * W;
         int sumR = 0, sumG = 0, sumB = 0;
         // Prime the window with [0..BLOOM_RADIUS-1] (left edge has fewer
         // samples; the loop body will add the new right-edge sample on the
@@ -380,7 +404,7 @@ void PostFX::applyBloom(uint16_t* framebuffer) {
     // 4. Add bloom contribution to the framebuffer with per-channel
     // saturation — keeps the same look as the original.
     for (int i = 0; i < W * H; i++) {
-        const uint16_t orig  = framebuffer[i];
+        const uint16_t orig  = framebufferDecode(framebuffer[i]);
         const uint16_t bloom = bloomTemp[i];
         int r = ((orig >> 11) & 0x1F) + ((bloom >> 11) & 0x1F);
         int g = ((orig >> 5)  & 0x3F) + ((bloom >> 5)  & 0x3F);
@@ -388,20 +412,20 @@ void PostFX::applyBloom(uint16_t* framebuffer) {
         if (r > 0x1F) r = 0x1F;
         if (g > 0x3F) g = 0x3F;
         if (b > 0x1F) b = 0x1F;
-        framebuffer[i] = (uint16_t)((r << 11) | (g << 5) | b);
+        framebuffer[i] = framebufferEncode(uint16_t((r << 11) | (g << 5) | b));
     }
     #endif
 }
 
 void PostFX::applyCRT(uint16_t* framebuffer) {
-    #if POSTFX_CRT
+    #if POSTFX_CRT || JET_RUNTIME_POSTFX
     applyCRT(framebuffer, CRT_SCANLINE_INTENSITY, FIELD_BUFFERS != 0, false);
     #endif
 }
 
 void PostFX::applyCRT(uint16_t* framebuffer, uint8_t intensity,
                       bool interlaced, bool oddRows) {
-    #if POSTFX_CRT
+    #if POSTFX_CRT || JET_RUNTIME_POSTFX
     if (!framebuffer || intensity == 0) return;
     const int width = HALF_WIDTH_BUFFERS ? screenWidth / 2 : screenWidth;
     const bool alternating = FIELD_BUFFERS || interlaced;
@@ -420,72 +444,53 @@ void PostFX::applyCRT(uint16_t* framebuffer, uint8_t intensity,
     #endif
 }
 
-void PostFX::applyMotionBlur(uint16_t* framebuffer) {
-    #if POSTFX_MOTION_BLUR
-    for (int i = 0; i < screenWidth * screenHeight; i++) {
-        uint16_t current = framebuffer[i];
-        uint16_t prev = previousFrame[i];
-
-        // Blend current frame with previous frame
-        int r = (((current >> 11) & 0x1F) * (100 - MOTION_BLUR_STRENGTH) +
-                ((prev >> 11) & 0x1F) * MOTION_BLUR_STRENGTH) / 100;
-        int g = (((current >> 5) & 0x3F) * (100 - MOTION_BLUR_STRENGTH) +
-                ((prev >> 5) & 0x3F) * MOTION_BLUR_STRENGTH) / 100;
-        int b = ((current & 0x1F) * (100 - MOTION_BLUR_STRENGTH) +
-                (prev & 0x1F) * MOTION_BLUR_STRENGTH) / 100;
-
-        framebuffer[i] = (r << 11) | (g << 5) | b;
+void PostFX::applyMotionBlur(uint16_t* framebuffer,unsigned strength) {
+#if POSTFX_MOTION_BLUR || JET_RUNTIME_POSTFX
+    if(!framebuffer||!strength)return;
+    strength=std::min(strength,100U);prepare(MOTION);
+    size_t count=size_t(screenWidth)*screenHeight;
+    if(!motionReady) {std::memcpy(previousFrame.get(),framebuffer,count*2);motionReady=true;return;}
+    for(size_t i=0;i<count;++i) {
+        uint16_t current=framebufferDecode(framebuffer[i]),previous=framebufferDecode(previousFrame[i]);
+        unsigned r=(((current>>11)&31)*(100-strength)+((previous>>11)&31)*strength)/100;
+        unsigned g=(((current>>5)&63)*(100-strength)+((previous>>5)&63)*strength)/100;
+        unsigned b=((current&31)*(100-strength)+(previous&31)*strength)/100;
+        framebuffer[i]=framebufferEncode(uint16_t((r<<11)|(g<<5)|b));
     }
-
-    // Store current frame for next frame's blur
-    memcpy(previousFrame, framebuffer, screenWidth * screenHeight * sizeof(uint16_t));
-    #endif
+    std::memcpy(previousFrame.get(),framebuffer,count*2);
+#else
+    (void)framebuffer;(void)strength;
+#endif
 }
-
-void PostFX::applyChromatic(uint16_t* framebuffer) {
-    #if POSTFX_CHROMATIC
-    // We'll need a temporary buffer to avoid artifacts
-    uint16_t* temp = new uint16_t[screenWidth * screenHeight];
-    memcpy(temp, framebuffer, screenWidth * screenHeight * sizeof(uint16_t));
-
-    for (int y = 0; y < screenHeight; y++) {
-        for (int x = 0; x < screenWidth; x++) {
-            uint16_t pixel = temp[y * screenWidth + x];
-            int r = (pixel >> 11) & 0x1F;
-            int g = (pixel >> 5) & 0x3F;
-            int b = pixel & 0x1F;
-
-            // Offset red and blue channels
-            int rx = x + CHROMATIC_OFFSET;
-            int bx = x - CHROMATIC_OFFSET;
-
-            if (rx < screenWidth)
-                framebuffer[y * screenWidth + x] = ((r << 11) | (g << 5) | b);
-            if (bx >= 0)
-                framebuffer[y * screenWidth + x] |= b;
+void PostFX::applyChromatic(uint16_t* framebuffer,unsigned offset) {
+#if POSTFX_CHROMATIC || JET_RUNTIME_POSTFX
+    if(!framebuffer||!offset||screenWidth<2)return;
+    offset=std::min(offset,unsigned(screenWidth-1));prepare(CHROMATIC);
+    for(int y=0;y<screenHeight;++y) {
+        auto *row=framebuffer+size_t(y)*screenWidth;std::memcpy(chromaticRow.get(),row,size_t(screenWidth)*2);
+        for(int x=0;x<screenWidth;++x) {
+            unsigned red=framebufferDecode(chromaticRow[std::min(x+int(offset),screenWidth-1)])&0xf800;
+            unsigned green=framebufferDecode(chromaticRow[x])&0x07e0;
+            unsigned blue=framebufferDecode(chromaticRow[std::max(x-int(offset),0)])&0x001f;
+            row[x]=framebufferEncode(uint16_t(red|green|blue));
         }
     }
-
-    delete[] temp;
-    #endif
+#else
+    (void)framebuffer;(void)offset;
+#endif
 }
-
-void PostFX::applyPixelate(uint16_t* framebuffer) {
-    #if POSTFX_PIXELATE
-    for (int y = 0; y < screenHeight; y += PIXELATE_SIZE) {
-        for (int x = 0; x < screenWidth; x += PIXELATE_SIZE) {
-            // Sample the center pixel of the block
-            uint16_t pixel = framebuffer[y * screenWidth + x];
-
-            // Fill the block with the sampled color
-            for (int by = 0; by < PIXELATE_SIZE && (y + by) < screenHeight; by++) {
-                for (int bx = 0; bx < PIXELATE_SIZE && (x + bx) < screenWidth; bx++) {
-                    framebuffer[(y + by) * screenWidth + (x + bx)] = pixel;
-                }
-            }
-        }
+void PostFX::applyPixelate(uint16_t* framebuffer,unsigned size) {
+#if POSTFX_PIXELATE || JET_RUNTIME_POSTFX
+    if(!framebuffer||size<2)return;
+    size=std::min(size,unsigned(std::max(screenWidth,screenHeight)));
+    for(unsigned y=0;y<unsigned(screenHeight);y+=size)for(unsigned x=0;x<unsigned(screenWidth);x+=size) {
+        uint16_t pixel=framebuffer[size_t(y)*screenWidth+x];
+        for(unsigned by=0;by<size&&y+by<unsigned(screenHeight);++by)
+            std::fill_n(framebuffer+size_t(y+by)*screenWidth+x,std::min(size,unsigned(screenWidth)-x),pixel);
     }
-    #endif
+#else
+    (void)framebuffer;(void)size;
+#endif
 }
 
 } // namespace Renderer

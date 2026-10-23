@@ -130,6 +130,23 @@ static int extras_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *c
     q={};q.opcode=SOLAR_OS_JET_PICK_RESULT;assert(execute()==0&&r.count==1&&r.values[0]==0);
     assert(api->remove(scene,flare)==0&&api->remove(scene,mat)==0&&api->remove(scene,pool)==0);return 0;
 }
+static int postfx_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
+    solar_os_jet_command_t q={};solar_os_jet_reply_t r;
+    auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
+    q.opcode=SOLAR_OS_JET_POSTFX_INFO;assert(execute()==0&&r.values[16]==0&&r.values[JET_FX_pixelate]==1);
+    q={};q.opcode=SOLAR_OS_JET_POSTFX;q.fields=(1U<<JET_FX_COUNT)-1;
+    q.values[JET_FX_fxaa]=q.values[JET_FX_bloom]=1;q.values[JET_FX_crt]=48;
+    q.values[JET_FX_motion_blur]=50;q.values[JET_FX_chromatic]=2;q.values[JET_FX_pixelate]=4;q.values[JET_FX_cel_bits]=4;
+    int err=execute();if(err) {
+        q={};q.opcode=SOLAR_OS_JET_POSTFX_INFO;assert(execute()==0&&r.values[16]==0&&r.values[JET_FX_cel_bits]==0);return err;
+    }
+    long before=requests;
+    for(int frame=0;frame<3;++frame) {err=api->render(scene,color,bytes,nullptr,nullptr);if(err)return err;}
+    assert(requests==before); // Enabled effects reuse their prepared scratch.
+    q={};q.opcode=SOLAR_OS_JET_POSTFX_INFO;assert(execute()==0&&r.values[16]==64*48*6+64*10&&r.values[17]);
+    q.opcode=SOLAR_OS_JET_POSTFX_CLEAR;assert(execute()==0);
+    q.opcode=SOLAR_OS_JET_POSTFX_INFO;assert(execute()==0&&r.values[16]==0&&r.values[JET_FX_cel_bits]==0);return 0;
+}
 #include "jet_assets_test.inc"
 int main() {
     auto *api=solar_os_jet_engine_api_v1();assert(api->abi_version==1&&api->struct_size==sizeof(*api));
@@ -203,6 +220,16 @@ int main() {
         requests=0;fail_at=failure;void *s=nullptr;
         int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
         if(!err) {err=extras_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
+        assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
+        assert(solar_os_jet_engine_idle()&&live==baseline);
+        if(requests<=failure){complete=true;break;}
+    }
+    assert(complete);fail_at=-1;
+    complete=false;
+    for(long failure=0;failure<250;++failure) {
+        requests=0;fail_at=failure;void *s=nullptr;
+        int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
+        if(!err) {err=postfx_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
         assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
         assert(solar_os_jet_engine_idle()&&live==baseline);
         if(requests<=failure){complete=true;break;}

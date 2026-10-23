@@ -7,11 +7,12 @@ static void extras_hook(Scene &,void *user) {
         else pool->value.lastRenderedTriangles=0;
     }
     raster->pickQueryCount=queries;
+    process_postfx();
     for(auto &flare:engine->flares)if(flare&&flare->values[JET_FLARE_enabled])
         flare->value->update(engine->frame_dt,engine->width,engine->height);
 }
 static void extras_hook_state() {
-    bool used=false;for(auto &pool:active->particles)used|=bool(pool);for(auto &flare:active->flares)used|=bool(flare);
+    bool used=bool(active->effects);for(auto &pool:active->particles)used|=bool(pool);for(auto &flare:active->flares)used|=bool(flare);
     active->scene.setPostGeometryHook(used ? extras_hook : nullptr,used ? active : nullptr);
 }
 static void user_pick_queries() {
@@ -147,6 +148,6 @@ static int extras_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &
         }
         return 0;
     }
-    default:return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    default:return postfx_command(q,r);
     }
 }

@@ -81,6 +81,9 @@ struct Engine {
     std::unique_ptr<MeshResource> prototypes[SOLAR_OS_JET_MAX_PROTOTYPES];
     std::unique_ptr<ParticleResource> particles[SOLAR_OS_JET_MAX_PARTICLES];
     std::unique_ptr<FlareResource> flares[SOLAR_OS_JET_MAX_FLARES];
+    std::unique_ptr<PostFX> effects;
+    double effect_values[SOLAR_OS_JET_VALUES]={0};
+    uint16_t *frame_color=nullptr;
     float frame_dt=1.0f/30;
     bool (*frame_cancel)(void *)=nullptr;
     void *frame_cancel_user=nullptr;
@@ -95,6 +98,7 @@ struct Engine {
     Scene scene;
     Engine(uint16_t w, uint16_t h, uint16_t *color, uint16_t *depth)
         : width(w), height(h), scene(color, depth, w, h) {
+        effect_values[JET_FX_pixelate]=1;
         scene.setCamera(&camera); scene.setAmbientLight(&ambient);
         scene.setDirectionalLight(&light); scene.setBackcolor(0xffff);
         scene.setClearBuffer(true); camera.setPosition(0,0,-500);
@@ -204,12 +208,15 @@ static int instance_command(const solar_os_jet_command_t &,solar_os_jet_reply_t 
 static void refresh_instance_poses(Item &);
 static int remove_prototype(uint32_t);
 static int extras_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
+static int postfx_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
+static void process_postfx();
 #include "surface_api.inc"
 #include "scene_api.inc"
 #include "overlay_api.inc"
 #include "asset_api.inc"
 #include "instance_api.inc"
 #include "extras_api.inc"
+#include "postfx_api.inc"
 static int transform(void *s,uint32_t id,const solar_os_jet_pose_t *p) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if(!pose_valid(p)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
@@ -249,12 +256,14 @@ static int render(void *s,uint16_t *color,size_t bytes,solar_os_native_cancel_fn
         if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
         prepare_extras();
         active->frame_cancel=cancelled;active->frame_cancel_user=&state;
+        active->frame_color=color;
         active->scene.setFramebuffer(color);
         active->scene.setCancellation(cancelled,&state);
         try { active->scene.render(); }
-        catch (...) { active->scene.setCancellation(nullptr,nullptr);active->frame_cancel=nullptr;active->frame_cancel_user=nullptr;throw; }
+        catch (...) { active->scene.setCancellation(nullptr,nullptr);active->frame_cancel=nullptr;active->frame_cancel_user=nullptr;active->frame_color=nullptr;throw; }
         active->scene.setCancellation(nullptr,nullptr);
         active->frame_cancel=nullptr;active->frame_cancel_user=nullptr;
+        active->frame_color=nullptr;
         if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
         snapshot_picks();return 0;
     });

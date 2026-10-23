@@ -81,11 +81,11 @@ class Rasterizer
         bool interlacedMode = false;    ///< When true, only every other row is drawn each frame.
         bool checkerboardMode = false;  ///< When true, alternates between two complementary checkerboard pixel patterns each frame. Requires double-buffering in the frontend for the reconstruction pass.
         bool wireframeMode = false;     ///< When true, triangles are drawn as outlines (in their material colour) instead of being filled. Skips lighting, texturing and the z-buffer; intended as a debug/visualisation aid. Scene::clearBuffers forces a black background while this is on.
-        #if POSTFX_CELLSHADING
+        #if POSTFX_CELLSHADING || JET_RUNTIME_POSTFX
         /// Quantise scalar lighting in the existing raster pass, with no image
         /// buffer. Low bits discarded: 0 = smooth, 6 = steps of 64 (four diffuse
         /// bands), 8 = steps of 256. Ambient and additive gloss stay continuous.
-        bool celShadingEnabled = true;
+        bool celShadingEnabled = POSTFX_CELLSHADING != 0;
         uint8_t celShadingBits = CELLSHADING_CELL_BITS;
         #endif
 
