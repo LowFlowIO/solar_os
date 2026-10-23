@@ -15,7 +15,10 @@ extern "C" {
 #include "solar_os_frame_presenter.h"
 }
 
-struct solar_os_gfx { unsigned width = 64, height = 48; bool supported = true; };
+struct solar_os_gfx {
+    unsigned width = 64, height = 48;
+    uint32_t formats = SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT;
+};
 static solar_os_gfx_t gfx;
 static std::atomic<int> allocations{0}, attempts{0}, fail_at{-1};
 static std::atomic<unsigned> presented{0};
@@ -74,9 +77,13 @@ void solar_os_context_finish(solar_os_context_t *ctx, int code, const char *) {
 size_t solar_os_gfx_width(const solar_os_gfx_t *surface) { return surface->width; }
 size_t solar_os_gfx_height(const solar_os_gfx_t *surface) { return surface->height; }
 bool solar_os_gfx_supports_frame_format(const solar_os_gfx_t *surface, solar_os_display_format_t format) {
-    return surface->supported && format == SOLAR_OS_DISPLAY_FORMAT_RGB565;
+    return (surface->formats & SOLAR_OS_DISPLAY_FORMAT_BIT(format)) != 0;
 }
-esp_err_t solar_os_gfx_present_frame(solar_os_gfx_t *, const solar_os_display_raster_t *frame) {
+}
+
+// Capture the RGB producer side of the mocked presenter. Actual dithering,
+// packed transport and target metadata are tested with the real presenter.
+static esp_err_t capture_source_frame(const solar_os_display_raster_t *frame) {
     assert(frame->format == SOLAR_OS_DISPLAY_FORMAT_RGB565);
     assert(frame->source_width == gfx.width && frame->source_height == gfx.height);
     assert(frame->source_stride == gfx.width * 2);
@@ -88,9 +95,14 @@ esp_err_t solar_os_gfx_present_frame(solar_os_gfx_t *, const solar_os_display_ra
     return ESP_OK;
 }
 
+extern "C" {
 esp_err_t solar_os_frame_presenter_init(solar_os_frame_presenter_t **out,
     const solar_os_frame_presenter_config_t *config) {
     assert(!*out && config->format == SOLAR_OS_DISPLAY_FORMAT_RGB565);
+    assert(config->allow_mono_fallback && config->literal_mono_palette);
+    const bool direct = gfx.formats & SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT;
+    assert(config->request_high_refresh == !direct);
+    assert(config->preferred_fps == (direct ? 30 : 0));
     void *storage = solar_os_memory_alloc(sizeof(solar_os_frame_presenter_t),
         SOLAR_OS_MEMORY_EXTERNAL_PREFERRED, "frame.presenter");
     if (!storage) return ESP_ERR_NO_MEM;
@@ -117,7 +129,7 @@ static void mock_present(solar_os_frame_presenter_t *p, const uint8_t *data) {
     frame.source_height = frame.height = p->config.height;
     frame.source_stride = p->config.stride; frame.format = p->config.format;
     const auto started = esp_timer_get_time();
-    p->stats.last_error = solar_os_gfx_present_frame(p->config.gfx, &frame);
+    p->stats.last_error = capture_source_frame(&frame);
     if (p->stats.last_error == ESP_OK) {
         ++p->stats.presented_frames;
         p->stats.present_us += esp_timer_get_time() - started;
@@ -201,7 +213,7 @@ static void wait_exit(solar_os_context_t &ctx) {
     wait_until([&] { tick(ctx); return ctx.exit_requested; });
 }
 
-int main(int argc, char **argv) {
+static void test_lifecycle() {
     // Every managed allocation through construction and the first rendered
     // frame fails once. No partial scene survives any failed attempt.
     bool reached = false;
@@ -240,9 +252,10 @@ int main(int argc, char **argv) {
         assert(solar_os_jet_app.start(&ctx) == ESP_ERR_INVALID_ARG);
         release(ctx, false);
     }
-    auto ctx = prepare(); gfx.supported = false;
+    auto ctx = prepare(); const auto formats = gfx.formats;
+    gfx.formats = SOLAR_OS_DISPLAY_FORMAT_INDEX8_BIT;
     assert(solar_os_jet_app.start(&ctx) == ESP_ERR_NOT_SUPPORTED);
-    release(ctx, false); gfx.supported = true;
+    release(ctx, false); gfx.formats = formats;
     ctx = prepare(); assert(solar_os_jet_app.start(&ctx) == ESP_OK);
     present_error = true; wait_exit(ctx); assert(ctx.exit_code == 1);
     release(ctx, true);
@@ -258,10 +271,18 @@ int main(int argc, char **argv) {
     solar_os_jet_app.stop(&ctx);
     assert(!solar_os_jet_app.state_release_ready() && allocations > 0);
     join_ok = true; release(ctx, true);
+}
 
+int main(int argc, char **argv) {
+    for (auto formats : {SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT,
+                        SOLAR_OS_DISPLAY_FORMAT_MONO1_BIT}) {
+        gfx.formats = formats;
+        test_lifecycle();
+    }
+    gfx.formats = SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT | SOLAR_OS_DISPLAY_FORMAT_MONO1_BIT;
     // Render the actual application scene at nova's output dimensions.
     gfx.width = 480; gfx.height = 320;
-    ctx = prepare(); assert(solar_os_jet_app.start(&ctx) == ESP_OK);
+    auto ctx = prepare(); assert(solar_os_jet_app.start(&ctx) == ESP_OK);
     wait_until([] { return presented >= 20; });
     solar_os_jet_app.suspend(&ctx);
     assert(presented >= 20 && !ctx.exit_requested);
@@ -280,5 +301,12 @@ int main(int argc, char **argv) {
         }
         std::fclose(file);
     }
+    release(ctx, true);
+    // A reflective display retains the same renderer and depth at full size.
+    gfx.width = 400; gfx.height = 300; gfx.formats = SOLAR_OS_DISPLAY_FORMAT_MONO1_BIT;
+    ctx = prepare("frames=20");
+    assert(solar_os_jet_app.start(&ctx) == ESP_OK);
+    wait_exit(ctx); assert(ctx.exit_code == 0 && presented == 20);
+    assert(image.size() == 400 * 300 * 2);
     release(ctx, true);
 }

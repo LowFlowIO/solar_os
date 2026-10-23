@@ -245,23 +245,41 @@ int main(void)
     assert(!p->task);
     assert(solar_os_frame_presenter_deinit(p) == ESP_OK);
 
-    /* RGB565 needs two bytes per pixel, no palette, and a direct color target.
-     * It must never enter the indexed-to-monochrome conversion path. */
+    /* RGB565 needs two bytes per pixel and no palette. Mono conversion is
+     * opt-in; a target supporting both formats always takes the direct path. */
     display_width = 64; display_height = 48;
     display_formats = SOLAR_OS_DISPLAY_FORMAT_MONO1_BIT;
     config = (solar_os_frame_presenter_config_t){
         .gfx = (solar_os_gfx_t *)&captured, .format = SOLAR_OS_DISPLAY_FORMAT_RGB565,
         .width = 64, .height = 48, .stride = 128,
-        .allow_mono_fallback = true,
+        .fit = SOLAR_OS_FRAME_FIT_HEIGHT,
     };
     p = NULL;
     assert(solar_os_frame_presenter_init(&p, &config) == ESP_ERR_NOT_SUPPORTED && !p);
-    display_formats = SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT;
     rgb565_worker = true;
+    config.allow_mono_fallback = true;
+    assert(solar_os_frame_presenter_init(&p, &config) == ESP_OK && p->mono_fallback);
+    assert(solar_os_frame_presenter_acquire(p, &writing, &bytes) == ESP_OK);
+    memset(writing, 0xff, bytes);
+    assert(solar_os_frame_presenter_exchange(p, &writing) == ESP_OK);
+    uint8_t *swap = p->presenting; p->presenting = p->queued; p->queued = swap;
+    assert(frame_present(p) == ESP_OK && captured.format == SOLAR_OS_DISPLAY_FORMAT_MONO1);
+    assert(captured.source_stride == 8 && captured.data_size == 8 * 48);
+    for (unsigned i = 0; i < captured.data_size; ++i) assert(captured.data[i] == 0);
+    solar_os_frame_presenter_suspend(p);
+    display_width = 37; display_height = 35;
+    assert(solar_os_frame_presenter_resume(p) == ESP_OK);
+    assert(p->output_width == 37 && p->output_height == 28 && p->output_x % 8 == 0);
+    assert(frame_present(p) == ESP_OK && captured.source_stride == 5);
+    assert(solar_os_frame_presenter_deinit(p) == ESP_OK);
+    display_width = 64; display_height = 48;
+    display_formats = SOLAR_OS_DISPLAY_FORMAT_RGB565_BIT | SOLAR_OS_DISPLAY_FORMAT_MONO1_BIT;
+    p = NULL;
     config.stride = 127;
     assert(solar_os_frame_presenter_init(&p, &config) == ESP_ERR_INVALID_ARG && !p);
     config.stride = 128;
     assert(solar_os_frame_presenter_init(&p, &config) == ESP_OK);
+    assert(!p->mono_fallback && !p->mono);
     assert(solar_os_frame_presenter_acquire(p, &writing, &bytes) == ESP_OK);
     assert(bytes == 64 * 48 * 2);
     writing[0] = 0xf8; writing[1] = 0;

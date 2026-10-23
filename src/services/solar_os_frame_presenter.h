@@ -25,6 +25,8 @@ typedef struct {
     size_t palette_size;
     uint16_t preferred_fps;
     solar_os_frame_fit_t fit;
+    /* Opt into ordered dithering of indexed or wire-order RGB565 input when
+     * the target accepts MONO1 instead of the source format. */
     bool allow_mono_fallback;
     bool request_high_refresh;
     bool reverse_direct_palette;

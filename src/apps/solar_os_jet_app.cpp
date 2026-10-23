@@ -173,7 +173,9 @@ static esp_err_t start_worker() {
 static esp_err_t start(solar_os_context_t *ctx) {
     new (jet_state) JetState{};
     state.gfx = solar_os_context_gfx(ctx);
-    if (!state.gfx || !solar_os_gfx_supports_frame_format(state.gfx, SOLAR_OS_DISPLAY_FORMAT_RGB565))
+    if (!state.gfx) return ESP_ERR_NOT_SUPPORTED;
+    const bool direct_color = solar_os_gfx_supports_frame_format(state.gfx, SOLAR_OS_DISPLAY_FORMAT_RGB565);
+    if (!direct_color && !solar_os_gfx_supports_frame_format(state.gfx, SOLAR_OS_DISPLAY_FORMAT_MONO1))
         return ESP_ERR_NOT_SUPPORTED;
     if (solar_os_context_argc(ctx) > 2) return ESP_ERR_INVALID_ARG;
     if (solar_os_context_argc(ctx) == 2) {
@@ -187,7 +189,7 @@ static esp_err_t start(solar_os_context_t *ctx) {
     }
     size_t width = solar_os_gfx_width(state.gfx), height = solar_os_gfx_height(state.gfx);
     // Full-width RGB565 + matching per-pixel depth. Avoid upstream packed-row
-    // alignment assumptions; no resizing, interlace or conversion buffer.
+    // alignment assumptions. The presenter dithers only for MONO1 targets.
     if (!width || !height || width % 8 || width > 1024 || height > 1024)
         return ESP_ERR_INVALID_SIZE;
     state.width = width; state.height = height;
@@ -197,7 +199,10 @@ static esp_err_t start(solar_os_context_t *ctx) {
     config.format = SOLAR_OS_DISPLAY_FORMAT_RGB565;
     config.width = width; config.height = height; config.stride = width * 2;
     config.fit = SOLAR_OS_FRAME_FIT_HEIGHT;
-    config.preferred_fps = 30;
+    config.preferred_fps = direct_color ? 30 : 0;
+    config.allow_mono_fallback = true;
+    config.literal_mono_palette = true;
+    config.request_high_refresh = !direct_color;
     config.clear_background_on_resume = true;
     config.background_rgb565 = 0xffff;
     esp_err_t error = solar_os_frame_presenter_init(&state.presenter, &config);

@@ -200,9 +200,50 @@ static bool frame_convert_indexed_to_mono(solar_os_frame_presenter_t *presenter)
     return true;
 }
 
+static bool frame_convert_rgb565_to_mono(solar_os_frame_presenter_t *presenter)
+{
+    if (presenter->config.format != SOLAR_OS_DISPLAY_FORMAT_RGB565) return false;
+
+    /* Component tables keep divisions out of the pixel loop. Match the indexed
+     * palette's luma exactly, read RGB565 in wire order without alignment
+     * assumptions, and assemble each output byte before writing PSRAM. */
+    uint16_t red[32], green[64], blue[32];
+    for (unsigned i = 0; i < 32; ++i) {
+        red[i] = (i * 255U / 31U) * 77U;
+        blue[i] = (i * 255U / 31U) * 29U;
+    }
+    for (unsigned i = 0; i < 64; ++i) green[i] = (i * 255U / 63U) * 150U;
+    const unsigned width = presenter->output_width, height = presenter->output_height;
+    const unsigned x_step = presenter->config.width / width, x_fraction = presenter->config.width % width;
+    const unsigned y_step = presenter->config.height / height, y_fraction = presenter->config.height % height;
+    unsigned source_y = 0, y_accumulator = 0;
+    for (unsigned y = 0; y < height; ++y) {
+        const uint8_t *row = presenter->presenting + (size_t)source_y * presenter->config.stride;
+        uint8_t *out = presenter->mono + (size_t)y * presenter->output_stride;
+        const uint8_t *thresholds = bayer4[y & 3U];
+        unsigned source_x = 0, x_accumulator = 0;
+        for (unsigned x = 0; x < width; x += 8U) {
+            const unsigned count = width - x < 8U ? width - x : 8U;
+            unsigned bits = 0;
+            for (unsigned k = 0; k < count; ++k) {
+                const unsigned color = ((unsigned)row[source_x * 2U] << 8U) | row[source_x * 2U + 1U];
+                const unsigned luma = (red[color >> 11U] + green[(color >> 5U) & 63U] + blue[color & 31U]) >> 8U;
+                if (thresholds[k & 3U] * 16U < 255U - luma) bits |= 1U << k;
+                source_x += x_step; x_accumulator += x_fraction;
+                if (x_accumulator >= width) { x_accumulator -= width; ++source_x; }
+            }
+            out[x >> 3U] = bits;
+        }
+        source_y += y_step; y_accumulator += y_fraction;
+        if (y_accumulator >= height) { y_accumulator -= height; ++source_y; }
+    }
+    return true;
+}
+
 static void frame_convert_to_mono(solar_os_frame_presenter_t *presenter)
 {
     memset(presenter->mono, 0, presenter->mono_size);
+    if (frame_convert_rgb565_to_mono(presenter)) return;
     if (frame_convert_indexed_to_mono(presenter)) return;
     uint16_t source_y = 0U;
     uint32_t y_accumulator = 0U;
@@ -235,7 +276,8 @@ static void frame_convert_to_mono(solar_os_frame_presenter_t *presenter)
 
 static void frame_prepare_mono_palette(solar_os_frame_presenter_t *presenter)
 {
-    if (!presenter->mono_fallback) {
+    if (!presenter->mono_fallback ||
+        presenter->config.format == SOLAR_OS_DISPLAY_FORMAT_RGB565) {
         return;
     }
     const size_t palette_size =
@@ -490,7 +532,6 @@ esp_err_t solar_os_frame_presenter_init(
     if (presenter->mono_fallback &&
         (!config->allow_mono_fallback ||
          config->format == SOLAR_OS_DISPLAY_FORMAT_MONO1 ||
-         config->format == SOLAR_OS_DISPLAY_FORMAT_RGB565 ||
          (presenter->target.frame_formats &
           SOLAR_OS_DISPLAY_FORMAT_MONO1_BIT) == 0U)) {
         solar_os_memory_free(presenter);
