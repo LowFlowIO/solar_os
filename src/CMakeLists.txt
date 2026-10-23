@@ -541,6 +541,9 @@ if(SOLAR_OS_PACKAGE_SERVICE_MPEG)
         services/solar_os_mpeg_raster.c PROPERTIES COMPILE_OPTIONS "-O2")
 endif()
 
+# Frame rotation and DMA row staging are hot paths on the SPI color displays.
+set_source_files_properties(drivers/tft_ili9341.c PROPERTIES COMPILE_OPTIONS "-O2")
+
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     ${SOLAR_OS_BOARD_DEFINE}=1
     ${SOLAR_OS_BOARD_CAPABILITY_DEFINES}

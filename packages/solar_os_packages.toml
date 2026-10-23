@@ -56,6 +56,11 @@ label = "DLP display receiver"
 category = "Hardware interfaces"
 members = ["app_dlp"]
 
+[groups.jet]
+label = "Jet 3D renderer"
+category = "Media"
+members = ["service_jet"]
+
 [groups.vision]
 label = "Computer vision"
 category = "Media"
@@ -515,12 +520,12 @@ members = ["app_invaders"]
 [groups.python]
 label = "Python"
 category = "Scripting"
-members = ["app_python", "service_emotion"]
+members = ["app_python", "service_emotion", "service_jet"]
 
 [groups.lua]
 label = "Lua"
 category = "Scripting"
-members = ["app_lua", "service_emotion"]
+members = ["app_lua", "service_emotion", "service_jet"]
 
 [groups.playground]
 label = "Playground package manager"
@@ -2832,6 +2837,14 @@ label = "app.clock"
 depends = ["service_schedule"]
 sources = ["apps/solar_os_clock.c"]
 capabilities = ["gfx"]
+
+[packages.service_jet]
+label = "service.jet"
+depends = ["service_native_modules"]
+sources = ["services/solar_os_jet.c"]
+requires = ["esp_timer"]
+capabilities = ["gfx", "psram"]
+targets = ["esp32s3"]
 
 [packages.app_com]
 label = "app.com"
