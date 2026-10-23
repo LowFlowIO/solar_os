@@ -65,6 +65,6 @@ static int overlay_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t 
         const auto &p=active->picks[unsigned(index)];
         r.handle=p.object;r.values[0]=p.hit;r.values[1]=p.triangle;r.values[2]=p.depth;r.values[3]=p.x;r.values[4]=p.y;return 0;
     }
-    default:return SOLAR_OS_NATIVE_ERROR_NOT_SUPPORTED;
+    default:return asset_command(q,r);
     }
 }

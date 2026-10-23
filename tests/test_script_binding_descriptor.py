@@ -49,7 +49,7 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
         self.assertEqual(methods[0],methods[1])
         self.assertTrue({"mesh_data", "texture", "material", "capabilities", "primitive",
             "object_set", "mesh_update", "camera_action", "point_light", "gradient", "lod",
-            "sprite", "sprite_info", "sprite_set", "pick", "picks"} <= methods[0])
+            "sprite", "sprite_info", "sprite_set", "pick", "picks", "load_obj", "load_mtl", "load_bmp"} <= methods[0])
 
     def test_both_interpreters_expand_the_shared_descriptor_once(self):
         include = '#include "solar_os_script_api.inc"'

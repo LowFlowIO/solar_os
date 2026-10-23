@@ -297,6 +297,63 @@ if selection["hit"]:
 Complete examples are `examples/python/jet_picking.py` and
 `examples/lua/jet_picking.lua`.
 
+## Asset loading
+
+Jet library 1.4 or later reports `assets=True` in `capabilities()` and adds
+three loaders. They accept file contents, copy retained data into owned storage,
+and leave the scene unchanged if validation or allocation fails. Read files
+with the language's normal file APIs; the provider does not open paths or fetch
+dependencies.
+
+| Method | Input and result |
+| --- | --- |
+| `load_obj(data, scale=1, material=0, color=0xffffff, name="")` | OBJ text or bytes, up to 1 MiB; return an object handle. Python accepts keyword options; Lua takes an options table after the data string. |
+| `load_mtl(data)` | MTL text or bytes, up to 256 KiB; return material handles in declaration order. The complete material set is published together. |
+| `load_bmp(data, ...)` | BMP bytes, up to 8 MiB; return a texture handle. Accepts the texture sampling and name options. Format is always `"rgb565"`; `pixels` and `palette` options are not accepted. |
+
+OBJ loading supports `v`, `vt`, `vn`, `usemtl`, positive and negative face
+indices, and `v`, `v/vt`, `v//vn`, or `v/vt/vn` face elements. Convex
+polygons of up to 16 vertices are triangulated as a fan. Missing normals are
+generated per triangle; supplied normals are retained. An optional fourth
+position component is the homogeneous divisor. OBJ units are multiplied by
+`128 * scale`, matching Jet's loader convention; scale is 1/1024–32 and final
+coordinates must fit -4096–4096. A file may define up to 1024 positions, 8192
+combined UV/normal records, and 2048 generated triangles. Lines may contain at
+most 4096 bytes.
+
+`usemtl` names must match materials already in the scene. Load MTL data first;
+`mtllib`, object/group names and smoothing declarations do not load files or
+split the object. Jet's `mt HEX565 [alpha]` extension creates an object-owned
+face material; up to 32 are allowed. `md` or `mr` restores the default material.
+
+MTL loading supports `newmtl`, `Kd`, `Ks`, `Ns`, `d`, `Tr`, `illum`,
+and `map_Kd`. Diffuse color and opacity values are 0–1. Specular color is
+averaged into Jet's scalar specular coefficient; gloss is clamped to 255.
+`illum 0` selects unlit shading, 1 selects Gouraud, and 2–10 select Phong.
+Other MTL properties are ignored. Texture-map names, including spaces, must
+exactly match textures loaded or created beforehand; map options are not
+supported. Material names must be unique and fit the normal 63-byte limit.
+
+BMP loading accepts Windows DIB headers of at least 40 bytes, dimensions
+1–1024, top-down or bottom-up rows, and uncompressed 1-, 4-, 8-, 16-, 24-, or
+32-bit pixels. Paletted files are expanded to RGB565. Uncompressed 16-bit files
+use RGB555; 16-bit bit-field files support RGB555 and RGB565 masks. Standard
+BGR masks are also accepted for 32-bit bit-field files. RLE and other
+compression are rejected. The 32-bit alpha byte is ignored; use the texture's
+`alpha_key` option when color-key transparency is needed.
+
+```python
+with open("/sdcard/assets/checker.bmp", "rb") as source:
+    texture = scene.load_bmp(source.read(), name="checker.bmp")
+with open("/sdcard/assets/model.mtl") as source:
+    materials = scene.load_mtl(source.read())
+with open("/sdcard/assets/model.obj") as source:
+    model = scene.load_obj(source.read(), scale=0.7)
+```
+
+Self-contained examples that build a tiny BMP and import a textured OBJ cube
+are `examples/python/jet_assets.py` and `examples/lua/jet_assets.lua`.
+
 ## Presentation and memory
 
 Rendering uses the display's full dimensions. Width must be a multiple of eight;

@@ -108,6 +108,16 @@ int main(int argc,char **argv) {
             "s:remove(hud);s:remove(m);s:remove(t);s:pick(nil);s:render();assert(#s:picks()==0);s:close()");
         jet_test_assert_clean();
         solua.session_gfx=jet_test_gfx();solua.events=(void *)1;
+        run(L,"s=jet.open('display0');assert(s:capabilities().assets); "
+            "local bmp=string.pack('<c2I4I2I2I4I4I4I4I2I2I4I4I4I4I4I4','BM',70,0,0,54,40,2,2,1,24,0,16,0,0,0,0).. "
+            "string.char(255,0,0,255,255,255,0,0,0,0,255,0,255,0,0,0); "
+            "t=s:load_bmp(bmp,{name='checker.bmp'});assert(s:texture_info(t).width==2); "
+            "local materials=s:load_mtl('newmtl textured\\nKd 1 1 1\\nmap_Kd checker.bmp\\n');assert(#materials==1); "
+            "local obj='v -1 -1 0\\nv 0 1 0\\nv 1 -1 0\\nvt 0 0\\nvt .5 1\\nvt 1 0\\nvn 0 0 -1\\nusemtl textured\\nf -3/1/1 -2/2/1 -1/3/1\\n'; "
+            "c=s:load_obj(obj,{scale=.5,name='imported'});assert(s:object_info(c).triangles==1);s:render(); "
+            "assert(not pcall(s.load_obj,s,'v nan 0 0\\n'));assert(not pcall(s.load_bmp,s,bmp:sub(1,69))); "
+            "s:remove(c);s:remove(materials[1]);s:remove(t);s:close()");
+        jet_test_assert_clean();
         run(L,"s=jet.open('display0');assert(s:capabilities().geometry and s:capabilities().scene); "
             "for _,kind in ipairs{'cube','grid','plane','pyramid','sphere','capsule','cylinder','billboard','quad','debug_cube'} do "
             "local p=s:primitive{kind=kind};local info=s:object_info(p);assert(info.vertices>0 and info.triangles>0); "

@@ -6,6 +6,7 @@
 #include <new>
 #include <cstring>
 #include <cmath>
+#include <string_view>
 
 using namespace Renderer;
 namespace {
@@ -42,7 +43,7 @@ struct Item {
     std::unique_ptr<Object> object;
     uint32_t id;
     char name[SOLAR_OS_JET_NAME]={0};
-    std::unique_ptr<Material> face_materials[6];
+    std::vector<std::unique_ptr<Material>> face_materials;
     explicit Item(uint32_t color) : material(uint16_t(((color >> 8) & 0xf800) |
         ((color >> 5) & 0x7e0) | ((color >> 3) & 31))), id(0) {
         material.shadingMode = ShadingMode::GOURAUD;
@@ -173,9 +174,11 @@ static Item *find(uint32_t id) {
 }
 static int scene_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 static int overlay_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
+static int asset_command(const solar_os_jet_command_t &,solar_os_jet_reply_t &);
 #include "surface_api.inc"
 #include "scene_api.inc"
 #include "overlay_api.inc"
+#include "asset_api.inc"
 static int transform(void *s,uint32_t id,const solar_os_jet_pose_t *p) {
     if(s!=active || !s) return SOLAR_OS_NATIVE_ERROR_INVALID_STATE;
     if(!pose_valid(p)) return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;

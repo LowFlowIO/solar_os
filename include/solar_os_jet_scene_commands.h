@@ -44,6 +44,12 @@
  X(blend,ENUM,0,0,1,"replace|add") X(scale,INT,1,1,16,NULL) \
  X(flip_x,BOOL,0,0,1,NULL) X(flip_y,BOOL,0,0,1,NULL) \
  X(mirror_x,BOOL,0,0,1,NULL) X(mirror_y,BOOL,0,0,1,NULL) X(name,NAME,0,0,0,NULL)
+#define JET_OBJ_LOAD_FIELDS(X) \
+ X(scale,FLOAT,1,0.0009765625,32,NULL) X(material,INT,0,0,4294967295.0,NULL) \
+ X(color,INT,16777215,0,16777215,NULL) X(name,NAME,0,0,0,NULL)
+#define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_LOAD_##name,
+enum { JET_OBJ_LOAD_FIELDS(JET_FIELD_ENUM) JET_LOAD_COUNT };
+#undef JET_FIELD_ENUM
 #define JET_FIELD_ENUM(name,kind,initial,low,high,choices) JET_SPR_##name,
 enum { JET_SPRITE_FIELDS(JET_FIELD_ENUM) JET_SPR_COUNT };
 #undef JET_FIELD_ENUM
@@ -77,4 +83,5 @@ static const solar_os_jet_field_t jet_camera_action_fields[]={JET_CAMERA_ACTION_
 static const solar_os_jet_field_t jet_point_fields[]={JET_POINT_FIELDS(JET_FIELD_VALUE)};
 static const solar_os_jet_field_t jet_scene_fields[]={JET_SCENE_FIELDS(JET_FIELD_VALUE)};
 static const solar_os_jet_field_t jet_sprite_fields[]={JET_SPRITE_FIELDS(JET_FIELD_VALUE)};
+static const solar_os_jet_field_t jet_obj_load_fields[]={JET_OBJ_LOAD_FIELDS(JET_FIELD_VALUE)};
 #undef JET_FIELD_VALUE

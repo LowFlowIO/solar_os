@@ -36,6 +36,13 @@ static Material *material(uint32_t id,Material *fallback=nullptr) {
 static void surface_reply(const Resource &entry,solar_os_jet_reply_t &r) {
     r.handle=entry.id;std::memcpy(r.values,entry.values,sizeof(r.values));std::memcpy(r.name,entry.name,sizeof(r.name));
 }
+static void material_values(Material &updated,const double *v,Texture *texture) {
+    updated.color=rgb565(uint32_t(v[JET_MAT_color]));updated.diffuseMap=texture;
+    updated.shadingMode=ShadingMode(int(v[JET_MAT_shading]));updated.alpha=v[JET_MAT_alpha];
+    updated.diffuse=v[JET_MAT_diffuse];updated.specular=v[JET_MAT_specular];updated.specularExponent=v[JET_MAT_gloss];
+    updated.emissive=v[JET_MAT_emissive];updated.perspectiveCorrect=v[JET_MAT_perspective];
+    updated.waterYBias=v[JET_MAT_water_bias];updated.waterReflectionMaxY=v[JET_MAT_reflection_max_y];
+}
 static int material_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
     auto *old=q.opcode==SOLAR_OS_JET_MATERIAL ? nullptr : resource(active->materials,q.handle);
     if(q.opcode!=SOLAR_OS_JET_MATERIAL && !old) return SOLAR_OS_NATIVE_ERROR_NOT_FOUND;
@@ -48,12 +55,7 @@ static int material_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t
     auto fresh=old ? nullptr : std::make_unique<MaterialResource>();
     auto *entry=old ? old : fresh.get();
     Material updated=entry->value;
-    updated.color=rgb565(uint32_t(v[JET_MAT_color])); updated.diffuseMap=texture ? texture->value.get() : nullptr;
-    updated.shadingMode=ShadingMode(int(v[JET_MAT_shading]));updated.alpha=v[JET_MAT_alpha];
-    updated.diffuse=v[JET_MAT_diffuse];updated.specular=v[JET_MAT_specular];
-    updated.specularExponent=v[JET_MAT_gloss];updated.emissive=v[JET_MAT_emissive];
-    updated.perspectiveCorrect=v[JET_MAT_perspective];updated.waterYBias=v[JET_MAT_water_bias];
-    updated.waterReflectionMaxY=v[JET_MAT_reflection_max_y];
+    material_values(updated,v,texture ? texture->value.get() : nullptr);
     entry->value=updated;std::memcpy(entry->values,v,sizeof(v));
     if(q.fields&(1U<<JET_MAT_name)) std::memcpy(entry->name,q.name,sizeof(entry->name));
     if(old) {r.handle=old->id;return 0;}
@@ -188,7 +190,7 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
         const auto &q=*command;auto &r=*reply;r={};
         switch(q.opcode) {
         case SOLAR_OS_JET_INFO: {
-            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING;
+            r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS;
             int objects,triangles,vertices;active->scene.getStatistics(objects,triangles,vertices);
             r.values[0]=objects;r.values[1]=triangles;r.values[2]=vertices;
             r.values[3]=SOLAR_OS_JET_MAX_MATERIALS;r.values[4]=SOLAR_OS_JET_MAX_TEXTURES;

@@ -28,6 +28,7 @@ static int primitive(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r) {
         return SOLAR_OS_NATIVE_ERROR_INVALID_SIZE;
     if(v[JET_PRIM_kind]==9) {
         const uint16_t colors[]={0xf800,0x07e0,0x001f,0xffe0,0xf81f,0x07ff};
+        item->face_materials.resize(6);
         for(unsigned i=0;i<6;++i) {
             item->face_materials[i]=std::make_unique<Material>(colors[i]);
             item->face_materials[i]->name=nullptr;
@@ -100,9 +101,10 @@ static int object_action(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r
     case 6:o.invalidatePositions();return 0;
     case 7: {
         auto copy=std::make_unique<Item>(0xffffff);copy->material=item->material;copy->object=std::make_unique<Object>(o);
+        copy->face_materials.resize(item->face_materials.size());
         for(auto &face:copy->object->triangles) {
             if(face.material==&item->material) face.material=&copy->material;
-            for(unsigned i=0;i<6;++i) if(item->face_materials[i] && face.material==item->face_materials[i].get()) {
+            for(unsigned i=0;i<item->face_materials.size();++i) if(item->face_materials[i] && face.material==item->face_materials[i].get()) {
                 if(!copy->face_materials[i]) copy->face_materials[i]=std::make_unique<Material>(*item->face_materials[i]);
                 face.material=copy->face_materials[i].get();
             }

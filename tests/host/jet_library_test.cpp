@@ -4,6 +4,7 @@
 #include <cstdio>
 #include <new>
 #include <vector>
+#include <cstring>
 extern "C" const solar_os_jet_api_v1_t *solar_os_jet_engine_api_v1(void);
 extern "C" bool solar_os_jet_engine_idle(void);
 static long requests,fail_at=-1,live;
@@ -89,6 +90,7 @@ static int overlay_chain(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *
     assert(api->remove(scene,cube)==0);assert(execute()==0&&r.handle==cube); // Last completed frame, never a dangling pointer.
     assert(api->remove(scene,sprite)==0);return 0;
 }
+#include "jet_assets_test.inc"
 int main() {
     auto *api=solar_os_jet_engine_api_v1();assert(api->abi_version==1&&api->struct_size==sizeof(*api));
     std::vector<uint16_t> color(64*48),depth(64*48);size_t bytes=color.size()*2;
@@ -136,6 +138,16 @@ int main() {
         if(requests<=failure){complete=true;break;}
     }
     assert(complete);fail_at=-1;
+    complete=false;
+    for(long failure=0;failure<250;++failure) {
+        requests=0;fail_at=failure;void *s=nullptr;
+        int err=api->create(64,48,color.data(),depth.data(),bytes,&s);
+        if(!err) {err=asset_chain(api,s,color.data(),bytes);assert(api->destroy(s)==0);}
+        assert(err==0||err==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);
+        assert(solar_os_jet_engine_idle()&&live==baseline);
+        if(requests<=failure){complete=true;break;}
+    }
+    assert(complete);fail_at=-1;
     // Every constructor must release partially built geometry on allocation failure.
     for(unsigned kind=0;kind<10;++kind) {
         complete=false;
@@ -174,6 +186,7 @@ int main() {
     assert(api->remove(scene,cube)==0);
     assert(api->render(scene,color.data(),bytes,nullptr,nullptr)==0);
     for(auto pixel:color)assert(pixel==0);
+    asset_validation(api,scene,color.data(),bytes);
     assert(api->destroy(scene)==0&&api->destroy(scene)==SOLAR_OS_NATIVE_ERROR_INVALID_STATE);
     assert(solar_os_jet_engine_idle());puts("Jet provider ABI, allocation failures, geometry and cancellation passed");
 }
