@@ -73,6 +73,28 @@ static void compare_conversion(void)
 int main(void)
 {
     compare_conversion();
+    /* Direct RGB565 is already in wire byte order. Preserve its pointer,
+     * bytes and background color for every terminal palette/polarity setting. */
+    uint8_t rgb[] = {0xf8,0, 0x07,0xe0, 0,0x1f, 0xff,0xff};
+    for (unsigned polarity = 0; polarity < 2; polarity++)
+        for (unsigned literal = 0; literal < 2; literal++)
+            for (unsigned reverse = 0; reverse < 2; reverse++) {
+                inverted = polarity;
+                solar_os_frame_presenter_t p = {
+                    .config = {.gfx = (solar_os_gfx_t *)&captured,
+                        .format = SOLAR_OS_DISPLAY_FORMAT_RGB565, .width = 2,
+                        .height = 2, .stride = 4, .literal_direct_palette = literal,
+                        .reverse_direct_palette = reverse, .background_rgb565 = 0x1234},
+                    .presenting = rgb, .source_size = sizeof(rgb),
+                    .output_width = 4, .output_height = 4, .clear_background_pending = true,
+                };
+                assert(frame_present(&p) == ESP_OK);
+                assert(captured.data == rgb && captured.format == SOLAR_OS_DISPLAY_FORMAT_RGB565);
+                assert(captured.data_size == sizeof(rgb) && captured.source_stride == 4);
+                assert(!captured.palette_inverted && captured.palette_rgb565 == NULL);
+                assert(captured.background_rgb565 == 0x1234 && captured.clear_background);
+                assert(rgb[0] == 0xf8 && rgb[1] == 0);
+            }
     uint16_t palette[256] = {[0] = 0x00ffU, [3] = 0xf800U, [32] = 0, [33] = 0xffffU};
     uint8_t pixels[32], mono[4];
     for (unsigned format = SOLAR_OS_DISPLAY_FORMAT_INDEX8;

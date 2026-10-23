@@ -496,6 +496,9 @@ set(SOLAR_OS_FLAVOR_STAMP
 )
 
 set(SOLAR_OS_EXTRA_INCLUDE_DIRS)
+if(SOLAR_OS_PACKAGE_ENGINE_JET)
+    list(APPEND SOLAR_OS_EXTRA_INCLUDE_DIRS "vendor/jet")
+endif()
 if(SOLAR_OS_PACKAGE_SERVICE_DISPLAY_LINK)
     list(APPEND SOLAR_OS_EXTRA_INCLUDE_DIRS "../protocol/display_link/include")
 endif()
@@ -540,6 +543,9 @@ if(SOLAR_OS_PACKAGE_SERVICE_MPEG)
     set_source_files_properties(services/solar_os_mpeg.c
         services/solar_os_mpeg_raster.c PROPERTIES COMPILE_OPTIONS "-O2")
 endif()
+
+# Frame rotation and DMA row staging are hot paths on the SPI color displays.
+set_source_files_properties(drivers/tft_ili9341.c PROPERTIES COMPILE_OPTIONS "-O2")
 
 target_compile_definitions(${COMPONENT_LIB} PRIVATE
     ${SOLAR_OS_BOARD_DEFINE}=1

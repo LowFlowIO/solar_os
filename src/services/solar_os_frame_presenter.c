@@ -12,6 +12,7 @@
 #include "solar_os_task.h"
 
 #define FRAME_PRESENTER_STACK 3072U
+#define FRAME_PRESENTER_RGB565_STACK 6144U
 #define FRAME_PRESENTER_PRIORITY (tskIDLE_PRIORITY + 1U)
 #define FRAME_PRESENTER_HPM_HZ_TENTHS 255U
 
@@ -68,13 +69,17 @@ static size_t frame_minimum_stride(solar_os_display_format_t format,
     if (format == SOLAR_OS_DISPLAY_FORMAT_INDEX8) {
         return width;
     }
+    if (format == SOLAR_OS_DISPLAY_FORMAT_RGB565) {
+        return (size_t)width * 2U;
+    }
     return 0U;
 }
 
 static bool frame_palette_valid(
     const solar_os_frame_presenter_config_t *config)
 {
-    if (config->format == SOLAR_OS_DISPLAY_FORMAT_MONO1) {
+    if (config->format == SOLAR_OS_DISPLAY_FORMAT_MONO1 ||
+        config->format == SOLAR_OS_DISPLAY_FORMAT_RGB565) {
         return true;
     }
     const size_t required = config->format == SOLAR_OS_DISPLAY_FORMAT_INDEX2 ?
@@ -262,11 +267,13 @@ static esp_err_t frame_present(solar_os_frame_presenter_t *presenter)
         .height = presenter->output_height,
         .format = presenter->config.format,
         .palette_inverted =
+            presenter->config.format != SOLAR_OS_DISPLAY_FORMAT_RGB565 &&
             !presenter->config.literal_direct_palette &&
             (solar_os_gfx_palette_inverted(presenter->config.gfx) !=
              presenter->config.reverse_direct_palette),
         .clear_background = presenter->clear_background_pending,
         .background_index = presenter->config.background_index,
+        .background_rgb565 = presenter->config.background_rgb565,
     };
     if (presenter->mono_fallback) {
         frame_convert_to_mono(presenter);
@@ -455,6 +462,7 @@ esp_err_t solar_os_frame_presenter_init(
 {
     if (out == NULL || *out != NULL || config == NULL || config->gfx == NULL ||
         config->width == 0U || config->height == 0U ||
+        frame_minimum_stride(config->format, config->width) == 0U ||
         config->stride < frame_minimum_stride(config->format, config->width) ||
         !frame_palette_valid(config) ||
         solar_os_gfx_width(config->gfx) == 0U ||
@@ -482,6 +490,7 @@ esp_err_t solar_os_frame_presenter_init(
     if (presenter->mono_fallback &&
         (!config->allow_mono_fallback ||
          config->format == SOLAR_OS_DISPLAY_FORMAT_MONO1 ||
+         config->format == SOLAR_OS_DISPLAY_FORMAT_RGB565 ||
          (presenter->target.frame_formats &
           SOLAR_OS_DISPLAY_FORMAT_MONO1_BIT) == 0U)) {
         solar_os_memory_free(presenter);
@@ -571,8 +580,10 @@ esp_err_t solar_os_frame_presenter_resume(
             presenter->config.clear_background_on_resume;
         xSemaphoreGive(presenter->mutex);
     }
-    const uint32_t stack_bytes = presenter->target.presentation_stack_bytes > FRAME_PRESENTER_STACK ?
-        presenter->target.presentation_stack_bytes : FRAME_PRESENTER_STACK;
+    const uint32_t minimum_stack = presenter->config.format == SOLAR_OS_DISPLAY_FORMAT_RGB565 ?
+        FRAME_PRESENTER_RGB565_STACK : FRAME_PRESENTER_STACK;
+    const uint32_t stack_bytes = presenter->target.presentation_stack_bytes > minimum_stack ?
+        presenter->target.presentation_stack_bytes : minimum_stack;
     const BaseType_t created = solar_os_task_create_pinned_internal(
         frame_presenter_worker, "frame_present", stack_bytes,
         presenter, FRAME_PRESENTER_PRIORITY, &presenter->task,

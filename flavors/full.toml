@@ -18,6 +18,7 @@ zoo = true
 pipelines = true
 rtsp = true
 dlp = true
+jet = true
 input_keymap = true
 control_bindings = true
 signal_processing = true

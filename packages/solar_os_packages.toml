@@ -56,6 +56,11 @@ label = "DLP display receiver"
 category = "Hardware interfaces"
 members = ["app_dlp"]
 
+[groups.jet]
+label = "Jet 3D renderer"
+category = "Media"
+members = ["app_jet"]
+
 [groups.vision]
 label = "Computer vision"
 category = "Media"
@@ -2832,6 +2837,32 @@ label = "app.clock"
 depends = ["service_schedule"]
 sources = ["apps/solar_os_clock.c"]
 capabilities = ["gfx"]
+
+[packages.engine_jet]
+label = "engine.jet"
+sources = [
+  "vendor/jet/BlendSpans.cpp",
+  "vendor/jet/Camera.cpp",
+  "vendor/jet/Light.cpp",
+  "vendor/jet/Material.cpp",
+  "vendor/jet/Object.cpp",
+  "vendor/jet/PostFX.cpp",
+  "vendor/jet/Primitives.cpp",
+  "vendor/jet/Renderer.cpp",
+  "vendor/jet/Scene.cpp",
+  "vendor/jet/Sprite2D.cpp",
+  "vendor/jet/Texture.cpp",
+  "vendor/jet/TiledSpan.cpp",
+  "vendor/jet/TrigLUT.cpp",
+]
+capabilities = ["gfx", "psram"]
+
+[packages.app_jet]
+label = "app.jet"
+depends = ["engine_jet"]
+sources = ["apps/solar_os_jet_app.cpp"]
+requires = ["esp_timer"]
+capabilities = ["gfx", "psram"]
 
 [packages.app_com]
 label = "app.com"

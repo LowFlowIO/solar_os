@@ -29,6 +29,32 @@ in shell scrollback; app screens are discarded. Errors return to the shell
 with a diagnostic. Run `status` to check the most recent app exit code: 0 means
 success. See [Sessions](sessions.apps.md) for switching and display focus.
 
+## jet
+
+Run the Jet 3D renderer demo on a display that accepts RGB565 frames.
+The `jet` package group supplies `app.jet` and `engine.jet`.
+
+```text
+jet
+jet frames=120
+```
+
+The demo rotates two shaded cubes on a white background. Press **Space** to
+pause or continue, or **q** to close. The common session controls above also
+apply. `frames` closes the demo after 1 through 1000000 rendered frames.
+
+Rendering uses the selected display's full dimensions, a complete RGB565
+framebuffer in display wire byte order, and a matching 16-bit depth buffer.
+The shared presenter exchanges three color buffers without copying pixels and
+displays the newest queued frame while rendering continues. Each color buffer
+and the depth buffer uses `width × height × 2` bytes of PSRAM. There is no separate
+framebuffer format conversion pass. Display transport can still require
+DMA staging, rotation or scaling. Width must be a multiple of eight and both
+dimensions must be at most 1024 pixels.
+
+The app requires PSRAM and direct RGB565 presentation. Monochrome and indexed
+render targets, OBJ file viewing, and Python/Lua APIs are not available.
+
 ## dlp
 
 Use a named SolarOS display as a Display Link Protocol receiver. The `dlp`
