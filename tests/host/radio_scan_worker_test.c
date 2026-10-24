@@ -138,6 +138,18 @@ int main(void)
     assert(solar_os_radio_scan_worker_close(&worker, &view) == ESP_OK && worker == NULL);
     assert(!claimed && memcmp(&device, &saved, sizeof(saved)) == 0 && allocations == 0);
 
+    /* Fresh peaks survive until copied and are consumed exactly once. A
+     * retained latest value during a quiet interval cannot repeat an alert. */
+    solar_os_radio_scan_config_t channel = {.mode = SOLAR_OS_RADIO_SCAN_CHANNEL, .interval_ms = 3600000};
+    assert(solar_os_radio_scan_worker_open(&worker, "radio0", &channel) == ESP_OK);
+    vTaskDelay(40);
+    assert(solar_os_radio_scan_worker_copy(worker, &view) == ESP_OK);
+    assert(view.recent_peak != SOLAR_OS_RADIO_SCAN_EMPTY && view.recent_peak == view.latest);
+    assert(solar_os_radio_scan_worker_copy(worker, &view) == ESP_OK);
+    assert(view.recent_peak == SOLAR_OS_RADIO_SCAN_EMPTY && view.latest != SOLAR_OS_RADIO_SCAN_EMPTY);
+    assert(solar_os_radio_scan_worker_close(&worker, &view) == ESP_OK);
+    assert(!claimed && memcmp(&device, &saved, sizeof(saved)) == 0 && allocations == 0);
+
     fail_create = true;
     assert(solar_os_radio_scan_worker_open(&worker, "radio0", &config) == ESP_ERR_NO_MEM && worker == NULL);
     assert(!claimed && device.state == saved.state && allocations == 0);

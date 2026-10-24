@@ -28,6 +28,7 @@ void solar_os_radio_scan_clear(solar_os_radio_scan_t *scan)
     scan->last_sweep_ms = 0;
     scan->sweep_started_ms = scan_now();
     scan->latest = scan->floor = scan->peak = SOLAR_OS_RADIO_SCAN_EMPTY;
+    scan->recent_peak = SOLAR_OS_RADIO_SCAN_EMPTY;
     scan->generation++;
 }
 
@@ -209,6 +210,8 @@ esp_err_t solar_os_radio_scan_poll(solar_os_radio_scan_t *scan)
         }
         if (err == ESP_OK) {
             scan->latest = dbm;
+            if (scan->recent_peak == SOLAR_OS_RADIO_SCAN_EMPTY || dbm > scan->recent_peak)
+                scan->recent_peak = dbm;
             if (scan->floor == SOLAR_OS_RADIO_SCAN_EMPTY || dbm < scan->floor) scan->floor = dbm;
             if (scan->peak == SOLAR_OS_RADIO_SCAN_EMPTY || dbm > scan->peak) scan->peak = dbm;
             now = scan_now();

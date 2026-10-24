@@ -47,6 +47,7 @@ typedef struct {
     size_t history_count;
     size_t history_head;
     int16_t latest;
+    int16_t recent_peak; /* Strongest fresh sample since the last worker copy. */
     int16_t floor;
     int16_t peak;
     int16_t levels[SOLAR_OS_RADIO_SCAN_BINS];
@@ -71,6 +72,8 @@ void solar_os_radio_scan_clear(solar_os_radio_scan_t *scan);
 typedef struct solar_os_radio_scan_worker solar_os_radio_scan_worker_t;
 esp_err_t solar_os_radio_scan_worker_open(solar_os_radio_scan_worker_t **worker,
     const char *name, const solar_os_radio_scan_config_t *config);
+/* Copy a snapshot and consume its recent_peak interval. EMPTY means no fresh
+ * samples; latest and the held peaks remain available for display. */
 esp_err_t solar_os_radio_scan_worker_copy(solar_os_radio_scan_worker_t *worker,
     solar_os_radio_scan_t *snapshot);
 esp_err_t solar_os_radio_scan_worker_clear(solar_os_radio_scan_worker_t *worker);

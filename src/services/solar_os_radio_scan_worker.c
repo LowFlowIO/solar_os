@@ -86,6 +86,7 @@ esp_err_t solar_os_radio_scan_worker_copy(solar_os_radio_scan_worker_t *worker,
     if (worker == NULL || snapshot == NULL) return ESP_ERR_INVALID_ARG;
     if (xSemaphoreTake(worker->lock, pdMS_TO_TICKS(10)) != pdTRUE) return ESP_ERR_TIMEOUT;
     memcpy(snapshot, &worker->scan, sizeof(*snapshot));
+    worker->scan.recent_peak = SOLAR_OS_RADIO_SCAN_EMPTY;
     xSemaphoreGive(worker->lock);
     return ESP_OK;
 }

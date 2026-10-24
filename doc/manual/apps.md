@@ -1360,8 +1360,9 @@ rfscan radio0
 radio scan radio0
 ```
 
-With no argument the app selects the first attached radio; **Radio** cycles
-through attached devices. The `radio` configuration TUI also opens the scanner
+Select the radio at launch with `rfscan <name>`; it remains selected for that
+app session. With no argument the app selects the first attached radio.
+The `radio` configuration TUI also opens the scanner
 with `s` on a graphical display. From a text-only shell, use
 `session create rfscan display0 radio0` to open it on the device display.
 
@@ -1373,7 +1374,7 @@ receiving, the scanner observes without retuning, consuming packets or taking
 its radio claim. Transmit and sleep intervals produce no energy samples. An
 idle radio is claimed and placed in receive mode until scanning stops.
 
-Channel controls are **Start/Stop**, **Time**, **Step**, **Freq** and **Radio**.
+Channel controls are **Start/Stop**, **Time**, **Step**, **Freq** and **Thresh**.
 **Step** selects a frequency increment of 25, 62.5, 125 or 250 kHz without
 interrupting monitoring. With **Freq** selected, Up/Down increases/decreases
 the requested frequency by that increment; the frequency is shown to 1 Hz.
@@ -1381,6 +1382,25 @@ Changing frequency stops monitoring; **Start** applies the requested frequency
 and resumes the graph. Tuning requires an unclaimed radio and preserves the
 current receiver bandwidth. A busy radio reports its owner. Stop, suspension
 or exit restores the previous frequency and operating state.
+
+Enter on a setting opens a prefilled input popup. Type to replace the current
+value, use Left/Right, Home/End, Backspace or Delete to edit, or Ctrl+U to clear
+the field. Enter applies and Esc cancels. Frequency uses MHz; Step and BW use
+kHz, including decimal values. A BW of `0` keeps the current receiver filter.
+Range accepts start and end frequencies in MHz separated by a space; Time
+accepts 1–3600 seconds. Values that would exceed the supported number of scan
+bins are rejected or require a larger step. Radio drivers validate frequency
+and bandwidth when scanning starts. Opening or cancelling a popup leaves the
+current scan running.
+
+**Thresh** controls an audible energy alert in both tabs. The default is
+−90 dBm; Up/Down changes it by 5 dB and cycles through Off at the ends of the
+−130 to −30 dBm range. Enter accepts an exact dBm value or `off`. Changing the
+threshold leaves scanning running. A dashed horizontal line marks the threshold;
+fresh samples above it request a short beep at most once per second, including
+brief hits between graphical refreshes. Alerts use the selected audio output
+and global volume/mute, skip busy audio, and are cancelled on Stop, suspension
+or exit. Audio failures are reported without ending the scan.
 
 **Band** shows received energy against frequency, a dashed peak trace and a
 waterfall with the newest completed sweep at the top. Darker pixels mean
@@ -1405,10 +1425,10 @@ Sweep speed depends on the driver, bandwidth, range and frequency step.
 Band scans start only with **Start** and require exclusive ownership of the
 selected radio. A busy radio shows its owner; stop that owner explicitly
 before scanning. Normal packet reception on that radio is paused during a
-sweep. Stop, app suspension, app exit, a scan error or three minutes without
-input ends the sweep. The scanner restores the previous configuration and
+sweep. Band scanning has no idle timeout. Stop, app suspension, app exit or a
+scan error ends the sweep. The scanner restores the previous configuration and
 operating state and releases its claim; a restoration failure is reported.
-Changing settings other than Channel's frequency step stops scanning.
+Applying settings other than the threshold or Channel's frequency step stops scanning.
 Returning to a suspended app leaves it
 stopped until **Start** is selected.
 
@@ -1417,9 +1437,9 @@ stopped until **Start** is selected.
 | Tab, or tap a tab | Switch between Channel and Band |
 | Left/Right | Select a bottom function |
 | Up/Down | Next/previous value of the selected function; Up starts and Down stops when Start/Stop is selected |
-| Enter, or tap a bottom button | Activate the selected function; settings advance to the next value |
+| Enter, or tap a bottom button | Toggle Start/Stop, or open the selected setting's input popup |
 | Space | Start or stop |
-| `r`, `s`, `n` | Time/range, step, next radio |
+| `r`, `s`, `t` | Time/range, step, threshold |
 | `f` in Channel, `b` in Band | Increase frequency by Step, or advance bandwidth |
 | `c` | Clear history and peak hold |
 | Ctrl+Alt+Del, `q` or Esc | Exit |

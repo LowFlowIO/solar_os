@@ -42,7 +42,7 @@ class FlavorPackagesTest(unittest.TestCase):
     def test_radio_scanner_requires_graphics_and_radio_service(self):
         _, _, groups, packages = self.resolve("full")
         self.assertTrue(groups["radio_scanner"])
-        for name in ("app_rfscan", "service_radio_scan", "service_radio"):
+        for name in ("app_rfscan", "service_radio_scan", "service_radio", "service_audio"):
             self.assertTrue(packages[name], name)
         _, capable = generate_flavor_config.apply_board_capability_pruning(
             self.catalog, groups, packages, {"gfx", "expansion_spi"})

@@ -2962,7 +2962,7 @@ capabilities = ["gfx", "gpio"]
 
 [packages.app_rfscan]
 label = "app.rfscan"
-depends = ["service_radio_scan"]
+depends = ["service_radio_scan", "service_audio"]
 sources = ["apps/solar_os_rfscan.c"]
 requires = ["heap"]
 capabilities = ["gfx"]
