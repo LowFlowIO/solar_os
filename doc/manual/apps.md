@@ -1346,6 +1346,133 @@ Controls:
 - `r` resets the sampling baseline.
 - `q`, `Esc`, or the app-exit key exits.
 
+## rfscan
+
+Graphical receiver-energy monitor for attached radios that report the
+`live_rssi` capability. Requires a graphical display and the `radio_scanner`
+group. Radio drivers provide live energy readings and validate tuning and
+bandwidth settings through the common radio API; the app does not select
+support by radio model.
+
+```text
+rfscan
+rfscan radio0
+radio scan radio0
+```
+
+Select the radio at launch with `rfscan <name>`; it remains selected for that
+app session. With no argument the app selects the first attached radio.
+The `radio` configuration TUI also opens the scanner
+with `s` on a graphical display. From a text-only shell, use
+`session create rfscan display0 radio0` to open it on the device display.
+
+**Channel** plots live RSSI against time. **Time** cycles through 10 seconds,
+1 minute, 10 minutes and 1 hour. Sampling intervals increase with the time
+window; short bursts can be missed. The graph shows the latest level and the
+minimum and peak since starting or clearing. When another service is already
+receiving, the scanner observes without retuning, consuming packets or taking
+its radio claim. Transmit and sleep intervals produce no energy samples. An
+idle radio is claimed and placed in receive mode until scanning stops.
+
+PgUp zooms into the RSSI plot's Y axis and PgDown zooms out. Available spans
+are 5, 10, 25, 50, 100 and 200 dB; the default is 100 dB. In Channel, the plot
+centers on the average RSSI of samples inside the displayed time window. In
+Band, it centers on the average of the current frequency-bin readings. Empty
+bins and held peaks do not affect the average. Each zoom key centers the axis
+on that average, then holds the axis steady until the next zoom key. The **Avg**
+readout continues updating; values outside the selected span are clipped to
+the plot edges. Zoom leaves scanning and the alert threshold unchanged and
+does not change waterfall shading. A threshold outside the visible Y range
+keeps working but its horizontal marker is hidden.
+
+Channel controls are **Start/Stop**, **Time**, **Step**, **Freq** and **Thresh**.
+**Step** selects a frequency increment of 25, 62.5, 125 or 250 kHz without
+interrupting monitoring. With **Freq** selected, Up/Down increases/decreases
+the requested frequency by that increment; the frequency is shown to 1 Hz.
+Changing frequency applies it and resumes acquisition automatically when
+monitoring was running. Tuning requires an unclaimed radio and preserves the
+current receiver bandwidth. A busy radio reports its owner. Stop, suspension
+or exit restores the previous frequency and operating state.
+
+Enter on a setting opens a prefilled input popup. Type to replace the current
+value, use Left/Right, Home/End, Backspace or Delete to edit, or Ctrl+U to clear
+the field. Enter applies and Esc cancels. Frequency uses MHz; Step and BW use
+kHz, including decimal values. A BW of `0` keeps the current receiver filter.
+Range accepts start and end frequencies in MHz separated by a space; Time
+accepts 1–3600 seconds. Values that would exceed the supported number of scan
+bins are rejected or require a larger step. Radio drivers validate frequency
+and bandwidth when scanning starts. Opening or cancelling a popup leaves the
+current scan running.
+
+**Thresh** controls an audible energy alert in both tabs. The default is
+−90 dBm; Up/Down changes it by 1, 1, 1, 2, 5 or 10 dB for Y spans of
+5, 10, 25, 50, 100 or 200 dB, respectively, and cycles through Off at the ends
+of the −130 to −30 dBm range. Enter accepts an exact dBm value or `off`. Changing the
+threshold leaves scanning running. A dashed horizontal line marks the threshold;
+fresh samples at or above it request a short beep at most once per second, including
+brief hits between graphical refreshes. Alerts use the selected audio output
+and global volume/mute, skip busy audio, and are cancelled on Stop, suspension
+or exit. Audio failures are reported without ending the scan.
+The center frequency of the strongest sample responsible for the last alert
+is shown beside the threshold as `Threshold: >=-90dBm Triggered: 868.375000MHz`.
+Before the first alert, Triggered shows `--`. The frequency remains visible while scanning moves on;
+the next alert updates it.
+
+**Band** shows received energy against frequency, a dashed peak trace and a
+waterfall with the newest completed sweep at the top. Darker pixels mean
+stronger energy. The waterfall uses dithering on 1-bit displays; buttons use
+solid backgrounds, outlines and inverse selection. **Range** cycles through
+±250 kHz, ±1 MHz, ±2 MHz and a
+preset band: 433.05–434.79, 863–870 or 902–928 MHz, selected from the current
+frequency. **Step** cycles through 25, 62.5, 125 and 250 kHz; wide ranges
+increase the step when necessary to stay within 129 frequency bins. **BW**
+selects the current receiver bandwidth or 62.5, 125 or 250 kHz. Drivers can
+round the requested bandwidth up to a supported filter; the running scan shows
+the applied bandwidth. Unsupported settings are rejected by the radio driver.
+The final frequency shown is the
+last sampled bin.
+
+Three status lines above the graph show tuning settings, RSSI readings and the
+alert threshold with the last alert frequency. Errors replace the RSSI readings.
+The top header shows LIVE with **owns RX**, **observe RX** or **RX paused**
+for a band sweep; stopped acquisition shows STOPPED. In Channel, the header
+also shows the time window. The tuning row shows the frequency or band range,
+with **BW:** and **Step:** labels.
+Sampling runs independently of graphical refreshes. Radios advertising
+`fast_tune` use lightweight frequency changes and driver-defined settling
+times; other `live_rssi` radios remain supported through normal configuration.
+Sweep speed depends on the driver, bandwidth, range and frequency step.
+
+Band scans require exclusive ownership of the selected radio.
+A busy radio shows its owner; stop that owner explicitly
+before scanning. Normal packet reception on that radio is paused during a
+sweep. Band scanning has no idle timeout. Stop, app suspension, app exit or a
+scan error ends the sweep. The scanner restores the previous configuration and
+operating state and releases its claim; a restoration failure is reported.
+Changing settings or switching tabs automatically resumes acquisition if it
+was running; a stopped scan stays stopped. Rejected settings restore the
+previous selection and resume it when radio ownership permits.
+Returning to a suspended app leaves it
+stopped until **Start** is selected.
+
+| Control | Action |
+| --- | --- |
+| Tab, or tap a tab | Switch between Channel and Band |
+| Left/Right | Select a bottom function |
+| PgUp/PgDown | Zoom the RSSI Y axis in/out, centered on the displayed average |
+| Up/Down | Next/previous value of the selected function; Up starts and Down stops when Start/Stop is selected |
+| Enter, or tap a bottom button | Toggle Start/Stop, or open the selected setting's input popup |
+| Space | Start or stop |
+| `r`, `s`, `t` | Time/range, step, threshold |
+| `f` in Channel, `b` in Band | Increase frequency by Step, or advance bandwidth |
+| `c` | Clear history and peak hold |
+| Ctrl+Alt+Del, `q` or Esc | Exit |
+
+RSSI measures energy inside the receiver filter without decoding its source.
+Frequency bins are sampled sequentially; receiver bandwidth limits frequency
+detail. Scan only within the attached module's supported RF band and antenna
+range. This display does not provide raw I/Q samples.
+
 ## logic
 
 On-device logic analyzer waveform viewer. It displays the latest capture made
