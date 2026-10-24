@@ -96,7 +96,11 @@ esp_err_t solar_os_radio_scan_start(solar_os_radio_scan_t *scan, const char *nam
     if (err != ESP_OK) return err;
     /* Only observing an already receiving channel is shared. All retuning or
      * enabling RX requires an exclusive claim; never steal an owner's radio. */
-    if (config->mode == SOLAR_OS_RADIO_SCAN_BAND || scan->saved.state != SOLAR_OS_RADIO_STATE_RX) {
+    bool channel_retune = config->mode == SOLAR_OS_RADIO_SCAN_CHANNEL &&
+        ((config->frequency_hz && config->frequency_hz != scan->saved.config.frequency_hz) ||
+         (config->bandwidth_hz && config->bandwidth_hz != scan->saved.config.rx_bandwidth_hz));
+    if (config->mode == SOLAR_OS_RADIO_SCAN_BAND || channel_retune ||
+        scan->saved.state != SOLAR_OS_RADIO_STATE_RX) {
         err = solar_os_radio_claim(name, "rfscan", &scan->handle);
         if (err != ESP_OK) {
             if (solar_os_radio_get_info(name, &info) == ESP_OK) {
@@ -140,7 +144,18 @@ esp_err_t solar_os_radio_scan_start(solar_os_radio_scan_t *scan, const char *nam
         }
         scan->settling = true;
     } else if (scan->restore) {
-        err = solar_os_radio_handle_set_state(&scan->handle, SOLAR_OS_RADIO_STATE_RX);
+        if (config->frequency_hz) scan->receiver.frequency_hz = config->frequency_hz;
+        if (config->bandwidth_hz) scan->receiver.rx_bandwidth_hz = config->bandwidth_hz;
+        if (scan->receiver.frequency_hz != scan->saved.config.frequency_hz ||
+            scan->receiver.rx_bandwidth_hz != scan->saved.config.rx_bandwidth_hz) {
+            err = solar_os_radio_handle_configure(&scan->handle, &scan->receiver);
+        }
+        if (err == ESP_OK) {
+            solar_os_radio_status_t effective;
+            err = solar_os_radio_handle_get_status(&scan->handle, &effective);
+            if (err == ESP_OK) scan->receiver = effective.config;
+        }
+        if (err == ESP_OK) err = solar_os_radio_handle_set_state(&scan->handle, SOLAR_OS_RADIO_STATE_RX);
     }
     if (err != ESP_OK) {
         (void)solar_os_radio_scan_stop(scan);

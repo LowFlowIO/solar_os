@@ -111,7 +111,36 @@ static void test_scanner(void)
     assert(solar_os_radio_scan_stop(&observer) == ESP_OK);
     assert(solar_os_radio_handle_valid(&owner));
     assert(configure_calls == before);
+    /* Channel retuning and filter changes require ownership, even when the
+     * owner's receiver is already running. Failed claims leave it untouched. */
+    fake_status.state = SOLAR_OS_RADIO_STATE_RX;
+    config.frequency_hz = saved.config.frequency_hz + 25000U;
+    assert(solar_os_radio_scan_start(&observer, "radio0", &config) == ESP_ERR_INVALID_STATE);
+    assert(configure_calls == before && solar_os_radio_handle_valid(&owner));
+    assert(fake_status.config.frequency_hz == saved.config.frequency_hz);
+    config.frequency_hz = 0;
+    config.bandwidth_hz = saved.config.rx_bandwidth_hz + 25000U;
+    assert(solar_os_radio_scan_start(&observer, "radio0", &config) == ESP_ERR_INVALID_STATE);
+    assert(configure_calls == before && solar_os_radio_handle_valid(&owner));
     assert(solar_os_radio_release(&owner) == ESP_OK);
+
+    fake_status = saved;
+    config.frequency_hz = saved.config.frequency_hz + 62500U;
+    assert(solar_os_radio_scan_start(&observer, "radio0", &config) == ESP_OK);
+    assert(observer.restore && configure_calls == before + 1);
+    assert(observer.receiver.frequency_hz == config.frequency_hz);
+    assert(observer.receiver.rx_bandwidth_hz == config.bandwidth_hz);
+    assert(fake_status.state == SOLAR_OS_RADIO_STATE_RX);
+    ticks += 100;
+    assert(solar_os_radio_scan_poll(&observer) == ESP_OK && observer.history_count == 1);
+    assert(solar_os_radio_scan_stop(&observer) == ESP_OK);
+    assert(memcmp(&fake_status, &saved, sizeof(saved)) == 0);
+    assert(solar_os_radio_get_info("radio0", &info) == ESP_OK && !info.claimed);
+    fail_configure = 1;
+    assert(solar_os_radio_scan_start(&observer, "radio0", &config) == ESP_FAIL);
+    assert(memcmp(&fake_status, &saved, sizeof(saved)) == 0);
+    assert(solar_os_radio_get_info("radio0", &info) == ESP_OK && !info.claimed);
+    config.frequency_hz = config.bandwidth_hz = 0;
 
     fake_status = saved;
     config.mode = SOLAR_OS_RADIO_SCAN_BAND;

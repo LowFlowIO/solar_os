@@ -17,6 +17,7 @@ typedef struct {
     uint32_t start_hz;
     uint32_t end_hz;
     uint32_t step_hz;
+    uint32_t frequency_hz; /* Channel: zero follows the current receiver. */
     uint32_t bandwidth_hz; /* Zero keeps the current receiver bandwidth. */
     uint32_t interval_ms;  /* Channel sampling interval, at least 100 ms. */
 } solar_os_radio_scan_config_t;

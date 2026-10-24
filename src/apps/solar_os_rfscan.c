@@ -22,6 +22,7 @@ typedef struct {
     unsigned bandwidth;
     unsigned focus;
     bool band;
+    bool channel_frequency;
     bool suspended;
     int pointer_x;
     int pointer_y;
@@ -30,6 +31,8 @@ typedef struct {
 
 static void *rfscan_state;
 #define rfscan (*(rfscan_state_t *)rfscan_state)
+
+static const uint32_t rfscan_steps[] = {25000, 62500, 125000, 250000};
 
 static uint32_t rfscan_now(void)
 {
@@ -61,14 +64,18 @@ static bool rfscan_stop(void)
 
 static void rfscan_parameters(void)
 {
-    static const uint32_t steps[] = {25000, 62500, 125000, 250000};
     static const uint32_t spans[] = {250000, 1000000, 2000000};
     static const uint32_t bandwidths[] = {0, 62500, 125000, 250000};
     solar_os_radio_scan_config_t *config = &rfscan.scan.config;
     config->mode = rfscan.band ? SOLAR_OS_RADIO_SCAN_BAND : SOLAR_OS_RADIO_SCAN_CHANNEL;
     config->interval_ms = rfscan.window_ms / SOLAR_OS_RADIO_SCAN_HISTORY;
-    config->bandwidth_hz = bandwidths[rfscan.bandwidth];
-    config->step_hz = steps[rfscan.step];
+    config->bandwidth_hz = rfscan.band ? bandwidths[rfscan.bandwidth] : 0;
+    config->step_hz = rfscan_steps[rfscan.step];
+    config->frequency_hz = !rfscan.band && rfscan.channel_frequency ? rfscan.center_hz : 0;
+    if (!rfscan.band) {
+        config->start_hz = config->end_hz = rfscan.center_hz;
+        return;
+    }
     if (rfscan.range < 3) {
         config->start_hz = rfscan.center_hz > spans[rfscan.range] ?
             rfscan.center_hz - spans[rfscan.range] : rfscan.center_hz;
@@ -85,7 +92,7 @@ static void rfscan_parameters(void)
     }
     while ((config->end_hz - config->start_hz) / config->step_hz >= SOLAR_OS_RADIO_SCAN_BINS &&
            rfscan.step < 3) {
-        config->step_hz = steps[++rfscan.step];
+        config->step_hz = rfscan_steps[++rfscan.step];
     }
     /* Display the last actual sample frequency rather than an unsampled edge. */
     config->end_hz = config->start_hz +
@@ -101,6 +108,7 @@ static bool rfscan_select(const char *name)
     if (err != ESP_OK) { rfscan_result(err); return false; }
     rfscan.radio = info;
     rfscan.center_hz = status.config.frequency_hz;
+    rfscan.channel_frequency = false;
     rfscan.scan.receiver = status.config;
     strlcpy(rfscan.scan.name, name, sizeof(rfscan.scan.name));
     rfscan_parameters();
@@ -114,9 +122,15 @@ static void rfscan_begin(void)
         return;
     }
     if (rfscan.worker != NULL && !rfscan_stop()) return;
-    if (!rfscan_select(rfscan.radio.name)) return;
+    solar_os_radio_status_t status;
+    esp_err_t err = solar_os_radio_get_info(rfscan.radio.name, &rfscan.radio);
+    if (err == ESP_OK) err = solar_os_radio_get_status(rfscan.radio.name, &status);
+    if (err != ESP_OK) { rfscan_result(err); return; }
+    rfscan.scan.receiver = status.config;
+    if (!rfscan.band && !rfscan.channel_frequency) rfscan.center_hz = status.config.frequency_hz;
+    rfscan_parameters();
     solar_os_radio_scan_config_t config = rfscan.scan.config;
-    esp_err_t err = solar_os_radio_scan_worker_open(&rfscan.worker, rfscan.radio.name, &config);
+    err = solar_os_radio_scan_worker_open(&rfscan.worker, rfscan.radio.name, &config);
     if (err == ESP_OK) (void)solar_os_radio_scan_worker_copy(rfscan.worker, &rfscan.scan);
     rfscan_result(err);
 }
@@ -164,15 +178,16 @@ static void rfscan_render(solar_os_context_t *ctx)
                  scan->config.start_hz / 1000000.0, scan->config.end_hz / 1000000.0,
                  scan->running ? "RX paused" : "");
     } else {
-        snprintf(text, sizeof(text), "%.3f MHz  %lus window  %s",
-                 scan->receiver.frequency_hz / 1000000.0,
-                 (unsigned long)(rfscan.window_ms / 1000U), scan->restore ? "owns RX" : "observe RX");
+        snprintf(text, sizeof(text), "%.6f MHz  %lus  %s",
+                 (scan->running ? scan->receiver.frequency_hz : rfscan.center_hz) / 1000000.0,
+                 (unsigned long)(rfscan.window_ms / 1000U), scan->running ?
+                     (scan->restore ? "owns RX" : "observe RX") : "Start to apply");
     }
     solar_os_gfx_text(gfx, 4, 52, text);
     snprintf(text, sizeof(text), "BW %.1fkHz%s  step %.1fkHz",
-             (rfscan.band && !scan->running && scan->config.bandwidth_hz ?
+             (!scan->running && scan->config.bandwidth_hz ?
                   scan->config.bandwidth_hz : scan->receiver.rx_bandwidth_hz) / 1000.0,
-             rfscan.bandwidth == 0 ? "*" : "", scan->config.step_hz / 1000.0);
+             rfscan.band && rfscan.bandwidth == 0 ? "*" : "", rfscan_steps[rfscan.step] / 1000.0);
     solar_os_gfx_text(gfx, 4, 65, text);
     if (scan->latest != SOLAR_OS_RADIO_SCAN_EMPTY) {
         snprintf(text, sizeof(text), "Now %d  Min %d  Peak %d dBm", scan->latest, scan->floor, scan->peak);
@@ -251,7 +266,7 @@ static void rfscan_render(solar_os_context_t *ctx)
         (unsigned long)scan->sweeps, (unsigned long)scan->last_sweep_ms);
     else snprintf(text, sizeof(text), "%s  Tab mode  Up/Down change", rfscan.radio.claimed ? rfscan.radio.owner : "Channel energy");
     solar_os_gfx_text(gfx, 4, height - 30, text);
-    const char *buttons[] = {scan->running ? "Stop" : "Start", rfscan.band ? "Range" : "Time", "Step", "BW", "Radio"};
+    const char *buttons[] = {scan->running ? "Stop" : "Start", rfscan.band ? "Range" : "Time", "Step", rfscan.band ? "BW" : "Freq", "Radio"};
     for (unsigned i = 0; i < 5; i++) {
         rfscan_button(gfx, i * width / 5 + 2, height - 24, width / 5 - 4, buttons[i], rfscan.focus == i);
     }
@@ -273,7 +288,12 @@ static void rfscan_action(unsigned action, int direction)
         else rfscan_begin();
         return;
     }
-    if (!rfscan.band && (action == 2 || action == 3)) return;
+    if (!rfscan.band && action == 2) {
+        rfscan.step = rfscan_cycle(rfscan.step, 4, direction);
+        rfscan_parameters();
+        return;
+    }
+    if (!rfscan.band && !rfscan.channel_frequency) rfscan.center_hz = rfscan.scan.receiver.frequency_hz;
     if (!rfscan_stop()) return;
     if (action == 1) {
         if (rfscan.band) rfscan.range = rfscan_cycle(rfscan.range, 4, direction);
@@ -286,8 +306,17 @@ static void rfscan_action(unsigned action, int direction)
                 }
             }
         }
-    } else if (action == 2 && rfscan.band) rfscan.step = rfscan_cycle(rfscan.step, 4, direction);
-    else if (action == 3 && rfscan.band) rfscan.bandwidth = rfscan_cycle(rfscan.bandwidth, 4, direction);
+    } else if (action == 3 && !rfscan.band) {
+        const int64_t frequency = (int64_t)rfscan.center_hz +
+            (direction < 0 ? -(int64_t)rfscan_steps[rfscan.step] : rfscan_steps[rfscan.step]);
+        if (frequency <= 0 || frequency > UINT32_MAX) {
+            strlcpy(rfscan.message, "Frequency out of range", sizeof(rfscan.message));
+            return;
+        }
+        rfscan.center_hz = (uint32_t)frequency;
+        rfscan.channel_frequency = true;
+    } else if (action == 2) rfscan.step = rfscan_cycle(rfscan.step, 4, direction);
+    else if (action == 3) rfscan.bandwidth = rfscan_cycle(rfscan.bandwidth, 4, direction);
     else if (action == 4) {
         const size_t count = solar_os_radio_count();
         size_t selected = 0;
@@ -366,6 +395,8 @@ static bool rfscan_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         }
         if (rfscan.worker != NULL) {
             esp_err_t err = solar_os_radio_scan_worker_copy(rfscan.worker, &rfscan.scan);
+            if (err == ESP_OK && !rfscan.band && !rfscan.channel_frequency)
+                rfscan.center_hz = rfscan.scan.receiver.frequency_hz;
             if (err == ESP_OK && !rfscan.scan.running) {
                 esp_err_t sample_error = rfscan.scan.error;
                 (void)rfscan_stop();
@@ -390,8 +421,9 @@ static bool rfscan_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         else if (ch == '\n' || ch == '\r') rfscan_action(rfscan.focus, 0);
         else if (ch == ' ') rfscan_action(0, 0);
         else if (ch == 'r') rfscan_action(1, 1);
+        else if (ch == 'f' && !rfscan.band) rfscan_action(3, 1);
         else if (ch == 's') rfscan_action(2, 1);
-        else if (ch == 'b') rfscan_action(3, 1);
+        else if (ch == 'b' && rfscan.band) rfscan_action(3, 1);
         else if (ch == 'n') rfscan_action(4, 1);
         else if (ch == 'c') {
             if (rfscan.worker != NULL) {

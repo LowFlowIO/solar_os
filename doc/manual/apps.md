@@ -1373,6 +1373,15 @@ receiving, the scanner observes without retuning, consuming packets or taking
 its radio claim. Transmit and sleep intervals produce no energy samples. An
 idle radio is claimed and placed in receive mode until scanning stops.
 
+Channel controls are **Start/Stop**, **Time**, **Step**, **Freq** and **Radio**.
+**Step** selects a frequency increment of 25, 62.5, 125 or 250 kHz without
+interrupting monitoring. With **Freq** selected, Up/Down increases/decreases
+the requested frequency by that increment; the frequency is shown to 1 Hz.
+Changing frequency stops monitoring; **Start** applies the requested frequency
+and resumes the graph. Tuning requires an unclaimed radio and preserves the
+current receiver bandwidth. A busy radio reports its owner. Stop, suspension
+or exit restores the previous frequency and operating state.
+
 **Band** shows received energy against frequency, a dashed peak trace and a
 waterfall with the newest completed sweep at the top. Darker pixels mean
 stronger energy. The waterfall uses dithering on 1-bit displays; buttons use
@@ -1399,7 +1408,8 @@ before scanning. Normal packet reception on that radio is paused during a
 sweep. Stop, app suspension, app exit, a scan error or three minutes without
 input ends the sweep. The scanner restores the previous configuration and
 operating state and releases its claim; a restoration failure is reported.
-Changing settings stops scanning. Returning to a suspended app leaves it
+Changing settings other than Channel's frequency step stops scanning.
+Returning to a suspended app leaves it
 stopped until **Start** is selected.
 
 | Control | Action |
@@ -1409,7 +1419,8 @@ stopped until **Start** is selected.
 | Up/Down | Next/previous value of the selected function; Up starts and Down stops when Start/Stop is selected |
 | Enter, or tap a bottom button | Activate the selected function; settings advance to the next value |
 | Space | Start or stop |
-| `r`, `s`, `b`, `n` | Time/range, step, bandwidth, next radio |
+| `r`, `s`, `n` | Time/range, step, next radio |
+| `f` in Channel, `b` in Band | Increase frequency by Step, or advance bandwidth |
 | `c` | Clear history and peak hold |
 | Ctrl+Alt+Del, `q` or Esc | Exit |
 

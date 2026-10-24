@@ -2,6 +2,10 @@
 
 ## 4.x
 
+- **4.16.29** — 2026-10-24 — Added the optional `rfscan` graphical radio
+  scanner with live RSSI graphs, fast band sweeps and waterfalls on color and
+  monochrome displays. Added touchscreen tap, double-tap, hold and swipe
+  gestures.
 - **4.16.28** — 2026-10-23 — Added the optional Jet 3D renderer for Python
   and Lua, with textured meshes, lighting, sprites, particles, shaders and asset
   loading on color and dithered monochrome displays. Fixed streaming-script
