@@ -1211,6 +1211,9 @@ static const char * const osc_source_types[] = {"stream", "control"};
 #endif
 
 static const char * const radio_subcommands[] = {
+#if SOLAR_OS_PACKAGE_APP_RFSCAN
+    "scan",
+#endif
     "status",
     "list",
     "config",
@@ -1819,6 +1822,9 @@ static const char * const path_player_tui[] = {"player", "--tui"};
 #endif
 #if SOLAR_OS_PACKAGE_APP_FUNCGEN
 static const char * const path_funcgen[] = {"funcgen"};
+#endif
+#if SOLAR_OS_PACKAGE_APP_RFSCAN
+static const char * const path_rfscan[] = {"rfscan"};
 #endif
 #if SOLAR_OS_PACKAGE_APP_LOGIC
 static const char * const path_logic[] = {"logic"};
@@ -2722,6 +2728,9 @@ static const char * const path_encoder_reset[] = {"encoder", "reset"};
 #endif
 static const char * const path_radio[] = {"radio"};
 static const char * const path_radio_status[] = {"radio", "status"};
+#if SOLAR_OS_PACKAGE_APP_RFSCAN
+static const char * const path_radio_scan[] = {"radio", "scan"};
+#endif
 static const char * const path_radio_config[] = {"radio", "config"};
 static const char * const path_radio_config_name[] = {"radio", "config", SHELL_COMPLETION_ANY};
 static const char * const path_radio_config_modulation[] = {"radio", "config", SHELL_COMPLETION_ANY, "modulation"};
@@ -3232,6 +3241,9 @@ static const shell_completion_rule_t shell_completion_rules[] = {
     SHELL_COMPLETION_STATIC(path_logic_pins, logic_rate_values),
     SHELL_COMPLETION_STATIC(path_logic_rate, logic_sample_values),
     SHELL_COMPLETION_STATIC(path_logic_samples, logic_trigger_options),
+#endif
+#if SOLAR_OS_PACKAGE_APP_RFSCAN
+    SHELL_COMPLETION_RADIOS(path_rfscan),
 #endif
 #if SOLAR_OS_PACKAGE_APP_SCP
     SHELL_COMPLETION_OPTIONS(path_scp, scp_options),
@@ -3838,6 +3850,9 @@ static const shell_completion_rule_t shell_completion_rules[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_RADIO
     SHELL_COMPLETION_STATIC(path_radio, radio_subcommands),
     SHELL_COMPLETION_RADIOS(path_radio_status),
+#if SOLAR_OS_PACKAGE_APP_RFSCAN
+    SHELL_COMPLETION_RADIOS(path_radio_scan),
+#endif
     SHELL_COMPLETION_RADIOS(path_radio_config),
     SHELL_COMPLETION_STATIC(path_radio_config_name, radio_config_fields),
     SHELL_COMPLETION_STATIC(path_radio_config_modulation, radio_modulation_values),

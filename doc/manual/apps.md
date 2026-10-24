@@ -1346,6 +1346,78 @@ Controls:
 - `r` resets the sampling baseline.
 - `q`, `Esc`, or the app-exit key exits.
 
+## rfscan
+
+Graphical receiver-energy monitor for attached radios that report the
+`live_rssi` capability. Requires a graphical display and the `radio_scanner`
+group. Radio drivers provide live energy readings and validate tuning and
+bandwidth settings through the common radio API; the app does not select
+support by radio model.
+
+```text
+rfscan
+rfscan radio0
+radio scan radio0
+```
+
+With no argument the app selects the first attached radio; **Radio** cycles
+through attached devices. The `radio` configuration TUI also opens the scanner
+with `s` on a graphical display. From a text-only shell, use
+`session create rfscan display0 radio0` to open it on the device display.
+
+**Channel** plots live RSSI against time. **Time** cycles through 10 seconds,
+1 minute, 10 minutes and 1 hour. Sampling intervals increase with the time
+window; short bursts can be missed. The graph shows the latest level and the
+minimum and peak since starting or clearing. When another service is already
+receiving, the scanner observes without retuning, consuming packets or taking
+its radio claim. Transmit and sleep intervals produce no energy samples. An
+idle radio is claimed and placed in receive mode until scanning stops.
+
+**Band** shows received energy against frequency, a dashed peak trace and a
+waterfall with the newest completed sweep at the top. Darker pixels mean
+stronger energy. The waterfall uses dithering on 1-bit displays; buttons use
+solid backgrounds, outlines and inverse selection. **Range** cycles through
+±250 kHz, ±1 MHz, ±2 MHz and a
+preset band: 433.05–434.79, 863–870 or 902–928 MHz, selected from the current
+frequency. **Step** cycles through 25, 62.5, 125 and 250 kHz; wide ranges
+increase the step when necessary to stay within 129 frequency bins. **BW**
+selects the current receiver bandwidth or 62.5, 125 or 250 kHz. Drivers can
+round the requested bandwidth up to a supported filter; the running scan shows
+the applied bandwidth. Unsupported settings are rejected by the radio driver.
+The final frequency shown is the
+last sampled bin.
+
+The footer shows completed sweeps and the latest sweep duration in milliseconds.
+Sampling runs independently of graphical refreshes. Radios advertising
+`fast_tune` use lightweight frequency changes and driver-defined settling
+times; other `live_rssi` radios remain supported through normal configuration.
+Sweep speed depends on the driver, bandwidth, range and frequency step.
+
+Band scans start only with **Start** and require exclusive ownership of the
+selected radio. A busy radio shows its owner; stop that owner explicitly
+before scanning. Normal packet reception on that radio is paused during a
+sweep. Stop, app suspension, app exit, a scan error or three minutes without
+input ends the sweep. The scanner restores the previous configuration and
+operating state and releases its claim; a restoration failure is reported.
+Changing settings stops scanning. Returning to a suspended app leaves it
+stopped until **Start** is selected.
+
+| Control | Action |
+| --- | --- |
+| Tab, or tap a tab | Switch between Channel and Band |
+| Left/Right | Select a bottom function |
+| Up/Down | Next/previous value of the selected function; Up starts and Down stops when Start/Stop is selected |
+| Enter, or tap a bottom button | Activate the selected function; settings advance to the next value |
+| Space | Start or stop |
+| `r`, `s`, `b`, `n` | Time/range, step, bandwidth, next radio |
+| `c` | Clear history and peak hold |
+| Ctrl+Alt+Del, `q` or Esc | Exit |
+
+RSSI measures energy inside the receiver filter without decoding its source.
+Frequency bins are sampled sequentially; receiver bandwidth limits frequency
+detail. Scan only within the attached module's supported RF band and antenna
+range. This display does not provide raw I/Q samples.
+
 ## logic
 
 On-device logic analyzer waveform viewer. It displays the latest capture made

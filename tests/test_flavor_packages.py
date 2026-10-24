@@ -39,6 +39,21 @@ class FlavorPackagesTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid flavor name"):
             generate_flavor_config.public_flavor_name("full", "beta flavor")
 
+    def test_radio_scanner_requires_graphics_and_radio_service(self):
+        _, _, groups, packages = self.resolve("full")
+        self.assertTrue(groups["radio_scanner"])
+        for name in ("app_rfscan", "service_radio_scan", "service_radio"):
+            self.assertTrue(packages[name], name)
+        _, capable = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"gfx", "expansion_spi"})
+        self.assertTrue(capable["app_rfscan"])
+        _, headless = generate_flavor_config.apply_board_capability_pruning(
+            self.catalog, groups, packages, {"expansion_spi"})
+        self.assertFalse(headless["app_rfscan"])
+        for flavor in ("classic", "writerdeck"):
+            _, _, _, optional = self.resolve(flavor)
+            self.assertFalse(optional["app_rfscan"])
+
     def test_games_are_only_in_full(self):
         built_in_flavors = ("full", "classic", "writerdeck")
         for flavor in built_in_flavors:

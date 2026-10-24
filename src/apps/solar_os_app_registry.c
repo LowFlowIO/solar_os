@@ -131,6 +131,9 @@
 #if SOLAR_OS_PACKAGE_APP_LOGIC
 #include "solar_os_logic_app.h"
 #endif
+#if SOLAR_OS_PACKAGE_APP_RFSCAN
+#include "solar_os_rfscan.h"
+#endif
 #if SOLAR_OS_PACKAGE_APP_READER
 #include "solar_os_reader.h"
 #endif
@@ -282,6 +285,9 @@ static const solar_os_app_registry_entry_t registered_apps[] = {
 #endif
 #if SOLAR_OS_PACKAGE_APP_LOGIC
     APP_ENTRY("logic", "logic analyzer waveform viewer", &solar_os_logic_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "logic <pin[,pin...]> [rate] [samples] [trigger=pin]", 2, 5),
+#endif
+#if SOLAR_OS_PACKAGE_APP_RFSCAN
+    APP_ENTRY("rfscan", "radio energy graph and swept waterfall", &solar_os_rfscan_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "rfscan [radio-name]", 1, 2),
 #endif
 #if SOLAR_OS_PACKAGE_APP_READER
     APP_FILE_ENTRY("reader", "graphics text/Markdown/EPUB reader", &solar_os_reader_app, SOLAR_OS_APP_CAP_GRAPHICS | SOLAR_OS_APP_CAP_DISPLAY, "reader [--pager] <file.txt|file.md|file.epub|man:topic>", 2, 3, ".txt .text .md .markdown .epub"),

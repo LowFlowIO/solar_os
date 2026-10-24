@@ -53,6 +53,7 @@ calculator = true
 plot = true
 sheet = true
 logic_analyzer = true
+radio_scanner = true
 sump = true
 bridge = true
 daq = true
