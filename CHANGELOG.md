@@ -2,6 +2,10 @@
 
 ## 4.x
 
+- **4.16.30** — 2026-10-24 — Faster native-app discovery at boot and reduced
+  alert-tone SRAM use. Added Jet background caching and Python/Lua access to
+  terminal colors. Display snapshots now mirror unscaled full-screen RGB565
+  frames as dithered monochrome images.
 - **4.16.29** — 2026-10-24 — Added the optional `rfscan` graphical radio
   scanner with live RSSI graphs, fast band sweeps and waterfalls on color and
   monochrome displays. Added touchscreen tap, double-tap, hold and swipe
