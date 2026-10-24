@@ -9804,6 +9804,15 @@ static void solua_queue_device_input(const solar_os_event_t *event)
     (void)xQueueSend(solua.device_input, event, 0);
 }
 
+static void solua_finish_handoff(solar_os_context_t *ctx)
+{
+    /* DONE can be consumed before the child starts. Finish on return as well. */
+    if (solua.task_done && solua.repl_exit_requested &&
+        ctx->requested_app == NULL && !ctx->exit_requested) {
+        solua_return_to_shell(ctx, solua.exit_code, NULL);
+    }
+}
+
 static bool solua_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 {
     if (event == NULL) {
@@ -9819,6 +9828,7 @@ static bool solua_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 
     if (event->type == SOLAR_OS_EVENT_TICK) {
         solua_drain_events(ctx);
+        solua_finish_handoff(ctx);
         return true;
     }
     if (event->type != SOLAR_OS_EVENT_CHAR) {

@@ -695,7 +695,8 @@ static esp_err_t app_registry_request_native_launch(
         }
         argv[i + 1U] = storage[i + 1U];
     }
-    return solar_os_context_request_launch(ctx, entry->app, (int)argc, argv);
+    return solar_os_context_request_launch_ex(ctx, entry->app, (int)argc, argv,
+                                              SOLAR_OS_LAUNCH_CHILD_RETURN);
 }
 
 esp_err_t solar_os_app_registry_request_launch(solar_os_context_t *ctx,

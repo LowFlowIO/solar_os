@@ -9848,6 +9848,15 @@ static void python_return_to_shell(solar_os_context_t *ctx,
                                          shared_port ? NULL : message);
 }
 
+static void python_finish_handoff(solar_os_context_t *ctx)
+{
+    /* DONE can be consumed before the child starts. Finish on return as well. */
+    if (python_app.done && python_app.repl_exit_requested &&
+        ctx->requested_app == NULL && !ctx->exit_requested) {
+        python_return_to_shell(ctx, python_app.exit_code, NULL);
+    }
+}
+
 static size_t python_repl_max_input_len(solar_os_context_t *ctx)
 {
     solar_os_shell_io_t *io = python_io(ctx);
@@ -10677,6 +10686,7 @@ static bool python_event(solar_os_context_t *ctx, const solar_os_event_t *event)
 
     if (event->type == SOLAR_OS_EVENT_TICK) {
         python_drain_events(ctx);
+        python_finish_handoff(ctx);
         return true;
     }
     if (event->type != SOLAR_OS_EVENT_CHAR) {
