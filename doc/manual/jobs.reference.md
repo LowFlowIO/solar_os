@@ -667,6 +667,9 @@ Notes:
   30,400 bytes in total. `web0` additionally owns a board-sized U8g2
   framebuffer (15,200 bytes on Waveshare, 13,824 bytes on the 384x288 PAL
   target). HTTP transmission never holds a display or registry lock.
+- Full-screen, unscaled RGB565 frames, including Jet scenes, are exported as
+  dithered monochrome snapshots. The physical color display keeps its original
+  RGB565 colors. Partial or scaled RGB565 raster updates are not mirrored.
 - The snapshot is copied into the transmit buffer and released before network
   I/O, so a slow browser cannot prevent newer display frames from being
   published.

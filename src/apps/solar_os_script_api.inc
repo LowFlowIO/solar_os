@@ -1140,6 +1140,7 @@ SOLAR_OS_SCRIPT_API_FUNCTION(gfx, size, size);
 SOLAR_OS_SCRIPT_API_FUNCTION(gfx, clear, clear);
 SOLAR_OS_SCRIPT_API_FUNCTION(gfx, gray, gray);
 SOLAR_OS_SCRIPT_API_FUNCTION(gfx, rgb, rgb);
+SOLAR_OS_SCRIPT_API_FUNCTION(gfx, theme, theme);
 SOLAR_OS_SCRIPT_API_FUNCTION(gfx, color, color);
 SOLAR_OS_SCRIPT_API_FUNCTION(gfx, set_color, color);
 SOLAR_OS_SCRIPT_API_FUNCTION(gfx, font, font);

@@ -105,6 +105,9 @@ struct Engine {
     solar_os_jet_pick_t query_points[SOLAR_OS_JET_MAX_PICKS];
     unsigned pick_count=0,query_count=0;
     std::vector<uint16_t> gradient;
+    std::vector<uint16_t> background_color,background_depth,pending_color,pending_depth;
+    uint16_t *frame_depth=nullptr;
+    bool background_pending=false,background_captured=false;
     double settings[SOLAR_OS_JET_VALUES]={1};
     uint16_t fov=60;
     uint32_t next_id = 0;
@@ -112,6 +115,7 @@ struct Engine {
     Scene scene;
     Engine(uint16_t w, uint16_t h, uint16_t *color, uint16_t *depth)
         : width(w), height(h), scene(color, depth, w, h) {
+        frame_depth=depth;
         effect_values[JET_FX_pixelate]=1;
         scene.setCamera(&camera); scene.setAmbientLight(&ambient);
         scene.setDirectionalLight(&light); scene.setBackcolor(0xffff);
@@ -274,6 +278,8 @@ static int render(void *s,uint16_t *color,size_t bytes,solar_os_native_cancel_fn
         active->shader_fault=false;
         for(auto &shader:active->shaders)if(shader) {shader->failed=false;shader->calls=0;}
         if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
+        active->background_captured=false;
+        extras_hook_state();
         prepare_extras();
         active->frame_cancel=frame_stopped;active->frame_cancel_user=&state;
         active->frame_color=color;
@@ -286,6 +292,14 @@ static int render(void *s,uint16_t *color,size_t bytes,solar_os_native_cancel_fn
         active->frame_color=nullptr;
         if(cancelled(&state)) return int(SOLAR_OS_NATIVE_ERROR_TIMEOUT);
         for(auto &shader:active->shaders)if(shader&&shader->failed)return int(SOLAR_OS_NATIVE_ERROR_FAILED);
+        if(active->background_captured) {
+            active->background_color.swap(active->pending_color);
+            active->background_depth.swap(active->pending_depth);
+            std::vector<uint16_t>().swap(active->pending_color);
+            std::vector<uint16_t>().swap(active->pending_depth);
+            active->background_pending=false;
+            active->scene.setBackgroundCache(active->background_color.data(),active->background_depth.data());
+        }
         snapshot_picks();return 0;
     });
 }

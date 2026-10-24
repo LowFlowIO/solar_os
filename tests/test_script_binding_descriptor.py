@@ -232,7 +232,7 @@ class ScriptBindingDescriptorTest(unittest.TestCase):
             + submodule_constant_count
             + subnested_count
             + hid_keycode_count * hid_keycode_include_count,
-            897,
+            899,
         )
 
     def test_tui_and_gfx_export_modified_horizontal_navigation_keys(self):

@@ -77,6 +77,8 @@ static bool display_snapshot_slot(size_t slot_index, solar_os_display_target_t *
 static void display_publish_frame(u8g2_t *u8g2);
 static void display_publish_surface(u8g2_t *u8g2,
                                     const solar_os_display_surface_t *surface);
+static void display_publish_rgb_frame(u8g2_t *u8g2,
+                                      const solar_os_display_raster_t *frame);
 
 bool solar_os_display_target_is_board_primary(const char *name)
 {
@@ -1878,6 +1880,9 @@ esp_err_t solar_os_display_present_frame(
         display_activate_pending_overlay_locked(&display_targets[slot_index]);
     }
     xSemaphoreGive(present_mutex);
+    if (ret == ESP_OK) {
+        display_publish_rgb_frame(u8g2, frame);
+    }
     display_release_slot_ref(slot_index, generation);
     return ret;
 }
@@ -1976,8 +1981,10 @@ static void display_publish_surface(u8g2_t *u8g2,
         {0U, 8U, 2U, 10U}, {12U, 4U, 14U, 6U},
         {3U, 11U, 1U, 9U}, {15U, 7U, 13U, 5U},
     };
-    if (u8g2 == NULL || surface == NULL || surface->format !=
-        SOLAR_OS_DISPLAY_FORMAT_INDEX8 || surface->palette_rgb565 == NULL) {
+    if (u8g2 == NULL || surface == NULL ||
+        (surface->format != SOLAR_OS_DISPLAY_FORMAT_RGB565 &&
+         (surface->format != SOLAR_OS_DISPLAY_FORMAT_INDEX8 ||
+          surface->palette_rgb565 == NULL))) {
         return;
     }
 
@@ -2012,9 +2019,10 @@ static void display_publish_surface(u8g2_t *u8g2,
     memset(export_buffer, 0, export_buffer_size);
     for (uint16_t y = 0; y < surface->height; y++) {
         for (uint16_t x = 0; x < surface->width; x++) {
-            const uint8_t palette_index =
-                surface->data[(size_t)y * surface->stride + x];
-            const uint16_t rgb565 = surface->palette_rgb565[palette_index];
+            const uint8_t *row = surface->data + (size_t)y * surface->stride;
+            const uint16_t rgb565 = surface->format == SOLAR_OS_DISPLAY_FORMAT_RGB565 ?
+                ((uint16_t)row[x * 2U] << 8U) | row[x * 2U + 1U] :
+                surface->palette_rgb565[row[x]];
             const unsigned red = ((rgb565 >> 11U) & 0x1fU) * 255U / 31U;
             const unsigned green = ((rgb565 >> 5U) & 0x3fU) * 255U / 63U;
             const unsigned blue = (rgb565 & 0x1fU) * 255U / 31U;
@@ -2052,6 +2060,32 @@ static void display_publish_surface(u8g2_t *u8g2,
     if (slot->generation == generation && slot->refs > 0) slot->refs--;
     portEXIT_CRITICAL(&display_targets_lock);
     solar_os_memory_free(free_buffer);
+}
+
+static void display_publish_rgb_frame(u8g2_t *u8g2,
+                                      const solar_os_display_raster_t *frame)
+{
+    /* Full-display RGB streams (including Jet) bypass the indexed canvas.
+     * Export their actual pixels through the same monochrome mirror path.
+     * Partial/scaled raster composition is not represented by a surface. */
+    if (frame->format != SOLAR_OS_DISPLAY_FORMAT_RGB565 ||
+        frame->x != 0U || frame->y != 0U ||
+        frame->width != frame->source_width || frame->height != frame->source_height ||
+        frame->width != u8g2_GetDisplayWidth(u8g2) ||
+        frame->height != u8g2_GetDisplayHeight(u8g2)) {
+        return;
+    }
+    const u8x8_display_info_t *info = u8g2_GetU8x8(u8g2)->display_info;
+    if (info == NULL) return;
+    const solar_os_display_surface_t surface = {
+        .data = frame->data, .data_size = frame->data_size,
+        .width = frame->width, .height = frame->height,
+        .stride = frame->source_stride,
+        .native_width = info->pixel_width, .native_height = info->pixel_height,
+        .format = SOLAR_OS_DISPLAY_FORMAT_RGB565,
+        .rotation = display_rotation(u8g2),
+    };
+    display_publish_surface(u8g2, &surface);
 }
 
 void solar_os_display_present(u8g2_t *u8g2, solar_os_display_present_mode_t mode)

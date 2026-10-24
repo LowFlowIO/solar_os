@@ -1151,6 +1151,15 @@ static esp_err_t foreground_prepare_slot(const char *path,
     return ESP_OK;
 }
 
+static esp_err_t foreground_discovery_read(void *context, size_t offset,
+                                           void *buffer, size_t length)
+{
+    FILE *file = context;
+    /* Avoid discarding stdio's read buffer for adjacent metadata windows. */
+    if (ftell(file) != (long)offset && fseek(file, (long)offset, SEEK_SET) != 0) return ESP_FAIL;
+    return fread(buffer, 1U, length, file) == length ? ESP_OK : ESP_FAIL;
+}
+
 esp_err_t solar_os_native_foreground_resolve(const char *path,
     const solar_os_app_t **app, char *detail, size_t detail_size)
 {
@@ -1161,16 +1170,12 @@ esp_err_t solar_os_native_foreground_resolve(const char *path,
     if (err != ESP_OK) return err;
     if (metadata.type != SOLAR_OS_STORAGE_ENTRY_FILE || metadata.size_bytes < 52U ||
         metadata.size_bytes > SOLAR_OS_NATIVE_ELF_MAX_BYTES) return ESP_ERR_INVALID_SIZE;
-    uint8_t *data = solar_os_memory_alloc((size_t)metadata.size_bytes,
-        SOLAR_OS_MEMORY_EXTERNAL_REQUIRED, "native.app.inspect");
-    if (!data) return ESP_ERR_NO_MEM;
-    size_t read = 0U;
+    FILE *file = fopen(path, "rb");
+    if (!file) return ESP_FAIL;
     solar_os_native_elf_info_t info;
-    err = solar_os_storage_read_file(path, data, (size_t)metadata.size_bytes, &read);
-    if (err == ESP_OK && read != metadata.size_bytes) err = ESP_FAIL;
-    if (err == ESP_OK) err = solar_os_native_elf_validate(data, read,
+    err = solar_os_native_elf_discover(foreground_discovery_read, file, (size_t)metadata.size_bytes,
         SOLAR_OS_NATIVE_ELF_MACHINE_XTENSA, &info, detail, detail_size);
-    solar_os_memory_free(data);
+    fclose(file);
     if (err != ESP_OK) return err;
     if (!info.foreground) return ESP_OK; /* lifecycle-1 command */
     return foreground_prepare_slot(path, &info, app);
