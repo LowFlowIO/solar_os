@@ -48,6 +48,7 @@ typedef struct {
     size_t history_head;
     int16_t latest;
     int16_t recent_peak; /* Strongest fresh sample since the last worker copy. */
+    uint32_t recent_peak_frequency_hz;
     int16_t floor;
     int16_t peak;
     int16_t levels[SOLAR_OS_RADIO_SCAN_BINS];

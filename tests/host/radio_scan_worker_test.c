@@ -145,8 +145,10 @@ int main(void)
     vTaskDelay(40);
     assert(solar_os_radio_scan_worker_copy(worker, &view) == ESP_OK);
     assert(view.recent_peak != SOLAR_OS_RADIO_SCAN_EMPTY && view.recent_peak == view.latest);
+    assert(view.recent_peak_frequency_hz == device.config.frequency_hz);
     assert(solar_os_radio_scan_worker_copy(worker, &view) == ESP_OK);
     assert(view.recent_peak == SOLAR_OS_RADIO_SCAN_EMPTY && view.latest != SOLAR_OS_RADIO_SCAN_EMPTY);
+    assert(view.recent_peak_frequency_hz == 0);
     assert(solar_os_radio_scan_worker_close(&worker, &view) == ESP_OK);
     assert(!claimed && memcmp(&device, &saved, sizeof(saved)) == 0 && allocations == 0);
 

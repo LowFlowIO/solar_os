@@ -152,6 +152,9 @@ static void test_scanner(void)
     for (unsigned i = 0; i < 6; i++) { ticks += 25; assert(solar_os_radio_scan_poll(&scan) == ESP_OK); }
     assert(scan.sweeps == 1 && scan.rows == 1 && samples == before + 3);
     assert(scan.levels[2] != SOLAR_OS_RADIO_SCAN_EMPTY);
+    assert(scan.recent_peak == scan.peak && scan.recent_peak_frequency_hz == config.end_hz);
+    assert(solar_os_radio_scan_poll(&scan) == ESP_OK); /* Retune the next sweep before reading the snapshot. */
+    assert(scan.receiver.frequency_hz == config.start_hz && scan.recent_peak_frequency_hz == config.end_hz);
     assert(solar_os_radio_scan_stop(&scan) == ESP_OK);
     assert(fake_status.state == saved.state && memcmp(&fake_status.config, &saved.config, sizeof(saved.config)) == 0);
     assert(solar_os_radio_get_info("radio0", &info) == ESP_OK && !info.claimed);

@@ -24,6 +24,13 @@ typedef enum {
 } rfscan_edit_t;
 
 typedef struct {
+    uint32_t center_hz, window_ms, step_hz, bandwidth_hz;
+    uint32_t range_start_hz, range_end_hz;
+    unsigned range;
+    bool band, channel_frequency;
+} rfscan_settings_t;
+
+typedef struct {
     solar_os_radio_scan_t scan;
     solar_os_radio_scan_worker_t *worker;
     solar_os_radio_info_t radio;
@@ -33,7 +40,12 @@ typedef struct {
     uint32_t rendered_generation;
     uint32_t next_beep;
     uint32_t beep_id;
+    uint32_t last_beep_hz;
     int16_t threshold_dbm;
+    int16_t average_dbm;
+    int16_t y_center_dbm;
+    bool y_fixed;
+    unsigned y_zoom;
     unsigned range;
     uint32_t step_hz;
     uint32_t bandwidth_hz;
@@ -59,6 +71,7 @@ static void *rfscan_state;
 static const uint32_t rfscan_steps[] = {25000, 62500, 125000, 250000};
 static const uint32_t rfscan_bandwidths[] = {0, 62500, 125000, 250000};
 static const uint32_t rfscan_windows[] = {10000, 60000, 600000, 3600000};
+static const unsigned rfscan_y_spans[] = {5, 10, 25, 50, 100, 200};
 
 static uint32_t rfscan_next_value(uint32_t value, const uint32_t *values, size_t count, int direction)
 {
@@ -99,7 +112,7 @@ static void rfscan_alert(uint32_t now)
 {
     if (!rfscan.scan.running || rfscan.threshold_dbm == SOLAR_OS_RADIO_SCAN_EMPTY ||
         rfscan.scan.recent_peak == SOLAR_OS_RADIO_SCAN_EMPTY ||
-        rfscan.scan.recent_peak <= rfscan.threshold_dbm ||
+        rfscan.scan.recent_peak < rfscan.threshold_dbm ||
         (int32_t)(now - rfscan.next_beep) < 0) return;
     rfscan.next_beep = now + 1000U;
     const solar_os_audio_tone_step_t step = {.frequency_hz = 1200, .duration_ms = 70};
@@ -109,7 +122,11 @@ static void rfscan_alert(uint32_t now)
     };
     uint32_t request_id = 0;
     esp_err_t err = solar_os_audio_tone_enqueue(&request, &request_id);
-    if (err == ESP_OK) rfscan.beep_id = request_id;
+    if (err == ESP_OK) {
+        rfscan.beep_id = request_id;
+        rfscan.last_beep_hz = rfscan.scan.recent_peak_frequency_hz;
+        rfscan.next_render = now;
+    }
     if (err != ESP_OK && err != ESP_ERR_INVALID_STATE) {
         snprintf(rfscan.message, sizeof(rfscan.message), "Beep: %s", esp_err_to_name(err));
     }
@@ -188,33 +205,118 @@ static bool rfscan_select(const char *name)
     return true;
 }
 
-static void rfscan_begin(void)
+static bool rfscan_begin(void)
 {
     if (rfscan.radio.name[0] == '\0') {
         strlcpy(rfscan.message, "No attached radio", sizeof(rfscan.message));
-        return;
+        return false;
     }
-    if (rfscan.worker != NULL && !rfscan_stop()) return;
+    if (rfscan.worker != NULL && !rfscan_stop()) return false;
     solar_os_radio_status_t status;
     esp_err_t err = solar_os_radio_get_info(rfscan.radio.name, &rfscan.radio);
     if (err == ESP_OK) err = solar_os_radio_get_status(rfscan.radio.name, &status);
-    if (err != ESP_OK) { rfscan_result(err); return; }
+    if (err != ESP_OK) { rfscan_result(err); return false; }
     rfscan.scan.receiver = status.config;
     if (!rfscan.band && !rfscan.channel_frequency) rfscan.center_hz = status.config.frequency_hz;
     rfscan_parameters();
     solar_os_radio_scan_config_t config = rfscan.scan.config;
     err = solar_os_radio_scan_worker_open(&rfscan.worker, rfscan.radio.name, &config);
     rfscan_result(err);
-    if (err == ESP_OK && solar_os_radio_scan_worker_copy(rfscan.worker, &rfscan.scan) == ESP_OK)
+    if (err != ESP_OK) return false;
+    rfscan.scan.running = true;
+    if (solar_os_radio_scan_worker_copy(rfscan.worker, &rfscan.scan) == ESP_OK)
         rfscan_alert(rfscan_now());
+    return true;
 }
 
-static int rfscan_y(int16_t dbm, int top, int height)
+static rfscan_settings_t rfscan_settings(void)
 {
-    int value = dbm;
-    if (value < -130) value = -130;
-    if (value > -30) value = -30;
-    return top + (height - 1) * (-30 - value) / 100;
+    return (rfscan_settings_t){
+        .center_hz = rfscan.center_hz, .window_ms = rfscan.window_ms,
+        .step_hz = rfscan.step_hz, .bandwidth_hz = rfscan.bandwidth_hz,
+        .range_start_hz = rfscan.range_start_hz, .range_end_hz = rfscan.range_end_hz,
+        .range = rfscan.range, .band = rfscan.band, .channel_frequency = rfscan.channel_frequency,
+    };
+}
+
+static bool rfscan_apply_settings(const rfscan_settings_t *before, bool was_running)
+{
+    rfscan_parameters();
+    if (!was_running) { solar_os_radio_scan_clear(&rfscan.scan); return true; }
+    if (rfscan_begin()) return true;
+    /* A rejected setting must not strand a working receiver. Restore the
+     * previous selection and continue it when ownership still permits. */
+    char error[sizeof(rfscan.message)];
+    strlcpy(error, rfscan.message, sizeof(error));
+    rfscan.center_hz = before->center_hz; rfscan.window_ms = before->window_ms;
+    rfscan.step_hz = before->step_hz; rfscan.bandwidth_hz = before->bandwidth_hz;
+    rfscan.range_start_hz = before->range_start_hz; rfscan.range_end_hz = before->range_end_hz;
+    rfscan.range = before->range; rfscan.band = before->band;
+    rfscan.channel_frequency = before->channel_frequency;
+    rfscan_parameters();
+    if (rfscan_begin()) strlcpy(rfscan.message, error, sizeof(rfscan.message));
+    return false;
+}
+
+static void rfscan_center_y(void)
+{
+    solar_os_radio_scan_t *scan = &rfscan.scan;
+    int32_t sum = 0;
+    size_t count = 0;
+    if (rfscan.band) {
+        for (size_t i = 0; i < scan->bins; i++) {
+            if (scan->levels[i] == SOLAR_OS_RADIO_SCAN_EMPTY) continue;
+            sum += scan->levels[i];
+            count++;
+        }
+    } else if (scan->history_count) {
+        const uint32_t newest = scan->history_ms[
+            (scan->history_head + SOLAR_OS_RADIO_SCAN_HISTORY - 1U) % SOLAR_OS_RADIO_SCAN_HISTORY];
+        for (size_t i = 0; i < scan->history_count; i++) {
+            size_t index = (scan->history_head + SOLAR_OS_RADIO_SCAN_HISTORY - scan->history_count + i) %
+                SOLAR_OS_RADIO_SCAN_HISTORY;
+            if (newest - scan->history_ms[index] > rfscan.window_ms ||
+                scan->history[index] == SOLAR_OS_RADIO_SCAN_EMPTY) continue;
+            sum += scan->history[index];
+            count++;
+        }
+    }
+    if (count) {
+        const int32_t rounded = sum + (sum < 0 ? -1 : 1) * (int32_t)(count / 2U);
+        rfscan.average_dbm = (int16_t)(rounded / (int32_t)count);
+    } else if (scan->latest != SOLAR_OS_RADIO_SCAN_EMPTY) rfscan.average_dbm = scan->latest;
+    if (!rfscan.y_fixed) rfscan.y_center_dbm = rfscan.average_dbm;
+}
+
+static unsigned rfscan_threshold_step(void)
+{
+    unsigned step = rfscan_y_spans[rfscan.y_zoom] / 20U;
+    return step > 0 ? step : 1U;
+}
+
+static void rfscan_zoom(int direction)
+{
+    rfscan_center_y();
+    if (direction < 0 && rfscan.y_zoom > 0) rfscan.y_zoom--;
+    if (direction > 0 && rfscan.y_zoom + 1U < sizeof(rfscan_y_spans) / sizeof(rfscan_y_spans[0])) rfscan.y_zoom++;
+    rfscan.y_center_dbm = rfscan.average_dbm;
+    rfscan.y_fixed = true;
+}
+
+static bool rfscan_y_visible(int dbm)
+{
+    const int distance = 2 * ((int)dbm - rfscan.y_center_dbm);
+    const int span = (int)rfscan_y_spans[rfscan.y_zoom];
+    return distance >= -span && distance <= span;
+}
+
+static int rfscan_y(int dbm, int top, int height)
+{
+    const int span = (int)rfscan_y_spans[rfscan.y_zoom];
+    int distance = span + 2 * ((int)rfscan.y_center_dbm - dbm);
+    if (distance < 0) distance = 0;
+    if (distance > span * 2) distance = span * 2;
+    return top + (height - 1) * distance / (span * 2);
 }
 
 static void rfscan_button(solar_os_gfx_t *gfx, int x, int y, int width,
@@ -285,57 +387,72 @@ static void rfscan_render(solar_os_context_t *ctx)
     const int width = (int)solar_os_gfx_width(gfx);
     const int height = (int)solar_os_gfx_height(gfx);
     solar_os_radio_scan_t *scan = &rfscan.scan;
+    rfscan_center_y();
     char text[96];
     solar_os_gfx_clear(gfx, SOLAR_OS_GFX_COLOR_WHITE);
     solar_os_gfx_set_font(gfx, SOLAR_OS_GFX_FONT_SMALL);
     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    const char *state = !scan->running ? "STOPPED" : rfscan.band ? "LIVE RX paused" :
+        scan->restore ? "LIVE owns RX" : "LIVE observe RX";
     snprintf(text, sizeof(text), "%s  %s  %s", rfscan.radio.name[0] ? rfscan.radio.name : "No radio",
-             rfscan.radio.driver, scan->running ? "LIVE" : "STOPPED");
+             rfscan.radio.driver, state);
+    if (!rfscan.band) {
+        const size_t used = strlen(text);
+        snprintf(text + used, sizeof(text) - used, "  Time: %gs", rfscan.window_ms / 1000.0);
+    }
     solar_os_gfx_text(gfx, 4, 12, text);
     rfscan_button(gfx, 4, 18, width / 2 - 6, "Channel", !rfscan.band);
     rfscan_button(gfx, width / 2 + 2, 18, width / 2 - 6, "Band", rfscan.band);
     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
+    const uint32_t bandwidth = !scan->running && scan->config.bandwidth_hz ?
+        scan->config.bandwidth_hz : scan->receiver.rx_bandwidth_hz;
     if (rfscan.band) {
-        snprintf(text, sizeof(text), "%.3f - %.3f MHz  %s",
+        snprintf(text, sizeof(text), "%.3f-%.3fMHz BW: %.3fkHz Step: %gkHz",
                  scan->config.start_hz / 1000000.0, scan->config.end_hz / 1000000.0,
-                 scan->running ? "RX paused" : "");
+                 bandwidth / 1000.0, rfscan.step_hz / 1000.0);
     } else {
-        snprintf(text, sizeof(text), "%.6f MHz  %lus  %s",
+        snprintf(text, sizeof(text), "Freq: %.6fMHz BW: %.3fkHz Step: %gkHz",
                  (scan->running ? scan->receiver.frequency_hz : rfscan.center_hz) / 1000000.0,
-                 (unsigned long)(rfscan.window_ms / 1000U), scan->running ?
-                     (scan->restore ? "owns RX" : "observe RX") : "Start to apply");
+                 bandwidth / 1000.0, rfscan.step_hz / 1000.0);
     }
     solar_os_gfx_text(gfx, 4, 52, text);
-    char threshold[16];
-    if (rfscan.threshold_dbm == SOLAR_OS_RADIO_SCAN_EMPTY) strlcpy(threshold, "alert off", sizeof(threshold));
-    else snprintf(threshold, sizeof(threshold), ">%ddBm", rfscan.threshold_dbm);
-    snprintf(text, sizeof(text), "BW %.3fkHz%s step %.3fkHz %s",
-             (!scan->running && scan->config.bandwidth_hz ?
-                  scan->config.bandwidth_hz : scan->receiver.rx_bandwidth_hz) / 1000.0,
-             rfscan.band && rfscan.bandwidth_hz == 0 ? "*" : "", rfscan.step_hz / 1000.0,
-             threshold);
-    solar_os_gfx_text(gfx, 4, 65, text);
-    if (scan->latest != SOLAR_OS_RADIO_SCAN_EMPTY) {
-        snprintf(text, sizeof(text), "Now %d  Min %d  Peak %d dBm", scan->latest, scan->floor, scan->peak);
+    char threshold[64];
+    if (rfscan.threshold_dbm == SOLAR_OS_RADIO_SCAN_EMPTY) strlcpy(threshold, "Threshold: Off", sizeof(threshold));
+    else snprintf(threshold, sizeof(threshold), "Threshold: >=%ddBm", rfscan.threshold_dbm);
+    const size_t used = strlen(threshold);
+    if (rfscan.last_beep_hz) {
+        snprintf(threshold + used, sizeof(threshold) - used, " Triggered: %.6fMHz", rfscan.last_beep_hz / 1000000.0);
+    } else strlcpy(threshold + used, " Triggered: --", sizeof(threshold) - used);
+    solar_os_gfx_text(gfx, 4, 76, threshold);
+    if (rfscan.message[0]) strlcpy(text, rfscan.message, sizeof(text));
+    else if (scan->latest != SOLAR_OS_RADIO_SCAN_EMPTY) {
+        snprintf(text, sizeof(text), "Now: %d Avg: %d Min: %d Peak: %d dBm",
+            scan->latest, rfscan.average_dbm, scan->floor, scan->peak);
     } else {
         strlcpy(text, "Waiting for receiver energy", sizeof(text));
     }
-    solar_os_gfx_text(gfx, 4, 79, text);
+    solar_os_gfx_text(gfx, 4, 64, text);
 
     const int left = 29, plot_width = width - left - 5;
-    const int top = 88, available = height - top - 45;
+    const int top = 86, available = height - top - 32;
     if (plot_width > 1 && available > 12) {
         const int plot_height = rfscan.band ? available / 2 : available;
-        for (int level = -130; level <= -30; level += 50) {
+        const int span = (int)rfscan_y_spans[rfscan.y_zoom];
+        const int tick = span <= 10 ? 1 : span <= 25 ? 5 : span <= 50 ? 10 : span <= 100 ? 25 : 50;
+        const int low = rfscan.y_center_dbm - span / 2;
+        const int high = rfscan.y_center_dbm + span / 2;
+        int first = low - low % tick;
+        if (first < low) first += tick;
+        for (int level = first; level <= high; level += tick) {
             int y = rfscan_y(level, top, plot_height);
             solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
             solar_os_gfx_set_line_style(gfx, SOLAR_OS_GFX_LINE_DOTTED);
             solar_os_gfx_line(gfx, left, y, width - 5, y);
             solar_os_gfx_set_line_style(gfx, SOLAR_OS_GFX_LINE_SOLID);
             snprintf(text, sizeof(text), "%d", level);
-            solar_os_gfx_text(gfx, 1, y + (level == -30 ? 6 : 0), text);
+            solar_os_gfx_text(gfx, 1, y + (y == top ? 6 : 0), text);
         }
-        if (rfscan.threshold_dbm != SOLAR_OS_RADIO_SCAN_EMPTY) {
+        if (rfscan.threshold_dbm != SOLAR_OS_RADIO_SCAN_EMPTY && rfscan_y_visible(rfscan.threshold_dbm)) {
             const int y = rfscan_y(rfscan.threshold_dbm, top, plot_height);
             solar_os_gfx_set_line_style(gfx, SOLAR_OS_GFX_LINE_DASHED);
             solar_os_gfx_line(gfx, left, y, width - 5, y);
@@ -393,11 +510,6 @@ static void rfscan_render(solar_os_context_t *ctx)
         }
     }
     solar_os_gfx_set_color(gfx, SOLAR_OS_GFX_COLOR_BLACK);
-    if (rfscan.message[0]) strlcpy(text, rfscan.message, sizeof(text));
-    else if (rfscan.band) snprintf(text, sizeof(text), "%lu sweeps  %lums/sweep  Tab mode",
-        (unsigned long)scan->sweeps, (unsigned long)scan->last_sweep_ms);
-    else snprintf(text, sizeof(text), "%s  Tab mode  Up/Down change", rfscan.radio.claimed ? rfscan.radio.owner : "Channel energy");
-    solar_os_gfx_text(gfx, 4, height - 30, text);
     const char *buttons[] = {scan->running ? "Stop" : "Start", rfscan.band ? "Range" : "Time", "Step", rfscan.band ? "BW" : "Freq", "Thresh"};
     for (unsigned i = 0; i < 5; i++) {
         rfscan_button(gfx, i * width / 5 + 2, height - 24, width / 5 - 4, buttons[i], rfscan.focus == i);
@@ -494,7 +606,10 @@ static bool rfscan_edit_submit(void)
         strlcpy(rfscan.edit_error, "Step too small for this range", sizeof(rfscan.edit_error));
         return false;
     }
-    if (!(rfscan.edit == RFSCAN_EDIT_STEP && !rfscan.band) && !rfscan_stop()) {
+    const rfscan_settings_t before = rfscan_settings();
+    const bool was_running = rfscan.scan.running;
+    const bool receiver_change = !(rfscan.edit == RFSCAN_EDIT_STEP && !rfscan.band);
+    if (receiver_change && !rfscan_stop()) {
         strlcpy(rfscan.edit_error, "Could not stop receiver", sizeof(rfscan.edit_error));
         return false;
     }
@@ -508,15 +623,27 @@ static bool rfscan_edit_submit(void)
         rfscan.range_start_hz = value;
         rfscan.range_end_hz = end;
     } else rfscan.window_ms = value;
-    rfscan_parameters();
-    if (!rfscan.scan.running) solar_os_radio_scan_clear(&rfscan.scan);
+    if (receiver_change) {
+        if (!rfscan_apply_settings(&before, was_running)) {
+            strlcpy(rfscan.edit_error, rfscan.message, sizeof(rfscan.edit_error));
+            return false;
+        }
+    } else {
+        rfscan_parameters();
+        if (!rfscan.scan.running) solar_os_radio_scan_clear(&rfscan.scan);
+    }
     return true;
 }
 
 static void rfscan_edit_key(uint8_t ch, size_t cells)
 {
     if (ch == '\r') ch = SOLAR_OS_KEY_ENTER;
-    if (rfscan.edit_replace && ((ch >= ' ' && ch < SOLAR_OS_KEY_UP) || ch == '\b' || ch == 0x7fU || ch == 0x15U)) {
+    const bool input = (ch >= ' ' && ch < SOLAR_OS_KEY_UP) ||
+        ch == '\b' || ch == 0x7fU || ch == 0x15U || ch == SOLAR_OS_KEY_DELETE;
+    const bool navigation = ch == SOLAR_OS_KEY_LEFT || ch == SOLAR_OS_KEY_RIGHT ||
+        ch == SOLAR_OS_KEY_HOME || ch == SOLAR_OS_KEY_END ||
+        ch == SOLAR_OS_KEY_CTRL_LEFT || ch == SOLAR_OS_KEY_CTRL_RIGHT;
+    if (rfscan.edit_replace && input) {
         rfscan.edit_text[0] = '\0';
         rfscan.edit_cursor = (solar_os_tui_input_state_t){0};
     }
@@ -524,7 +651,7 @@ static void rfscan_edit_key(uint8_t ch, size_t cells)
         rfscan.edit_text[0] = '\0';
         rfscan.edit_cursor = (solar_os_tui_input_state_t){0};
     }
-    if (ch != SOLAR_OS_KEY_ENTER && ch != SOLAR_OS_KEY_ESCAPE) rfscan.edit_replace = false;
+    if (input || navigation) rfscan.edit_replace = false;
     solar_os_tui_input_action_t action = solar_os_tui_input_key(rfscan.edit_text,
         sizeof(rfscan.edit_text), &rfscan.edit_cursor, ch, cells);
     if (action == SOLAR_OS_TUI_INPUT_CANCEL ||
@@ -549,11 +676,22 @@ static void rfscan_action(unsigned action, int direction)
     }
     if (action == 4) {
         int value = rfscan.threshold_dbm == SOLAR_OS_RADIO_SCAN_EMPTY ?
-            (direction < 0 ? -30 : -130) : rfscan.threshold_dbm + (direction < 0 ? -5 : 5);
+            (direction < 0 ? -30 : -130) : rfscan.threshold_dbm +
+                (direction < 0 ? -(int)rfscan_threshold_step() : (int)rfscan_threshold_step());
         rfscan_threshold(value < -130 || value > -30 ? SOLAR_OS_RADIO_SCAN_EMPTY : value);
         return;
     }
     if (!rfscan.band && !rfscan.channel_frequency) rfscan.center_hz = rfscan.scan.receiver.frequency_hz;
+    const rfscan_settings_t before = rfscan_settings();
+    const bool was_running = rfscan.scan.running;
+    int64_t frequency = rfscan.center_hz;
+    if (action == 3 && !rfscan.band) {
+        frequency += direction < 0 ? -(int64_t)rfscan.step_hz : rfscan.step_hz;
+        if (frequency <= 0 || frequency > UINT32_MAX) {
+            strlcpy(rfscan.message, "Frequency out of range", sizeof(rfscan.message));
+            return;
+        }
+    }
     if (!rfscan_stop()) return;
     if (action == 1) {
         if (rfscan.band) rfscan.range = rfscan.range >= 4 ?
@@ -562,27 +700,21 @@ static void rfscan_action(unsigned action, int direction)
             rfscan.window_ms = rfscan_next_value(rfscan.window_ms, rfscan_windows, 4, direction);
         }
     } else if (action == 3 && !rfscan.band) {
-        const int64_t frequency = (int64_t)rfscan.center_hz +
-            (direction < 0 ? -(int64_t)rfscan.step_hz : rfscan.step_hz);
-        if (frequency <= 0 || frequency > UINT32_MAX) {
-            strlcpy(rfscan.message, "Frequency out of range", sizeof(rfscan.message));
-            return;
-        }
         rfscan.center_hz = (uint32_t)frequency;
         rfscan.channel_frequency = true;
     } else if (action == 2) rfscan.step_hz = rfscan_next_value(rfscan.step_hz, rfscan_steps, 4, direction);
     else if (action == 3) rfscan.bandwidth_hz = rfscan_next_value(rfscan.bandwidth_hz, rfscan_bandwidths, 4, direction);
-    rfscan_parameters();
-    solar_os_radio_scan_clear(&rfscan.scan);
+    (void)rfscan_apply_settings(&before, was_running);
 }
 
 static void rfscan_set_mode(bool band)
 {
-    if (rfscan.band == band || !rfscan_stop()) return;
+    if (rfscan.band == band) return;
+    const rfscan_settings_t before = rfscan_settings();
+    const bool was_running = rfscan.scan.running;
+    if (!rfscan_stop()) return;
     rfscan.band = band;
-    rfscan_parameters();
-    solar_os_radio_scan_clear(&rfscan.scan);
-    if (!rfscan.band) rfscan_begin();
+    (void)rfscan_apply_settings(&before, was_running);
 }
 
 static esp_err_t rfscan_start(solar_os_context_t *ctx)
@@ -594,6 +726,9 @@ static esp_err_t rfscan_start(solar_os_context_t *ctx)
     rfscan.range = 2;
     rfscan.step_hz = 125000U;
     rfscan.threshold_dbm = -90;
+    rfscan.average_dbm = -80;
+    rfscan.y_center_dbm = -80;
+    rfscan.y_zoom = 4; /* 100 dB span until changed with Page Up/Down. */
     rfscan.next_beep = rfscan_now();
     if (solar_os_context_argc(ctx) > 1) {
         if (!rfscan_select(solar_os_context_argv(ctx, 1))) return ESP_ERR_NOT_FOUND;
@@ -668,6 +803,8 @@ static bool rfscan_event(solar_os_context_t *ctx, const solar_os_event_t *event)
         else if (ch == '\t') rfscan_set_mode(!rfscan.band);
         else if (ch == SOLAR_OS_KEY_UP) rfscan_action(rfscan.focus, 1);
         else if (ch == SOLAR_OS_KEY_DOWN) rfscan_action(rfscan.focus, -1);
+        else if (ch == SOLAR_OS_KEY_PAGE_UP) rfscan_zoom(-1);
+        else if (ch == SOLAR_OS_KEY_PAGE_DOWN) rfscan_zoom(1);
         else if (ch == '\n' || ch == '\r') rfscan_action(rfscan.focus, 0);
         else if (ch == ' ') rfscan_action(0, 0);
         else if (ch == 'r') rfscan_action(1, 1);
