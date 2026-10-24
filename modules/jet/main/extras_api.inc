@@ -1,6 +1,12 @@
 static void extras_hook(Scene &,void *user) {
     auto *engine=static_cast<Engine *>(user);
     if(engine!=active||(engine->frame_cancel&&engine->frame_cancel(engine->frame_cancel_user)))return;
+    if(engine->background_pending) {
+        const size_t bytes=size_t(engine->width)*engine->height*sizeof(uint16_t);
+        std::memcpy(engine->pending_color.data(),engine->frame_color,bytes);
+        std::memcpy(engine->pending_depth.data(),engine->frame_depth,bytes);
+        engine->background_captured=true;
+    }
     auto *raster=engine->scene.getRenderer();int queries=raster->pickQueryCount;raster->pickQueryCount=0;
     for(auto &pool:engine->particles)if(pool) {
         if(pool->values[JET_PART_enabled])pool->value.render(&engine->scene,&engine->camera,engine->width,engine->height);
@@ -12,7 +18,7 @@ static void extras_hook(Scene &,void *user) {
         flare->value->update(engine->frame_dt,engine->width,engine->height);
 }
 static void extras_hook_state() {
-    bool used=bool(active->effects);for(auto &pool:active->particles)used|=bool(pool);for(auto &flare:active->flares)used|=bool(flare);
+    bool used=bool(active->effects)||active->background_pending;for(auto &pool:active->particles)used|=bool(pool);for(auto &flare:active->flares)used|=bool(flare);
     active->scene.setPostGeometryHook(used ? extras_hook : nullptr,used ? active : nullptr);
 }
 static void user_pick_queries() {

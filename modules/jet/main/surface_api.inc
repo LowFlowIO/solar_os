@@ -235,6 +235,7 @@ static int execute(void *s,const solar_os_jet_command_t *command,solar_os_jet_re
             r.handle=SOLAR_OS_JET_FEATURE_MATERIALS|SOLAR_OS_JET_FEATURE_TEXTURES|SOLAR_OS_JET_FEATURE_GEOMETRY|SOLAR_OS_JET_FEATURE_SCENE|SOLAR_OS_JET_FEATURE_SPRITES|SOLAR_OS_JET_FEATURE_PICKING|SOLAR_OS_JET_FEATURE_ASSETS|SOLAR_OS_JET_FEATURE_INSTANCING|SOLAR_OS_JET_FEATURE_PARTICLES|SOLAR_OS_JET_FEATURE_FLARES|SOLAR_OS_JET_FEATURE_POSTFX|SOLAR_OS_JET_FEATURE_TILED_TEXTURES|SOLAR_OS_JET_FEATURE_SHADERS;
             int objects,triangles,vertices;active->scene.getStatistics(objects,triangles,vertices);
             r.handle|=SOLAR_OS_JET_FEATURE_RENDERER_CONTROLS;
+            r.handle|=SOLAR_OS_JET_FEATURE_BACKGROUND_CACHE;
             r.values[0]=objects;r.values[1]=triangles;r.values[2]=vertices;
             r.values[3]=SOLAR_OS_JET_MAX_MATERIALS;r.values[4]=SOLAR_OS_JET_MAX_TEXTURES;
             r.values[5]=SOLAR_OS_JET_MAX_LIGHTS;r.values[6]=SOLAR_OS_JET_MAX_OBJECTS;

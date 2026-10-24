@@ -23,6 +23,48 @@ void *operator new[](size_t n,const std::nothrow_t &) noexcept {return operator 
 void operator delete(void *p,const std::nothrow_t &) noexcept {operator delete(p);}
 void operator delete[](void *p,const std::nothrow_t &) noexcept {operator delete(p);}
 static bool cancellation(void *user) {return ++*static_cast<unsigned *>(user)==4;}
+static void background_cache_validation(const solar_os_jet_api_v1_t *api,void *scene,
+                                        uint16_t *color,size_t bytes) {
+    solar_os_jet_command_t q={};solar_os_jet_reply_t r;
+    auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
+    q.opcode=SOLAR_OS_JET_INFO;assert(execute()==0&&(r.handle&SOLAR_OS_JET_FEATURE_BACKGROUND_CACHE));
+    uint32_t cube=0;assert(api->cube(scene,150,150,150,0xff0000,&cube)==0);
+    q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=1U<<JET_SCENE_background_cache;
+    q.values[JET_SCENE_background_cache]=1;assert(execute()==0);
+    assert(api->render(scene,color,bytes,nullptr,nullptr)==0);
+    std::vector<uint16_t> cached(color,color+bytes/2),other(bytes/2,0);
+    assert(api->remove(scene,cube)==0);
+    assert(api->render(scene,other.data(),bytes,nullptr,nullptr)==0&&other==cached);
+    q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=1U<<JET_SCENE_background_cache;
+    q.values[JET_SCENE_background_cache]=1;assert(execute()==0);
+    assert(api->render(scene,color,bytes,[](void *){return true;},nullptr)==SOLAR_OS_NATIVE_ERROR_TIMEOUT);
+    assert(api->render(scene,other.data(),bytes,nullptr,nullptr)==0&&other==cached);
+    // A changed foreground leaves no trails; geometry behind the captured
+    // cube must still be rejected by the retained depth buffer.
+    assert(api->cube(scene,100,100,100,0x00ff00,&cube)==0);
+    solar_os_jet_pose_t pose={0,0,200,0,0,0};assert(api->transform(scene,cube,&pose)==0);
+    assert(api->render(scene,color,bytes,nullptr,nullptr)==0);
+    assert(color[24*64+32]==cached[24*64+32]);
+    pose.z=-200;assert(api->transform(scene,cube,&pose)==0);
+    assert(api->render(scene,color,bytes,nullptr,nullptr)==0&&color[24*64+32]!=cached[24*64+32]);
+    assert(api->remove(scene,cube)==0);
+    assert(api->render(scene,other.data(),bytes,nullptr,nullptr)==0&&other==cached);
+    // Both allocation failures preserve the previous cache and settings.
+    for(long failure=0;failure<2;++failure) {
+        q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=1U<<JET_SCENE_background_cache;
+        q.values[JET_SCENE_background_cache]=1;fail_at=requests+failure;
+        assert(execute()==SOLAR_OS_NATIVE_ERROR_NO_MEMORY);fail_at=-1;
+        assert(api->render(scene,other.data(),bytes,nullptr,nullptr)==0&&other==cached);
+    }
+    q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=1U<<JET_SCENE_clear;
+    assert(execute()==SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT);
+    q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=1U<<JET_SCENE_wireframe;q.values[JET_SCENE_wireframe]=1;
+    assert(execute()==SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT);
+    q={};q.opcode=SOLAR_OS_JET_SCENE_SET;q.fields=1U<<JET_SCENE_background_cache;
+    assert(execute()==0&&api->render(scene,color,bytes,nullptr,nullptr)==0);
+    for(size_t i=0;i<bytes/2;++i)assert(color[i]==0xffff);
+    puts("Jet background cache: buffer exchange, depth occlusion, no trails, cancellation and allocation failures passed");
+}
 static void controls_validation(const solar_os_jet_api_v1_t *api,void *scene,uint16_t *color,size_t bytes) {
     solar_os_jet_command_t q={};solar_os_jet_reply_t r;
     auto execute=[&] {return api->extensions->execute(scene,&q,&r);};
@@ -375,5 +417,8 @@ int main() {
     assert(solar_os_jet_engine_idle());
     scene=nullptr;assert(api->create(64,48,color.data(),depth.data(),bytes,&scene)==0);
     controls_validation(api,scene,color.data(),bytes);assert(api->destroy(scene)==0&&solar_os_jet_engine_idle());
+    scene=nullptr;assert(api->create(64,48,color.data(),depth.data(),bytes,&scene)==0);
+    background_cache_validation(api,scene,color.data(),bytes);
+    assert(api->destroy(scene)==0&&solar_os_jet_engine_idle());
     puts("Jet provider ABI, allocation failures, geometry and cancellation passed");
 }

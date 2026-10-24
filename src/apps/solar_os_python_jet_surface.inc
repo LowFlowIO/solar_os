@@ -80,6 +80,7 @@ static mp_obj_t solaros_jet_scene_capabilities(mp_obj_t self) {
     python_dict_store_bool(dict,"tiled_textures",r.handle&SOLAR_OS_JET_FEATURE_TILED_TEXTURES);
     python_dict_store_bool(dict,"shaders",r.handle&SOLAR_OS_JET_FEATURE_SHADERS);
     python_dict_store_bool(dict,"renderer_controls",r.handle&SOLAR_OS_JET_FEATURE_RENDERER_CONTROLS);
+    python_dict_store_bool(dict,"background_cache",r.handle&SOLAR_OS_JET_FEATURE_BACKGROUND_CACHE);
     const char *names[]={"objects","triangles","vertices","max_materials","max_textures","max_lights","max_objects","max_sprites","max_picks","max_prototypes","max_instances","max_particle_systems","max_flares","max_flare_elements"};
     for(unsigned i=0;i<14;++i) python_dict_store_uint(dict,names[i],r.values[i]);
     python_dict_store_uint(dict,"max_shaders",r.values[14]);

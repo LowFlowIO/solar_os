@@ -7854,6 +7854,16 @@ static int solua_gfx_rgb(lua_State *L)
     return 1;
 }
 
+static int solua_gfx_theme(lua_State *L)
+{
+    uint32_t foreground = 0, background = 0;
+    solua_check_esp(L, solar_os_display_get_colors(&foreground, &background));
+    lua_newtable(L);
+    solua_set_int(L, -1, "foreground", foreground);
+    solua_set_int(L, -1, "background", background);
+    return 1;
+}
+
 static int solua_gfx_font(lua_State *L)
 {
     if (lua_gettop(L) == 0 || lua_isnil(L, 1)) {

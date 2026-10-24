@@ -384,6 +384,18 @@ static void jet_fill_u32x16(uint32_t* dest, uint32_t val, int n32) {
 #endif
 
 void PERF_CRITICAL Scene::clearBuffers() {
+#if !HALF_WIDTH_BUFFERS && !FIELD_BUFFERS && Z_BUFFERING
+    if(clearRenderBuffer && cachedBackgroundColor && cachedBackgroundDepth &&
+       renderer && !renderer->wireframeMode && !renderer->checkerboardMode && !renderer->interlacedMode) {
+        const size_t first=size_t(std::max(0,renderer->yBandMin))*screenWidth;
+        const size_t end=size_t(std::min(screenHeight,renderer->yBandMax))*screenWidth;
+        if(end>first) {
+            std::memcpy(framebuffer+first,cachedBackgroundColor+first,(end-first)*sizeof(uint16_t));
+            std::memcpy(zBuffer+first,cachedBackgroundDepth+first,(end-first)*sizeof(uint16_t));
+        }
+        return;
+    }
+#endif
     //cast the framebuffer to a 32-bit pointer
     uint32_t* framebuffer32 = (uint32_t*)framebuffer;
 

@@ -189,6 +189,23 @@ static int scene_command(const solar_os_jet_command_t &q,solar_os_jet_reply_t &r
         double v[SOLAR_OS_JET_VALUES]={0};merge_values(v,q,jet_scene_fields,JET_SCENE_COUNT,active->settings);
         if(v[JET_SCENE_texture_lod]&&v[JET_SCENE_texture_far]<=v[JET_SCENE_texture_near])
             return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+        if(v[JET_SCENE_background_cache]&&(!v[JET_SCENE_clear]||v[JET_SCENE_wireframe]))
+            return SOLAR_OS_NATIVE_ERROR_INVALID_ARGUMENT;
+        if(q.fields&(1U<<JET_SCENE_background_cache)) {
+            if(v[JET_SCENE_background_cache]) {
+                const size_t pixels=size_t(active->width)*active->height;
+                std::vector<uint16_t> color(pixels),depth(pixels);
+                active->pending_color.swap(color);active->pending_depth.swap(depth);
+                active->background_pending=true;
+            } else {
+                active->scene.setBackgroundCache(nullptr,nullptr);
+                active->background_pending=false;
+                std::vector<uint16_t>().swap(active->background_color);
+                std::vector<uint16_t>().swap(active->background_depth);
+                std::vector<uint16_t>().swap(active->pending_color);
+                std::vector<uint16_t>().swap(active->pending_depth);
+            }
+        }
         std::memcpy(active->settings,v,sizeof(v));
         active->scene.setClearBuffer(active->settings[JET_SCENE_clear]);active->scene.lodScale=active->settings[JET_SCENE_lod_scale];
         active->scene.lodBias=active->settings[JET_SCENE_lod_bias];

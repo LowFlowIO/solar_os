@@ -145,6 +145,9 @@ public:
     /// @brief Enable or disable per-frame framebuffer clearing.
     /// @param clear True to clear before rendering, false to preserve previous content.
     void setClearBuffer(bool clear) { clearRenderBuffer = clear; }
+    void setBackgroundCache(const uint16_t *color,const uint16_t *depth) {
+        cachedBackgroundColor=color;cachedBackgroundDepth=depth;
+    }
 
     /// @brief Hot-swap framebuffer, z-buffer and dimensions (e.g. on window resize).
     ///
@@ -311,6 +314,7 @@ private:
     PostFX* postFX = nullptr;
 
     uint16_t* framebuffer;
+    const uint16_t *cachedBackgroundColor=nullptr,*cachedBackgroundDepth=nullptr;
     uint16_t* zBuffer;
     int screenWidth;
     int screenHeight;

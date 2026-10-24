@@ -8864,6 +8864,19 @@ static mp_obj_t solaros_gfx_rgb(mp_obj_t red_obj,
 }
 MP_DEFINE_CONST_FUN_OBJ_3(solaros_gfx_rgb_obj, solaros_gfx_rgb);
 
+static mp_obj_t solaros_gfx_theme(void)
+{
+    uint32_t foreground = 0, background = 0;
+    python_check_esp(solar_os_display_get_colors(&foreground, &background));
+    mp_obj_t theme = mp_obj_new_dict(2);
+    mp_obj_dict_store(theme, mp_obj_new_str("foreground", 10),
+                      mp_obj_new_int_from_uint(foreground));
+    mp_obj_dict_store(theme, MP_OBJ_NEW_QSTR(MP_QSTR_background),
+                      mp_obj_new_int_from_uint(background));
+    return theme;
+}
+MP_DEFINE_CONST_FUN_OBJ_0(solaros_gfx_theme_obj, solaros_gfx_theme);
+
 static mp_obj_t solaros_gfx_font(size_t n_args, const mp_obj_t *args)
 {
     if (n_args == 0) {

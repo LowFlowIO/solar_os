@@ -58,3 +58,8 @@ and parameters are initialized; scripts must contain VM exceptions before return
 
 Upstream updates require reviewing these changes and rerunning native versus
 wire-order image comparisons and firmware builds.
+
+The SolarOS provider can capture a static geometry frame's color and depth.
+Full-frame clears then restore that cache before rendering dynamic geometry.
+Capture precedes particles, post-processing and sprites; failed captures retain
+the previous cache. Buffers belong to the provider and are released on close.

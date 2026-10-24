@@ -613,6 +613,24 @@ shading; use `clear=True` for a clean transition. Examples are
 
 ## Presentation and memory
 
+Jet library 1.11 adds `settings(background_cache=True)` (Lua:
+`scene:settings{background_cache=true}`). It captures the next successful
+geometry frame's color and depth before particles, post-processing and sprites.
+Keep only the static background geometry visible for that frame, render once,
+then disable or remove it. Later frames restore the cached pixels and depth
+before drawing moving objects, preserving occlusion without rendering the
+static geometry again. `capabilities()` reports `background_cache` support.
+
+The cache requires `clear=True` and `wireframe=False`. It retains a fixed view;
+camera, lighting, material and geometry changes do not update it automatically.
+Set `background_cache=False` to release it, then capture again for a new view.
+A failed or cancelled capture preserves the previous cache. Captured geometry
+does not participate in picking after it is disabled or removed.
+
+The cache uses an additional `width × height × 4` bytes of PSRAM. Recapture
+temporarily holds both the old cache and a new pair of buffers. Scenes release
+all cache storage on close.
+
 Rendering uses the display's full dimensions. Width must be a multiple of eight;
 both dimensions must be at most 1024 pixels. The host owns three RGB565 color
 buffers and one depth buffer, each `width × height × 2` bytes of PSRAM, in
