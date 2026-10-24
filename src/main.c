@@ -1723,6 +1723,7 @@ static void poll_local_input_sources(void)
 static void dispatch_input_sources(void)
 {
     poll_local_input_sources();
+    solar_os_input_poll();
     maybe_exit_suspend_for_input();
     if (solar_os_input_take_captured_activity()) {
         maybe_exit_suspend_for_input();
