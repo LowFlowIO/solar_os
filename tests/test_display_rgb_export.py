@@ -13,7 +13,8 @@ class DisplayRgbExportTest(unittest.TestCase):
         source = (ROOT / "src/services/solar_os_display.c").read_text()
         with tempfile.TemporaryDirectory() as tmp:
             Path(tmp, "export.inc").write_text(production_functions(source, (
-                "display_surface_logical_to_native", "display_publish_surface")))
+                "display_export_mono_rgb565", "display_surface_logical_to_native",
+                "display_publish_surface")))
             binary = Path(tmp, "export")
             subprocess.run([
                 "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
