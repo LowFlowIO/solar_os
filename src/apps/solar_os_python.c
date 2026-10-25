@@ -7690,20 +7690,25 @@ static bool python_messages_list_visit(
     return true;
 }
 
-static mp_obj_t solaros_messages_list(mp_obj_t conversation_id_obj)
+static mp_obj_t solaros_messages_list(size_t n_args, const mp_obj_t *args)
 {
+    size_t offset = n_args >= 2 ? python_u32_from_obj(args[1]) : 0;
+    size_t limit = n_args >= 3 ? python_u32_from_obj(args[2]) : SOLAR_OS_MESSAGING_MESSAGE_CAPACITY;
+    if (!limit || limit > SOLAR_OS_MESSAGING_MESSAGE_CAPACITY)
+        mp_raise_ValueError(MP_ERROR_TEXT("limit must be 1..64"));
+    /* GC ownership also releases the page if dictionary allocation raises. */
+    solar_os_messaging_message_t *page = m_new(solar_os_messaging_message_t, limit);
+    size_t count = 0; bool more = false;
+    python_check_esp(solar_os_messaging_message_page(python_u32_from_obj(args[0]),
+        0, offset, page, limit, &count, &more));
     python_messages_list_context_t context = {
         .list = mp_obj_new_list(0, NULL),
     };
-    (void)solar_os_messaging_message_visit(
-        python_u32_from_obj(conversation_id_obj),
-        0,
-        python_messages_list_visit,
-        &context,
-        NULL);
+    for (size_t i = 0; i < count; i++) (void)python_messages_list_visit(&page[i], &context);
+    m_del(solar_os_messaging_message_t, page, limit);
     return context.list;
 }
-MP_DEFINE_CONST_FUN_OBJ_1(solaros_messages_list_obj, solaros_messages_list);
+MP_DEFINE_CONST_FUN_OBJ_VAR_BETWEEN(solaros_messages_list_obj, 1, 3, solaros_messages_list);
 
 static mp_obj_t solaros_messages_send(size_t n_args,
                                       const mp_obj_t *args,

@@ -2,6 +2,10 @@
 
 ## 4.x
 
+- **4.16.31** — 2026-10-25 — Chat now retains received and sent messages
+  on disk with fast channel switching and access to older history. Added TWAI
+  CAN expansion support and shell controls. Improved BLE keyboard compatibility,
+  fixed large-display rendering, and preserved full color in browser mirroring.
 - **4.16.30** — 2026-10-24 — Faster native-app discovery at boot and reduced
   alert-tone SRAM use. Added Jet background caching and Python/Lua access to
   terminal colors. Display snapshots now mirror unscaled full-screen RGB565

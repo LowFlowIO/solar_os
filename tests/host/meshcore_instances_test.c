@@ -195,7 +195,7 @@ int main(void)
     assert(solar_os_meshcore_legacy_begin(0, &lease) == ESP_ERR_INVALID_ARG && !lease);
     assert(solar_os_meshcore_legacy_begin(1, NULL) == ESP_ERR_INVALID_ARG);
     char extra_file[64]; snprintf(extra_file, sizeof(extra_file), ".chat/profiles/%03" PRIu32 ".bin", extra);
-    const char *files[] = {".chat/profiles/002.bin", ".chat/profiles/004.bin", ".chat/profiles/005.bin", extra_file, ".messages/messages.bin", ".contacts/contacts.bin"};
+    const char *files[] = {".chat/profiles/002.bin", ".chat/profiles/004.bin", ".chat/profiles/005.bin", extra_file, ".messages/history.bin", ".messages/location", ".contacts/contacts.bin"};
     char path[160];
     for (size_t i = 0; i < sizeof(files)/sizeof(files[0]); i++) {
         assert(solar_os_storage_default_path(files[i], path, sizeof(path)) == ESP_OK); assert(unlink(path) == 0);

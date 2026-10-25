@@ -93,6 +93,10 @@ typedef enum {
 typedef struct {
     const uint8_t *data;
     size_t data_size;
+    /* Optional native row-major RGB565 snapshot, most-significant byte first.
+     * Rows contain native_width pixels without padding. Shares data's lifetime. */
+    const uint8_t *rgb565_data;
+    size_t rgb565_size;
     uint32_t frame_id;
     uint32_t target_generation;
     uint16_t width;

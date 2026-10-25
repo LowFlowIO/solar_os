@@ -116,22 +116,20 @@ static void messages_status(solar_os_shell_io_t *io)
     solar_os_shell_io_table_printf(
         io,
         "Conversations: %u/%u\n"
-        "Messages: %u/%u (%u unread)\n"
+        "Messages: %u (%u unread)\n"
+        "RAM cache: %u/%u\n"
         "Pending outbox: %u/%u (volatile)\n"
-        "History: %s, capacity %u, limit %u bytes\n"
+        "History: %s\n"
         "Dropped: messages %" PRIu32 ", outbox %" PRIu32 "\n",
         (unsigned)status.conversations,
         (unsigned)SOLAR_OS_MESSAGING_CONVERSATION_CAPACITY,
         (unsigned)status.messages,
-        (unsigned)SOLAR_OS_MESSAGING_MESSAGE_CAPACITY,
         (unsigned)status.unread,
+        (unsigned)status.cached_messages,
+        (unsigned)SOLAR_OS_MESSAGING_MESSAGE_CAPACITY,
         (unsigned)status.queued_outbox,
         (unsigned)SOLAR_OS_MESSAGING_OUTBOX_CAPACITY,
-        status.persistent ?
-            (status.inbox_backed ? "compact internal" : "full") :
-            "volatile",
-        (unsigned)status.persistent_capacity,
-        (unsigned)status.persistent_limit_bytes,
+        status.persistent ? "disk archive (available disk space)" : "unavailable",
         status.dropped_messages,
         status.dropped_outbox);
     if (status.storage_error != ESP_OK) {

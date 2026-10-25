@@ -14,6 +14,11 @@ KEYMAP_INPUTS := $(wildcard $(ROOT)/keymaps/profiles/*.json) $(ROOT)/scripts/gen
 
 .PHONY: all test clean
 
+TARGETS += can_twai_test
+
+can_twai_test: can_twai_test.c $(ROOT)/src/drivers/can_twai.c $(ROOT)/src/services/solar_os_can.c $(wildcard can_stubs/driver/*.h)
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -Ican_stubs -Iepd_stubs -Iexpansion_stubs -I. -I$(ROOT)/src/drivers -I$(ROOT)/src/services $(filter %.c,$^) -o $@
+
 TARGETS += ble_service_test ble_multi_peer_test ble_nimble_test ble_hid_test ble_lua_bindings_test ble_server_test ble_coc_test
 TARGETS += input_action_match_test gesture_completion_test touch_gesture_test
 TARGETS += epd_ssd1677_test epd_uc8179_test uc8179_expansion_test epd_uc8279_test uc8279_expansion_test
@@ -47,6 +52,11 @@ TARGETS += tensor_image_lua_test
 TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test irc_protocol_test gateway_config_test link_messaging_test chat_settings_test meshcore_instances_test
+TARGETS += inbox_saved_history_test
+
+inbox_saved_history_test: inbox_saved_history_test.c $(ROOT)/src/services/solar_os_inbox.c $(ROOT)/src/services/solar_os_inbox.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -ffunction-sections -fdata-sections \
+		-Imessaging_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services $< -Wl,--gc-sections -o $@
 TARGETS += nmea_test nmea_gnss_test gnss_output_test
 TARGETS += sx1262_test
 TARGETS += cw2017_test
@@ -296,7 +306,7 @@ messaging_service_test gateway_config_test link_messaging_test chat_settings_tes
         $(ROOT)/src/services/solar_os_saved_config.h $(ROOT)/src/services/solar_os_credentials.c \
         $(ROOT)/src/services/solar_os_link_messaging.c $(ROOT)/src/services/solar_os_link_messaging.h \
         $(ROOT)/src/services/solar_os_chat.c messaging_service_test.c \
-        $(ROOT)/src/services/solar_os_messaging.c $(ROOT)/src/services/solar_os_messaging_registry.inc $(ROOT)/src/services/solar_os_messaging_types.c \
+        $(ROOT)/src/services/solar_os_messaging.c $(ROOT)/src/services/solar_os_messaging_history.inc $(ROOT)/src/services/solar_os_messaging_registry.inc $(ROOT)/src/services/solar_os_messaging_types.c \
         $(ROOT)/src/services/solar_os_contacts.h $(ROOT)/src/services/solar_os_messaging.h \
         $(ROOT)/src/services/solar_os_messaging_types.h messaging_stubs/freertos/semphr.h \
         $(ROOT)/src/services/solar_os_storage.c $(ROOT)/src/services/solar_os_storage.h
@@ -307,6 +317,8 @@ messaging_service_test gateway_config_test link_messaging_test chat_settings_tes
 		$< $(ROOT)/src/services/solar_os_messaging_types.c \
 		$(ROOT)/src/services/solar_os_storage.c -Wl,--gc-sections \
 		-Wl,--wrap=solar_os_storage_is_mounted,--wrap=solar_os_storage_sd_is_mounted \
+		-Wl,--wrap=solar_os_storage_flash_is_mounted,--wrap=solar_os_storage_flash_mount_point \
+		-Wl,--wrap=solar_os_storage_sd_mount_point \
 		-Wl,--wrap=solar_os_storage_default_path,--wrap=solar_os_storage_mkdir \
 		-Wl,--wrap=solar_os_storage_remove,--wrap=solar_os_storage_get_usage,--wrap=rename -o $@
 
@@ -670,9 +682,9 @@ board_caps_test: board_caps_test.c $(ROOT)/src/services/solar_os_board_caps.c $(
 		-DSOLAR_OS_BOARD_HAS_HUMIDITY=1 -DSOLAR_OS_BOARD_HAS_SIMD=1 \
 		board_caps_test.c $(ROOT)/src/services/solar_os_board_caps.c -o $@
 
-hid_keyboard_report_test: hid_keyboard_report_test.c $(ROOT)/src/services/solar_os_hid_keyboard_report.c $(ROOT)/src/services/solar_os_hid_keyboard_report.h
+hid_keyboard_report_test: hid_keyboard_report_test.c $(ROOT)/src/services/solar_os_hid_keyboard_report.c $(ROOT)/src/services/solar_os_hid_keyboard_report.h $(ROOT)/src/services/solar_os_ble_hid_report_map.c $(ROOT)/src/services/solar_os_ble_hid_report_map.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services \
-		hid_keyboard_report_test.c $(ROOT)/src/services/solar_os_hid_keyboard_report.c -o $@
+		hid_keyboard_report_test.c $(ROOT)/src/services/solar_os_hid_keyboard_report.c $(ROOT)/src/services/solar_os_ble_hid_report_map.c -o $@
 
 ble_keyboard_scan_policy_test: ble_keyboard_scan_policy_test.c $(ROOT)/src/services/solar_os_ble_keyboard_scan_policy.c $(ROOT)/src/services/solar_os_ble_keyboard_scan_policy.h
 	$(CC) $(CFLAGS) -I$(ROOT)/src/services \
@@ -1100,6 +1112,7 @@ rtc_pcf85063_test: rtc_pcf85063_test.c \
 		rtc_pcf85063_test.c $(ROOT)/src/drivers/rtc_pcf85063.c -o $@
 
 test: $(TARGETS)
+	./can_twai_test
 	./i2c_buses_test
 	./inmp441_test
 	./epd_pixel_budget_test
@@ -1115,6 +1128,7 @@ test: $(TARGETS)
 	./rtc_ds3231_test
 	./axp2101_service_test
 	./messaging_service_test
+	./inbox_saved_history_test
 	./gateway_config_test
 	./link_messaging_test
 	./chat_settings_test

@@ -83,7 +83,7 @@ int main(void)
     assert(!find_link("a") && find_link("b")->provider == b && find_link("b")->config.enabled);
     assert(solar_os_link_messaging_start("b") == ESP_OK);
     assert(solar_os_messaging_instance_remove(b) == ESP_OK);
-    const char *files[] = {".chat/profiles/003.bin", ".chat/profiles/004.bin", ".contacts/contacts.bin", ".messages/messages.bin"};
+    const char *files[] = {".chat/profiles/003.bin", ".chat/profiles/004.bin", ".contacts/contacts.bin", ".messages/history.bin", ".messages/location"};
     char path[160];
     for (size_t i = 0; i < sizeof(files)/sizeof(files[0]); i++) {
         assert(solar_os_storage_default_path(files[i], path, sizeof(path)) == ESP_OK); assert(unlink(path) == 0);
