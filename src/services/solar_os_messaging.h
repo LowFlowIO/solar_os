@@ -14,7 +14,7 @@
 #define SOLAR_OS_MESSAGING_PROVIDER_KEY_MAX 64U
 #define SOLAR_OS_MESSAGING_SENDER_MAX 40U
 #define SOLAR_OS_MESSAGING_STORE_DIR ".messages"
-#define SOLAR_OS_MESSAGING_STORE_FILE "messages.bin"
+#define SOLAR_OS_MESSAGING_STORE_FILE "history.bin"
 
 typedef enum {
     SOLAR_OS_MESSAGING_EVENT_PROVIDER = 0,
@@ -169,9 +169,11 @@ typedef struct {
     bool inbox_backed;
     size_t conversations;
     size_t messages;
+    size_t cached_messages;
     size_t unread;
     size_t queued_outbox;
     size_t queued_events;
+    /* Zero denotes an archive limited by available disk space. */
     size_t persistent_capacity;
     size_t persistent_limit_bytes;
     uint32_t dropped_messages;
@@ -185,6 +187,11 @@ typedef bool (*solar_os_messaging_message_visitor_t)(
     void *user);
 
 esp_err_t solar_os_messaging_init(void);
+/* Newest matching messages, returned in chronological order. Offset counts
+ * messages from the newest end of the conversation; memory use is caller-bounded. */
+esp_err_t solar_os_messaging_message_page(solar_os_conversation_id_t conversation,
+    solar_os_messaging_provider_id_t provider, size_t offset,
+    solar_os_messaging_message_t *messages, size_t capacity, size_t *count, bool *more);
 esp_err_t solar_os_messaging_get_status(solar_os_messaging_status_t *status);
 esp_err_t solar_os_messaging_provider_register(
     solar_os_messaging_provider_id_t provider,

@@ -81,9 +81,27 @@ stores.
 
 See `contacts` for the TUI and mutation commands. `chat` is the unified
 conversation UI and works without Wi-Fi; provider jobs connect transports when
-available. The `messages` shell API exposes the same bounded conversation
-store. Stable 64-bit message IDs are printed as hexadecimal strings so they
+available. The `messages` shell API exposes the same disk history.
+Stable 64-bit message IDs are printed as hexadecimal strings so they
 survive shell and scripting runtimes without precision loss.
+
+Received and sent messages are saved in `.messages/history.bin` on the selected
+storage volume. The 64-message RAM cache does not limit disk history. History
+grows with available disk space; gateway sync and cache eviction do not delete
+older messages. Chat loads each conversation from disk. Use Page Up and Page
+Down to move through older and newer history pages. `messages list ID` reads
+the complete saved conversation.
+
+SolarOS selects mounted storage when creating the archive and saves that
+location in internal flash. If SD mounts after startup, an internal archive
+moves to SD through a checked, synced copy before the saved location changes.
+Existing files on SD are not overwritten. An unavailable saved volume is retried
+when it returns; a new empty archive does not replace its history.
+If storage is unavailable or a write fails, `messages status` reports the error.
+New sends are queued only after their history is saved.
+
+Existing full message records and incoming message records from the compact
+Inbox store migrate to the archive. Their original files are retained.
 
 Direct messages to a blocked endpoint are always rejected. A discovered
 endpoint requires an explicit second confirmation in Chat or

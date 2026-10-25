@@ -52,6 +52,11 @@ TARGETS += tensor_image_lua_test
 TARGETS += vision_lua_bindings_test
 TARGETS += media_lua_bindings_test
 TARGETS += messaging_service_test irc_protocol_test gateway_config_test link_messaging_test chat_settings_test meshcore_instances_test
+TARGETS += inbox_saved_history_test
+
+inbox_saved_history_test: inbox_saved_history_test.c $(ROOT)/src/services/solar_os_inbox.c $(ROOT)/src/services/solar_os_inbox.h
+	$(CC) $(CFLAGS) -D_GNU_SOURCE -include compat.h -ffunction-sections -fdata-sections \
+		-Imessaging_stubs -I. -I$(ROOT)/src -I$(ROOT)/src/services $< -Wl,--gc-sections -o $@
 TARGETS += nmea_test nmea_gnss_test gnss_output_test
 TARGETS += sx1262_test
 TARGETS += cw2017_test
@@ -301,7 +306,7 @@ messaging_service_test gateway_config_test link_messaging_test chat_settings_tes
         $(ROOT)/src/services/solar_os_saved_config.h $(ROOT)/src/services/solar_os_credentials.c \
         $(ROOT)/src/services/solar_os_link_messaging.c $(ROOT)/src/services/solar_os_link_messaging.h \
         $(ROOT)/src/services/solar_os_chat.c messaging_service_test.c \
-        $(ROOT)/src/services/solar_os_messaging.c $(ROOT)/src/services/solar_os_messaging_registry.inc $(ROOT)/src/services/solar_os_messaging_types.c \
+        $(ROOT)/src/services/solar_os_messaging.c $(ROOT)/src/services/solar_os_messaging_history.inc $(ROOT)/src/services/solar_os_messaging_registry.inc $(ROOT)/src/services/solar_os_messaging_types.c \
         $(ROOT)/src/services/solar_os_contacts.h $(ROOT)/src/services/solar_os_messaging.h \
         $(ROOT)/src/services/solar_os_messaging_types.h messaging_stubs/freertos/semphr.h \
         $(ROOT)/src/services/solar_os_storage.c $(ROOT)/src/services/solar_os_storage.h
@@ -312,6 +317,8 @@ messaging_service_test gateway_config_test link_messaging_test chat_settings_tes
 		$< $(ROOT)/src/services/solar_os_messaging_types.c \
 		$(ROOT)/src/services/solar_os_storage.c -Wl,--gc-sections \
 		-Wl,--wrap=solar_os_storage_is_mounted,--wrap=solar_os_storage_sd_is_mounted \
+		-Wl,--wrap=solar_os_storage_flash_is_mounted,--wrap=solar_os_storage_flash_mount_point \
+		-Wl,--wrap=solar_os_storage_sd_mount_point \
 		-Wl,--wrap=solar_os_storage_default_path,--wrap=solar_os_storage_mkdir \
 		-Wl,--wrap=solar_os_storage_remove,--wrap=solar_os_storage_get_usage,--wrap=rename -o $@
 
@@ -1121,6 +1128,7 @@ test: $(TARGETS)
 	./rtc_ds3231_test
 	./axp2101_service_test
 	./messaging_service_test
+	./inbox_saved_history_test
 	./gateway_config_test
 	./link_messaging_test
 	./chat_settings_test

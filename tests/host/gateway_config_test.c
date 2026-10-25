@@ -151,7 +151,7 @@ int main(void)
     assert(solar_os_chat_get_config(&config) == ESP_ERR_NOT_FOUND);
     assert(!solar_os_messaging_provider_find("gateway"));
     char path[160];
-    const char *files[] = {".chat/profiles/001.bin", ".chat/profiles/004.bin", ".chat/profiles/005.bin", ".messages/messages.bin"};
+    const char *files[] = {".chat/profiles/001.bin", ".chat/profiles/004.bin", ".chat/profiles/005.bin", ".messages/history.bin", ".messages/location"};
     for (size_t i = 0; i < sizeof(files) / sizeof(files[0]); i++) {
         assert(solar_os_storage_default_path(files[i], path, sizeof(path)) == ESP_OK);
         assert(unlink(path) == 0);

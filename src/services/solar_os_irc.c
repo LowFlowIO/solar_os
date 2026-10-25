@@ -582,7 +582,11 @@ static void irc_received(irc_instance_t *node, char *line)
             .timestamp_ms = (uint64_t)time(NULL) * 1000,
             .security_flags = SOLAR_OS_SECURITY_TRANSPORT_SECURED | SOLAR_OS_SECURITY_SENDER_UNVERIFIED,
             .sender = sender, .body = p[1]};
-        (void)solar_os_messaging_publish_inbound(&inbound, NULL, NULL);
+        esp_err_t error = solar_os_messaging_publish_inbound(&inbound, NULL, NULL);
+        if (error != ESP_OK) {
+            irc_status(node, error, "message history storage failed");
+            SOLAR_OS_LOGW("irc", "message history storage failed: %s", esp_err_to_name(error));
+        }
     }
 }
 
