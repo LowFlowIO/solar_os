@@ -214,7 +214,8 @@ static void slots(const sc2_identity_t *a, const sc2_identity_t *b)
     L(3, "{\"type\":\"room.list\"}"); /* frames before auth do not extend it */
     CHECK(sc2_mr_tick(mr) == 0);
     g_now++;
-    CHECK(sc2_mr_tick(mr) == 1 && g_kicked[3] == 1 && has(3, "\"code\":408"));
+    CHECK(sc2_mr_tick(mr) == 1 && g_kicked[3] == 1 && has(3, "\"code\":408") &&
+          has(3, "\"err\":\"auth_timeout\""));
 
     /* eviction: everyone logged in; nobody idle long enough yet */
     memset(g_kicked, 0, sizeof(g_kicked));

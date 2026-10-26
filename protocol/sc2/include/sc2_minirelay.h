@@ -18,17 +18,29 @@
  * 413 too_large) and never grows.
  *
  * Connection slots: the host has cfg->sessions slots and nothing more, so
- * the relay bounds how long a client can hold one, like the full relay:
+ * the relay bounds how long a client can hold one:
  *   - one session per device key: a new login closes the older session of
  *     the same device with 409 replaced;
+ *   - a login must be finished within SC2_MR_AUTH_S of sc2_mr_open(),
+ *     whatever the client sends meanwhile, else 408 auth_timeout
+ *     (sc2_mr_tick());
  *   - pings are not activity: an authenticated session that sends nothing
- *     but pings for cfg->idle_s gets 408 idle (sc2_mr_tick()); a login that
- *     is not finished within SC2_MR_AUTH_S gets 408 idle as well;
+ *     but pings for cfg->idle_s gets 408 idle (sc2_mr_tick());
  *   - when every slot is taken, sc2_mr_evict() closes the longest-idle
  *     authenticated session (idle at least SC2_MR_EVICT_MIN_S) with
  *     503 evicted so the host can give its slot to the new connection.
  * Each of these sends a final error frame to that session, releases it and
  * calls cfg->kick so the host closes the connection.
+ *
+ * Eviction differs from the full relay. The full relay keeps a few spare
+ * slots for handshakes and evicts only once the newcomer has authenticated,
+ * so connections without a key cannot push devices off. A host with
+ * cfg->sessions slots has no spare ones and calls sc2_mr_evict() when a
+ * connection is accepted, before it has said anything: anyone who can
+ * reach the port can close sessions that have been idle for
+ * SC2_MR_EVICT_MIN_S, one per connection (the login deadline then frees
+ * the newcomer's slot). That is acceptable on the trusted LAN the
+ * mini-relay is meant for, not on an open network.
  *
  * Legacy v1: a first line that is a hello without "proto":"sc2" returns
  * SC2_MR_LEGACY when cfg->legacy_v1 is set (the host then runs its v1
@@ -117,8 +129,9 @@ void sc2_mr_close(sc2_mr_t *mr, unsigned s);
  * error frame was sent). SC2_MR_LEGACY: v1 hello, the session is released
  * and the host handles this line itself. */
 int sc2_mr_line(sc2_mr_t *mr, unsigned s, const char *line, size_t len);
-/* Close sessions past their deadline (408 idle, then cfg->kick). Call it
- * about once a second. Returns the number of sessions closed. */
+/* Close sessions past their deadline (408 auth_timeout or 408 idle, then
+ * cfg->kick). Call it about once a second. Returns the number of sessions
+ * closed. */
 unsigned sc2_mr_tick(sc2_mr_t *mr);
 /* Every slot is taken and a new connection arrived: close the authenticated
  * session that has been idle longest, if idle for SC2_MR_EVICT_MIN_S or

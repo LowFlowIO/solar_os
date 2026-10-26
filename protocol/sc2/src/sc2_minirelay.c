@@ -1202,7 +1202,7 @@ unsigned sc2_mr_tick(sc2_mr_t *mr)
     for (unsigned i = 0; i < mr->nsess; i++) {
         const mr_sess_t *ss = &mr->sess[i];
         if ((ss->state == ST_NEW || ss->state == ST_WELCOMED) && since(now, ss->opened) >= SC2_MR_AUTH_S) {
-            kick(mr, i, 408, "idle", "login not completed in time");
+            kick(mr, i, 408, "auth_timeout", "login not completed in time");
         } else if (ss->state == ST_AUTHED && since(now, ss->active) >= mr->idle_s) {
             kick(mr, i, 408, "idle", "closed after a period without activity; reconnect to continue");
         } else {
