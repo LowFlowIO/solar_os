@@ -81,6 +81,8 @@ typedef struct {
     bool client_ok;
     bool auto_joined;
     bool rebuild;     /* relay switch pending: rebuild the client */
+    bool history_wait; /* Messaging has no history store yet */
+    bool store_failed; /* an inbound message could not be saved */
     const char *key_refused; /* login refused: relay key differs from the pin */
     sc2rp_t rp;       /* relay in use, home relay, visits */
     uint32_t attempt;
@@ -195,6 +197,15 @@ static void short_id(char *out, size_t cap, const char *hex)
     snprintf(out, cap, "%.8s", hex != NULL ? hex : "");
 }
 
+/* Messaging saves every message in its disk history and refuses inbound
+ * messages it cannot save. The relay counts a DM as delivered once it is
+ * acknowledged, so nothing is fetched while there is no history store. */
+static bool history_ready(void)
+{
+    solar_os_messaging_status_t st;
+    return solar_os_messaging_get_status(&st) == ESP_OK && st.persistent && st.storage_error == ESP_OK;
+}
+
 static void on_message(const sc2c_event_t *ev)
 {
     bool dm = ev->kind == SC2C_DM;
@@ -236,6 +247,9 @@ static void on_message(const sc2c_event_t *ev)
     esp_err_t err = solar_os_messaging_publish_inbound(&in, NULL, NULL);
     if (err != ESP_OK) {
         SOLAR_OS_LOGW(TAG, "inbound message not stored: %s", esp_err_to_name(err));
+        if (!history_ready()) {
+            s.store_failed = true; /* the worker closes the session after this read */
+        }
     }
 }
 
@@ -985,10 +999,27 @@ static void worker(void *arg)
                 (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(250));
                 continue;
             }
+            if (!history_ready()) {
+                if (!s.history_wait) {
+                    s.history_wait = true;
+                    status(false, ESP_ERR_INVALID_STATE, "waiting for message storage");
+                    SOLAR_OS_LOGW(TAG, "message history is not available; not connecting");
+                }
+                (void)ulTaskNotifyTake(pdTRUE, pdMS_TO_TICKS(SC2_SYNC_CHECK_MS));
+                continue;
+            }
+            s.history_wait = false;
             try_connect();
             continue;
         }
         pump_input(100);
+        if (s.store_failed) {
+            /* not a relay failure: no backoff, no failover */
+            s.store_failed = false;
+            drop(ESP_OK, NULL);
+            SOLAR_OS_LOGW(TAG, "message history write failed; disconnected until it works again");
+            continue;
+        }
         if (!s.connected) {
             continue;
         }
