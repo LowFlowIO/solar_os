@@ -139,6 +139,11 @@ it and read messages that arrive afterwards until contacts block it.
 Deleted records are overwritten before removal, but the flash
 wear-levelling layer can keep older sector copies until they are erased.
 
+This covers keys only. Messages that `sc2-sync` delivers to Chat are kept
+decrypted in the Messaging history (`.messages/history.bin`, on SD when
+mounted), without a size limit; see "Messages at rest" in
+[Messaging](messaging.md).
+
 The hardware RNG is only a true RNG while Wi-Fi or Bluetooth is running.
 SC2 mixes it with a seed carried across boots, and the identity is created
 on first use rather than at boot; create it with Wi-Fi connected.

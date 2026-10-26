@@ -221,6 +221,10 @@ queued. `sc2 relay` shows the relay in use. Trade-offs:
   visit (up to about 15 minutes).
 - A public room on two relays is one conversation: posts from each relay are
   kept apart by relay index, so each relay resumes from its own position.
+  That position is the highest post from that relay still in the saved
+  history, so it survives restarts; deleting that post with `messages
+  delete` moves it back, and the post comes back at the next sync if the
+  relay still serves it.
   Reordering the fallback list may re-fetch or skip some recent history.
   Private rooms live on the primary relay: while a fallback is in use they
   wait, and a message to one fails with "private room is on the primary
@@ -258,6 +262,21 @@ that was removed or deleted on the relay stays in Chat and the message
 store of a device that already received it. The relay stops serving it
 (sync, its web view). Messages from banned keys stop arriving because the
 relay refuses them.
+
+Messages at rest: Messaging saves every message in `.messages/history.bin`
+(see above), and for `sc2` that is the decrypted text: DMs, private room
+messages and public posts are stored in plaintext, with sender and time,
+on the SD card when one is mounted, otherwise on internal flash. History
+has no size or age limit; it grows until the volume is full. End-to-end
+encryption protects messages on the way, not on the device: whoever can
+read the card or the flash can read the history. Inbox notifications for
+received messages hold another copy of the text. `messages delete` hides a
+message, but its earlier copy stays in the history file until `messages
+clear` (or removing the instance) rewrites the file, and the card's
+deleted sectors are not wiped. A relay `room.mod` removal or `del` post
+does not remove anything on the device (see above). `sc2-sync` connects
+only while Messaging can save history; until then `messages status` shows
+"waiting for message storage" for the instance.
 
 Gateway conversations use the v1 protocol. They are always marked `legacy
 insecure`, and also `transport secured` with `chats://` or `tls://`. The server
