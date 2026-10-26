@@ -143,7 +143,11 @@ configure NAME admit CODE|off` and `pin sha256/B64|off` change the admission
 code and the TLS pin. With a pin, the pinned key alone authenticates the relay
 (a self-signed certificate works; host name and expiry are not checked);
 without one the certificate must chain to the ESP-IDF CA bundle. `sc2-sync`
-connects the first enabled `sc2` instance; `sc2 relay` shows its state.
+keeps one relay connection, for the first enabled `sc2` instance: the one
+with the lowest instance ID, which is the oldest, since IDs are never
+reused. Other enabled `sc2` instances wait until that one is disabled or
+removed. `sc2 relay` shows the
+connection's state.
 `messages query NAME PEER` and `sc2 safety PEER` take the 32-hex device ID, a
 unique prefix of at least 6 hex digits of a peer whose keys or session are
 stored, or a nickname saved with `sc2 alias NAME DEVICE`.
@@ -160,7 +164,7 @@ conversations: use `messages send` as for any room, and `messages leave` to
 leave one (this also deletes the device's copy of the room record; an admin
 that leaves cannot invite again). `sc2 rooms` lists the instance's rooms with
 their state (`waiting for an admin`, `waiting for the room key`, `joined`).
-Invites cannot be revoked from the device yet, and members cannot be removed;
+Invites cannot be revoked from the device, and members cannot be removed;
 create a new room instead.
 
 Safety numbers: in Chat, `/safety` on an sc2 DM (or `/safety PEER`) opens a
@@ -245,6 +249,15 @@ with fixed caps) next to the v1 gateway on the same port. Add it with
 logs at start. See the `chatd` job reference for its limits. `chat://` is
 plain TCP, so the relay sees your IP; message contents stay end-to-end
 encrypted.
+
+Public room moderation: relays remove posts with relay-signed `room.mod`
+events, and a sender can delete its own post with a `del` post. SolarOS
+does not apply either yet. Relay removals are not verified or acted on,
+and a `del` post is dropped without retracting the original, so a post
+that was removed or deleted on the relay stays in Chat and the message
+store of a device that already received it. The relay stops serving it
+(sync, its web view). Messages from banned keys stop arriving because the
+relay refuses them.
 
 Gateway conversations use the v1 protocol. They are always marked `legacy
 insecure`, and also `transport secured` with `chats://` or `tls://`. The server

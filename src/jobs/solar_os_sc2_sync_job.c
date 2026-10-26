@@ -11,7 +11,7 @@ static void sc2_sync_stop(solar_os_context_t *ctx)
 { (void)ctx; solar_os_sc2_sync_stop(); }
 const solar_os_job_t solar_os_sc2_sync_job = {
     .name = "sc2-sync",
-    .summary = "connect sc2 messaging instances to their relay",
+    .summary = "connect the first enabled sc2 messaging instance to its relay",
     .kind = SOLAR_OS_JOB_KIND_BACKGROUND,
     .start = sc2_sync_start,
     .stop = sc2_sync_stop,

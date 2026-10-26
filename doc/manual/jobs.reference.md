@@ -270,6 +270,38 @@ restore Chat history
 from the compact records already stored in `/.inbox/messages.bin`; no second
 ring is created, so Chat history cannot consume the remaining flash volume.
 
+## sc2-sync
+
+Connects the first enabled `sc2` messaging instance to its SC2 relay and
+keeps that connection: login with the device identity, DMs, private and
+public rooms, key bundles and the outbox.
+
+`sc2` instances are created enabled, and enabling one starts the job by
+itself, so it rarely needs to be started by hand. It takes no arguments:
+
+```text
+job start sc2-sync
+job stop sc2-sync
+job status sc2-sync
+```
+
+The job keeps one connection. It uses the enabled `sc2` instance with the
+lowest instance ID, which is the oldest, since IDs are never reused; other
+enabled `sc2` instances wait until that one is disabled or removed. A
+change to the instance (`messages configure`) is picked up without a
+restart, and with nothing enabled the job keeps running idle.
+
+It owns the reconnect backoff, failover to the instance's fallback relays
+and the visits to them, and the private room requests from `sc2 room`.
+Relay closes that are part of normal operation (`408 idle`,
+`503 reconnect`, `503 evicted`) reconnect after one to three seconds;
+`409 replaced` waits longer each time it repeats. Use `sc2 relay` for the
+connection state, the relay in use, the outbox and retries. See
+[Messaging](messaging.md) for relays, fallbacks and private rooms.
+
+Stopping the job closes the connection; queued messages stay in the
+outbox and are sent once it runs again.
+
 ## chatd
 
 Local SolarOS chat gateway server. It is useful for testing the `chat` app or

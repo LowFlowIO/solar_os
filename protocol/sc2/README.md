@@ -25,7 +25,7 @@ covers the C API and the byte layouts that the code fixes.
 | `sc2_json.h` | bounded JSON reader (depth 8, strict UTF-8, duplicate keys rejected on lookup) and writer (byte-identical to Python `json.dumps(separators=(",", ":"), ensure_ascii=False)`) |
 | `sc2_frame.h` | line assembler (16384-byte lines), `hello`/`welcome`/`auth`, `dm.send`/`dm.msg`, `room.send`/`room.msg`, public posts (`room.post`/`room.pub`) with signed bytes, private `room.create`, `room.commit` (both directions), `room.invite`, `room.join` with a proof, `room.mod` decode |
 | `sc2_commit.h` | private-room commits (130-byte record, sign/verify, commit ID), the roster (`sc2_roster_t`: make, check, apply, roster hash), invite key/proof and the invite code (binary and `sc2i:` text) |
-| `sc2_mod.h` | relay-signed moderation record (122 bytes: remove/ban/unban), encode/decode/sign/verify |
+| `sc2_mod.h` | relay-signed moderation record (122 bytes: remove/ban/unban), encode/decode/sign/verify; the client does not apply these events yet (`doc/manual/messaging.md`) |
 | `sc2_minirelay.h` | sans-IO relay subset for small devices (`chatd`): hello/auth, keys publish/claim, DM mailbox, one public room, fixed caps in one allocation, bounded connection slots (one session per device, login deadline, idle timeout, eviction when full at accept); the host does the sockets |
 | `sc2.h` | umbrella header |
 
