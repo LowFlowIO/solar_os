@@ -326,19 +326,32 @@ The mini-relay is a fixed-size subset of the relay protocol:
 | Offline DM mailbox (store and forward) | 24 messages, 12 per device, 3200-byte envelopes |
 | Public room `pub:general` | last 24 posts |
 
-The six connections are held for a bounded time, as on the self-hosted
-relay:
+The six connections are shared by SC2 and v1 clients and held for a
+bounded time:
 
-- One session per device: when a device logs in again, its older session
-  gets `409 replaced` and is closed (this also clears a connection left
-  half-open by a network change).
-- Keepalive pings are not activity. A session that sends nothing else for
-  5 minutes gets `408 idle` and is closed; the client reconnects and picks
-  up waiting DMs at its next sync. A login has to finish within 30 seconds.
-- When all six connections are taken, a new one takes the slot of the
+- A connection must finish its login within 30 seconds of being accepted:
+  SC2 `hello` and `auth` (`408 auth_timeout`), or a v1 `hello` (a v1 error
+  with code 408). Sending other lines meanwhile does not extend it.
+- One SC2 session per device: when a device logs in again, its older
+  session gets `409 replaced` and is closed (this also clears a connection
+  left half-open by a network change).
+- SC2 keepalive pings are not activity. A session that sends nothing else
+  for 5 minutes gets `408 idle` and is closed; the client reconnects and
+  picks up waiting DMs at its next sync.
+- When all six connections are taken, a new one takes the slot of the SC2
   session that has been idle longest, if that one has been idle for at
-  least a minute (`503 evicted`); otherwise the newcomer gets
-  `503 server_full`.
+  least a minute (`503 evicted`). Otherwise a v1 session that has sent
+  nothing for 5 minutes gives up its slot (a v1 error with code 503). If
+  neither exists, the newcomer gets a `server full` error (code 503). v1 has no
+  keepalive, so a quiet v1 client is only closed when its slot is needed;
+  the Chat gateway connection reconnects by itself.
+
+Eviction differs from the full relay. The full relay keeps spare slots for
+handshakes and only evicts once the newcomer has logged in with its device
+key. chatd has no spare slots and evicts when it accepts the connection,
+before the newcomer has sent anything, so anyone who can reach the port can
+close idle sessions, one per connection. This is fine on the trusted LAN
+chatd is meant for; do not expose its port to the internet.
 
 Private rooms and other public rooms are refused (`501`/`404`); use a full
 relay for those. All stores live in one PSRAM block (about 135 KiB), so the

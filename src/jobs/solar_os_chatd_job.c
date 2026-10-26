@@ -51,6 +51,13 @@
 #define CHATD_DEFAULT_CHANNEL "general"
 #define CHATD_HISTORY_COUNT 64U
 #define CHATD_HISTORY_TYPE_MAX 16U
+/* v1 connection slots (the SC2 mini-relay bounds its own sessions): a
+ * connection must send its v1 hello within CHATD_V1_LOGIN_S, and when every
+ * slot is taken a v1 session that has sent nothing for CHATD_V1_EVICT_IDLE_S
+ * gives its slot to the new connection. v1 has no keepalive, so a quiet
+ * reader is not closed while there is room. */
+#define CHATD_V1_LOGIN_S 30U
+#define CHATD_V1_EVICT_IDLE_S 300U
 
 static const char *TAG = "solar_os_chatd";
 
@@ -70,6 +77,8 @@ typedef struct {
     size_t line_len;
     uint32_t rx_count;
     uint32_t tx_count;
+    uint64_t opened_s; /* monotonic seconds: accepted */
+    uint64_t active_s; /* monotonic seconds: last v1 line */
 } chatd_client_t;
 
 typedef struct {
@@ -104,6 +113,8 @@ typedef struct {
     uint32_t connection_count;
     uint32_t message_count;
     uint32_t dropped_count;
+    uint32_t v1_login_timeouts; /* closed: no v1 hello within CHATD_V1_LOGIN_S */
+    uint32_t v1_evicted;        /* idle v1 sessions closed to admit a connection */
     esp_err_t last_error;
     bool legacy_v1; /* v1 clients accepted (default) */
 #if CHATD_SC2
@@ -126,6 +137,11 @@ static chatd_job_state_t *chatd_state;
 static uint64_t chatd_now_ms(void)
 {
     return (uint64_t)(esp_timer_get_time() / 1000LL);
+}
+
+static uint64_t chatd_mono_s(void)
+{
+    return chatd_now_ms() / 1000U;
 }
 
 static uint64_t chatd_next_message_id(chatd_job_state_t *state)
@@ -1005,6 +1021,7 @@ static void chatd_process_line(chatd_job_state_t *state, size_t client_index, co
     if (chatd_sc2_line(state, client_index, line) || !client->active) {
         return;
     }
+    client->active_s = chatd_mono_s();
 
     if (!solar_os_json_scan_object_string(line, "type", type, sizeof(type), NULL)) {
         (void)chatd_send_event(state,
@@ -1141,6 +1158,43 @@ static void chatd_client_rx(chatd_job_state_t *state, size_t client_index)
     }
 }
 
+/* Every slot is taken: the v1 session that has been quiet longest gives up
+ * its slot if it has sent nothing for CHATD_V1_EVICT_IDLE_S. This happens
+ * at accept, before the new connection has said anything, like the
+ * mini-relay's eviction: on a LAN anyone who can reach the port can close
+ * quiet sessions this way, one per connection. Returns the freed slot or
+ * -1. */
+static int chatd_v1_evict(chatd_job_state_t *state)
+{
+    const uint64_t now = chatd_mono_s();
+    int best = -1;
+    for (size_t i = 0; i < CHATD_MAX_CLIENTS; i++) {
+        const chatd_client_t *c = &state->clients[i];
+        if (!c->active || !c->authed || c->proto != CHATD_PROTO_V1 || now - c->active_s < CHATD_V1_EVICT_IDLE_S) {
+            continue;
+        }
+        if (best < 0 || c->active_s < state->clients[best].active_s) {
+            best = (int)i;
+        }
+    }
+    if (best >= 0) {
+        chatd_client_t *c = &state->clients[best];
+        (void)chatd_send_event(state,
+                               c,
+                               "error",
+                               NULL,
+                               NULL,
+                               "server full; this idle session was closed to admit another",
+                               false,
+                               503,
+                               true);
+        SOLAR_OS_LOGI(TAG, "idle v1 client closed to make room: %s", c->peer);
+        chatd_close_client(state, (size_t)best, true);
+        state->v1_evicted++;
+    }
+    return best;
+}
+
 static int chatd_find_free_client(chatd_job_state_t *state)
 {
     for (size_t i = 0; i < CHATD_MAX_CLIENTS; i++) {
@@ -1168,6 +1222,9 @@ static void chatd_accept_client(chatd_job_state_t *state)
     }
 #endif
     if (slot < 0) {
+        slot = chatd_v1_evict(state);
+    }
+    if (slot < 0) {
         static const char busy[] =
             "{\"type\":\"error\",\"text\":\"server full\",\"code\":503}\n";
         (void)send(fd, busy, sizeof(busy) - 1U, 0);
@@ -1191,6 +1248,7 @@ static void chatd_accept_client(chatd_job_state_t *state)
     client->line_len = 0;
     client->rx_count = 0;
     client->tx_count = 0;
+    client->opened_s = client->active_s = chatd_mono_s();
     client->user[0] = '\0';
     client->device[0] = '\0';
     client->from[0] = '\0';
@@ -1217,6 +1275,42 @@ static void chatd_close_all_sockets(chatd_job_state_t *state)
 
 static void chatd_sc2_stop(chatd_job_state_t *state);
 static void chatd_sc2_tick(chatd_job_state_t *state);
+
+/* True when the SC2 mini-relay keeps this connection's deadlines: every
+ * connection it was opened for, until a v1 hello hands it to the v1 server. */
+static bool chatd_sc2_owns(const chatd_job_state_t *state, const chatd_client_t *client)
+{
+#if CHATD_SC2
+    return state->mr != NULL && client->proto != CHATD_PROTO_V1;
+#else
+    (void)state;
+    (void)client;
+    return false;
+#endif
+}
+
+/* v1 login deadline, once a second: a connection that has not sent its v1
+ * hello CHATD_V1_LOGIN_S after it was accepted is closed, whatever else it
+ * sent meanwhile. */
+static void chatd_v1_tick(chatd_job_state_t *state)
+{
+    static uint64_t last_s;
+    const uint64_t now = chatd_mono_s();
+    if (now == last_s) {
+        return;
+    }
+    last_s = now;
+    for (size_t i = 0; i < CHATD_MAX_CLIENTS; i++) {
+        chatd_client_t *c = &state->clients[i];
+        if (!c->active || c->authed || chatd_sc2_owns(state, c) || now - c->opened_s < CHATD_V1_LOGIN_S) {
+            continue;
+        }
+        (void)chatd_send_event(state, c, "error", NULL, NULL, "login not completed in time", false, 408, true);
+        SOLAR_OS_LOGI(TAG, "client closed, no hello in time: %s", c->peer);
+        chatd_close_client(state, i, false);
+        state->v1_login_timeouts++;
+    }
+}
 
 static void chatd_free_buffers(chatd_job_state_t *state)
 {
@@ -1284,6 +1378,7 @@ static void chatd_job_task(void *arg)
         };
         const int ready = select(max_fd + 1, &readfds, NULL, NULL, &timeout);
         chatd_sc2_tick(state);
+        chatd_v1_tick(state);
         if (ready < 0) {
             if (errno != EINTR && !state->stop_requested) {
                 state->last_error = ESP_FAIL;
@@ -1310,10 +1405,13 @@ static void chatd_job_task(void *arg)
 
     SOLAR_OS_LOGI(TAG,
                   "stopped: connections=%" PRIu32 " messages=%" PRIu32 " dropped=%" PRIu32
+                  " v1_login_timeouts=%" PRIu32 " v1_evicted=%" PRIu32
                   " stack_free=%u",
                   state->connection_count,
                   state->message_count,
                   state->dropped_count,
+                  state->v1_login_timeouts,
+                  state->v1_evicted,
                   (unsigned)uxTaskGetStackHighWaterMark(NULL));
 
     chatd_close_all_sockets(state);
@@ -1808,6 +1906,8 @@ static esp_err_t chatd_job_start(solar_os_context_t *ctx, int argc, char **argv)
     chatd_job.connection_count = 0;
     chatd_job.message_count = 0;
     chatd_job.dropped_count = 0;
+    chatd_job.v1_login_timeouts = 0;
+    chatd_job.v1_evicted = 0;
     chatd_job.last_error = ESP_OK;
     chatd_job.legacy_v1 = opts.v1;
     for (size_t i = 0; i < CHATD_MAX_CLIENTS; i++) {
