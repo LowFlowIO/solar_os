@@ -1,5 +1,23 @@
 # SolarOS Changelog
 
+## Unreleased
+
+- Added SolarOS Sealed Chat (SC2), an optional end-to-end encrypted
+  messaging provider for unified Chat. Each device has one identity; DMs use
+  X3DH and a double ratchet, private rooms use admin-signed membership
+  commits and invites, and public rooms carry signed, non-deniable plaintext
+  posts. Relays are added by domain from a signed descriptor
+  with a pinned relay key, or by `chats://` or `chat://` URL, with up to
+  three fallback relays. The `sc2-sync` job keeps the relay connection and
+  starts by itself when an `sc2` instance is enabled. Safety numbers can be
+  compared and marked verified in Chat or the shell. `chatd` doubles as a
+  small SC2 relay for a trusted LAN, next to the v1 gateway. Python and Lua
+  get `solaros.sc2`. The reference relay is a separate project,
+  [solar_os_sc2-relay](https://github.com/LowFlowIO/solar_os_sc2-relay).
+  Relay moderation events and post deletions are not applied on the device
+  yet. Received SC2 messages are kept decrypted in the device's message
+  history, like other chat messages.
+
 ## 4.x
 
 - **4.16.31** — 2026-10-25 — Chat now retains received and sent messages
