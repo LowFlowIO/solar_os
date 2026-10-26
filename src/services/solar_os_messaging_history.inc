@@ -24,6 +24,9 @@ static void messaging_history_note_locked(const solar_os_messaging_message_t *me
     if (!n) return;
     n->count++;
     if (message->provider_message_key > n->provider_cursor) n->provider_cursor = message->provider_message_key;
+    uint64_t tag = message->provider_message_key >> SOLAR_OS_MESSAGING_CURSOR_TAG_SHIFT;
+    uint64_t sequence = message->provider_message_key & SOLAR_OS_MESSAGING_CURSOR_SEQUENCE_MASK;
+    if (tag < SOLAR_OS_MESSAGING_CURSOR_TAGS && sequence > n->tagged_cursor[tag]) n->tagged_cursor[tag] = sequence;
     n->recent[n->recent_head] = index;
     n->recent_head = (n->recent_head + 1) % MESSAGING_HISTORY_PAGE_CAPACITY;
     if (n->recent_count < MESSAGING_HISTORY_PAGE_CAPACITY) n->recent_count++;

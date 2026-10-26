@@ -82,6 +82,8 @@ typedef struct {
     solar_os_conversation_id_t conversation;
     size_t count;
     uint64_t provider_cursor;
+    /* Highest key per source tag (top byte), tag bits cleared. */
+    uint64_t tagged_cursor[SOLAR_OS_MESSAGING_CURSOR_TAGS];
     int32_t recent[MESSAGING_HISTORY_PAGE_CAPACITY];
     size_t recent_head;
     size_t recent_count;
@@ -1562,6 +1564,21 @@ uint64_t solar_os_messaging_provider_cursor(
     messaging_history_navigation_t *n = c >= 0 ?
         messaging_history_navigation_locked(messaging.conversations[c].id, false) : NULL;
     uint64_t cursor = n ? n->provider_cursor : 0;
+    messaging_history_unlock();
+    return cursor;
+}
+
+uint64_t solar_os_messaging_provider_cursor_tagged(
+    solar_os_messaging_provider_id_t provider, const char *provider_key, unsigned tag)
+{
+    if (tag >= SOLAR_OS_MESSAGING_CURSOR_TAGS || !messaging_provider_valid(provider) ||
+        !provider_key || solar_os_messaging_init() != ESP_OK) return 0;
+    messaging_history_lock();
+    if (!messaging.persistent) (void)messaging_history_ensure_locked();
+    int c = messaging_conversation_index_locked(provider, provider_key);
+    messaging_history_navigation_t *n = c >= 0 ?
+        messaging_history_navigation_locked(messaging.conversations[c].id, false) : NULL;
+    uint64_t cursor = n ? n->tagged_cursor[tag] : 0;
     messaging_history_unlock();
     return cursor;
 }

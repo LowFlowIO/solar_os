@@ -292,6 +292,20 @@ size_t solar_os_messaging_message_visit(
 uint64_t solar_os_messaging_provider_cursor(
     solar_os_messaging_provider_id_t provider,
     const char *provider_key);
+/* Providers that receive one conversation from several sources (sc2: a
+ * primary relay and its fallbacks) put a source tag in the top byte of the
+ * provider message key. The history index keeps, per conversation, the
+ * highest remaining key of each tag below SOLAR_OS_MESSAGING_CURSOR_TAGS,
+ * rebuilt from disk history at load and after deletes. Returns that key
+ * with the tag cleared, or 0. */
+#define SOLAR_OS_MESSAGING_CURSOR_TAG_SHIFT 56U
+#define SOLAR_OS_MESSAGING_CURSOR_SEQUENCE_MASK \
+    ((UINT64_C(1) << SOLAR_OS_MESSAGING_CURSOR_TAG_SHIFT) - 1U)
+#define SOLAR_OS_MESSAGING_CURSOR_TAGS 4U
+uint64_t solar_os_messaging_provider_cursor_tagged(
+    solar_os_messaging_provider_id_t provider,
+    const char *provider_key,
+    unsigned tag);
 size_t solar_os_messaging_message_visit_consistent(
     solar_os_conversation_id_t conversation_id,
     solar_os_messaging_provider_id_t provider,
