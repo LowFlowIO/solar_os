@@ -87,13 +87,15 @@ only for ESP32-S3 targets with I2C and expansion I2S resources.
 Both use the generic audio backend; a board with built-in audio declares a
 fixed default attachment instead of compiling a separate board adapter.
 The `driver.display-st7305`, `driver.display-st7796`,
-`driver.display-st7789`, `driver.display-ili9341`, `driver.display-cvbs-pal`,
+`driver.display-st7789`, `driver.display-axs15231b`,
+`driver.display-ili9341`, `driver.display-cvbs-pal`,
 `driver.display-vga32`, `expansion.ssd1677`, and `expansion.ssd1683` packages use
 the same model.
 Each package registers an expansion driver and a board with that integrated
 panel declares an immutable early `display0` attachment. SSD1683, ST7305,
 ST7796, and ILI9341 are available on both ESP32 and ESP32-S3; ST7789 is
-currently ESP32-S3-only. The I2S-based CVBS PAL and VGA32 implementations
+currently ESP32-S3-only. AXS15231B is ESP32-S3-only and is not part of any
+flavor; it is enabled as a board-required package by boards that declare it. The I2S-based CVBS PAL and VGA32 implementations
 remain specific to classic ESP32. Generic services do not select these
 implementations with driver-specific preprocessor branches.
 `expansion.ssd1683` uses a named SPI bus and claimed CS, D/C, reset, BUSY, and

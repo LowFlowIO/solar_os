@@ -268,6 +268,7 @@ Run `expansion drivers` on the device to see the exact registered set.
 | `sh1106` | 128x64 I2C OLED with SH1106 addressing | `i2c=<bus> addr=<address>` | Registers an auxiliary display target with the two-column offset. |
 | `st7305` | 400x300 or 384x168 reflective LCD | `spi=<bus> cs=<pin> dc=<pin> reset=<pin>`; optional `panel=0|1 rotation=1|3` | ESP32 and ESP32-S3. Panel 0 is the native 300x400 Waveshare panel; panel 1 is the native 168x384 CL-32 panel. Both boards register their panel as fixed `display0`. |
 | `ili9341` | 320x240 color TFT | `spi=<bus> cs=<pin> dc=<pin>`; optional `reset=<pin> bl=<pin> active=0|1 pwm=0|1` | ESP32 and ESP32-S3; ODROID-GO registers it as fixed `display0`. |
+| `axs15231b` | 320x480 QSPI color TFT | `clk=<pin> d0=<pin> d1=<pin> d2=<pin> d3=<pin> cs=<pin>`; optional `reset=<pin> bl=<pin> active=0|1 pwm=0|1` | ESP32-S3; owns `SPI2_HOST` privately in quad mode. Guition JC3248W535 registers it as fixed `display0`. |
 | `st7796` | 480x320 color TFT | `spi=<bus> cs=<pin> dc=<pin>`; optional `reset=<pin> bl=<pin> active=0|1 pwm=0|1` | ESP32 and ESP32-S3; Freenove registers it as fixed `display0`. |
 | `st7789` | 320x240 color TFT | `spi=<bus> cs=<pin> dc=<pin>`; optional `reset=<pin> bl=<pin> power=<pin> active=0|1 pwm=0|1` | ESP32-S3 driver; T-Deck Plus registers it as fixed `display0` with shared peripheral power and GPIO backlight control. |
 | `cvbs-pal` | 384x288 or 320x200 monochrome PAL composite output | `i2s=i2s0 out=gpio25` | Classic ESP32 driver; ESP32-WROVER v3.0 registers it as fixed `display0`. |

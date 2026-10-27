@@ -662,6 +662,11 @@ label = "ST7789 display"
 category = "Expansion hardware"
 members = ["driver_display_st7789"]
 
+[groups.axs15231b]
+label = "AXS15231B QSPI display"
+category = "Expansion hardware"
+members = ["driver_display_axs15231b"]
+
 [groups.cvbs]
 label = "PAL composite display"
 category = "Expansion hardware"
@@ -2092,6 +2097,19 @@ sources = [
   "board/solar_os_board_display_expansion.c",
   "drivers/tft_ili9341.c",
   "services/solar_os_tft_display.c",
+]
+requires = ["esp_driver_gpio", "esp_driver_spi", "u8g2"]
+capabilities = ["gfx", "expansion_gpio"]
+
+[packages.driver_display_axs15231b]
+label = "driver.display-axs15231b"
+targets = ["esp32s3"]
+expansion_drivers = ["solar_os_axs15231b_expansion_driver"]
+depends = ["service_expansion", "service_pwm"]
+sources = [
+  "board/solar_os_board_display_expansion.c",
+  "drivers/lcd_axs15231b.c",
+  "services/solar_os_axs15231b_display.c",
 ]
 requires = ["esp_driver_gpio", "esp_driver_spi", "u8g2"]
 capabilities = ["gfx", "expansion_gpio"]

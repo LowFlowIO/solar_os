@@ -906,6 +906,65 @@ kind = "parameter"
 hint = "0|1"
 allowed = [0, 1]
 
+[drivers.axs15231b]
+summary = "320x480 QSPI color TFT"
+package = "driver_display_axs15231b"
+targets = ["esp32s3"]
+capabilities = ["gfx", "expansion_gpio"]
+board_capabilities = ["display", "gfx"]
+board_driver = "display_axs15231b"
+board_defines = { SOLAR_OS_BOARD_DISPLAY_CONTROLLER = '"AXS15231B"', SOLAR_OS_BOARD_DISPLAY_WIDTH = "480", SOLAR_OS_BOARD_DISPLAY_HEIGHT = "320" }
+early = true
+default_name = "display0"
+[[drivers.axs15231b.bindings]]
+key = "clk"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.axs15231b.bindings]]
+key = "d0"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.axs15231b.bindings]]
+key = "d1"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.axs15231b.bindings]]
+key = "d2"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.axs15231b.bindings]]
+key = "d3"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.axs15231b.bindings]]
+key = "cs"
+kind = "gpio"
+hint = "gpio"
+required = true
+[[drivers.axs15231b.bindings]]
+key = "reset"
+kind = "gpio"
+hint = "gpio"
+[[drivers.axs15231b.bindings]]
+key = "bl"
+kind = "gpio"
+hint = "gpio"
+[[drivers.axs15231b.bindings]]
+key = "active"
+kind = "parameter"
+hint = "0|1"
+allowed = [0, 1]
+[[drivers.axs15231b.bindings]]
+key = "pwm"
+kind = "parameter"
+hint = "0|1"
+allowed = [0, 1]
+
 [drivers.st7789]
 summary = "320x240 color TFT"
 package = "driver_display_st7789"
