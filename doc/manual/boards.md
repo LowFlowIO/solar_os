@@ -4,7 +4,7 @@ title = "Boards and hardware targets"
 section = "build"
 summary = "Supported boards, capabilities, porting structure, and validation"
 aliases = ["board", "targets"]
-keywords = "boards targets custom board profile fixed expansion platformio waveshare epaper e-paper ssd1677 devkit odroid elecrow freenove wrover ttgo vga32 composite vga capabilities porting validation"
+keywords = "boards targets custom board profile fixed expansion platformio waveshare epaper e-paper ssd1677 devkit odroid elecrow freenove guition jc3248w535 axs15231b qspi wrover ttgo vga32 composite vga capabilities porting validation"
 packages_any = []
 +++
 # Defining SolarOS Boards
@@ -203,6 +203,7 @@ The current tree includes these board targets:
 | --- | --- | --- | --- |
 | `solar_term` | `solar_term` | [SolarTerm](https://github.com/nilseuropa/solar_term), built from the Waveshare ESP32-S3-RLCD-4.2 | Primary ST7305 reflective display target with SDMMC, CDC, UART, RTC, SHTC3, battery ADC, ES8311/ES7210 audio, expansion I2C/SPI/UART/GPIO/ADC/PWM, and runtime-routable SPI3 on GPIO1/GPIO2/GPIO3/GPIO17. SolarOS refers to this hardware configuration as SolarTerm. |
 | `freenove_esp32_s3_display_4_0` | `freenove_esp32_s3_display_4_0` | Freenove ESP32-S3 Display 4.0-inch (FNK0104S) | Integrated 480x320 ST7796 display, FT6336 capacitive pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, native USB CDC, and UART/I2C/GPIO expansion connectors. |
+| `guition_jc3248w535` | `guition_jc3248w535` | Guition JC3248W535 3.5-inch ESP32-S3 Display (JC3248W535EN) | ESP32-S3-WROOM-1-N16R8 target with a 480x320 landscape AXS15231B display on a private quad-SPI bus (GPIO47 CLK, GPIO21/48/40/39 data, GPIO45 CS), PWM backlight on GPIO1, a one-shot GPIO38 panel reset pulse at boot, native USB CDC, UART, a GPIO0 BOOT/KEY button, a declared microSD SPI bus on GPIO10-GPIO13, Wi-Fi, BLE, and expansion GPIO/ADC/PWM on the P2-P4 headers. Display only: the AXS15231B touch controller and the TE line are not driven. |
 | `qdtech_es3c28p` | `qdtech_es3c28p` | [QDtech ES3C28P 2.8-inch ESP32-S3 Touch Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Capacitive-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, FT6336 pointer, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
 | `qdtech_es3n28p` | `qdtech_es3n28p` | [QDtech ES3N28P 2.8-inch ESP32-S3 Display](https://www.lcdwiki.com/2.8inch_ESP32-S3_Display) | Non-touch ESP32-S3R8 target with 16 MB flash, 8 MB PSRAM, a 320x240 landscape ILI9341V display, ES8311 speaker and microphone, four-bit SDMMC, battery ADC, one WS2812B, native USB CDC, and UART/I2C/GPIO expansion connectors. |
 | `elecrow_crowpanel_esp32_s3_4_2_epaper` | `elecrow_crowpanel_esp32_s3_4_2_epaper` | Elecrow CrowPanel ESP32-S3 4.2-inch E-paper | ESP32-S3-WROOM-1-N8R8 target with a 400x300 SSD1683 e-paper display, microSD over SDSPI, CH340C/UART console, rotary/menu/exit controls, status LED, Wi-Fi, BLE, and expansion I2C/SPI/UART/1-Wire/GPIO/ADC/PWM. |
@@ -828,6 +829,84 @@ Build the standalone target with:
 ```sh
 pio run -e qdtech_es3c28p
 pio run -e qdtech_es3n28p
+```
+
+## Guition JC3248W535 3.5-inch ESP32-S3 Display
+
+The `guition_jc3248w535` target supports the Guition (Shenzhen Jingcai)
+JC3248W535 board, sold as JC3248W535EN and, with capacitive touch, as
+JC3248W535C. It uses an ESP32-S3-WROOM-1-N16R8 module with 16 MB flash and
+8 MB OPI PSRAM through the shared `esp32-s3-devkitc1-n16r8` PlatformIO hardware
+definition. This is a display-only profile: the AXS15231B touch controller and
+the panel TE signal are not driven, and the target has no pointer capability
+or `touch0` device.
+
+SolarOS runs the native 320x480 AXS15231B panel as a 480x320 landscape primary
+display. The fixed `display0` attachment uses the `axs15231b` driver, which
+owns `SPI2_HOST` privately in quad-SPI mode because the shared bus registry
+does not model four data lines. The panel wiring is:
+
+| Signal | GPIO |
+| --- | --- |
+| QSPI CLK | GPIO47 |
+| QSPI D0-D3 | GPIO21, GPIO48, GPIO40, GPIO39 |
+| QSPI CS | GPIO45 |
+| Panel reset | GPIO38 |
+| Backlight (active-high PWM) | GPIO1 |
+
+The transport follows the ESPHome `mipi_spi` quad path that is known to work on
+this board: SPI mode 0, chip select driven as a GPIO around each command and
+each pixel stream, and transactions of at most 4092 bytes in whole rows. Pixels
+are RGB565 from a PSRAM frame buffer. Rotation is done in software
+(`U8G2_R1`); MADCTL only selects BGR order. GPIO38 receives a single
+LOW-to-HIGH reset pulse on the first display initialization and is not toggled
+again. The backlight stays off until the first black frame has been sent and
+the panel has been switched on, so a failed initialization leaves the screen
+dark instead of showing uninitialized GRAM.
+
+The manifest exposes these build-time tuning defines. The defaults are the
+verified configuration:
+
+- `SOLAR_OS_BOARD_DISPLAY_SPI_CLOCK_HZ` (default `40000000U`): QSPI clock.
+- `SOLAR_OS_BOARD_DISPLAY_SPI_MODE` (default `0`): SPI mode. The vendor demo
+  uses mode 3.
+- `SOLAR_OS_BOARD_DISPLAY_SOFTWARE_CS` (default `1`): `1` drives GPIO45 as a
+  GPIO; `0` uses the peripheral chip select.
+- `SOLAR_OS_BOARD_DISPLAY_MADCTL` (default `0x08`): MADCTL value; BGR order
+  only.
+- `SOLAR_OS_BOARD_DISPLAY_INVERT_COLOR` (default `0`): `1` sends INVON.
+- `SOLAR_OS_BOARD_DISPLAY_FULL_FRAME` (default `0`): `1` flushes full frames
+  instead of dirty row bands.
+- `SOLAR_OS_BOARD_DISPLAY_VENDOR_INIT` (default `0`): `1` sends the long
+  register table from the JC3248W535EN demo.
+- `SOLAR_OS_BOARD_DISPLAY_SELF_TEST` (default `0`): `1` shows red, green, blue,
+  and white full screens before the shell, for bring-up.
+- `SOLAR_OS_BOARD_LCD_RESET_LOW_MS` (default `150U`): length of the GPIO38 reset
+  pulse.
+- `SOLAR_OS_BOARD_LCD_BACKLIGHT_PWM_FREQ_HZ` (default `20000U`): backlight PWM
+  frequency.
+
+The BOOT button on GPIO0 becomes the SolarOS KEY after startup. A short press
+uses the configured sleep or suspend action. A long press forgets the
+remembered BLE keyboard and starts pairing, which gives this keyboardless board
+a way to pair a BLE keyboard. Do not hold the button during reset or power-up,
+because GPIO0 low selects the ESP32-S3 download mode.
+
+The board declares, but does not attach devices to, two further buses. `spi0`
+on `SPI3_HOST` uses the microSD slot wiring: GPIO12 clock, GPIO11 MOSI, GPIO13
+MISO, and GPIO10 chip select. `i2c0` uses the touch controller wiring, GPIO4
+SDA and GPIO8 SCL. GPIO3 is the unused touch interrupt and GPIO5 is the battery
+sense divider; both stay fixed. `uart0` uses the releasable GPIO43/GPIO44 pins.
+
+The P2-P4 headers expose runtime GPIO6, GPIO7, GPIO9, and GPIO14-GPIO18, all of
+which support PWM and ADC. GPIO46 is on P2 but remains blocked as a strapping
+pin.
+
+Build and flash the standalone target with:
+
+```sh
+pio run -e guition_jc3248w535
+pio run -e guition_jc3248w535 -t upload
 ```
 
 ## Elecrow CrowPanel ESP32-S3 4.2-inch E-paper

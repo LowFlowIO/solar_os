@@ -221,6 +221,39 @@ class BoardManifestTest(unittest.TestCase):
         self.assertEqual(hardware["build"]["flash_mode"], "dio")
         self.assertEqual(hardware["build"]["psram_type"], "opi")
 
+    def test_guition_jc3248w535_is_display_only_axs15231b(self) -> None:
+        board = load_board_manifest(
+            self.manifest_dir / "guition_jc3248w535.toml",
+            self.manifest_dir,
+        )
+        validate_board(board, self.drivers)
+        self.assertEqual(board["target"]["platformio_board"], "esp32-s3-devkitc1-n16r8")
+        self.assertIn("display_axs15231b", board["build"]["drivers"])
+        self.assertIn("key", board["build"]["capabilities"])
+        self.assertNotIn("pointer", board["build"]["capabilities"])
+        self.assertIn("driver_display_axs15231b", required_packages(board, self.drivers))
+        defines = board["defines"]
+        self.assertEqual(defines["SOLAR_OS_BOARD_DISPLAY_NATIVE_WIDTH"], "320")
+        self.assertEqual(defines["SOLAR_OS_BOARD_DISPLAY_NATIVE_HEIGHT"], "480")
+        self.assertEqual(defines["SOLAR_OS_BOARD_DISPLAY_U8G2_ROTATION"], "U8G2_R1")
+        self.assertEqual(defines["SOLAR_OS_BOARD_DISPLAY_SPI_MODE"], "0")
+        self.assertEqual(defines["SOLAR_OS_BOARD_DISPLAY_SOFTWARE_CS"], "1")
+        self.assertEqual(defines["SOLAR_OS_BOARD_DISPLAY_SELF_TEST"], "0")
+        self.assertEqual(defines["SOLAR_OS_BOARD_PIN_KEY"], "GPIO_NUM_0")
+        devices = {device["name"]: device for device in board["devices"]}
+        self.assertEqual(set(devices), {"display0"})
+        self.assertEqual(devices["display0"]["driver"], "axs15231b")
+        self.assertEqual(
+            devices["display0"]["bindings"],
+            {"clk": 47, "d0": 21, "d1": 48, "d2": 40, "d3": 39, "cs": 45,
+             "reset": 38, "bl": 1, "active": 1, "pwm": 1},
+        )
+        pins = {pin["gpio"]: pin for pin in board["pins"]}
+        for gpio in (0, 1, 21, 38, 39, 40, 45, 46, 47, 48):
+            with self.subTest(gpio=gpio):
+                self.assertEqual(pins[gpio]["policy"], "fixed")
+                self.assertFalse(pins[gpio].get("user", False))
+
     def test_qdtech_es3c28p_adds_ft6336_touch(self) -> None:
         board = load_board_manifest(
             self.manifest_dir / "qdtech_es3c28p.toml",

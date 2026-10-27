@@ -84,6 +84,8 @@ Built-in targets include:
   ESP32-S3-RLCD-4.2 board.
 - `freenove_esp32_s3_display_4_0`: integrated 480x320 capacitive-touch terminal
   with speaker, microphone, SD, and battery monitoring.
+- `guition_jc3248w535`: display-only 480x320 AXS15231B quad-SPI color terminal
+  with BLE keyboard pairing from the BOOT button.
 - `qdtech_es3c28p`: capacitive-touch 320x240 color terminal with speaker,
   microphone, SD, battery monitoring, and one RGB LED.
 - `qdtech_es3n28p`: non-touch 320x240 color terminal with speaker, microphone,

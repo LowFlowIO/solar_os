@@ -37,8 +37,8 @@ shell.
 Built-in displays follow the same rule and appear as fixed `display0`
 attachments: Waveshare uses `st7305`, Freenove uses `st7796`, ODROID-GO uses
 `ili9341`, Elecrow CrowPanel boards use `ssd1683`, ESP32-WROVER v3.0 uses `cvbs-pal`,
-T-LoRa-Pager uses `st7796`, T-Deck Plus uses `st7789`, and TTGO VGA32 uses
-`vga32`. They attach before the splash and primary display service start.
+T-LoRa-Pager uses `st7796`, T-Deck Plus uses `st7789`, Guition JC3248W535 uses
+`axs15231b`, and TTGO VGA32 uses `vga32`. They attach before the splash and primary display service start.
 
 Built-in SDMMC slots also appear as fixed `storage0` attachments. SolarTerm,
 Waveshare ESP32-S3-SIM7670G-4G, and ESP32-WROVER v3.0 use one-bit bindings;
