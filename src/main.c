@@ -68,6 +68,9 @@
 #include "solar_os_wireguard.h"
 #endif
 #include "solar_os_board.h"
+#if SOLAR_OS_PACKAGE_SERVICE_HEAPDESK
+#include "solar_os_heapdesk.h"
+#endif
 
 #ifndef SOLAR_OS_BOARD_PIN_KEY
 #define SOLAR_OS_BOARD_PIN_KEY 0
@@ -1901,6 +1904,9 @@ void app_main(void)
 
     ESP_LOGI(TAG, "boot milestone: starting peripherals");
     solar_os_boot_services_init(millis_u32());
+#if SOLAR_OS_PACKAGE_SERVICE_HEAPDESK
+    solar_os_heapdesk_init();
+#endif
     ESP_ERROR_CHECK(solar_os_schedule_init());
     solar_os_schedule_set_script_runner(solar_os_shell_run_background_script);
 #if SOLAR_OS_BOARD_HAS_DISPLAY

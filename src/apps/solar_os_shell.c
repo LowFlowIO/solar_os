@@ -624,6 +624,9 @@ static const shell_command_t shell_builtin_commands[] = {
 #if SOLAR_OS_PACKAGE_SERVICE_ESPNOW
     {"espnow", "ESP-NOW transport and peers", solar_os_shell_cmd_espnow},
 #endif
+#if SOLAR_OS_PACKAGE_SERVICE_HEAPDESK
+    {"heapdesk", "Heapdesk telemetry config", solar_os_shell_cmd_heapdesk},
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_MQTT
     {"mqtt", "MQTT client", solar_os_shell_cmd_mqtt},
 #endif

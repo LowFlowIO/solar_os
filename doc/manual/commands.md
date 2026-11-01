@@ -863,6 +863,10 @@ xfer recv <port> <file> --zmodem [--append|--replace]
 | `mqtt` | `mqtt disconnect` | Disconnect and stop the MQTT client. |
 | `mqtt` | `mqtt publish <topic> <payload> [qos] [retain]` | Publish a message with optional QoS 0–2 and retain flag. |
 | `mqtt` | `mqtt subscribe <topic> [qos]` | Subscribe and print received messages until app-exit or `q`. |
+| `heapdesk` | `heapdesk status` | Show Heapdesk settings and connection (side-project builds with SOLAR_OS_ENABLE_HEAPDESK=1). |
+| `heapdesk` | `heapdesk set <mqtt_uri|api_url|device_id|secret> <value>` | Save a Heapdesk setting in NVS. |
+| `heapdesk` | `heapdesk clear [key]` | Delete one or all saved Heapdesk settings. |
+| `heapdesk` | `heapdesk start` | Start the Heapdesk connector now if Wi-Fi has an IP. |
 | `ping` | `ping <host> [count]` | Send ICMP echo requests. Without count, ping runs until Esc, Ctrl+C, or app-exit. |
 | `netscan` | `netscan <host|range> [ports]` | Scan TCP ports on one host or a capped IPv4 range. |
 | `ntp` | `ntp [server]` | Sync the wall clock from NTP. |

@@ -172,6 +172,11 @@ label = "Background logging"
 category = "Maintenance"
 members = ["job_log"]
 
+[groups.heapdesk]
+label = "Heapdesk telemetry (side project, opt-in)"
+category = "Maintenance"
+members = ["service_heapdesk"]
+
 [groups.battery_monitor]
 label = "Battery monitor"
 category = "Maintenance"
@@ -2911,3 +2916,10 @@ sources = [
 ]
 requires = ["esp_driver_gpio", "esp_driver_spi", "esp_driver_ledc", "esp_timer", "nvs_flash", "u8g2"]
 capabilities = ["gfx", "expansion_gpio"]
+
+[packages.service_heapdesk]
+label = "service.heapdesk"
+depends = ["service_wifi"]
+sources = ["services/solar_os_heapdesk.c", "shell/solar_os_shell_heapdesk.c"]
+requires = ["heapdesk_connector", "nvs_flash", "esp_netif", "esp_event"]
+capabilities = ["wifi"]

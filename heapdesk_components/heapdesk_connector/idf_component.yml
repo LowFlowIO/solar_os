@@ -1,0 +1,6 @@
+version: "1.0.0"
+description: "Heapdesk connector: 1 Hz heap/CPU/stack telemetry, crash capture, remote NVS, console, files and OTA for ESP-IDF"
+url: "https://github.com/heapdesk/heapdesk"
+license: "Apache-2.0"
+dependencies:
+  idf: ">=5.1"

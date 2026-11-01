@@ -156,6 +156,47 @@ if sdkconfig_path.is_file():
             "from SDK configuration defaults without a backup"
         )
 
+# Heapdesk side project: env SOLAR_OS_ENABLE_HEAPDESK=1 or
+# custom_solaros_enable_heapdesk = true. Uses its own sdkconfig file so stock
+# configs are never touched.
+def _truthy(value) -> bool:
+    return str(value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+heapdesk_enabled = _truthy(os.environ.get("SOLAR_OS_ENABLE_HEAPDESK")) or _truthy(
+    env.GetProjectOption("custom_solaros_enable_heapdesk", ""))
+heapdesk_coredump = heapdesk_enabled and (
+    _truthy(os.environ.get("SOLAR_OS_HEAPDESK_COREDUMP")) or _truthy(
+        env.GetProjectOption("custom_solaros_heapdesk_coredump", "")))
+os.environ["SOLAR_OS_ENABLE_HEAPDESK"] = "1" if heapdesk_enabled else ""
+os.environ["SOLAR_OS_HEAPDESK_COREDUMP"] = "1" if heapdesk_coredump else ""
+if heapdesk_enabled:
+    board_config.update("build.esp-idf.sdkconfig_path",
+                        (project_dir / f"sdkconfig.{env['PIOENV']}.heapdesk").as_posix())
+    print(f"SolarOS: Heapdesk enabled (coredump={'on' if heapdesk_coredump else 'off'})")
+if heapdesk_coredump:
+    # Carve a 64 KiB coredump partition from the end of the FAT `flash` partition.
+    source = Path(partition_file)
+    if not source.is_absolute():
+        source = project_dir / source
+    rows, carved = [], False
+    for line in source.read_text(encoding="utf-8").splitlines():
+        cols = [c.strip() for c in line.split(",")]
+        if cols and cols[0] == "flash" and len(cols) >= 5 and not carved:
+            size = int(cols[4], 0) - 0x10000
+            if size < 0x10000:
+                raise SystemExit("Heapdesk coredump: flash partition too small")
+            cols[4] = hex(size)
+            line = ",".join(cols)
+            carved = True
+        rows.append(line)
+    if not carved:
+        raise SystemExit(f"Heapdesk coredump: no 'flash' partition in {source}")
+    rows.append("coredump, data, coredump, , 0x10000,")
+    generated = build_dir / "heapdesk_partitions.csv"
+    generated.write_text("\n".join(rows) + "\n", encoding="utf-8")
+    partition_file = generated.as_posix()
+
 flavor_file = _selected_flavor_file(project_dir, flavor)
 # PlatformIO parses build.cmake_extra_args with Click's POSIX-style argument
 # splitter, including on Windows. Native Windows backslashes would therefore be
@@ -188,6 +229,8 @@ tracked_files = (
     project_dir / "packages" / "solar_os_packages.toml",
     project_dir / "scripts" / "generate_flavor_config.py",
     project_dir / "scripts" / "platformio_solaros_flavor.py",
+    project_dir / "sdkconfig.defaults.heapdesk",
+    project_dir / "sdkconfig.defaults.heapdesk_coredump",
     project_dir / "scripts" / "cxx_sdkconfig.cmake",
     project_dir / "scripts" / "solaros_update_layout.py",
     project_dir / "scripts" / "solaros_build_lock.py",
@@ -216,6 +259,7 @@ stamp = (
     f"partition={partition_file}\n"
     f"cvbs={cvbs_mode}\n"
     f"vga={vga_mode}\n"
+    f"heapdesk={int(heapdesk_enabled)}:{int(heapdesk_coredump)}\n"
 )
 for name, value in keymap_options.items():
     stamp += f"{name}={value}\n"

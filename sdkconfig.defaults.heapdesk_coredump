@@ -1,0 +1,6 @@
+# Heapdesk core dumps (only with SOLAR_OS_HEAPDESK_COREDUMP=1; adds a 64 KiB
+# coredump partition carved from the end of the `flash` FAT partition).
+CONFIG_ESP_COREDUMP_ENABLE_TO_FLASH=y
+CONFIG_ESP_COREDUMP_DATA_FORMAT_ELF=y
+CONFIG_ESP_COREDUMP_CHECKSUM_SHA256=y
+CONFIG_HEAPDESK_UPLOAD_COREDUMP=y

@@ -1,0 +1,103 @@
+menu "Heapdesk connector"
+
+    config HEAPDESK_ENABLED
+        bool "Enable Heapdesk connector"
+        default y
+        help
+            When disabled, heapdesk_start() returns ESP_ERR_NOT_SUPPORTED and the
+            component adds almost nothing to the image.
+
+    config HEAPDESK_MQTT_URI
+        string "MQTT broker URI"
+        default "mqtts://mqtt.heapdesk.example:8883"
+        depends on HEAPDESK_ENABLED
+        help
+            mqtt://host:1883 for plaintext (development only) or mqtts://host:8883.
+
+    config HEAPDESK_API_URL
+        string "Heapdesk HTTP API base URL"
+        default "https://heapdesk.example"
+        depends on HEAPDESK_ENABLED
+        help
+            Used for core dump upload. File transfer and OTA use signed URLs sent
+            by the server with each command.
+
+    config HEAPDESK_DEVICE_ID
+        string "Device ID"
+        default ""
+        depends on HEAPDESK_ENABLED
+        help
+            Shown when you create a device in the Heapdesk dashboard (hd_...).
+
+    config HEAPDESK_DEVICE_SECRET
+        string "Device secret"
+        default ""
+        depends on HEAPDESK_ENABLED
+        help
+            Shown once when you create the device. Prefer passing it at runtime via
+            heapdesk_config_t (e.g. from NVS) to keep it out of sdkconfig.
+
+    config HEAPDESK_METRICS_INTERVAL_MS
+        int "Telemetry interval (ms)"
+        default 1000
+        range 250 60000
+        depends on HEAPDESK_ENABLED
+
+    config HEAPDESK_MAX_TASKS
+        int "Maximum tasks reported per sample"
+        default 32
+        range 4 64
+        depends on HEAPDESK_ENABLED
+
+    config HEAPDESK_TASK_STACK_SIZE
+        int "Connector worker task stack size (bytes)"
+        default 6144
+        range 4096 16384
+        depends on HEAPDESK_ENABLED
+
+    config HEAPDESK_TASK_PRIORITY
+        int "Connector worker task priority"
+        default 3
+        range 1 20
+        depends on HEAPDESK_ENABLED
+
+    config HEAPDESK_UPLOAD_COREDUMP
+        bool "Upload core dumps found in flash on boot"
+        default y
+        depends on HEAPDESK_ENABLED && ESP_COREDUMP_ENABLE_TO_FLASH
+        help
+            After upload succeeds the core dump partition is erased.
+
+    config HEAPDESK_ALLOW_NVS_WRITE
+        bool "Allow remote NVS writes and deletes"
+        default y
+        depends on HEAPDESK_ENABLED
+
+    config HEAPDESK_ALLOW_FILES
+        bool "Allow remote file browsing and transfer"
+        default y
+        depends on HEAPDESK_ENABLED
+
+    config HEAPDESK_FILE_MAX_BYTES
+        int "Maximum file size for put_file/get_file"
+        default 1048576
+        depends on HEAPDESK_ALLOW_FILES
+
+    config HEAPDESK_ALLOW_OTA
+        bool "Allow remote OTA updates"
+        default y
+        depends on HEAPDESK_ENABLED
+
+    config HEAPDESK_ALLOW_REBOOT
+        bool "Allow remote reboot"
+        default y
+        depends on HEAPDESK_ENABLED
+
+    config HEAPDESK_INSECURE_TLS_ALLOWED
+        bool "Allow plaintext mqtt:// and http:// endpoints"
+        default y
+        depends on HEAPDESK_ENABLED
+        help
+            Disable for production builds so the connector refuses non-TLS URLs.
+
+endmenu

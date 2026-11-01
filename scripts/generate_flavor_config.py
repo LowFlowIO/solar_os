@@ -4,6 +4,7 @@
 from __future__ import annotations
 
 import argparse
+import os
 from dataclasses import dataclass
 from pathlib import Path
 import re
@@ -287,6 +288,10 @@ def load_flavor(path: Path,
         raise ValueError(f"unknown package group key(s): {', '.join(unknown_groups)}")
     for group, value in package_groups.items():
         groups_enabled[group] = bool(value)
+    # Heapdesk side project: build-flag opt-in that ORs the group into any flavor.
+    if "heapdesk" in groups_enabled and os.environ.get(
+            "SOLAR_OS_ENABLE_HEAPDESK", "").strip().lower() in ("1", "true", "yes", "on"):
+        groups_enabled["heapdesk"] = True
 
     unknown_packages: list[str] = []
     for key, value in packages.items():

@@ -104,6 +104,9 @@ void solar_os_shell_cmd_mkdir(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_rm(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_mv(solar_os_context_t *ctx, int argc, char **argv);
 void solar_os_shell_cmd_cp(solar_os_context_t *ctx, int argc, char **argv);
+#if SOLAR_OS_PACKAGE_SERVICE_HEAPDESK
+void solar_os_shell_cmd_heapdesk(solar_os_context_t *ctx, int argc, char **argv);
+#endif
 #if SOLAR_OS_PACKAGE_SERVICE_MQTT
 void solar_os_shell_cmd_mqtt(solar_os_context_t *ctx, int argc, char **argv);
 #endif
