@@ -300,6 +300,8 @@ esp_err_t heapdesk_start(const heapdesk_config_t *cfg)
         .network.timeout_ms = 10000,
         .buffer.size = 4096,
         .buffer.out_size = 4096,
+        /* MQTTS: the TLS handshake (cert bundle verify) runs on this task. */
+        .task.stack_size = CONFIG_HEAPDESK_MQTT_TASK_STACK_SIZE,
     };
     if (hd_cfg.ca_cert_pem) {
         mc.broker.verification.certificate = hd_cfg.ca_cert_pem;

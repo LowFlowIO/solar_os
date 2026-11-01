@@ -51,9 +51,21 @@ menu "Heapdesk connector"
 
     config HEAPDESK_TASK_STACK_SIZE
         int "Connector worker task stack size (bytes)"
-        default 6144
+        default 8192
         range 4096 16384
         depends on HEAPDESK_ENABLED
+        help
+            The worker performs HTTPS (core dump upload, file transfer, OTA), so
+            the TLS handshake runs on this stack. 8 KiB is the safe minimum.
+
+    config HEAPDESK_MQTT_TASK_STACK_SIZE
+        int "MQTT client task stack size (bytes)"
+        default 8192
+        range 4096 16384
+        depends on HEAPDESK_ENABLED
+        help
+            Passed as esp_mqtt_client_config_t.task.stack_size. mqtts:// does the
+            TLS handshake on this task.
 
     config HEAPDESK_TASK_PRIORITY
         int "Connector worker task priority"

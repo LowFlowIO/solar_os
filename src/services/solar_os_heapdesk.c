@@ -9,6 +9,9 @@
 #include "esp_event.h"
 #include "esp_log.h"
 #include "esp_netif.h"
+#include "freertos/FreeRTOS.h"
+#include "freertos/task.h"
+#include "solar_os_task.h"
 #include "heapdesk.h"
 #include "nvs.h"
 
@@ -90,10 +93,29 @@ esp_err_t solar_os_heapdesk_try_start(void)
     return err;
 }
 
+/* Never start the connector on sys_evt: its stack (CONFIG_ESP_SYSTEM_EVENT_TASK_STACK_SIZE,
+ * 2304 B by default) overflows with the NVS reads, config buffers and MQTT(S) client init.
+ * Hand off to a short-lived task with a real stack instead. */
+static volatile bool heapdesk_start_pending;
+
+static void heapdesk_start_task(void *arg)
+{
+    (void)arg;
+    (void)solar_os_heapdesk_try_start();
+    heapdesk_start_pending = false;
+    solar_os_task_delete_internal(NULL);
+}
+
 static void on_got_ip(void *arg, esp_event_base_t base, int32_t id, void *data)
 {
     (void)arg; (void)base; (void)id; (void)data;
-    (void)solar_os_heapdesk_try_start();
+    if (heapdesk_started || heapdesk_start_pending) return;
+    heapdesk_start_pending = true;
+    if (solar_os_task_create_pinned_internal(heapdesk_start_task, "hd_start", 6144, NULL, 3, NULL,
+                                              tskNO_AFFINITY, SOLAR_OS_TASK_ROLE_SYSTEM) != pdPASS) {
+        heapdesk_start_pending = false;
+        ESP_LOGW(TAG, "could not create hd_start task");
+    }
 }
 
 void solar_os_heapdesk_init(void)
